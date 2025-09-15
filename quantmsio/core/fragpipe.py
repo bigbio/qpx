@@ -279,6 +279,15 @@ class Spectrum:
             [None] * len(precursor_charge), type=pa.list_(pa.float32())
         )
         num_peaks_array = pa.array([None] * len(precursor_charge), type=pa.int32())
+        charge_arrays = pa.array(
+            [None] * len(precursor_charge), type=pa.list_(pa.int32())
+        )
+        ion_type_arrays = pa.array(
+            [None] * len(precursor_charge), type=pa.list_(pa.string())
+        )
+        ion_mobility_arrays = pa.array(
+            [None] * len(precursor_charge), type=pa.list_(pa.float32())
+        )
         return {
             "precursor_charge": pa.array(precursor_charge, type=pa.int32()),
             "observed_mz": pa.array(observed_mz, type=pa.float32()),
@@ -289,6 +298,9 @@ class Spectrum:
             "num_peaks": num_peaks_array,
             "mz_array": mz_arrays,
             "intensity_array": intensity_arrays,
+            "charge_array": charge_arrays,
+            "ion_type_array": ion_type_arrays,
+            "ion_mobility_array": ion_mobility_arrays,
         }
 
     @classmethod

@@ -215,6 +215,9 @@ class Psm(MzTab):
         df.loc[:, "number_peaks"] = None
         df.loc[:, "mz_array"] = None
         df.loc[:, "intensity_array"] = None
+        df.loc[:, "charge_array"] = None
+        df.loc[:, "ion_type_array"] = None
+        df.loc[:, "ion_mobility_array"] = None
 
     def write_psm_to_file(
         self,

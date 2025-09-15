@@ -336,6 +336,9 @@ class MaxQuant:
         df.loc[:, "intensity_array"] = None
         df.loc[:, "mz_array"] = None
         df.loc[:, "number_peaks"] = None
+        df.loc[:, "charge_array"] = None
+        df.loc[:, "ion_type_array"] = None
+        df.loc[:, "ion_mobility_array"] = None
 
     def transform_feature(self, df: pd.DataFrame):
         self.generate_intensity_msg(

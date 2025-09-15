@@ -146,6 +146,27 @@ PSM_UNIQUE_FIELDS = [
             "description": "Array of intensity values for the spectrum used for the peptide spectrum match"
         },
     ),
+    pa.field(
+        "charge_array",
+        pa.list_(pa.int32()),
+        metadata={
+            "description": "Array of charge values for fragment ions corresponding to the spectrum peaks"
+        },
+    ),
+    pa.field(
+        "ion_type_array",
+        pa.list_(pa.string()),
+        metadata={
+            "description": "Array of ion type annotations for fragment ions (e.g., b, y, a, etc.)"
+        },
+    ),
+    pa.field(
+        "ion_mobility_array",
+        pa.list_(pa.float32()),
+        metadata={
+            "description": "Array of ion mobility values for fragment ions"
+        },
+    ),
 ]
 
 FEATURE_UNIQUE_FIELDS = [
