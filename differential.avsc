@@ -1,0 +1,51 @@
+{
+  "type": "record",
+  "name": "differential_file",
+  "doc": "Schema for a file containing differential expression data and associated metadata",
+  "fields": [
+    {
+      "name": "file_metadata",
+      "type": {
+        "type": "record",
+        "name": "file_metadata",
+        "doc": "Metadata for the differential expression file",
+        "fields": [
+          {"name": "quantmsio_version", "type": "string", "doc": "Version of the quantms.io format"},
+          {"name": "creator", "type": "string", "doc": "Name of the tool or person who created the file"},
+          {"name": "file_type", "type": "string", "doc": "Type of the file (differential_file)"},
+          {"name": "creation_date", "type": "string", "doc": "Date when the file was created"},
+          {"name": "uuid", "type": "string", "doc": "Unique identifier for the file"},
+          {"name": "software_provider", "type": "string", "doc": "Name of the software provider that generated the file"},
+          {"name": "project_accession", "type": ["null", "string"], "doc": "Project accession in PRIDE Archive if available"},
+          {"name": "project_title", "type": ["null", "string"], "doc": "Project title in PRIDE Archive if available"},
+          {"name": "project_description", "type": ["null", "string"], "doc": "Project description in PRIDE Archive if available"},
+          {"name": "factor_value", "type": ["null", "string"], "doc": "Factor value from SDRF file"},
+          {"name": "fdr_threshold", "type": "float32", "doc": "FDR threshold used for differential expression analysis"},
+          {"name": "contrasts", "type": {"type": "array", "items": "string"}, "doc": "List of contrasts used in the differential expression analysis"}
+        ]
+      },
+      "doc": "File-level metadata information"
+    },
+    {
+      "name": "records",
+      "type": {
+        "type": "array",
+        "items": {
+          "type": "record",
+          "name": "differential_expression_record",
+          "fields": [
+            {"name": "protein", "type": "string", "doc": "Protein Accession"},
+            {"name": "label", "type": "string", "doc": "Label for the Conditions combination"},
+            {"name": "log2FC", "type": "float64", "doc": "Log2 Fold Change"},
+            {"name": "se", "type": "float64", "doc": "Standard error of the log2 fold change"},
+            {"name": "df", "type": "int32", "doc": "Degree of freedom of the Student test"},
+            {"name": "pvalue", "type": "float64", "doc": "Raw p-values"},
+            {"name": "adj_pvalue", "type": "float64", "doc": "P-values adjusted among all the proteins in the specific comparison using the approach by Benjamini and Hochberg"},
+            {"name": "issue", "type": ["null", "string"], "doc": "Issue column shows if there is any issue for inference in corresponding protein and comparison"}
+          ]
+        }
+      },
+      "doc": "List of differential expression records"
+    }
+  ]
+} 

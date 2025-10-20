@@ -1,0 +1,163 @@
+{
+  "type": "record",
+  "name": "mz",
+  "doc": "Schema for mass spectrometry data including scan details, precursors, mz, intensity, and CV parameters.",
+  "fields": [
+    {
+      "name": "file_metadata",
+      "type": {
+        "type": "record",
+        "name": "file_metadata",
+        "doc": "Metadata for the mass spectra file",
+        "fields": [
+          {"name": "quantmsio_version", "type": "string", "doc": "Version of the quantms.io format"},
+          {"name": "creator", "type": "string", "doc": "Name of the tool or person who created the file"},
+          {"name": "file_type", "type": "string", "doc": "Type of the file (mz_file)"},
+          {"name": "creation_date", "type": "string", "doc": "Date when the file was created"},
+          {"name": "uuid", "type": "string", "doc": "Unique identifier for the file"},
+          {"name": "software_provider", "type": "string", "doc": "Name of the software provider that generated the file"}
+        ]
+      },
+      "doc": "File-level metadata information"
+    },
+    {
+      "name": "id",
+      "type": "string",
+      "doc": "Unique identifier for the scan or spectrum."
+    },
+    {
+      "name": "ms_level",
+      "type": "int",
+      "doc": "The MS level (e.g., 1 for MS1, 2 for MS2)."
+    },
+    {
+      "name": "centroid",
+      "type": "boolean",
+      "doc": "Indicates whether the data is centroided (true) or profile mode (false)."
+    },
+    {
+      "name": "scan_start_time",
+      "type": "float",
+      "doc": "The start time of the scan in minutes."
+    },
+    {
+      "name": "inverse_ion_mobility",
+      "type": ["null", "float"],
+      "default": null,
+      "doc": "Inverse ion mobility, if available, used for TIMS data."
+    },
+    {
+      "name": "ion_injection_time",
+      "type": "float",
+      "doc": "The ion injection time in milliseconds."
+    },
+    {
+      "name": "total_ion_current",
+      "type": "float",
+      "doc": "Total ion current (TIC) for the scan."
+    },
+    {
+      "name": "precursors",
+      "type": [
+        "null",
+        {
+          "type": "array",
+          "items": {
+            "type": "record",
+            "name": "precursor",
+            "doc": "Details about the precursor ions used in this MS/MS scan.",
+            "fields": [
+              {
+                "name": "selected_ion_mz",
+                "type": "float",
+                "doc": "The m/z value of the selected precursor ion."
+              },
+              {
+                "name": "selected_ion_charge",
+                "type": ["null", "int"],
+                "default": null,
+                "doc": "Charge state of the selected precursor ion, if available."
+              },
+              {
+                "name": "selected_ion_intensity",
+                "type": ["null", "float"],
+                "default": null,
+                "doc": "Intensity of the selected precursor ion."
+              },
+              {
+                "name": "isolation_window_target",
+                "type": ["null", "float"],
+                "default": null,
+                "doc": "The target m/z for the isolation window."
+              },
+              {
+                "name": "isolation_window_lower",
+                "type": ["null", "float"],
+                "default": null,
+                "doc": "The lower bound of the isolation window."
+              },
+              {
+                "name": "isolation_window_upper",
+                "type": ["null", "float"],
+                "default": null,
+                "doc": "The upper bound of the isolation window."
+              },
+              {
+                "name": "spectrum_ref",
+                "type": ["null", "string"],
+                "default": null,
+                "doc": "Reference to another spectrum (e.g., for linking to external datasets)."
+              }
+            ]
+          }
+        }
+      ],
+      "default": null,
+      "doc": "List of precursors for this scan, if applicable."
+    },
+    {
+      "name": "mz",
+      "type": {
+        "type": "array",
+        "items": "float"
+      },
+      "doc": "List of m/z values for the scan."
+    },
+    {
+      "name": "intensity",
+      "type": {
+        "type": "array",
+        "items": "float"
+      },
+      "doc": "List of intensity values corresponding to the m/z values."
+    },
+    {
+      "name": "cv_params",
+      "type": [
+        "null",
+        {
+          "type": "array",
+          "items": {
+            "type": "record",
+            "name": "cv_param",
+            "doc": "Controlled vocabulary (CV) parameters providing additional metadata for the scan.",
+            "fields": [
+              {
+                "name": "name",
+                "type": "string",
+                "doc": "Name of the CV term (e.g., from PSI-MS or other ontologies)."
+              },
+              {
+                "name": "value",
+                "type": "string",
+                "doc": "Value associated with the CV term."
+              }
+            ]
+          }
+        }
+      ],
+      "default": null,
+      "doc": "Optional list of CV parameters for additional metadata."
+    }
+  ]
+}

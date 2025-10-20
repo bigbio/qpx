@@ -1,0 +1,46 @@
+{
+  "type": "record",
+  "name": "absolute_file",
+  "doc": "Schema for a file containing absolute expression data (IBAQ values) and associated metadata",
+  "fields": [
+    {
+      "name": "file_metadata",
+      "type": {
+        "type": "record",
+        "name": "file_metadata",
+        "doc": "Metadata for the absolute expression file",
+        "fields": [
+          {"name": "quantmsio_version", "type": "string", "doc": "Version of the quantms.io format"},
+          {"name": "creator", "type": "string", "doc": "Name of the tool or person who created the file"},
+          {"name": "file_type", "type": "string", "doc": "Type of the file (absolute_file)"},
+          {"name": "creation_date", "type": "string", "doc": "Date when the file was created"},
+          {"name": "uuid", "type": "string", "doc": "Unique identifier for the file"},
+          {"name": "software_provider", "type": "string", "doc": "Name of the software provider that generated the file"},
+          {"name": "project_accession", "type": ["null", "string"], "doc": "Project accession in PRIDE Archive if available"},
+          {"name": "project_title", "type": ["null", "string"], "doc": "Project title in PRIDE Archive if available"},
+          {"name": "project_description", "type": ["null", "string"], "doc": "Project description in PRIDE Archive if available"},
+          {"name": "factor_value", "type": ["null", "string"], "doc": "Factor value from SDRF file"}
+        ]
+      },
+      "doc": "File-level metadata information"
+    },
+    {
+      "name": "records",
+      "type": {
+        "type": "array",
+        "items": {
+          "type": "record",
+          "name": "absolute_expression_record",
+          "fields": [
+            {"name": "protein", "type": "string", "doc": "Protein Accession"},
+            {"name": "sample_accession", "type": "string", "doc": "Sample Accession in the SDRF"},
+            {"name": "condition", "type": "string", "doc": "Value of the factor value"},
+            {"name": "ibaq", "type": "float32", "doc": "Intensity based absolute quantification"},
+            {"name": "ibaq_normalized", "type": "float32", "doc": "relative iBAQ"}
+          ]
+        }
+      },
+      "doc": "List of absolute expression records"
+    }
+  ]
+} 

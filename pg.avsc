@@ -1,0 +1,110 @@
+{
+	"name": "pg",
+	"type": "record",
+	"doc": "Schema for a file containing protein groups data and associated metadata",
+	"fields": [
+		{
+			"name": "file_metadata",
+			"type": {
+				"type": "record",
+				"name": "file_metadata",
+				"doc": "Metadata for the protein groups file",
+				"fields": [
+					{"name": "quantmsio_version", "type": "string", "doc": "Version of the quantms.io format"},
+					{"name": "creator", "type": "string", "doc": "Name of the tool or person who created the file"},
+					{"name": "file_type", "type": "string", "doc": "Type of the file (pg_file)"},
+					{"name": "creation_date", "type": "string", "doc": "Date when the file was created"},
+					{"name": "uuid", "type": "string", "doc": "Unique identifier for the file"},
+					{"name": "software_provider", "type": "string", "doc": "Name of the software provider that generated the file"}
+				]
+			},
+			"doc": "File-level metadata information"
+		},
+		{"name": "gg_accessions", "type": ["null",{"type": "array","items": "string"}], "doc": "Gene group accessions, as a string array"},
+		{"name": "pg_accessions", "type": ["null",{"type": "array","items": "string"}], "doc": "Protein accessions of all the proteins within this group"},
+		{"name": "pg_names", "type": ["null",{"type": "array","items": "string"}], "doc": "Protein group names (descriptive names for the proteins)"},
+		{"name": "gg_names", "type": ["null", {"type": "array", "items": "string"}], "doc": "Gene names corresponding to the proteins in the group"},
+		{"name": "reference_file_name", "type": "string", "doc": "The raw file containing the identified/quantified protein group"},
+		{"name": "peptide_counts", "type": ["null", {
+			"type": "struct",
+			"fields": [
+				{"name": "unique_sequences", "type": "int", "doc": "Number of peptide sequences unique to this protein group within this file"},
+				{"name": "total_sequences", "type": "int", "doc": "Total number of peptide sequences identified for this protein group in this file"}
+			]
+		}], "doc": "Peptide sequence counts for this protein group in this specific file"},
+		{"name": "feature_counts", "type": ["null", {
+			"type": "struct",
+			"fields": [
+				{"name": "unique_features", "type": "int", "doc": "Number of unique peptide features (peptide charge combinations) specific to this protein group within this file"},
+				{"name": "total_features", "type": "int", "doc": "Total number of peptide features identified for this protein group in this file"}
+			]
+		}], "doc": "Peptide feature counts for this protein group in this specific file"},
+		{"name": "global_qvalue", "type": ["null", "float32"], "doc": "Global q-value of the protein group at the experiment level"},
+		{"name": "pg_qvalue", "type": ["null", "float32"], "doc": "Protein group q-value at the run level (DIA-NN specific)"},
+		{"name": "intensities", "type": ["null",{
+			"type": "array",
+			"items": {
+				"type": "struct",
+				"fields": [
+					{"name": "sample_accession", "type": "string"},
+					{"name": "channel", "type": "string"},
+					{"name": "intensity", "type": "float32"}
+				]
+			}
+			}],
+			"doc": "The intensity-based abundance of the protein group in the sample across different channels"
+		},
+		{"name": "additional_intensities", "type": ["null",{
+			"type": "array",
+			"items": {
+				"type": "struct",
+				"fields": [
+					{"name": "sample_accession", "type": "string"},
+					{"name": "channel", "type": "string"},
+					{"name": "intensities", "type": {
+						"type": "array",
+						"items": {
+							"type": "struct",
+							"fields": [
+								{"name": "intensity_name", "type": "string"},
+								{"name": "intensity_value", "type": "float32"}
+							]
+						}
+					}}
+				]
+			}
+			}],
+			"doc": "Additional intensity values like normalized intensity, LFQ, iBAQ, etc. Each entry contains sample, channel and list of intensity name-value pairs"
+		},
+		{"name": "is_decoy", "type": "int", "doc": "Decoy indicator, 1 if the protein group is a decoy, 0 if target"},
+		{"name": "contaminant", "type": ["null", "int"], "doc": "If the protein is a contaminant (1) or not (0)"},
+		{"name": "peptides", "type": {"type": "array","items": { "type": "struct", "fields": [{ "name": "protein_name", "type": "string" }, { "name": "peptide_count", "type": "int" }]}}, "doc": "Number of peptides per protein in the protein group"},
+		{"name": "anchor_protein", "type": ["null", "string"], "doc": "The anchor protein of the protein group (leading protein or representative)"},
+		{"name": "sequence_coverage", "type": ["null", "float32"], "doc": "Percentage of the protein sequence covered by identified peptides"},
+		{"name": "molecular_weight", "type": ["null", "float32"], "doc": "Molecular weight of the protein in kDa"},
+		{"name": "additional_scores", "type": ["null", {
+			"type": "array",
+			"items": {
+				"type": "struct",
+				"fields": [
+					{"name": "score_name", "type": "string"},
+					{"name": "score_value", "type": "float32"}
+				]
+				}
+			}],
+			"doc": "Additional scores like posterior error probability, confidence score, etc."
+		},
+		{"name": "cv_params", "type": ["null", {
+			"type": "array",
+			"items": {
+				"type": "struct",
+				"fields": [
+					{"name": "cv_name", "type": "string"},
+					{"name": "cv_value", "type": "string"}
+				]
+				}
+			}],
+			"doc": "Optional list of CV parameters for additional metadata"
+		}
+	]
+}

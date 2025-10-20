@@ -1,0 +1,59 @@
+{
+	"name": "protein",
+	"type": "record",
+	"doc": "Schema for a file containing protein summary data and associated metadata",
+	"fields": [
+		{
+			"name": "file_metadata",
+			"type": {
+				"type": "record",
+				"name": "file_metadata",
+				"doc": "Metadata for the protein file",
+				"fields": [
+					{"name": "quantmsio_version", "type": "string", "doc": "Version of the quantms.io format"},
+					{"name": "creator", "type": "string", "doc": "Name of the tool or person who created the file"},
+					{"name": "file_type", "type": "string", "doc": "Type of the file (protein_file)"},
+					{"name": "creation_date", "type": "string", "doc": "Date when the file was created"},
+					{"name": "uuid", "type": "string", "doc": "Unique identifier for the file"},
+					{"name": "software_provider", "type": "string", "doc": "Name of the software provider that generated the file"}
+				]
+			},
+			"doc": "File-level metadata information"
+		},
+		{"name": "protein_accessions", "type": {"type": "array","items": "string"}},
+		{"name": "abundance","type": ["null", "float32"]},
+		{"name": "sample_accession", "type":  "string", "doc": "The sample accession in the SDRF, which column is called source name"},
+		{"name": "global_qvalue","type": ["null", "float32"], "doc": "The global qvalue for a given protein or protein groups"},
+		{"name": "is_decoy","type": ["null", "int"], "doc": "If the protein is decoy"},
+		{"name": "best_id_score", "type": [
+			"null",
+			{
+				"type": "record",
+				"name": "score",
+				"fields": [
+					{ "name": "name", "type": "string" },
+					{ "name": "value", "type": "float32" }
+				],
+				"doc": "A named score type and value representing an identification's measure of confidence or input feature"
+			}
+		]},
+		{"name": "additional_scores", "type": ["null", {"type": "array",
+		"items": {
+			"type": "record",
+			"name": "score",
+			"fields": [
+				{"name": "name", "type": "string"},
+				{"name": "value", "type": "float32"}
+			],
+			"doc": "A named score type and value representing an identification's measure of confidence or input feature"
+		}
+		}],
+		"doc": "List of identification scores subsidiary to the best score"
+		},
+		{"name": "gg_accessions", "type": ["null", {"type": "array","items": "string"}], "doc": "The gene accessions corresponding to every protein"},
+		{"name": "gg_names", "type": ["null", {"type": "array","items": "string"}], "doc": "The gene names corresponding to every protein"},
+		{"name": "number_peptides","type": ["null", "int"], "doc": "The total number of peptides for a give protein"},
+		{"name": "number_psms","type": ["null", "int"], "doc": "The total number of peptide spectrum matches"},
+		{"name": "number_unique_peptides","type": ["null", "int"], "doc": "The total number of unique peptides"}
+	]
+}

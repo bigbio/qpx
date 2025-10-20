@@ -1,0 +1,35 @@
+field 	ontology_name	ontology_accession	desc
+sequence	AA sequence	MS:1001344	The sequence is a amino acid sequence.
+peptidoform	peptidoform	MS:1003049	"Peptide that contains zero or more mass modifications on the termini or side chains of its amino acid residues, and may be differentiated from other peptidoforms with the same peptide sequence but different mass modification configurations."
+modifications	protein modifications	MS:1000933	"Encoding of modifications of the protein sequence from the specified accession, written in PEFF notation."
+precursor_charge	MS2 known precursor charges fractions	MS:4000063	The fraction of MS/MS precursors of the corresponding charge.
+posterior_error_probability	posterior error probability from identification based on multiple spectra	MS:1003336	PEP score for identifications based on multiple spectra.
+is_decoy	decoy peptide	MS:1002217	A putative identified peptide issued from a decoy sequence database.
+calculated_mz	theoretical monoisotopic m/z	MS:1003053	Mass-to-charge ratio of a peptidoform ion composed of the most common isotope of each atom computed from the putative knowledge of its molecular constituents.
+observed_mz			
+pg_accessions			
+predicted_rt	predicted retention time	MS:1000897	A time interval from the start of chromatography when an analyte exits a chromatographic column as predicted by a referenced software application.
+reference_file_name			
+scan	scan number	MS:1003057	Ordinal number of the scan indicating its order of acquisition within a mass spectrometry acquisition run.
+rt	retention time	MS:1000894	A time interval from the start of chromatography when an analyte exits a chromatographic column.
+ion_mobility	ion mobility drift time	MS:1002476	Drift time of an ion or spectrum of ions as measured in an ion mobility mass spectrometer. This time might refer to the central value of a bin into which all ions within a narrow range of drift time have been aggregated.
+number_peaks	number of peaks	MS_1003059	"Number of peaks or features in a spectrum. For a peak-picked spectrum, this will correspond to the number of data points. For a non-peak-picked spectrum, this corresponds to the number of features discernable in the spectrum, which will be fewer than the number of data points."
+mz_array	m/z array	MS_1000514	A data array of m/z values.
+intensity_array	intensity array	MS:1000515	A data array of intensity values.
+anchor_protein	anchor protein	MS:1001591	A representative protein selected from a set of sequence same-set or spectrum same-set proteins.
+unique	peptide unique to one protein	MS:1001363	A peptide matching only one.
+pg_global_qvalue	protein-level global FDR	MS:1001214	Estimation of the global false discovery rate of proteins.
+start_ion_mobility			
+stop_ion_mobility			
+gg_accessions			"Gene accessions, as string array"
+gg_names			"Gene names, as string array"
+rt_start			
+rt_stop			
+andromeda_score	Andromeda:score	MS:1002338	The probability based score of the Andromeda search engine.
+andromeda_delta_score	Andromeda: delta score	MS:1003433	
+percolator_score	percolator:score	MS:1001492	Percolator:score.
+openms_score	OpenMS:Best PSM Score	MS:1003114	The score of the best PSM selected by the underlying identification tool
+msgf_score	MS-GF:RawScore	MS:1002049	MS-GF raw score.
+consesus_support			
+parent_ion_fraction			Short for Parent Ion Fraction; indicates the fraction the target peak makes up of the total intensity in the inclusion window.
+precursor_quantification_score			"when using QuantUMS is equal to 1.0 / (1.0 + SD), where SD is the standard deviation of the LC-MS-derived error in relative precursor quantification"

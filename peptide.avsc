@@ -1,0 +1,86 @@
+{
+	"name": "peptide",
+	"type": "record",
+	"doc": "Schema for a file containing peptide summary data and associated metadata",
+	"fields": [
+		{
+			"name": "file_metadata",
+			"type": {
+				"type": "record",
+				"name": "file_metadata",
+				"doc": "Metadata for the peptide file",
+				"fields": [
+					{"name": "quantmsio_version", "type": "string", "doc": "Version of the quantms.io format"},
+					{"name": "creator", "type": "string", "doc": "Name of the tool or person who created the file"},
+					{"name": "file_type", "type": "string", "doc": "Type of the file (peptide_file)"},
+					{"name": "creation_date", "type": "string", "doc": "Date when the file was created"},
+					{"name": "uuid", "type": "string", "doc": "Unique identifier for the file"},
+					{"name": "software_provider", "type": "string", "doc": "Name of the software provider that generated the file"}
+				]
+			},
+			"doc": "File-level metadata information"
+		},
+		{"name": "sequence", "type": "string", "doc": "The peptide’s sequence (with no modifications)"},
+		{"name": "peptidoform", "type": "string", "doc": "Peptide sequence with modifications, see more in the documentation"},
+		{"name": "modifications", "type": ["null", {
+			"type": "array",
+			"items": {
+				"type": "record",
+				"name": "modification",
+				"doc": "A modification found in the peptide.",
+				"fields": [
+					{ "name": "name", "type": "string", "doc": "Name of the modification (e.g., Oxidation)"},
+					{ "name": "accession", "type": ["null", "string"], "doc": "Accession of the modification (e.g., UNIMOD:35)"},
+					{
+						"name": "fields",
+						"type": {
+							"type": "array",
+							"items": {
+								"type": "record",
+								"name": "modification_instance",
+								"doc": "An instance of a modification at a specific position with scores.",
+								"fields": [
+									{ "name": "position", "type": "int", "doc": "Position of the modification in the peptide sequence (1-based). Terminal mods are 0 (N-term) or len+1 (C-term)."},
+									{
+										"name": "scores",
+										"type": ["null", {
+											"type": "array",
+											"items": {
+												"type": "record",
+												"name": "score_entry",
+												"doc": "A score associated with the modification at this position.",
+												"fields": [
+													{ "name": "name", "type": "string", "doc": "Name of the score (e.g., FLR, PTM-score)"},
+													{ "name": "value", "type": ["null", "string"], "doc": "Value of the score." }
+												]
+											}
+										}],
+										"doc": "List of scores associated with this modification instance. Can be null if no scores are available."
+									}
+								]
+							}
+						}
+					}
+				]
+			}
+		}],
+		"doc": "List of modifications with details on position and scores."
+	},
+	{"name": "gg_accessions", "type": ["null", {"type": "array","items": "string"}], "doc": "Gene group accessions."},
+	{"name": "gg_names", "type": ["null", {"type": "array","items": "string"}], "doc": "Gene names, as a string array"},
+	{"name": "best_id_score", "type": ["null", {
+		"type": "array",
+		"items": {
+			"type": "struct",
+			"fields": [
+				{"name": "score_name", "type": "string"},
+				{"name": "score_value", "type": "float32"}
+			]
+			}
+		}],
+	"doc": "A named score type and value representing an identification's measure of confidence or input feature"
+	},
+	{"name": "sample_accession", "type": "string", "doc": "The sample accession in the SDRF, which column is called source name"},
+	{"name": "abundance", "type": "float32", "doc": "The peptide abundance in the given sample accession"}
+	]
+}

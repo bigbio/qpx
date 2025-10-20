@@ -1,0 +1,524 @@
+= quantms.io tools
+:sectnums:
+:toc: left
+:doctype: book
+:xrefstyle: short
+:figure-caption: Figure
+:pdf-page-size: A4
+
+quantms.io tools provides a standardized set of commands to generate
+different files for your project. It is mainly used to consolidate the
+data of each file and generate a standardized file representation.
+
+image::images/map.png[width=100%]
+
+You can generate separate files or complete project files depending on
+your needs.A completed project contains the following files:
+
+== Project converter tool
+
+If your project comes from the PRIDE database, you can use the pride
+accession to generate a [.title-ref]#project.json# that contains
+descriptive information about the entire project. Or, customize a
+Project Accession to generate an entirely new project. You can create a
+[.title-ref]#protein.txt# to generate specific project of the protein
+information in it. It's like this:
+
+[source,shell]
+----
+#protein.txt
+Q07878
+O43660
+P63261
+----
+
+* If you want to know more, please read `project`.
+* If your project is not from PRIDE, you can skip this step.
+
+[source,shell]
+----
+quantmsioc generate-pride-project-json
+   --project_accession PXD014414
+   --sdrf PXD014414.sdrf.tsv
+   --output_folder result
+----
+
+* Optional parameter
+
+[source,shell]
+----
+   --software_name   software name used to generate the data
+   --software_version   software version used to generate the data
+   --delete_existing   Delete existing files in the output folder(default False)
+----
+
+== DE converter tool
+
+Differential expression file Store the differential express proteins
+between two contrasts, with the corresponding fold changes and
+p-values.It can be easily visualized using tools such as
+https://en.wikipedia.org/wiki/Volcano_plot_(statistics)[Volcano Plot]
+and easily integrated with other omics data resources.
+
+* If you have generated project.json, you can use this parameter
+[.title-ref]#--project_file# to add project information for DE files.
+* If you want to know more, please read `de`.
+
+Example:
+
+[source,shell]
+----
+quantmsioc convert-de
+   --msstats_file PXD014414.sdrf_openms_design_msstats_in_comparisons.csv
+   --sdrf_file PXD014414.sdrf.tsv
+   --output_folder result
+----
+
+* Optional parameter
+
+[source,shell]
+----
+   --project_file   Descriptive information from project.json(project json path)
+   --protein_file   Protein file that meets specific requirements(protein.txt)
+   --fdr_threshold   FDR threshold to use to filter the results(default 0.05)
+   --output_prefix_file   Prefix of the differential expression file (final name will be {prefix}-{uuid}.differential.tsv)
+   --delete_existing   Delete existing files in the output folder(default True)
+----
+
+== AE converter tool
+
+The absolute expression format aims to visualize absolute expression
+(AE) results using iBAQ values and store the AE results of each protein
+on each sample.
+
+* If you have generated project.json, you can use this parameter
+[.title-ref]#--project_file# to add project information for AE files.
+* If you want to know ibaq, please read
+https://github.com/bigbio/ibaqpy[ibaqpy]
+* If you want to know more, please read `ae`.
+
+Example:
+
+[source,shell]
+----
+quantmsioc convert-ae
+   --ibaq_file PXD004452-ibaq.csv
+   --sdrf_file PXD014414.sdrf.tsv
+   --output_folder result
+----
+
+* Optional parameter
+
+[source,shell]
+----
+   --project_file   Descriptive information from project.json(project json path)
+   --protein_file   Protein file that meets specific requirements(protein.txt)
+   --output_prefix_file    Prefix of the absolute expression file (final name will be {prefix}-{uuid}.absolute.tsv)
+   --delete_existing    Delete existing files in the output folder(default True)
+----
+
+== Feature converter tool
+
+The Peptide table aims to cover detail on peptide level including
+peptide intensity. The most of content are from peptide part of mzTab.
+It store peptide intensity to perform down-stream analysis and
+integration.
+
+* If you want to know more, please read `feature`.
+
+=== Mztab
+
+Example:
+
+[source,shell]
+----
+quantmsioc convert-feature
+   --sdrf_file PXD014414.sdrf.tsv
+   --msstats_file PXD014414.sdrf_openms_design_msstats_in.csv
+   --mztab_file PXD014414.sdrf_openms_design_openms.mzTab
+   --output_folder result
+----
+
+* Optional parameter
+
+[source,shell]
+----
+   --file_num Read batch size(default 50)
+   --protein_file   Protein file that meets specific requirements(protein.txt)
+   --partitions The field used for splitting files, multiple fields are separated by `,`
+   --output_prefix_file   The prefix of the result file(like {prefix}-{uu.id}-{extension})
+   --duckdb_max_memory  The maximum amount of memory allocated by the DuckDB engine (e.g 16GB)
+   --duckdb_threads The number of threads for the DuckDB engine (e.g 4)
+----
+
+=== Maxquant
+
+Example:
+
+[source,shell]
+----
+quantmsioc convert-maxquant-feature
+   --evidence_file evidence.txt
+   --sdrf_file PXD014414.sdrf.tsv
+   --output_folder result
+----
+
+* Optional parameter
+
+[source,shell]
+----
+   --protein_file   Protein file that meets specific requirements(protein.txt)
+   --partitions The field used for splitting files, multiple fields are separated by `,`
+   --chunksize Read batch size
+   --output_prefix_file Prefix of the parquet file needed to generate the file name
+----
+
+=== DiaNN
+
+Example:
+
+[source,shell]
+----
+quantmsioc convert-diann
+   --report_path diann_report.tsv
+   --qvalue_threshold 0.05
+   --mzml_info_folder mzml
+   --sdrf_path PXD037682.sdrf.tsv
+   --output_folder result
+----
+
+* Optional parameter
+
+[source,shell]
+----
+   --protein_file Protein file that meets specific requirements
+   --partitions The field used for splitting files, multiple fields are separated by `,`
+   --output_prefix_file Prefix of the Json file needed to generate the file name
+   --duckdb_max_memory  The maximum amount of memory allocated by the DuckDB engine (e.g 16GB)
+   --duckdb_threads The number of threads for the DuckDB engine (e.g 4)
+   --file_num Read batch size(default 50)
+----
+
+== Psm converter tool
+
+The PSM table aims to cover detail on PSM level for AI/ML training and
+other use-cases. It store details on PSM level including spectrum
+mz/intensity for specific use-cases such as AI/ML training.
+
+* If you want to know more, please read `psm`.
+
+=== Mztab
+
+Example:
+
+[source,shell]
+----
+quantmsioc convert-psm
+   --mztab_file PXD014414.sdrf_openms_design_openms.mzTab
+   --output_folder result
+----
+
+* Optional parameter
+
+[source,shell]
+----
+--protein_file   Protein file that meets specific requirements(protein.txt)
+--chunksize Read batch size
+--output_prefix_file   The prefix of the result file(like {prefix}-{uu.id}-{extension})
+----
+
+=== Maxquant
+
+Example:
+
+[source,shell]
+----
+quantmsioc convert-maxquant-psm
+   --msms_file the msms.txt file, this will be used to extract the peptide information
+   --output_folder result
+----
+
+* Optional parameter
+
+[source,shell]
+----
+--chunksize Read batch size
+--output_prefix_file The prefix of the result file(like {prefix}-{uu.id}-{extension})
+----
+
+=== IdXML
+
+Example:
+
+[source,shell]
+----
+quantmsioc convert-idxml
+   --idxml_file path/to/file.idXML
+   --output_folder result
+----
+
+* Optional parameter
+
+[source,shell]
+----
+--mzml_file   Optional mzML file used to attach spectra by scan
+--output_prefix_file   The prefix of the result file(like {prefix}-{uu.id}-{extension})
+----
+
+== Compare psm.parquet
+
+This tool is used to compare peptide information in result files
+obtained by different search engines.
+
+* [.title-ref]#--tags# or [.title-ref]#-t# are used to specify the tags
+of the PSM table.
+
+Example:
+
+[source,shell]
+----
+quantmsioc compare-set-psms
+   -p PXD014414-comet.parquet
+   -p PXD014414-sage.parquet
+   -p PXD014414-msgf.parquet
+   -t comet
+   -t sage
+   -t msgf
+----
+
+== Generate spectra message
+
+generate_spectra_message support psm. It can be used directly for
+spectral clustering.
+
+Since the result file is too large, you can specify
+[.title-ref]#–-partitions# to split the result file.
+
+Example:
+
+[source,shell]
+----
+quantmsioc map-spectrum-message-to-parquet
+   --parquet_path PXD014414-f4fb88f6-0a45-451d-a8a6-b6d58fb83670.psm.parquet
+   --mzml_directory mzmls
+   --output_folder result
+----
+
+* Optional parameter
+
+[source,shell]
+----
+--file_num The number of rows of parquet read using pandas streaming
+--partitions The field used for splitting files, multiple fields are separated by `,`
+----
+
+== Generate gene message
+
+generate_gene_message support feature.
+
+Example:
+
+[source,shell]
+----
+quantmsioc map-gene-msg-to-parquet
+--parquet_path PXD000672-0beee055-ae78-4d97-b6ac-1f191e91bdd4.featrue.parquet
+--fasta_path Homo-sapiens-uniprot-reviewed-contaminants-decoy-202210.fasta
+--output_folder result
+----
+
+* Optional parameter
+
+[source,shell]
+----
+--file_num The number of rows of parquet read using pandas streaming
+--partitions The field used for splitting files, multiple fields are separated by `,`
+--species species type(default human)
+----
+
+* [.title-ref]#species#
+
+[width="55%",cols="36%,64%",options="header",]
+|===
+|Common name |Genus name
+a|
+____
+human
+____
+
+a|
+____
+Homo sapiens
+____
+
+a|
+____
+mouse
+____
+
+a|
+____
+Mus musculus
+____
+
+a|
+____
+rat
+____
+
+a|
+____
+Rattus norvegicus
+____
+
+a|
+____
+fruitfly
+____
+
+|Drosophila melanogaster
+a|
+____
+nematode
+____
+
+|Caenorhabditis elegans
+a|
+____
+zebrafish
+____
+
+a|
+____
+Danio rerio
+____
+
+|thale-cress a|
+____
+Arabidopsis thaliana
+____
+
+a|
+____
+frog
+____
+
+a|
+____
+Xenopus tropicalis
+____
+
+a|
+____
+pig
+____
+
+a|
+____
+Sus scrofa
+____
+
+|===
+
+== Register file
+
+This tool is used to register the file to [.title-ref]#project.json#. If
+your project comes from the PRIDE database, You can use this command to
+add file information for [.title-ref]#project.json#.
+
+* The parameter [.title-ref]#--category# has three options:
+[.title-ref]#sdrf_file#, [.title-ref]#feature_file#,
+[.title-ref]#psm_file#, [.title-ref]#differential_file#,
+[.title-ref]#absolute_file#.You can add the above file types.
+* The parameter [.title-ref]#--replace_existing# is enable then we
+remove the old file and add this one. If not then we can have a list of
+files for a category.
+
+Example:
+
+[source,shell]
+----
+quantmsioc attach-file
+   --project_file PXD014414/project.json
+   --attach_file PXD014414-943a8f02-0527-4528-b1a3-b96de99ebe75.featrue.parquet
+   --category feature_file
+----
+
+* Optional parameter
+
+[source,shell
+--is_folder A boolean value that indicates if the file is a folder or not
+--replace_existing Whether to delete old files
+--partitions The fields that are used to partition the data in the file. This is used to optimize the data retrieval and filtering of the data. This field is optional.]
+----
+----
+
+== Statistics
+
+This tool is used for statistics. Example:
+
+[source,shell]
+----
+quantmsioc project-ae-statistics
+   --absolute_path PXD010154-51b34353-227f-4d38-a181-6d42824de9f7.absolute.tsv
+   --parquet_path PXD010154-51b34353-227f-4d38-a181-6d42824de9f7.featrue.parquet
+   --save_path PXD014414.statistic.txt
+----
+
+[source,shell]
+----
+quantmsioc parquet-psm-statistics
+   --parquet_path PXD010154-51b34353-227f-4d38-a181-6d42824de9f7.psm.parquet
+   --save_path PXD014414.statistic.txt
+----
+
+== Plots
+
+This tool is used for visualization. * plot-psm-peptides
+
+[source,shell]
+----
+quantmsioc plot plot-psm-peptides
+   --psm_parquet_path PXD010154-51b34353-227f-4d38-a181-6d42824de9f7.psm.parquet
+   --sdrf_path PXD010154.sdrf.tsv
+   --save_path PXD014414_psm_peptides.svg
+----
+
+* plot-ibaq-distribution
+
+[source,shell]
+----
+quantmsioc plot plot-ibaq-distribution
+   --ibaq_path PXD010154-51b34353-227f-4d38-a181-6d42824de9f7.ibaq.tsv
+   --select_column IbaqLog
+   --save_path PXD014414_psm_peptides.svg
+----
+
+* plot-kde-intensity-distribution
+
+[source,shell]
+----
+quantmsioc plot plot-kde-intensity-distribution
+--feature_path PXD010154-51b34353-227f-4d38-a181-6d42824de9f7.featrue.parquet
+--num_samples 10
+--save_path PXD014414_psm_peptides.svg
+----
+
+* plot-bar-peptide-distribution
+
+[source,shell]
+----
+quantmsioc plot plot-bar-peptide-distribution
+--feature_path PXD010154-51b34353-227f-4d38-a181-6d42824de9f7.featrue.parquet
+--num_samples 10
+--save_path PXD014414_psm_peptides.svg
+----
+
+* plot-box-intensity-distribution
+
+[source,shell]
+----
+quantmsioc plot plot-box-intensity-distribution
+--feature_path PXD010154-51b34353-227f-4d38-a181-6d42824de9f7.featrue.parquet
+--num_samples 10
+--save_path PXD014414_psm_peptides.svg
+----

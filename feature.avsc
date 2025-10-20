@@ -1,0 +1,161 @@
+{
+	"name": "feature",
+	"type": "record",
+	"doc": "Schema for a file containing peptide features and associated metadata",
+	"fields": [
+		{
+			"name": "file_metadata",
+			"type": {
+				"type": "record",
+				"name": "file_metadata",
+				"doc": "Metadata for the feature file",
+				"fields": [
+					{"name": "quantmsio_version", "type": "string", "doc": "Version of the quantms.io format"},
+					{"name": "creator", "type": "string", "doc": "Name of the tool or person who created the file"},
+					{"name": "file_type", "type": "string", "doc": "Type of the file (feature_file)"},
+					{"name": "creation_date", "type": "string", "doc": "Date when the file was created"},
+					{"name": "uuid", "type": "string", "doc": "Unique identifier for the file"},
+					{"name": "scan_format", "type": "string", "doc": "The format of the scan, with possible values: scan, index, nativeId."},
+					{"name": "software_provider", "type": "string", "doc": "Name of the software provider that generated the file"}
+				]
+			},
+			"doc": "File-level metadata information"
+		},
+		{"name": "sequence", "type": "string", "doc": "The peptide’s sequence (with no modifications)"},
+		{"name": "peptidoform", "type": "string", "doc": "Peptide sequence with modifications, see more in the documentation"},
+		{"name": "modifications", "type": ["null", {
+			"type": "array",
+			"items": {
+				"type": "record",
+				"name": "modification",
+				"doc": "A modification found in the peptide.",
+				"fields": [
+					{ "name": "name", "type": "string", "doc": "Name of the modification (e.g., Oxidation)"},
+					{ "name": "accession", "type": ["null", "string"], "doc": "Accession of the modification (e.g., UNIMOD:35)"},
+					{
+						"name": "positions",
+						"type": {
+							"type": "array",
+							"items": {
+								"type": "record",
+								"name": "modification_instance",
+								"doc": "An instance of a modification at a specific position with associated scores.",
+								"fields": [
+									{ 
+										"name": "position", 
+										"type": "string", 
+										"doc": "Position of the modification in format '{AA}.{position}' where AA is the amino acid code (or N-term/C-term) and position is 0 for N-term, 1-based for amino acids, or length+1 for C-term"
+									},
+									{
+										"name": "scores",
+										"type": ["null", {
+											"type": "array",
+											"items": {
+												"type": "record",
+												"name": "score_entry",
+												"doc": "A score associated with the modification at this specific position.",
+												"fields": [
+													{ "name": "score_name", "type": "string", "doc": "Name of the score (e.g., localization_probability, PTM-score)"},
+													{ "name": "score_value", "type": "float32", "doc": "Value of the score for this specific position" }
+												]
+											}
+										}],
+										"doc": "List of scores associated with this modification instance at this specific position. Can be null if no scores are available."
+									}
+								]
+							}
+						}
+					}
+				]
+			}
+		}],
+		"doc": "List of modifications with details on position and position-specific scores."
+		},
+		{"name": "precursor_charge", "type": "int32", "doc": "Precursor charge"},
+		{"name": "posterior_error_probability", "type": ["null", "float32"], "doc": "Posterior error probability for the given peptide or psm match."},
+		{"name": "is_decoy", "type": "int32", "doc": "Decoy indicator, 1 if the PSM is a decoy, 0 target"},
+		{"name": "calculated_mz", "type": "float32", "doc": "Theoretical peptide mass-to-charge ratio based on identified sequence and modifications"},
+		{"name": "observed_mz", "type": "float32", "doc": "Experimental peptide mass-to-charge ratio of identified peptide (in Da)"},
+		{"name": "additional_scores", "type": ["null", {
+			"type": "array",
+			"items": {
+				"type": "record",
+				"name": "additional_score",
+				"fields": [
+					{"name": "score_name", "type": "string"},
+					{"name": "score_value", "type": "float32"}
+				]
+				}
+			}],
+			"doc": "A named score type and value representing an identification's measure of confidence or input feature"
+		},
+
+		{"name": "predicted_rt", "type": ["null", "float32"], "doc": "Predicted retention time of the peptide (in seconds)"},
+		{"name": "reference_file_name", "type": "string", "doc": "The reference file name that contains the feature"},
+		{"name": "cv_params", "type": ["null", {
+			"type": "array",
+			"items": {
+				"type": "record",
+				"name": "cv_param",
+				"fields": [
+					{"name": "cv_name", "type": "string"},
+					{"name": "cv_value", "type": "string"}
+				]
+			}
+			}],
+			"doc": "Optional list of CV parameters for additional metadata"
+		},
+		{"name": "scan", "type": "string", "doc": "Scan number of the spectrum"},
+		{"name": "rt", "type": ["null", "float32"], "doc": "MS2 scan’s precursor retention time (in seconds)"},
+		{"name": "ion_mobility", "type": ["null", "float32"], "doc": "Ion mobility value for the precursor ion"},
+		{"name": "intensities", "type":  ["null",{
+			"type": "array",
+			"items": {
+				"type": "record",
+				"name": "intensity_record",
+				"fields": [
+					{"name": "sample_accession", "type": "string"},
+					{"name": "channel", "type": "string"},
+					{"name": "intensity", "type": "float32"}
+				]
+			}
+			}],
+			"doc": "The intensity-based abundance of the peptide in the sample"
+		},
+		{"name": "additional_intensities", "type":  ["null",{
+			"type": "array",
+			"items": {
+				"type": "record",
+				"name": "additional_intensity_record",
+				"fields": [
+					{"name": "sample_accession", "type": "string"},
+					{"name": "channel", "type": "string"},
+					{"name": "intensities", "type": {
+						"type": "array",
+						"items": {
+							"type": "record",
+							"name": "intensity_pair",
+							"fields": [
+								{"name": "intensity_name", "type": "string"},
+								{"name": "intensity_value", "type": "float32"}
+							]
+						}
+					}}
+				]
+			}
+			}],
+			"doc": "Apart from the raw intensity, multiple intensity values can be provided as key-values pairs, for example, normalized intensity. Each entry contains sample, channel and list of intensity name-value pairs."
+		},
+		{"name": "pg_accessions", "type": ["null", {"type": "array","items": "string"}], "doc": "Protein group accessions of all the proteins that the peptide maps to"},
+		{"name": "anchor_protein", "type": "string", "doc": "One protein accession that represents the protein group"},
+		{"name": "unique", "type": ["null", "int32"], "doc": "Unique peptide indicator, if the peptide maps to a single protein, the value is 1, otherwise 0"},
+		{"name": "pg_global_qvalue", "type": ["null", "float32"], "doc": "Global q-value of the protein group at the experiment level"},
+		{"name": "start_ion_mobility", "type": ["null", "float32"], "doc": "start ion mobility value for the precursor ion"},
+		{"name": "stop_ion_mobility", "type": ["null", "float32"], "doc": "stop ion mobility value for the precursor ion"},
+		{"name": "gg_accessions", "type": ["null", {"type": "array", "items": "string"}], "doc": "Gene accessions, as string array"},
+		{"name": "gg_names", "type": ["null", {"type": "array", "items": "string"}], "doc": "Gene names, as string array"},
+		{"name": "scan_reference_file_name", "type": ["null","string"], "doc": "The reference file containing the best psm that identified the feature. Note: This file can be different from the file that contains the feature ().ReferenceFile"},
+		{"name": "rt_start", "type": ["null", "float32"], "doc": "Start of the retention time window for feature"},
+		{"name": "rt_stop", "type": ["null", "float32"], "doc": "End of the retention time window for feature"}
+	]
+}

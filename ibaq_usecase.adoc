@@ -1,0 +1,88 @@
+== IBAQ Usage
+
+Users can now convert existing public datasets in PRIDE Archive to peptide features files using the quantms.io toolkit, remap the proteins to a new version of the UniProt database and recompute IBAQ values using ibaqpy after annotating the SDRF file. ibaqpy benefits from SDRF's compatibility with public proteomics repositories like PRIDE, facilitating seamless integration into submission workflows and downstream analyses. The use of SDRF automates the parsing of metadata, reducing manual effort and user error while enabling better cross-study comparisons.
+
+=== convert to feature
+==== quantms
+
+nf-core/quantms is a bioinformatics best-practice analysis pipeline for Quantitative Mass Spectrometry (MS). Currently, the workflow supports three major MS-based analytical methods: (i) Data dependant acquisition (DDA) label-free and Isobaric quantitation (e.g. TMT, iTRAQ); (ii) Data independent acquisition (DIA) label-free quantification.
+
+===== Data dependant acquisition
+In experiments analyzed using quantms with data-dependent acquisition, you need to download the following files:
+
+* mzTab file: mzTab is intended as a lightweight supplement to the existing standard mzML to store and represent peptide and protein and identifications together with experimental metadata and basic quantitative information.
+* MSstats file: MSstats is generated for all three pipelines DDA-LFQ, DDA-ISO and DIA-LFQ. A simple tsv file ready to be read by the OpenMStoMSstats function of the MSstats R package. It should hold the same quantities as the consensusXML but rearranged in a "long" table format with additional information about the experimental design used by MSstats.
+* SDRF file: SDRF is a file format based on MAGE-TAB, designed to record sample metadata and the relationships between samples and data in proteomics experiments. The main purpose of SDRF is to enhance the interpretability and re-analyzability of proteomics data, as well as to facilitate integration with other omics data.
+
+
+====== convert report to feature
+
+[source, shell]
+----
+quantmsioc convert-feature 
+--sdrf_file PXD004452-Hella-trypsin.sdrf.tsv 
+--msstats_file PXD004452-Hella-trypsin.sdrf_openms_design_msstats_in.csv
+--mztab_file PXD004452-Hella-trypsin.sdrf_openms_design_openms.mzTab 
+--file_num 30 
+--output_folder res 
+--duckdb_max_memory 64GB 
+--output_prefix_file PXD004452
+----
+
+===== Data independent acquisition
+
+The DIA experiment was processed by the DIANN software, and you need to obtain the `diann_report` file and the `SDRF` file. You also need to download all the mass spectrometry information.
+
+[source, shell]
+----
+quantmsioc convert-diann 
+--report_path diann_report.tsv 
+--qvalue_threshold 0.05 
+--mzml_info_folder mzml 
+--sdrf_path PXD048325-Hela.sdrf.tsv 
+--output_folder res1 
+--output_prefix_file PXD048325 
+--duckdb_max_memory 64GB 
+--file_num 30
+----
+
+==== MaxQuant
+
+In MaxQuant, you need to download the `evidence` file and the `SDRF` file.
+
+[source, shell]
+----
+quantmsioc convert-maxquant-feature
+--evidence_file evidence.txt
+--sdrf_file PXD014414.sdrf.tsv
+--output_folder result
+--output_prefix_file PXD014414
+--chunksize 1000000
+----
+
+
+=== Map to the latest UniProt database
+
+You can download the latest `UniProt FASTA` file to remap the peptides and proteins.
+
+[source, shell]
+----
+quantmsioc transform uniprot \
+--feature-file PXD048325-29419338-aa11-47fb-b183-db1650465b57.feature.parquet \
+--fasta uniprotkb_Human_AND_reviewed_true_AND_m_2024_12_02.fasta \
+--output-folder result \
+--output-prefix PXD048325
+----
+
+=== Obtain a feature use case for calculating IBAQ
+
+Finally, for use with `ibaqpy`, you need to inject experimental information into the `feature` file using the `SDRF` file.
+
+[source, shell]
+----
+quantmsioc convert-ibaq 
+--feature_file res/PXD048325-29419338-aa11-47fb-b183-db1650465b57.feature.parquet 
+--sdrf_file PXD048325-Hela.sdrf.tsv 
+--output_folder ibaq 
+--output_prefix_file PXD048325
+----
