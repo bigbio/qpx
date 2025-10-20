@@ -1,0 +1,162 @@
+site_name: quantmsio
+site_description: Python package documentation for quantmsio - A tool for working with mass spectrometry data
+site_author: BigBio Team
+
+# Documentation URLs:
+#site_url: https://bigbio.github.io/quantms.io/package/
+site_url: https://shen-yufei.github.io/quantms.io/
+
+repo_name: bigbio/quantms.io
+repo_url: https://github.com/bigbio/quantms.io
+# dev_addr: 127.0.0.1:8000
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.expand
+    - navigation.path
+    - navigation.top
+    - navigation.footer
+    - navigation.indexes
+    - navigation.instant
+    - navigation.tracking
+    - search.suggest
+    - search.highlight
+    - search.share
+    - toc.follow
+    - toc.integrate
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+  icon:
+    repo: fontawesome/brands/github
+    admonition:
+      note: octicons/tag-16
+      abstract: octicons/checklist-16
+      info: octicons/info-16
+      tip: octicons/squirrel-16
+      success: octicons/check-16
+      question: octicons/question-16
+      warning: octicons/alert-16
+      failure: octicons/x-circle-16
+      danger: octicons/zap-16
+      bug: octicons/bug-16
+      example: octicons/beaker-16
+      quote: octicons/quote-16
+  favicon: images/favicon.ico
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets:
+      base_path: ["."]
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.caret
+  - pymdownx.tilde
+  - admonition
+  - pymdownx.details
+  - attr_list
+  - md_in_html
+  - def_list
+  - tables
+  - footnotes
+  - abbr
+  - toc:
+      permalink: true
+      permalink_title: Anchor link to this section
+      toc_depth: 2
+
+plugins:
+  - search:
+      lang:
+        - en
+  - markdown-exec
+
+nav:
+  - Home:
+      - Home: index.md
+      - Quick Start: quickstart.md
+      - Key Features: features.md
+      - Supported Formats: formats.md
+      - Example Workflow: workflow.md
+      - Installation: installation.md
+  - Getting Started:
+      - Overview: examples-overview.md
+      - Quick Start Examples: examples-quickstart.md
+      - Workflow Examples: examples-workflows.md
+      - Integration Examples: examples-integration.md
+      - QC Examples: examples-qc.md
+  - User Guide:
+      - Convert Commands: cli-convert.md
+      - Transform Commands: cli-transform.md
+      - Visualization Commands: cli-visualize.md
+      - Statistics Commands: cli-stats.md
+      - Project Management: cli-project.md
+  - Reference:
+      - CLI Reference: cli-reference.md
+      - Format Specification: format-specification.md
+  - Community: community.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/bigbio/quantms.io
+      name: GitHub Repository
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/quantmsio/
+      name: PyPI Package
+    - icon: fontawesome/solid/bug
+      link: https://github.com/bigbio/quantms.io/issues
+      name: Report Issues
+    - icon: fontawesome/solid/book
+      link: https://github.com/bigbio/quantms.io/blob/main/README.md
+      name: Documentation
+  analytics:
+    feedback:
+      title: Was this page helpful?
+      ratings:
+        - icon: material/emoticon-happy-outline
+          name: This page was helpful
+          data: 1
+          note: >-
+            Thanks for your feedback!
+        - icon: material/emoticon-sad-outline
+          name: This page could be improved
+          data: 0
+          note: >-
+            Thanks for your feedback! Help us improve by
+            <a href="https://github.com/bigbio/quantms.io/issues" target="_blank" rel="noopener">opening an issue</a>.
+
+copyright: Copyright &copy; 2024 BigBio Team

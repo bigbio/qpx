@@ -10,7 +10,7 @@ from quantmsio.core.idxml import IdXML
 class TestIdXML(unittest.TestCase):
 
     def setUp(self):
-        self.test_data_dir = Path(__file__).parent / "examples" / "idxml"
+        self.test_data_dir = Path(__file__).parents[2] / "examples" / "idxml"
         self.test_idxml_file = (
             self.test_data_dir
             / "SF_200217_pPeptideLibrary_pool1_HCDnlETcaD_OT_rep2_consensus_fdr_pep_luciphor.idXML"

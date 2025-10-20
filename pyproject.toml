@@ -46,6 +46,11 @@ venn = "*"
 pytest = "*"
 pytest-timeout = "*"
 
+# Documentation
+mkdocs = ">=1.5.0"
+mkdocs-material = ">=9.0.0"
+markdown-exec = {extras = ["ansi"], version = ">=1.11.0"}
+
 [tool.poetry.scripts]
 quantmsioc = "quantmsio.quantmsioc:quantms_io_main"
 

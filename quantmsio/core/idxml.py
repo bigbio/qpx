@@ -710,3 +710,58 @@ class IdXML:
         :return: Number of proteins
         """
         return len(self._protein_map)
+
+
+def merge_idxml_parquet_files(
+    parquet_files: List[Union[Path, str]],
+    output_path: Union[Path, str],
+) -> None:
+    """
+    Merge multiple PSM parquet files into a single parquet file.
+
+    :param parquet_files: List of parquet file paths to merge
+    :param output_path: Output path for the merged parquet file
+    """
+    if not parquet_files:
+        raise ValueError("No parquet files provided for merging")
+
+    logger.info(f"Merging {len(parquet_files)} parquet files into {output_path}")
+
+    # Read all parquet files into dataframes
+    dfs = []
+    for parquet_file in parquet_files:
+        logger.info(f"Reading {parquet_file}")
+        df = pd.read_parquet(parquet_file)
+        dfs.append(df)
+
+    # Concatenate all dataframes
+    merged_df = pd.concat(dfs, ignore_index=True)
+    logger.info(f"Total PSMs in merged file: {len(merged_df)}")
+
+    # Convert numpy arrays to lists for parquet compatibility
+    def convert_numpy_to_list(obj):
+        """Recursively convert numpy arrays to Python lists"""
+        if hasattr(obj, "tolist"):
+            return obj.tolist()
+        elif isinstance(obj, list):
+            return [convert_numpy_to_list(item) for item in obj]
+        elif isinstance(obj, dict):
+            return {key: convert_numpy_to_list(value) for key, value in obj.items()}
+        else:
+            return obj
+
+    for col in merged_df.columns:
+        if col in [
+            "modifications",
+            "protein_accessions",
+            "additional_scores",
+            "cv_params",
+            "mz_array",
+            "intensity_array",
+        ]:
+            merged_df[col] = merged_df[col].apply(convert_numpy_to_list)
+
+    # Write merged dataframe to parquet
+    table = pa.Table.from_pandas(merged_df, schema=PSM_SCHEMA)
+    pq.write_table(table, output_path, compression="gzip")
+    logger.info(f"Successfully merged parquet files to: {output_path}")

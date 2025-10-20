@@ -29,7 +29,6 @@ pip install quantmsio
 
 ```bash
 # Fork the repository on GitHub
-
 # Clone the repository
 git clone https://github.com/your-username/quantms.io.git
 cd quantms.io
@@ -38,46 +37,94 @@ cd quantms.io
 pip install .
 ```
 
+### Development Installation
+
+For development with all dependencies:
+
+```bash
+# Using Poetry (recommended)
+poetry install
+
+# Or using pip
+pip install -r requirements.txt
+pip install -e .
+```
+
 ## Usage
 
 The package provides a command-line interface (CLI) with several command groups:
+
+### Main CLI
+
+```bash
+Usage: cli [OPTIONS] COMMAND [ARGS]...
+
+  quantmsio - A tool for converting and analyzing mass spectrometry proteomics
+  data
+
+Options:
+  --version   Show the version and exit.
+  -h, --help  Show this message and exit.
+
+Commands:
+  convert    Convert external formats to quantms.io format.
+  project    Project management commands.
+  stats      Statistical analysis of quantms.io data.
+  transform  Transform quantms.io data into different representations.
+  visualize  Visualize quantms.io data.
+```
 
 ### Convert Commands
 
 Convert data from various external formats to quantms.io:
 
 ```bash
-# Convert quantms files
-quantmsioc convert quantms-psm [OPTIONS]
-quantmsioc convert quantms-feature [OPTIONS]
-quantmsioc convert quantms-pg [OPTIONS]
+Usage: convert [OPTIONS] COMMAND [ARGS]...
 
-# Convert MaxQuant files
-quantmsioc convert maxquant-psm [OPTIONS]
-quantmsioc convert maxquant-feature [OPTIONS]
-quantmsioc convert maxquant-pg [OPTIONS]
+  Convert external formats to quantms.io format.
 
-# Convert FragPipe files
-quantmsioc convert fragpipe [OPTIONS]
+Options:
+  --help  Show this message and exit.
 
-# Convert DIA-NN files
-quantmsioc convert diann [OPTIONS]
-quantmsioc convert diann-pg [OPTIONS]
-
-# Convert IdXML to PSM parquet
-quantmsioc convert idxml [OPTIONS]
+Commands:
+  diann             Convert DIA-NN report to quantms.io format
+  diann-pg          Convert DIA-NN report to protein group format
+  fragpipe          Convert FragPipe PSMs from psm.tsv to parquet file in
+                    quantms.io
+  idxml             Convert IdXML to PSM parquet file in quantms io
+  idxml-batch       Convert multiple IdXML files to a single merged PSM parquet
+                    file
+  maxquant-feature  Convert feature data from MaxQuant evidence.txt to parquet
+                    format
+  maxquant-pg       Convert MaxQuant proteinGroups.txt to quantms.io protein
+                    group format
+  maxquant-psm      Convert PSM data from MaxQuant msms.txt to parquet format
+  quantms-feature   Convert feature data from mzTab to quantms.io format.
+  quantms-pg        Convert protein groups from mzTab quantms TMT and LFQ...
+  quantms-psm       Convert PSM data from mzTab to quantms.io format.
 ```
 
-### Analysis Commands
+### Transform Commands
 
-Analyze quantms.io data:
+Transform data within the quantms.io ecosystem:
 
 ```bash
-# PSM statistics
-quantmsioc stats analyze psm [OPTIONS]
+Usage: transform [OPTIONS] COMMAND [ARGS]...
 
-# Project AE (iBAQ) and PSM parquet statistics
-quantmsioc stats analyze project-ae [OPTIONS]
+  Transform quantms.io data into different representations.
+
+Options:
+  --help  Show this message and exit.
+
+Commands:
+  ae            Convert IBAQ absolute file into quantms.io format
+  anndata       Merge multiple AE files into a file in AnnData format.
+  differential  Convert a MSstats differential file into a quantms.io file
+                format
+  gene          Map gene information from FASTA to parquet format
+  ibaq          Convert feature data to IBAQ format
+  spectra       Map spectrum information from mzML to parquet format
+  uniprot       Map feature data to latest UniProt version
 ```
 
 ### Visualization Commands
@@ -85,20 +132,31 @@ quantmsioc stats analyze project-ae [OPTIONS]
 Visualize quantms.io data:
 
 ```bash
-# Plot peptides by condition in LFQ
-quantmsioc visualize plot psm-peptides [OPTIONS]
+Usage: visualize [OPTIONS] COMMAND [ARGS]...
 
-# Plot iBAQ distribution
-quantmsioc visualize plot ibaq-distribution [OPTIONS]
+  Visualize quantms.io data.
 
-# Plot KDE intensity distribution
-quantmsioc visualize plot kde-intensity [OPTIONS]
+Options:
+  --help  Show this message and exit.
 
-# Plot peptide distribution
-quantmsioc visualize plot peptide-distribution [OPTIONS]
+Commands:
+  plot  Visualization commands for quantms.io data
+```
 
-# Plot intensity box plot
-quantmsioc visualize plot box-intensity [OPTIONS]
+### Statistics Commands
+
+Analyze quantms.io data:
+
+```bash
+Usage: stats [OPTIONS] COMMAND [ARGS]...
+
+  Statistical analysis of quantms.io data.
+
+Options:
+  --help  Show this message and exit.
+
+Commands:
+  analyze  Statistical analysis commands for quantms.io data
 ```
 
 ### Project Management Commands
@@ -106,38 +164,16 @@ quantmsioc visualize plot box-intensity [OPTIONS]
 Manage project metadata:
 
 ```bash
-# Generate project.json from a PRIDE accession and SDRF
-quantmsioc project create [OPTIONS]
+Usage: project [OPTIONS] COMMAND [ARGS]...
 
-# Attach files to project.json
-quantmsioc project attach [OPTIONS]
-```
+  Project management commands.
 
-### Data Transformation Commands
+Options:
+  --help  Show this message and exit.
 
-Transform data within the quantms.io ecosystem:
-
-```bash
-# Generate iBAQ feature file
-quantmsioc transform ibaq [OPTIONS]
-
-# Convert IBAQ absolute file
-quantmsioc transform ae [OPTIONS]
-
-# Merge AE files into AnnData (.h5ad)
-quantmsioc transform anndata [OPTIONS]
-
-# Convert MSstats differential file
-quantmsioc transform differential [OPTIONS]
-
-# Map gene information from FASTA
-quantmsioc transform gene [OPTIONS]
-
-# Map spectrum information from mzML
-quantmsioc transform spectra [OPTIONS]
-
-# Update UniProt mappings
-quantmsioc transform uniprot [OPTIONS]
+Commands:
+  attach  Register the file to project.json.
+  create  Generate a project file from original PRIDE accession
 ```
 
 ## Configuration
@@ -171,17 +207,6 @@ quantmsio/
     ├── system.py           # System utilities
     └── constants.py        # Constants and configurations
 ```
-
-### Recent Improvements
-
-1. **CLI Structure**
-
-   - Commands are organized into `convert`, `transform`, `visualize`, `stats`, and `project`
-   - Improved help messages and documentation
-
-2. **Code Organization**
-   - Separation of concerns across `core`, `commands`, `operate`, and `utils`
-   - Modular design with clearer entry points
 
 ### Contributing
 
