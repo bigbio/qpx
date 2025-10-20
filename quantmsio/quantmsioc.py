@@ -25,7 +25,7 @@ from quantmsio.commands.convert.quantms import create_duckdb_cmd as duckdb_creat
 from quantmsio.commands.convert.quantms_project import (
     convert_quantms_project_cmd as quantms_project_convert,
 )
-from quantmsio.commands.convert.idxml import convert_idxml_file
+from quantmsio.commands.convert.idxml import convert_idxml_file, convert_idxml_batch
 
 # Transform commands
 from quantmsio.commands.transform.ae import (
@@ -113,6 +113,7 @@ convert.add_command(quantms_psm_convert, name="quantms-psm")
 convert.add_command(quantms_feature_convert, name="quantms-feature")
 convert.add_command(quantms_pg_convert, name="quantms-pg")
 convert.add_command(convert_idxml_file, name="idxml")
+convert.add_command(convert_idxml_batch, name="idxml-batch")
 
 
 # Transform commands

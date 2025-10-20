@@ -1544,4 +1544,51 @@ The mass spectra view is a tabular file that contains the details of the mass sp
 |===
 | Field               | Type                 | Description
 
-| `
+| `id`
+| string
+| Unique identifier for the scan or spectrum
+
+| `ms_level`
+| int
+| The MS level (e.g., 1 for MS1, 2 for MS2)
+
+| `centroid`
+| boolean
+| Indicates whether the data is centroided (true) or profile mode (false)
+
+| `scan_start_time`
+| float
+| The start time of the scan in minutes
+
+| `inverse_ion_mobility`
+| float, null
+| Inverse ion mobility, if available, used for TIMS data
+
+| `ion_injection_time`
+| float
+| The ion injection time in milliseconds
+
+| `total_ion_current`
+| float
+| Total ion current (TIC) for the scan
+
+| `precursors`
+| array[struct], null
+| List of precursors for this scan, if applicable. Each precursor contains: selected_ion_mz, selected_ion_charge, selected_ion_intensity, isolation_window_target, isolation_window_lower, isolation_window_upper, spectrum_ref
+
+| `mz`
+| array[float]
+| List of m/z values for the scan
+
+| `intensity`
+| array[float]
+| List of intensity values corresponding to the m/z values
+
+| `cv_params`
+| array[struct{name: string, value: string}], null
+| Optional list of CV parameters for additional metadata
+|===
+
+==== Format
+
+The mass spectra view can be found in link:mz.avsc[mz.avsc].
