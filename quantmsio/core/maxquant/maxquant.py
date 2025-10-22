@@ -1297,7 +1297,20 @@ class MaxQuant:
                 for col in valuable_columns
                 if col in row and pd.notna(row[col])
             ]
-            search_tokens = set(" ".join(search_texts).lower().split())
+            combined_text = " ".join(search_texts).lower()
+
+            # Tokenize and normalize numbers
+            raw_tokens = TOKEN_DELIMITER_PATTERN.split(combined_text)
+            normalized_tokens = []
+            for token in raw_tokens:
+                token = token.strip()
+                if token:
+                    # Normalize numbers by removing leading zeros
+                    if token.isdigit():
+                        token = str(int(token))
+                    normalized_tokens.append(token)
+
+            search_tokens = set(normalized_tokens)
 
             self._optimized_sdrf_data.append(
                 {
@@ -1372,6 +1385,9 @@ class MaxQuant:
         for token in tokens:
             token = token.strip().lower()
             if token:
+                # Normalize numbers by removing leading zeros
+                if token.isdigit():
+                    token = str(int(token))
                 cleaned_tokens.append(token)
 
         return cleaned_tokens
@@ -1380,8 +1396,10 @@ class MaxQuant:
         """Create default cache result for failed matches"""
         return (maxquant_sample, "label free sample", None, 0)
 
-    def _find_best_matching_record(self, token_set: set) -> tuple:
-        """Find the best matching SDRF record using token-based matching"""
+    def _find_best_matching_record(
+        self, token_set: set, maxquant_sample: str = None
+    ) -> tuple:
+        """Find best matching SDRF record using token matching with tissue-based fallback"""
         best_record = None
         best_match_count = 0
 
@@ -1393,12 +1411,140 @@ class MaxQuant:
                 best_match_count = match_count
                 best_record = record
             elif match_count == best_match_count and match_count > 0:
-                if len(record["comment_data_file"]) < len(
+                # Prefer exact source_name match
+                current_source = str(record.get("source_name", "")).lower()
+                best_source = (
+                    str(best_record.get("source_name", "")).lower()
+                    if best_record
+                    else ""
+                )
+                mq_sample_lower = maxquant_sample.lower() if maxquant_sample else ""
+
+                current_is_exact = mq_sample_lower == current_source
+                best_is_exact = mq_sample_lower == best_source
+
+                if current_is_exact and not best_is_exact:
+                    best_record = record
+                elif not current_is_exact and best_is_exact:
+                    pass  # Keep best_record
+                elif len(record["comment_data_file"]) < len(
                     best_record["comment_data_file"]
                 ):
                     best_record = record
 
+        if (
+            best_match_count < 2
+            and maxquant_sample
+            and self.sdrf_handler
+            and hasattr(self.sdrf_handler, "sdrf_table")
+        ):
+            tissue_record = self._try_tissue_based_matching(maxquant_sample)
+            if tissue_record:
+                return tissue_record, -1
+
         return best_record, best_match_count
+
+    def _try_tissue_based_matching(self, maxquant_sample: str) -> dict:
+        """Match MaxQuant sample to SDRF using tissue name similarity"""
+        try:
+            parts = maxquant_sample.split("_")
+            if len(parts) == 0:
+                return None
+
+            # Try each part as potential tissue name
+            tissue_candidates = parts if len(parts) > 1 else [maxquant_sample]
+
+            sdrf_df = self.sdrf_handler.sdrf_table
+            if "characteristics[organism part]" not in sdrf_df.columns:
+                return None
+
+            best_match_row = None
+            best_similarity = 0.0
+            best_tissue_candidate = None
+
+            # Try matching each candidate part against SDRF tissues
+            for tissue_candidate in tissue_candidates:
+                tissue_normalized = self._normalize_tissue_name(tissue_candidate)
+                if not tissue_normalized or len(tissue_normalized) < 3:
+                    continue
+
+                for idx, row in sdrf_df.iterrows():
+                    sdrf_tissue = row.get("characteristics[organism part]", "")
+                    if pd.notna(sdrf_tissue):
+                        sdrf_tissue_normalized = self._normalize_tissue_name(
+                            str(sdrf_tissue)
+                        )
+                        similarity = self._calculate_tissue_similarity(
+                            tissue_normalized, sdrf_tissue_normalized
+                        )
+
+                        if similarity > best_similarity:
+                            best_similarity = similarity
+                            best_match_row = row
+                            best_tissue_candidate = tissue_candidate
+
+            if best_match_row is not None and best_similarity > 0.5:
+                first_sdrf_sample = best_match_row["source name"]
+                virtual_sample_name = f"{first_sdrf_sample}_{maxquant_sample}"
+
+                virtual_record = {
+                    "source_name": virtual_sample_name,
+                    "comment_label": best_match_row.get(
+                        "comment[label]", "label free sample"
+                    ),
+                    "comment_data_file": best_match_row.get("comment[data file]", ""),
+                    "search_tokens": set(),
+                }
+
+                return virtual_record
+        except Exception:
+            pass
+
+        return None
+
+    def _calculate_tissue_similarity(self, tissue1: str, tissue2: str) -> float:
+        """Calculate similarity between tissue names"""
+        if not tissue1 or not tissue2:
+            return 0.0
+
+        if tissue1 == tissue2:
+            return 1.0
+
+        if tissue1 in tissue2 or tissue2 in tissue1:
+            return 0.9
+
+        words1 = set(tissue1.split())
+        words2 = set(tissue2.split())
+
+        if len(words1) == 0 or len(words2) == 0:
+            return 0.0
+
+        intersection = len(words1.intersection(words2))
+        union = len(words1.union(words2))
+
+        if union > 0:
+            jaccard_score = intersection / union
+            if jaccard_score > 0:
+                return jaccard_score
+
+        for w1 in words1:
+            for w2 in words2:
+                if len(w1) >= 4 and len(w2) >= 4:
+                    if w1 in w2 or w2 in w1:
+                        return 0.7
+
+        return 0.0
+
+    def _normalize_tissue_name(self, tissue: str) -> str:
+        """Normalize tissue name to lowercase with spaces"""
+        if not tissue:
+            return ""
+
+        tissue = tissue.lower().strip()
+        tissue = tissue.replace("_", " ").replace("-", " ")
+        tissue = " ".join(tissue.split())
+
+        return tissue
 
     def _create_result_tuple(self, record: dict, match_count: int) -> tuple:
         """Create result tuple from matching record"""
@@ -1431,9 +1577,11 @@ class MaxQuant:
                 self._sdrf_search_cache[maxquant_sample] = result_tuple
                 return result_tuple[0]
 
-            best_record, best_match_count = self._find_best_matching_record(set(tokens))
+            best_record, best_match_count = self._find_best_matching_record(
+                set(tokens), maxquant_sample
+            )
 
-            if best_record and best_match_count > 0:
+            if best_record and (best_match_count > 0 or best_match_count == -1):
                 result_tuple = self._create_result_tuple(best_record, best_match_count)
             else:
                 result_tuple = (maxquant_sample, None, None, 0)
