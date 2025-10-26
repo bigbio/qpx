@@ -320,7 +320,7 @@ class MaxQuant:
 
         # Process all TMT channels by checking both index-based (0-N) and 1-based (1-N+1) column names
         # MaxQuant may use either "Reporter intensity 0" or "Reporter intensity 1" as the first column
-        for i in range(len(tmt_channels)):
+        for i, channel_name in enumerate(tmt_channels):
             reporter_cols_to_try = [
                 f"Reporter intensity {i}",
                 f"Reporter intensity {i+1}",
@@ -340,7 +340,6 @@ class MaxQuant:
             )
 
             if pd.notna(row[reporter_col]) and row[reporter_col] > 0:
-                channel_name = tmt_channels[i]
 
                 sample_accession = self._get_tmt_sample_accession(
                     reference_file_name, channel_name
