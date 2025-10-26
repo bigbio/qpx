@@ -1267,6 +1267,7 @@
 
 <h1 id="statistics-commands">Statistics Commands<a class="headerlink" href="#statistics-commands" title="Anchor link to this section">&para;</a></h1>
 <p>Perform statistical analysis on quantms.io data.</p>
+<p></p>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Anchor link to this section">&para;</a></h2>
 <p>The <code>stats</code> command group provides tools for generating comprehensive statistical summaries of quantms.io data files. These commands help assess data quality, completeness, and provide key metrics for experimental reports.</p>
 <h2 id="available-commands">Available Commands<a class="headerlink" href="#available-commands" title="Anchor link to this section">&para;</a></h2>
@@ -1279,63 +1280,64 @@
 <h2 id="project-ae">project-ae<a class="headerlink" href="#project-ae" title="Anchor link to this section">&para;</a></h2>
 <p>Generate comprehensive statistics for a project's absolute expression data.</p>
 <h3 id="project-ae-description">Description<a class="headerlink" href="#project-ae-description" title="Anchor link to this section">&para;</a></h3>
-<p>Analyzes both absolute expression (AE) and PSM data to generate a complete statistical summary. This command is useful for quality control and generating summary statistics for publications or reports.</p>
+<p>Analyzes both absolute expression (AE) and PSM data to generate a complete statistical summary. 
+    This command is useful for quality control and generating summary statistics for publications or reports.</p>
+
 <h3 id="project-ae-parameters">Parameters<a class="headerlink" href="#project-ae-parameters" title="Anchor link to this section">&para;</a></h3>
 <table>
 <thead>
 <tr>
-<th>Parameter</th>
-<th>Type</th>
-<th>Required</th>
-<th>Default</th>
-<th>Description</th>
+<th>Parameter</th><th>Type</th><th>Required</th><th>Default</th><th>Description</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code>--absolute-path</code></td>
-<td>Path</td>
+<td>FILE</td>
 <td>Yes</td>
-<td>-</td>
-<td>Absolute expression parquet file path</td>
+<td>Sentinel.UNSET</td>
+<td>Absolute expression file path</td>
 </tr>
 <tr>
 <td><code>--parquet-path</code></td>
-<td>Path</td>
+<td>FILE</td>
 <td>Yes</td>
-<td>-</td>
+<td>Sentinel.UNSET</td>
 <td>PSM parquet file path</td>
 </tr>
 <tr>
 <td><code>--save-path</code></td>
-<td>Path</td>
+<td>FILE</td>
 <td>No</td>
-<td>-</td>
-<td>Output statistics file path (if not provided, prints to stdout)</td>
+<td>Sentinel.UNSET</td>
+<td>Output statistics file path (e.g. stats.txt)</td>
 </tr>
 </tbody>
 </table>
+
 <h3 id="project-ae-examples">Usage Examples<a class="headerlink" href="#project-ae-examples" title="Anchor link to this section">&para;</a></h3>
 <h4 id="project-ae-example-console">Print to Console<a class="headerlink" href="#project-ae-example-console" title="Anchor link to this section">&para;</a></h4>
+<p>Generate project statistics:</p>
+<pre><code class="language-bash">quantmsioc stats analyze project-ae \
+    --absolute-path ./output/ae.parquet \
+    --parquet-path ./output/psm.parquet \
+    --save-path ./reports/project_statistics.txt</code></pre>
+
+<h4 id="project-ae-example-file">Save to File<a class="headerlink" href="#project-ae-example-file" title="Anchor link to this section">&para;</a></h4>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>quantmsioc<span class="w"> </span>stats<span class="w"> </span>analyze<span class="w"> </span>project-ae<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">    </span>--absolute-path<span class="w"> </span>./output/ae.parquet<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">    </span>--parquet-path<span class="w"> </span>./output/psm.parquet
-</span></code></pre></div>
-<h4 id="project-ae-example-file">Save to File<a class="headerlink" href="#project-ae-example-file" title="Anchor link to this section">&para;</a></h4>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>quantmsioc<span class="w"> </span>stats<span class="w"> </span>analyze<span class="w"> </span>project-ae<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">    </span>--absolute-path<span class="w"> </span>./output/ae.parquet<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span>--parquet-path<span class="w"> </span>./output/psm.parquet<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">    </span>--save-path<span class="w"> </span>./reports/project_statistics.txt
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">    </span>--parquet-path<span class="w"> </span>./output/psm.parquet<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">    </span>--save-path<span class="w"> </span>./reports/project_statistics.txt
 </span></code></pre></div>
 <h3 id="project-ae-output">Output Format<a class="headerlink" href="#project-ae-output" title="Anchor link to this section">&para;</a></h3>
 <p>The command generates a text report with the following metrics:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>Number of proteins: 2,547
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>Number of peptides: 12,384
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>Number of samples: 24
-</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>Number of peptidoforms: 15,921
-</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>Number of msruns: 24
-</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>iBAQ Number of proteins: 2,547
-</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>iBAQ Number of samples: 24
+<div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>Number of proteins: 2,547
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>Number of peptides: 12,384
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>Number of samples: 24
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>Number of peptidoforms: 15,921
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>Number of msruns: 24
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>iBAQ Number of proteins: 2,547
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>iBAQ Number of samples: 24
 </span></code></pre></div>
 <h3 id="project-ae-metrics">Metrics Explained<a class="headerlink" href="#project-ae-metrics" title="Anchor link to this section">&para;</a></h3>
 <table>
@@ -1394,51 +1396,52 @@
 <h2 id="psm">psm<a class="headerlink" href="#psm" title="Anchor link to this section">&para;</a></h2>
 <p>Generate statistics for PSM (Peptide-Spectrum Match) data.</p>
 <h3 id="psm-description">Description<a class="headerlink" href="#psm-description" title="Anchor link to this section">&para;</a></h3>
-<p>Analyzes PSM data to generate detailed statistics about identifications, including protein, peptide, and PSM counts.</p>
+<p>Analyzes PSM data to generate detailed statistics about identifications, including protein, 
+    peptide, and PSM counts.</p>
+
 <h3 id="psm-parameters">Parameters<a class="headerlink" href="#psm-parameters" title="Anchor link to this section">&para;</a></h3>
 <table>
 <thead>
 <tr>
-<th>Parameter</th>
-<th>Type</th>
-<th>Required</th>
-<th>Default</th>
-<th>Description</th>
+<th>Parameter</th><th>Type</th><th>Required</th><th>Default</th><th>Description</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code>--parquet-path</code></td>
-<td>Path</td>
+<td>FILE</td>
 <td>Yes</td>
-<td>-</td>
+<td>Sentinel.UNSET</td>
 <td>PSM parquet file path</td>
 </tr>
 <tr>
 <td><code>--save-path</code></td>
-<td>Path</td>
+<td>FILE</td>
 <td>No</td>
-<td>-</td>
-<td>Output statistics file path (if not provided, prints to stdout)</td>
+<td>Sentinel.UNSET</td>
+<td>Output statistics file path (e.g. stats.txt)</td>
 </tr>
 </tbody>
 </table>
+
 <h3 id="psm-examples">Usage Examples<a class="headerlink" href="#psm-examples" title="Anchor link to this section">&para;</a></h3>
 <h4 id="psm-example-console">Print to Console<a class="headerlink" href="#psm-example-console" title="Anchor link to this section">&para;</a></h4>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>quantmsioc<span class="w"> </span>stats<span class="w"> </span>analyze<span class="w"> </span>psm<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">    </span>--parquet-path<span class="w"> </span>tests/examples/parquet/psm.parquet
-</span></code></pre></div>
+<p>Generate PSM statistics:</p>
+<pre><code class="language-bash">quantmsioc stats analyze psm \
+    --parquet-path ./output/psm.parquet \
+    --save-path ./reports/psm_statistics.txt</code></pre>
+
 <h4 id="psm-example-file">Save to File<a class="headerlink" href="#psm-example-file" title="Anchor link to this section">&para;</a></h4>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>quantmsioc<span class="w"> </span>stats<span class="w"> </span>analyze<span class="w"> </span>psm<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">    </span>--parquet-path<span class="w"> </span>./output/psm.parquet<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">    </span>--save-path<span class="w"> </span>./reports/psm_statistics.txt
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>quantmsioc<span class="w"> </span>stats<span class="w"> </span>analyze<span class="w"> </span>psm<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">    </span>--parquet-path<span class="w"> </span>./output/psm.parquet<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span>--save-path<span class="w"> </span>./reports/psm_statistics.txt
 </span></code></pre></div>
 <h3 id="psm-output">Output Format<a class="headerlink" href="#psm-output" title="Anchor link to this section">&para;</a></h3>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>Number of proteins: 1,823
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>Number of peptides: 8,642
-</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>Number of peptidoforms: 11,205
-</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>Number of PSMs: 45,892
-</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>Number of msruns: 12
+<div class="language-text highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>Number of proteins: 1,823
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>Number of peptides: 8,642
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>Number of peptidoforms: 11,205
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>Number of PSMs: 45,892
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>Number of msruns: 12
 </span></code></pre></div>
 <h3 id="psm-metrics">Metrics Explained<a class="headerlink" href="#psm-metrics" title="Anchor link to this section">&para;</a></h3>
 <table>
@@ -1536,85 +1539,85 @@
 <h2 id="automation-and-integration">Automation and Integration<a class="headerlink" href="#automation-and-integration" title="Anchor link to this section">&para;</a></h2>
 <h3 id="batch-processing">Batch Processing<a class="headerlink" href="#batch-processing" title="Anchor link to this section">&para;</a></h3>
 <p>Process multiple files:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="ch">#!/bin/bash</span>
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="k">for</span><span class="w"> </span>file<span class="w"> </span><span class="k">in</span><span class="w"> </span>./output/*.psm.parquet<span class="p">;</span><span class="w"> </span><span class="k">do</span>
-</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">    </span><span class="nv">filename</span><span class="o">=</span><span class="k">$(</span>basename<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$file</span><span class="s2">&quot;</span><span class="w"> </span>.parquet<span class="k">)</span>
-</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">    </span>quantmsioc<span class="w"> </span>stats<span class="w"> </span>analyze<span class="w"> </span>psm<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">        </span>--parquet-path<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$file</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
-</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">        </span>--save-path<span class="w"> </span><span class="s2">&quot;./reports/</span><span class="si">${</span><span class="nv">filename</span><span class="si">}</span><span class="s2">_stats.txt&quot;</span>
-</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="k">done</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="ch">#!/bin/bash</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="k">for</span><span class="w"> </span>file<span class="w"> </span><span class="k">in</span><span class="w"> </span>./output/*.psm.parquet<span class="p">;</span><span class="w"> </span><span class="k">do</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">    </span><span class="nv">filename</span><span class="o">=</span><span class="k">$(</span>basename<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$file</span><span class="s2">&quot;</span><span class="w"> </span>.parquet<span class="k">)</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">    </span>quantmsioc<span class="w"> </span>stats<span class="w"> </span>analyze<span class="w"> </span>psm<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">        </span>--parquet-path<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$file</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">        </span>--save-path<span class="w"> </span><span class="s2">&quot;./reports/</span><span class="si">${</span><span class="nv">filename</span><span class="si">}</span><span class="s2">_stats.txt&quot;</span>
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="k">done</span>
 </span></code></pre></div>
 <h3 id="integration-with-reports">Integration with Reports<a class="headerlink" href="#integration-with-reports" title="Anchor link to this section">&para;</a></h3>
 <p>Use output in automated reports:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>quantmsioc<span class="w"> </span>stats<span class="w"> </span>analyze<span class="w"> </span>psm<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">    </span>--parquet-path<span class="w"> </span>./output/psm.parquet<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">    </span>--save-path<span class="w"> </span>./reports/stats.txt
-</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>
-</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="c1"># Extract specific metrics</span>
-</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>grep<span class="w"> </span><span class="s2">&quot;Number of proteins&quot;</span><span class="w"> </span>./reports/stats.txt<span class="w"> </span>&gt;&gt;<span class="w"> </span>./summary_report.md
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>quantmsioc<span class="w"> </span>stats<span class="w"> </span>analyze<span class="w"> </span>psm<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">    </span>--parquet-path<span class="w"> </span>./output/psm.parquet<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">    </span>--save-path<span class="w"> </span>./reports/stats.txt
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="c1"># Extract specific metrics</span>
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>grep<span class="w"> </span><span class="s2">&quot;Number of proteins&quot;</span><span class="w"> </span>./reports/stats.txt<span class="w"> </span>&gt;&gt;<span class="w"> </span>./summary_report.md
 </span></code></pre></div>
 <h3 id="combining-with-visualization">Combining with Visualization<a class="headerlink" href="#combining-with-visualization" title="Anchor link to this section">&para;</a></h3>
 <p>Generate both statistics and plots:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># Generate statistics</span>
-</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>quantmsioc<span class="w"> </span>stats<span class="w"> </span>analyze<span class="w"> </span>psm<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">    </span>--parquet-path<span class="w"> </span>./output/psm.parquet<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">    </span>--save-path<span class="w"> </span>./reports/stats.txt
-</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>
-</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="c1"># Generate visualizations</span>
-</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>quantmsioc<span class="w"> </span>visualize<span class="w"> </span>plot<span class="w"> </span>peptide-distribution<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="w">    </span>--feature-path<span class="w"> </span>./output/feature.parquet<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="w">    </span>--save-path<span class="w"> </span>./plots/peptide_dist.svg
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># Generate statistics</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>quantmsioc<span class="w"> </span>stats<span class="w"> </span>analyze<span class="w"> </span>psm<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">    </span>--parquet-path<span class="w"> </span>./output/psm.parquet<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">    </span>--save-path<span class="w"> </span>./reports/stats.txt
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="c1"># Generate visualizations</span>
+</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>quantmsioc<span class="w"> </span>visualize<span class="w"> </span>plot<span class="w"> </span>peptide-distribution<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="w">    </span>--feature-path<span class="w"> </span>./output/feature.parquet<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-6-9"><a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="w">    </span>--save-path<span class="w"> </span>./plots/peptide_dist.svg
 </span></code></pre></div>
 <hr />
 <h2 id="advanced-usage">Advanced Usage<a class="headerlink" href="#advanced-usage" title="Anchor link to this section">&para;</a></h2>
 <h3 id="quality-control-workflow">Quality Control Workflow<a class="headerlink" href="#quality-control-workflow" title="Anchor link to this section">&para;</a></h3>
 <p>Complete QC workflow example:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="ch">#!/bin/bash</span>
-</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>
-</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="c1"># 1. Generate PSM statistics</span>
-</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>quantmsioc<span class="w"> </span>stats<span class="w"> </span>analyze<span class="w"> </span>psm<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">    </span>--parquet-path<span class="w"> </span>./output/psm.parquet<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="w">    </span>--save-path<span class="w"> </span>./qc/psm_stats.txt
-</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>
-</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="c1"># 2. Generate AE statistics (if available)</span>
-</span><span id="__span-9-9"><a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="k">if</span><span class="w"> </span><span class="o">[</span><span class="w"> </span>-f<span class="w"> </span>./output/ae.parquet<span class="w"> </span><span class="o">]</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
-</span><span id="__span-9-10"><a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="w">    </span>quantmsioc<span class="w"> </span>stats<span class="w"> </span>analyze<span class="w"> </span>project-ae<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-9-11"><a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a><span class="w">        </span>--absolute-path<span class="w"> </span>./output/ae.parquet<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-9-12"><a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a><span class="w">        </span>--parquet-path<span class="w"> </span>./output/psm.parquet<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-9-13"><a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a><span class="w">        </span>--save-path<span class="w"> </span>./qc/ae_stats.txt
-</span><span id="__span-9-14"><a id="__codelineno-9-14" name="__codelineno-9-14" href="#__codelineno-9-14"></a><span class="k">fi</span>
-</span><span id="__span-9-15"><a id="__codelineno-9-15" name="__codelineno-9-15" href="#__codelineno-9-15"></a>
-</span><span id="__span-9-16"><a id="__codelineno-9-16" name="__codelineno-9-16" href="#__codelineno-9-16"></a><span class="c1"># 3. Create visualizations</span>
-</span><span id="__span-9-17"><a id="__codelineno-9-17" name="__codelineno-9-17" href="#__codelineno-9-17"></a>quantmsioc<span class="w"> </span>visualize<span class="w"> </span>plot<span class="w"> </span>box-intensity<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-9-18"><a id="__codelineno-9-18" name="__codelineno-9-18" href="#__codelineno-9-18"></a><span class="w">    </span>--feature-path<span class="w"> </span>./output/feature.parquet<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-9-19"><a id="__codelineno-9-19" name="__codelineno-9-19" href="#__codelineno-9-19"></a><span class="w">    </span>--save-path<span class="w"> </span>./qc/intensity_boxplot.svg
-</span><span id="__span-9-20"><a id="__codelineno-9-20" name="__codelineno-9-20" href="#__codelineno-9-20"></a>
-</span><span id="__span-9-21"><a id="__codelineno-9-21" name="__codelineno-9-21" href="#__codelineno-9-21"></a>quantmsioc<span class="w"> </span>visualize<span class="w"> </span>plot<span class="w"> </span>peptide-distribution<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-9-22"><a id="__codelineno-9-22" name="__codelineno-9-22" href="#__codelineno-9-22"></a><span class="w">    </span>--feature-path<span class="w"> </span>./output/feature.parquet<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-9-23"><a id="__codelineno-9-23" name="__codelineno-9-23" href="#__codelineno-9-23"></a><span class="w">    </span>--save-path<span class="w"> </span>./qc/peptide_distribution.svg
-</span><span id="__span-9-24"><a id="__codelineno-9-24" name="__codelineno-9-24" href="#__codelineno-9-24"></a>
-</span><span id="__span-9-25"><a id="__codelineno-9-25" name="__codelineno-9-25" href="#__codelineno-9-25"></a><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;QC report generated in ./qc/&quot;</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="ch">#!/bin/bash</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="c1"># 1. Generate PSM statistics</span>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>quantmsioc<span class="w"> </span>stats<span class="w"> </span>analyze<span class="w"> </span>psm<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">    </span>--parquet-path<span class="w"> </span>./output/psm.parquet<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">    </span>--save-path<span class="w"> </span>./qc/psm_stats.txt
+</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>
+</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="c1"># 2. Generate AE statistics (if available)</span>
+</span><span id="__span-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="k">if</span><span class="w"> </span><span class="o">[</span><span class="w"> </span>-f<span class="w"> </span>./output/ae.parquet<span class="w"> </span><span class="o">]</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
+</span><span id="__span-7-10"><a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="w">    </span>quantmsioc<span class="w"> </span>stats<span class="w"> </span>analyze<span class="w"> </span>project-ae<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-7-11"><a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="w">        </span>--absolute-path<span class="w"> </span>./output/ae.parquet<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-7-12"><a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a><span class="w">        </span>--parquet-path<span class="w"> </span>./output/psm.parquet<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-7-13"><a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a><span class="w">        </span>--save-path<span class="w"> </span>./qc/ae_stats.txt
+</span><span id="__span-7-14"><a id="__codelineno-7-14" name="__codelineno-7-14" href="#__codelineno-7-14"></a><span class="k">fi</span>
+</span><span id="__span-7-15"><a id="__codelineno-7-15" name="__codelineno-7-15" href="#__codelineno-7-15"></a>
+</span><span id="__span-7-16"><a id="__codelineno-7-16" name="__codelineno-7-16" href="#__codelineno-7-16"></a><span class="c1"># 3. Create visualizations</span>
+</span><span id="__span-7-17"><a id="__codelineno-7-17" name="__codelineno-7-17" href="#__codelineno-7-17"></a>quantmsioc<span class="w"> </span>visualize<span class="w"> </span>plot<span class="w"> </span>box-intensity<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-7-18"><a id="__codelineno-7-18" name="__codelineno-7-18" href="#__codelineno-7-18"></a><span class="w">    </span>--feature-path<span class="w"> </span>./output/feature.parquet<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-7-19"><a id="__codelineno-7-19" name="__codelineno-7-19" href="#__codelineno-7-19"></a><span class="w">    </span>--save-path<span class="w"> </span>./qc/intensity_boxplot.svg
+</span><span id="__span-7-20"><a id="__codelineno-7-20" name="__codelineno-7-20" href="#__codelineno-7-20"></a>
+</span><span id="__span-7-21"><a id="__codelineno-7-21" name="__codelineno-7-21" href="#__codelineno-7-21"></a>quantmsioc<span class="w"> </span>visualize<span class="w"> </span>plot<span class="w"> </span>peptide-distribution<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-7-22"><a id="__codelineno-7-22" name="__codelineno-7-22" href="#__codelineno-7-22"></a><span class="w">    </span>--feature-path<span class="w"> </span>./output/feature.parquet<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-7-23"><a id="__codelineno-7-23" name="__codelineno-7-23" href="#__codelineno-7-23"></a><span class="w">    </span>--save-path<span class="w"> </span>./qc/peptide_distribution.svg
+</span><span id="__span-7-24"><a id="__codelineno-7-24" name="__codelineno-7-24" href="#__codelineno-7-24"></a>
+</span><span id="__span-7-25"><a id="__codelineno-7-25" name="__codelineno-7-25" href="#__codelineno-7-25"></a><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;QC report generated in ./qc/&quot;</span>
 </span></code></pre></div>
 <h3 id="custom-thresholds">Custom Thresholds<a class="headerlink" href="#custom-thresholds" title="Anchor link to this section">&para;</a></h3>
 <p>Define quality thresholds:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="ch">#!/bin/bash</span>
-</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>
-</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="c1"># Generate statistics</span>
-</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>quantmsioc<span class="w"> </span>stats<span class="w"> </span>analyze<span class="w"> </span>psm<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="w">    </span>--parquet-path<span class="w"> </span>./output/psm.parquet<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-10-6"><a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="w">    </span>--save-path<span class="w"> </span>./stats.txt
-</span><span id="__span-10-7"><a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>
-</span><span id="__span-10-8"><a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="c1"># Check thresholds</span>
-</span><span id="__span-10-9"><a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="nv">proteins</span><span class="o">=</span><span class="k">$(</span>grep<span class="w"> </span><span class="s2">&quot;Number of proteins&quot;</span><span class="w"> </span>./stats.txt<span class="w"> </span><span class="p">|</span><span class="w"> </span>awk<span class="w"> </span><span class="s1">&#39;{print $4}&#39;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tr<span class="w"> </span>-d<span class="w"> </span><span class="s1">&#39;,&#39;</span><span class="k">)</span>
-</span><span id="__span-10-10"><a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="nv">peptides</span><span class="o">=</span><span class="k">$(</span>grep<span class="w"> </span><span class="s2">&quot;Number of peptides&quot;</span><span class="w"> </span>./stats.txt<span class="w"> </span><span class="p">|</span><span class="w"> </span>awk<span class="w"> </span><span class="s1">&#39;{print $4}&#39;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tr<span class="w"> </span>-d<span class="w"> </span><span class="s1">&#39;,&#39;</span><span class="k">)</span>
-</span><span id="__span-10-11"><a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a>
-</span><span id="__span-10-12"><a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a><span class="k">if</span><span class="w"> </span><span class="o">[</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$proteins</span><span class="s2">&quot;</span><span class="w"> </span>-lt<span class="w"> </span><span class="m">1000</span><span class="w"> </span><span class="o">]</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
-</span><span id="__span-10-13"><a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a><span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;WARNING: Low protein count (</span><span class="nv">$proteins</span><span class="s2">)&quot;</span>
-</span><span id="__span-10-14"><a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a><span class="k">fi</span>
-</span><span id="__span-10-15"><a id="__codelineno-10-15" name="__codelineno-10-15" href="#__codelineno-10-15"></a>
-</span><span id="__span-10-16"><a id="__codelineno-10-16" name="__codelineno-10-16" href="#__codelineno-10-16"></a><span class="k">if</span><span class="w"> </span><span class="o">[</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$peptides</span><span class="s2">&quot;</span><span class="w"> </span>-lt<span class="w"> </span><span class="m">5000</span><span class="w"> </span><span class="o">]</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
-</span><span id="__span-10-17"><a id="__codelineno-10-17" name="__codelineno-10-17" href="#__codelineno-10-17"></a><span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;WARNING: Low peptide count (</span><span class="nv">$peptides</span><span class="s2">)&quot;</span>
-</span><span id="__span-10-18"><a id="__codelineno-10-18" name="__codelineno-10-18" href="#__codelineno-10-18"></a><span class="k">fi</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="ch">#!/bin/bash</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="c1"># Generate statistics</span>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>quantmsioc<span class="w"> </span>stats<span class="w"> </span>analyze<span class="w"> </span>psm<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">    </span>--parquet-path<span class="w"> </span>./output/psm.parquet<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">    </span>--save-path<span class="w"> </span>./stats.txt
+</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>
+</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="c1"># Check thresholds</span>
+</span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="nv">proteins</span><span class="o">=</span><span class="k">$(</span>grep<span class="w"> </span><span class="s2">&quot;Number of proteins&quot;</span><span class="w"> </span>./stats.txt<span class="w"> </span><span class="p">|</span><span class="w"> </span>awk<span class="w"> </span><span class="s1">&#39;{print $4}&#39;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tr<span class="w"> </span>-d<span class="w"> </span><span class="s1">&#39;,&#39;</span><span class="k">)</span>
+</span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="nv">peptides</span><span class="o">=</span><span class="k">$(</span>grep<span class="w"> </span><span class="s2">&quot;Number of peptides&quot;</span><span class="w"> </span>./stats.txt<span class="w"> </span><span class="p">|</span><span class="w"> </span>awk<span class="w"> </span><span class="s1">&#39;{print $4}&#39;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tr<span class="w"> </span>-d<span class="w"> </span><span class="s1">&#39;,&#39;</span><span class="k">)</span>
+</span><span id="__span-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>
+</span><span id="__span-8-12"><a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a><span class="k">if</span><span class="w"> </span><span class="o">[</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$proteins</span><span class="s2">&quot;</span><span class="w"> </span>-lt<span class="w"> </span><span class="m">1000</span><span class="w"> </span><span class="o">]</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
+</span><span id="__span-8-13"><a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a><span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;WARNING: Low protein count (</span><span class="nv">$proteins</span><span class="s2">)&quot;</span>
+</span><span id="__span-8-14"><a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a><span class="k">fi</span>
+</span><span id="__span-8-15"><a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a>
+</span><span id="__span-8-16"><a id="__codelineno-8-16" name="__codelineno-8-16" href="#__codelineno-8-16"></a><span class="k">if</span><span class="w"> </span><span class="o">[</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$peptides</span><span class="s2">&quot;</span><span class="w"> </span>-lt<span class="w"> </span><span class="m">5000</span><span class="w"> </span><span class="o">]</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
+</span><span id="__span-8-17"><a id="__codelineno-8-17" name="__codelineno-8-17" href="#__codelineno-8-17"></a><span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;WARNING: Low peptide count (</span><span class="nv">$peptides</span><span class="s2">)&quot;</span>
+</span><span id="__span-8-18"><a id="__codelineno-8-18" name="__codelineno-8-18" href="#__codelineno-8-18"></a><span class="k">fi</span>
 </span></code></pre></div>
 <hr />
 <h2 id="related-commands">Related Commands<a class="headerlink" href="#related-commands" title="Anchor link to this section">&para;</a></h2>

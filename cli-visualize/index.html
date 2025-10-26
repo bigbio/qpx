@@ -1276,6 +1276,7 @@
 
 <h1 id="visualization-commands">Visualization Commands<a class="headerlink" href="#visualization-commands" title="Anchor link to this section">&para;</a></h1>
 <p>Create various data visualization plots from quantms.io data.</p>
+<p></p>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Anchor link to this section">&para;</a></h2>
 <p>The <code>visualize</code> command group provides tools for creating publication-quality visualizations from quantms.io parquet files. All plots are saved in vector formats (SVG, PDF) for high-resolution output.</p>
 <h2 id="available-commands">Available Commands<a class="headerlink" href="#available-commands" title="Anchor link to this section">&para;</a></h2>
@@ -1291,54 +1292,54 @@
 <h2 id="psm-peptides">psm-peptides<a class="headerlink" href="#psm-peptides" title="Anchor link to this section">&para;</a></h2>
 <p>Plot peptides by condition in label-free quantification (LFQ) experiments.</p>
 <h3 id="psm-peptides-description">Description<a class="headerlink" href="#psm-peptides-description" title="Anchor link to this section">&para;</a></h3>
-<p>Creates a visualization showing the distribution of identified peptides across different experimental conditions. This plot helps assess data quality and completeness across samples.</p>
+<p>Creates a visualization showing the distribution of identified peptides across different 
+    experimental conditions. This plot helps assess data quality and completeness across samples.</p>
+
 <h3 id="psm-peptides-parameters">Parameters<a class="headerlink" href="#psm-peptides-parameters" title="Anchor link to this section">&para;</a></h3>
 <table>
 <thead>
 <tr>
-<th>Parameter</th>
-<th>Type</th>
-<th>Required</th>
-<th>Default</th>
-<th>Description</th>
+<th>Parameter</th><th>Type</th><th>Required</th><th>Default</th><th>Description</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code>--psm-parquet-path</code></td>
-<td>Path</td>
+<td>FILE</td>
 <td>Yes</td>
-<td>-</td>
+<td>Sentinel.UNSET</td>
 <td>PSM parquet file path</td>
 </tr>
 <tr>
 <td><code>--sdrf-path</code></td>
-<td>Path</td>
+<td>FILE</td>
 <td>Yes</td>
-<td>-</td>
-<td>SDRF file path for metadata</td>
+<td>Sentinel.UNSET</td>
+<td>SDRF file path</td>
 </tr>
 <tr>
 <td><code>--save-path</code></td>
-<td>Path</td>
+<td>FILE</td>
 <td>Yes</td>
-<td>-</td>
-<td>Output image path (e.g., plot.svg)</td>
+<td>Sentinel.UNSET</td>
+<td>Output image path (e.g. plot.svg)</td>
 </tr>
 </tbody>
 </table>
+
 <h3 id="psm-peptides-examples">Usage Examples<a class="headerlink" href="#psm-peptides-examples" title="Anchor link to this section">&para;</a></h3>
 <h4 id="psm-peptides-example-basic">Basic Example<a class="headerlink" href="#psm-peptides-example-basic" title="Anchor link to this section">&para;</a></h4>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>quantmsioc<span class="w"> </span>visualize<span class="w"> </span>plot<span class="w"> </span>psm-peptides<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">    </span>--psm-parquet-path<span class="w"> </span>tests/examples/parquet/psm.parquet<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">    </span>--sdrf-path<span class="w"> </span>tests/examples/quantms/dda-lfq-full/PXD007683-LFQ.sdrf.tsv<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">    </span>--save-path<span class="w"> </span>./plots/peptides_by_condition.svg
-</span></code></pre></div>
+<p>Plot peptides by condition:</p>
+<pre><code class="language-bash">quantmsioc visualize plot psm-peptides \
+    --psm-parquet-path ./output/psm.parquet \
+    --sdrf-path ./metadata.sdrf.tsv \
+    --save-path ./plots/peptides_by_condition.svg</code></pre>
+
 <h4 id="psm-peptides-example-pdf">Generate PDF Output<a class="headerlink" href="#psm-peptides-example-pdf" title="Anchor link to this section">&para;</a></h4>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>quantmsioc<span class="w"> </span>visualize<span class="w"> </span>plot<span class="w"> </span>psm-peptides<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">    </span>--psm-parquet-path<span class="w"> </span>./output/psm.parquet<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span>--sdrf-path<span class="w"> </span>./metadata.sdrf.tsv<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">    </span>--save-path<span class="w"> </span>./plots/peptides_by_condition.pdf
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>quantmsioc<span class="w"> </span>visualize<span class="w"> </span>plot<span class="w"> </span>psm-peptides<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">    </span>--psm-parquet-path<span class="w"> </span>./output/psm.parquet<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">    </span>--sdrf-path<span class="w"> </span>./metadata.sdrf.tsv<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">    </span>--save-path<span class="w"> </span>./plots/peptides_by_condition.pdf
 </span></code></pre></div>
 <h3 id="psm-peptides-output">Output<a class="headerlink" href="#psm-peptides-output" title="Anchor link to this section">&para;</a></h3>
 <ul>
@@ -1364,53 +1365,53 @@
 <h2 id="ibaq-distribution">ibaq-distribution<a class="headerlink" href="#ibaq-distribution" title="Anchor link to this section">&para;</a></h2>
 <p>Plot the distribution of iBAQ (intensity-Based Absolute Quantification) values.</p>
 <h3 id="ibaq-distribution-description">Description<a class="headerlink" href="#ibaq-distribution-description" title="Anchor link to this section">&para;</a></h3>
-<p>Creates a histogram or density plot showing the distribution of iBAQ values across proteins. Useful for quality control and understanding the dynamic range of protein quantification.</p>
+<p>Creates a histogram or density plot showing the distribution of iBAQ values across proteins. 
+    Useful for quality control and understanding the dynamic range of protein quantification.</p>
+
 <h3 id="ibaq-distribution-parameters">Parameters<a class="headerlink" href="#ibaq-distribution-parameters" title="Anchor link to this section">&para;</a></h3>
 <table>
 <thead>
 <tr>
-<th>Parameter</th>
-<th>Type</th>
-<th>Required</th>
-<th>Default</th>
-<th>Description</th>
+<th>Parameter</th><th>Type</th><th>Required</th><th>Default</th><th>Description</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code>--ibaq-path</code></td>
-<td>Path</td>
+<td>FILE</td>
 <td>Yes</td>
-<td>-</td>
+<td>Sentinel.UNSET</td>
 <td>iBAQ file path</td>
 </tr>
 <tr>
 <td><code>--save-path</code></td>
-<td>Path</td>
+<td>FILE</td>
 <td>Yes</td>
-<td>-</td>
-<td>Output image path (e.g., plot.svg)</td>
+<td>Sentinel.UNSET</td>
+<td>Output image path (e.g. plot.svg)</td>
 </tr>
 <tr>
 <td><code>--select-column</code></td>
-<td>String</td>
+<td>TEXT</td>
 <td>No</td>
-<td>-</td>
-<td>Specific column in iBAQ file to plot</td>
+<td>Sentinel.UNSET</td>
+<td>Selected column in iBAQ file</td>
 </tr>
 </tbody>
 </table>
+
 <h3 id="ibaq-distribution-examples">Usage Examples<a class="headerlink" href="#ibaq-distribution-examples" title="Anchor link to this section">&para;</a></h3>
 <h4 id="ibaq-distribution-example-all">Plot All Samples<a class="headerlink" href="#ibaq-distribution-example-all" title="Anchor link to this section">&para;</a></h4>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>quantmsioc<span class="w"> </span>visualize<span class="w"> </span>plot<span class="w"> </span>ibaq-distribution<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">    </span>--ibaq-path<span class="w"> </span>tests/examples/AE/PXD016999.1-ibaq.tsv<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span>--save-path<span class="w"> </span>./plots/ibaq_distribution.svg
-</span></code></pre></div>
+<p>Plot iBAQ distribution:</p>
+<pre><code class="language-bash">quantmsioc visualize plot ibaq-distribution \
+    --ibaq-path ibaq_data.tsv \
+    --save-path ./plots/ibaq_distribution.svg</code></pre>
+
 <h4 id="ibaq-distribution-example-specific">Plot Specific Sample<a class="headerlink" href="#ibaq-distribution-example-specific" title="Anchor link to this section">&para;</a></h4>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>quantmsioc<span class="w"> </span>visualize<span class="w"> </span>plot<span class="w"> </span>ibaq-distribution<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">    </span>--ibaq-path<span class="w"> </span>tests/examples/AE/PXD016999.1-ibaq.tsv<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">    </span>--select-column<span class="w"> </span>Sample_001<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">    </span>--save-path<span class="w"> </span>./plots/ibaq_sample001.svg
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>quantmsioc<span class="w"> </span>visualize<span class="w"> </span>plot<span class="w"> </span>ibaq-distribution<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">    </span>--ibaq-path<span class="w"> </span>tests/examples/AE/PXD016999.1-ibaq.tsv<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span>--select-column<span class="w"> </span>Sample_001<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">    </span>--save-path<span class="w"> </span>./plots/ibaq_sample001.svg
 </span></code></pre></div>
 <h3 id="ibaq-distribution-output">Output<a class="headerlink" href="#ibaq-distribution-output" title="Anchor link to this section">&para;</a></h3>
 <ul>
@@ -1436,53 +1437,53 @@
 <h2 id="kde-intensity">kde-intensity<a class="headerlink" href="#kde-intensity" title="Anchor link to this section">&para;</a></h2>
 <p>Plot Kernel Density Estimation (KDE) of intensity distributions across samples.</p>
 <h3 id="kde-intensity-description">Description<a class="headerlink" href="#kde-intensity-description" title="Anchor link to this section">&para;</a></h3>
-<p>Creates overlaid KDE plots showing intensity distributions for multiple samples, enabling visual comparison of sample-to-sample variability and batch effects.</p>
+<p>Creates overlaid KDE plots showing intensity distributions for multiple samples, enabling 
+    visual comparison of sample-to-sample variability and batch effects.</p>
+
 <h3 id="kde-intensity-parameters">Parameters<a class="headerlink" href="#kde-intensity-parameters" title="Anchor link to this section">&para;</a></h3>
 <table>
 <thead>
 <tr>
-<th>Parameter</th>
-<th>Type</th>
-<th>Required</th>
-<th>Default</th>
-<th>Description</th>
+<th>Parameter</th><th>Type</th><th>Required</th><th>Default</th><th>Description</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code>--feature-path</code></td>
-<td>Path</td>
+<td>FILE</td>
 <td>Yes</td>
-<td>-</td>
-<td>Feature parquet file path</td>
+<td>Sentinel.UNSET</td>
+<td>Feature file path</td>
 </tr>
 <tr>
 <td><code>--save-path</code></td>
-<td>Path</td>
+<td>FILE</td>
 <td>Yes</td>
-<td>-</td>
-<td>Output image path (e.g., plot.svg)</td>
+<td>Sentinel.UNSET</td>
+<td>Output image path (e.g. plot.svg)</td>
 </tr>
 <tr>
 <td><code>--num-samples</code></td>
-<td>Integer</td>
+<td>INTEGER</td>
 <td>No</td>
 <td>10</td>
 <td>Number of samples to plot</td>
 </tr>
 </tbody>
 </table>
+
 <h3 id="kde-intensity-examples">Usage Examples<a class="headerlink" href="#kde-intensity-examples" title="Anchor link to this section">&para;</a></h3>
 <h4 id="kde-intensity-example-default">Plot Default Samples<a class="headerlink" href="#kde-intensity-example-default" title="Anchor link to this section">&para;</a></h4>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>quantmsioc<span class="w"> </span>visualize<span class="w"> </span>plot<span class="w"> </span>kde-intensity<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">    </span>--feature-path<span class="w"> </span>tests/examples/parquet/feature.parquet<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">    </span>--save-path<span class="w"> </span>./plots/intensity_kde.svg
-</span></code></pre></div>
+<p>Plot KDE intensity distribution:</p>
+<pre><code class="language-bash">quantmsioc visualize plot kde-intensity \
+    --feature-path ./output/feature.parquet \
+    --save-path ./plots/intensity_kde.svg</code></pre>
+
 <h4 id="kde-intensity-example-more">Plot More Samples<a class="headerlink" href="#kde-intensity-example-more" title="Anchor link to this section">&para;</a></h4>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>quantmsioc<span class="w"> </span>visualize<span class="w"> </span>plot<span class="w"> </span>kde-intensity<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">    </span>--feature-path<span class="w"> </span>./output/feature.parquet<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">    </span>--save-path<span class="w"> </span>./plots/intensity_kde_all.svg<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">    </span>--num-samples<span class="w"> </span><span class="m">20</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>quantmsioc<span class="w"> </span>visualize<span class="w"> </span>plot<span class="w"> </span>kde-intensity<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">    </span>--feature-path<span class="w"> </span>./output/feature.parquet<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span>--save-path<span class="w"> </span>./plots/intensity_kde_all.svg<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">    </span>--num-samples<span class="w"> </span><span class="m">20</span>
 </span></code></pre></div>
 <h3 id="kde-intensity-output">Output<a class="headerlink" href="#kde-intensity-output" title="Anchor link to this section">&para;</a></h3>
 <ul>
@@ -1509,53 +1510,53 @@
 <h2 id="peptide-distribution">peptide-distribution<a class="headerlink" href="#peptide-distribution" title="Anchor link to this section">&para;</a></h2>
 <p>Plot the distribution of peptides across proteins.</p>
 <h3 id="peptide-distribution-description">Description<a class="headerlink" href="#peptide-distribution-description" title="Anchor link to this section">&para;</a></h3>
-<p>Visualizes how many peptides are identified for each protein, providing insights into protein coverage and identification confidence.</p>
+<p>Visualizes how many peptides are identified for each protein, providing insights into 
+    protein coverage and identification confidence.</p>
+
 <h3 id="peptide-distribution-parameters">Parameters<a class="headerlink" href="#peptide-distribution-parameters" title="Anchor link to this section">&para;</a></h3>
 <table>
 <thead>
 <tr>
-<th>Parameter</th>
-<th>Type</th>
-<th>Required</th>
-<th>Default</th>
-<th>Description</th>
+<th>Parameter</th><th>Type</th><th>Required</th><th>Default</th><th>Description</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code>--feature-path</code></td>
-<td>Path</td>
+<td>FILE</td>
 <td>Yes</td>
-<td>-</td>
-<td>Feature parquet file path</td>
+<td>Sentinel.UNSET</td>
+<td>Feature file path</td>
 </tr>
 <tr>
 <td><code>--save-path</code></td>
-<td>Path</td>
+<td>FILE</td>
 <td>Yes</td>
-<td>-</td>
-<td>Output image path (e.g., plot.svg)</td>
+<td>Sentinel.UNSET</td>
+<td>Output image path (e.g. plot.svg)</td>
 </tr>
 <tr>
 <td><code>--num-samples</code></td>
-<td>Integer</td>
+<td>INTEGER</td>
 <td>No</td>
 <td>20</td>
-<td>Number of top proteins to display</td>
+<td>Number of samples to plot</td>
 </tr>
 </tbody>
 </table>
+
 <h3 id="peptide-distribution-examples">Usage Examples<a class="headerlink" href="#peptide-distribution-examples" title="Anchor link to this section">&para;</a></h3>
 <h4 id="peptide-distribution-example-basic">Basic Example<a class="headerlink" href="#peptide-distribution-example-basic" title="Anchor link to this section">&para;</a></h4>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>quantmsioc<span class="w"> </span>visualize<span class="w"> </span>plot<span class="w"> </span>peptide-distribution<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">    </span>--feature-path<span class="w"> </span>tests/examples/parquet/feature.parquet<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">    </span>--save-path<span class="w"> </span>./plots/peptide_per_protein.svg
-</span></code></pre></div>
+<p>Plot peptide distribution:</p>
+<pre><code class="language-bash">quantmsioc visualize plot peptide-distribution \
+    --feature-path ./output/feature.parquet \
+    --save-path ./plots/peptide_per_protein.svg</code></pre>
+
 <h4 id="peptide-distribution-example-top50">Show Top 50 Proteins<a class="headerlink" href="#peptide-distribution-example-top50" title="Anchor link to this section">&para;</a></h4>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>quantmsioc<span class="w"> </span>visualize<span class="w"> </span>plot<span class="w"> </span>peptide-distribution<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">    </span>--feature-path<span class="w"> </span>./output/feature.parquet<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">    </span>--save-path<span class="w"> </span>./plots/peptide_per_protein_top50.svg<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">    </span>--num-samples<span class="w"> </span><span class="m">50</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>quantmsioc<span class="w"> </span>visualize<span class="w"> </span>plot<span class="w"> </span>peptide-distribution<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">    </span>--feature-path<span class="w"> </span>./output/feature.parquet<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">    </span>--save-path<span class="w"> </span>./plots/peptide_per_protein_top50.svg<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">    </span>--num-samples<span class="w"> </span><span class="m">50</span>
 </span></code></pre></div>
 <h3 id="peptide-distribution-output">Output<a class="headerlink" href="#peptide-distribution-output" title="Anchor link to this section">&para;</a></h3>
 <ul>
@@ -1581,53 +1582,53 @@
 <h2 id="box-intensity">box-intensity<a class="headerlink" href="#box-intensity" title="Anchor link to this section">&para;</a></h2>
 <p>Plot box plots of intensity distributions across samples.</p>
 <h3 id="box-intensity-description">Description<a class="headerlink" href="#box-intensity-description" title="Anchor link to this section">&para;</a></h3>
-<p>Creates box plots showing the distribution of feature intensities for each sample, ideal for identifying outliers and assessing normalization quality.</p>
+<p>Creates box plots showing the distribution of feature intensities for each sample, ideal 
+    for identifying outliers and assessing normalization quality.</p>
+
 <h3 id="box-intensity-parameters">Parameters<a class="headerlink" href="#box-intensity-parameters" title="Anchor link to this section">&para;</a></h3>
 <table>
 <thead>
 <tr>
-<th>Parameter</th>
-<th>Type</th>
-<th>Required</th>
-<th>Default</th>
-<th>Description</th>
+<th>Parameter</th><th>Type</th><th>Required</th><th>Default</th><th>Description</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code>--feature-path</code></td>
-<td>Path</td>
+<td>FILE</td>
 <td>Yes</td>
-<td>-</td>
-<td>Feature parquet file path</td>
+<td>Sentinel.UNSET</td>
+<td>Feature file path</td>
 </tr>
 <tr>
 <td><code>--save-path</code></td>
-<td>Path</td>
+<td>FILE</td>
 <td>Yes</td>
-<td>-</td>
-<td>Output image path (e.g., plot.svg)</td>
+<td>Sentinel.UNSET</td>
+<td>Output image path (e.g. plot.svg)</td>
 </tr>
 <tr>
 <td><code>--num-samples</code></td>
-<td>Integer</td>
+<td>INTEGER</td>
 <td>No</td>
 <td>10</td>
 <td>Number of samples to plot</td>
 </tr>
 </tbody>
 </table>
+
 <h3 id="box-intensity-examples">Usage Examples<a class="headerlink" href="#box-intensity-examples" title="Anchor link to this section">&para;</a></h3>
 <h4 id="box-intensity-example-basic">Basic Example<a class="headerlink" href="#box-intensity-example-basic" title="Anchor link to this section">&para;</a></h4>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>quantmsioc<span class="w"> </span>visualize<span class="w"> </span>plot<span class="w"> </span>box-intensity<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">    </span>--feature-path<span class="w"> </span>tests/examples/parquet/feature.parquet<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">    </span>--save-path<span class="w"> </span>./plots/intensity_boxplot.svg
-</span></code></pre></div>
+<p>Plot box intensity distribution:</p>
+<pre><code class="language-bash">quantmsioc visualize plot box-intensity \
+    --feature-path ./output/feature.parquet \
+    --save-path ./plots/intensity_boxplot.svg</code></pre>
+
 <h4 id="box-intensity-example-all">Plot All Samples<a class="headerlink" href="#box-intensity-example-all" title="Anchor link to this section">&para;</a></h4>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>quantmsioc<span class="w"> </span>visualize<span class="w"> </span>plot<span class="w"> </span>box-intensity<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">    </span>--feature-path<span class="w"> </span>./output/feature.parquet<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">    </span>--save-path<span class="w"> </span>./plots/intensity_boxplot_all.svg<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">    </span>--num-samples<span class="w"> </span><span class="m">50</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>quantmsioc<span class="w"> </span>visualize<span class="w"> </span>plot<span class="w"> </span>box-intensity<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">    </span>--feature-path<span class="w"> </span>./output/feature.parquet<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">    </span>--save-path<span class="w"> </span>./plots/intensity_boxplot_all.svg<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">    </span>--num-samples<span class="w"> </span><span class="m">50</span>
 </span></code></pre></div>
 <h3 id="box-intensity-output">Output<a class="headerlink" href="#box-intensity-output" title="Anchor link to this section">&para;</a></h3>
 <ul>

@@ -1285,6 +1285,7 @@
 
 <h1 id="transform-commands">Transform Commands<a class="headerlink" href="#transform-commands" title="Anchor link to this section">&para;</a></h1>
 <p>Transform and process data within the quantms.io ecosystem.</p>
+<p></p>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Anchor link to this section">&para;</a></h2>
 <p>The <code>transform</code> command group provides tools for processing and transforming quantms.io data into various downstream formats. These commands enable absolute and differential expression analysis, metadata mapping, and data format conversions.</p>
 <h2 id="available-commands">Available Commands<a class="headerlink" href="#available-commands" title="Anchor link to this section">&para;</a></h2>
@@ -1301,105 +1302,107 @@
 <h2 id="ae">ae<a class="headerlink" href="#ae" title="Anchor link to this section">&para;</a></h2>
 <p>Convert iBAQ absolute expression data to quantms.io format.</p>
 <h3 id="ae-description">Description<a class="headerlink" href="#ae-description" title="Anchor link to this section">&para;</a></h3>
-<p>This command transforms iBAQ (intensity-Based Absolute Quantification) data into the standardized quantms.io absolute expression format. It integrates protein quantification with sample metadata from SDRF files.</p>
+<p>Transforms iBAQ (intensity-Based Absolute Quantification) data into the standardized 
+    quantms.io absolute expression format. It integrates protein quantification with sample 
+    metadata from SDRF files.</p>
+
+<p><strong>Format Specification</strong>: For details about the AE format structure and fields, see the <a href="https://io.quantms.org/format-specification/#absolute">Absolute Expression Format Specification</a>.</p>
 <h3 id="ae-parameters">Parameters<a class="headerlink" href="#ae-parameters" title="Anchor link to this section">&para;</a></h3>
 <table>
 <thead>
 <tr>
-<th>Parameter</th>
-<th>Type</th>
-<th>Required</th>
-<th>Default</th>
-<th>Description</th>
+<th>Parameter</th><th>Type</th><th>Required</th><th>Default</th><th>Description</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code>--ibaq-file</code></td>
-<td>Path</td>
+<td>FILE</td>
 <td>Yes</td>
-<td>-</td>
-<td>iBAQ file path</td>
+<td>Sentinel.UNSET</td>
+<td>IBAQ file path</td>
 </tr>
 <tr>
 <td><code>--sdrf-file</code></td>
-<td>Path</td>
+<td>FILE</td>
 <td>Yes</td>
-<td>-</td>
-<td>SDRF file path for metadata</td>
+<td>Sentinel.UNSET</td>
+<td>SDRF file path</td>
 </tr>
 <tr>
 <td><code>--protein-file</code></td>
-<td>Path</td>
+<td>FILE</td>
 <td>No</td>
-<td>-</td>
-<td>Protein file with specific requirements</td>
+<td>Sentinel.UNSET</td>
+<td>Protein file that meets specific requirements</td>
 </tr>
 <tr>
 <td><code>--project-file</code></td>
-<td>Path</td>
+<td>FILE</td>
 <td>No</td>
-<td>-</td>
+<td>Sentinel.UNSET</td>
 <td>quantms.io project file</td>
 </tr>
 <tr>
 <td><code>--output-folder</code></td>
-<td>Path</td>
+<td>DIRECTORY</td>
 <td>Yes</td>
-<td>-</td>
+<td>Sentinel.UNSET</td>
 <td>Output directory for generated files</td>
 </tr>
 <tr>
 <td><code>--output-prefix</code></td>
-<td>String</td>
+<td>TEXT</td>
 <td>No</td>
-<td>-</td>
+<td>Sentinel.UNSET</td>
 <td>Prefix for output files</td>
 </tr>
 <tr>
 <td><code>--delete-existing</code></td>
-<td>Flag</td>
+<td>FLAG</td>
 <td>No</td>
-<td>False</td>
+<td>-</td>
 <td>Delete existing files in output folder</td>
 </tr>
 </tbody>
 </table>
+
 <h3 id="ae-examples">Usage Examples<a class="headerlink" href="#ae-examples" title="Anchor link to this section">&para;</a></h3>
 <h4 id="ae-example-basic">Basic Example<a class="headerlink" href="#ae-example-basic" title="Anchor link to this section">&para;</a></h4>
+<p>Convert iBAQ data with default settings:</p>
+<pre><code class="language-bash">quantmsioc transform ae \
+    --ibaq-file ibaq_data.tsv \
+    --sdrf-file metadata.sdrf.tsv \
+    --output-folder ./output</code></pre>
+
+<h4 id="ae-example-metadata">With Project Metadata<a class="headerlink" href="#ae-example-metadata" title="Anchor link to this section">&para;</a></h4>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>quantmsioc<span class="w"> </span>transform<span class="w"> </span>ae<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">    </span>--ibaq-file<span class="w"> </span>tests/examples/AE/PXD016999.1-ibaq.tsv<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">    </span>--sdrf-file<span class="w"> </span>tests/examples/AE/PXD016999-first-instrument.sdrf.tsv<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">    </span>--output-folder<span class="w"> </span>./output
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">    </span>--project-file<span class="w"> </span>tests/examples/AE/project.json<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">    </span>--output-folder<span class="w"> </span>./output<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">    </span>--output-prefix<span class="w"> </span>ae_with_metadata<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">    </span>--delete-existing
 </span></code></pre></div>
-<h4 id="ae-example-metadata">With Project Metadata<a class="headerlink" href="#ae-example-metadata" title="Anchor link to this section">&para;</a></h4>
+<h4 id="ae-example-filter">Filter Specific Proteins<a class="headerlink" href="#ae-example-filter" title="Anchor link to this section">&para;</a></h4>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>quantmsioc<span class="w"> </span>transform<span class="w"> </span>ae<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">    </span>--ibaq-file<span class="w"> </span>tests/examples/AE/PXD016999.1-ibaq.tsv<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span>--sdrf-file<span class="w"> </span>tests/examples/AE/PXD016999-first-instrument.sdrf.tsv<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">    </span>--project-file<span class="w"> </span>tests/examples/AE/project.json<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">    </span>--output-folder<span class="w"> </span>./output<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">    </span>--output-prefix<span class="w"> </span>ae_with_metadata<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">    </span>--delete-existing
-</span></code></pre></div>
-<h4 id="ae-example-filter">Filter Specific Proteins<a class="headerlink" href="#ae-example-filter" title="Anchor link to this section">&para;</a></h4>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>quantmsioc<span class="w"> </span>transform<span class="w"> </span>ae<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">    </span>--ibaq-file<span class="w"> </span>tests/examples/AE/PXD016999.1-ibaq.tsv<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span>--sdrf-file<span class="w"> </span>tests/examples/AE/PXD016999-first-instrument.sdrf.tsv<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">    </span>--protein-file<span class="w"> </span>tests/examples/fasta/Homo-sapiens.fasta<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">    </span>--output-folder<span class="w"> </span>./output
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">    </span>--protein-file<span class="w"> </span>tests/examples/fasta/Homo-sapiens.fasta<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">    </span>--output-folder<span class="w"> </span>./output
 </span></code></pre></div>
 <h3 id="ae-input-formats">Input File Formats<a class="headerlink" href="#ae-input-formats" title="Anchor link to this section">&para;</a></h3>
 <p><strong>iBAQ File</strong>: Tab-separated file with protein accessions and iBAQ intensities</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>ProteinID    Sample1    Sample2    Sample3
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>P12345       1000000    950000     1050000
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>Q67890       500000     480000     520000
+<div class="language-text highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>ProteinID    Sample1    Sample2    Sample3
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>P12345       1000000    950000     1050000
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>Q67890       500000     480000     520000
 </span></code></pre></div>
 <p><strong>SDRF File</strong>: Standard PRIDE SDRF format with sample metadata</p>
 <h3 id="ae-output">Output Files<a class="headerlink" href="#ae-output" title="Anchor link to this section">&para;</a></h3>
 <ul>
 <li><strong>Output</strong>: <code>{output-prefix}-{uuid}.absolute.parquet</code></li>
 <li><strong>Format</strong>: Parquet file containing absolute expression quantification</li>
-<li><strong>Schema</strong>: Conforms to quantms.io absolute expression specification</li>
+<li><strong>Schema</strong>: Conforms to <a href="https://io.quantms.org/format-specification/#absolute">quantms.io absolute expression specification</a></li>
 </ul>
 <h3 id="ae-issues">Common Issues<a class="headerlink" href="#ae-issues" title="Anchor link to this section">&para;</a></h3>
 <p><strong>Issue</strong>: Mismatched sample names between iBAQ and SDRF</p>
@@ -1421,114 +1424,114 @@
 <h2 id="differential">differential<a class="headerlink" href="#differential" title="Anchor link to this section">&para;</a></h2>
 <p>Convert MSstats differential expression data to quantms.io format.</p>
 <h3 id="differential-description">Description<a class="headerlink" href="#differential-description" title="Anchor link to this section">&para;</a></h3>
-<p>Transforms differential expression analysis results from MSstats into the standardized quantms.io differential expression format. Supports FDR-based filtering and protein-specific subsetting.</p>
+<p>Transforms differential expression analysis results from MSstats into the standardized 
+    quantms.io differential expression format. Supports FDR-based filtering and protein-specific subsetting.</p>
+
 <h3 id="differential-parameters">Parameters<a class="headerlink" href="#differential-parameters" title="Anchor link to this section">&para;</a></h3>
 <table>
 <thead>
 <tr>
-<th>Parameter</th>
-<th>Type</th>
-<th>Required</th>
-<th>Default</th>
-<th>Description</th>
+<th>Parameter</th><th>Type</th><th>Required</th><th>Default</th><th>Description</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code>--msstats-file</code></td>
-<td>Path</td>
+<td>FILE</td>
 <td>Yes</td>
-<td>-</td>
-<td>MSstats differential expression file</td>
+<td>Sentinel.UNSET</td>
+<td>MSstats differential file</td>
 </tr>
 <tr>
 <td><code>--sdrf-file</code></td>
-<td>Path</td>
+<td>FILE</td>
 <td>Yes</td>
-<td>-</td>
-<td>SDRF file for metadata extraction</td>
+<td>Sentinel.UNSET</td>
+<td>SDRF file needed to extract metadata</td>
 </tr>
 <tr>
 <td><code>--project-file</code></td>
-<td>Path</td>
+<td>FILE</td>
 <td>No</td>
-<td>-</td>
+<td>Sentinel.UNSET</td>
 <td>quantms.io project file</td>
 </tr>
 <tr>
 <td><code>--protein-file</code></td>
-<td>Path</td>
+<td>FILE</td>
 <td>No</td>
-<td>-</td>
-<td>Protein file with specific requirements</td>
+<td>Sentinel.UNSET</td>
+<td>Protein file that meets specific requirements</td>
 </tr>
 <tr>
 <td><code>--fdr-threshold</code></td>
-<td>Float</td>
+<td>FLOAT</td>
 <td>No</td>
-<td>0.05</td>
+<td><code>0.05</code></td>
 <td>FDR threshold to filter results</td>
 </tr>
 <tr>
 <td><code>--output-folder</code></td>
-<td>Path</td>
+<td>DIRECTORY</td>
 <td>Yes</td>
-<td>-</td>
+<td>Sentinel.UNSET</td>
 <td>Output directory for generated files</td>
 </tr>
 <tr>
 <td><code>--output-prefix</code></td>
-<td>String</td>
+<td>TEXT</td>
 <td>No</td>
-<td>-</td>
+<td>Sentinel.UNSET</td>
 <td>Prefix for output files</td>
 </tr>
 <tr>
 <td><code>--delete-existing</code></td>
-<td>Flag</td>
+<td>FLAG</td>
 <td>No</td>
-<td>False</td>
+<td>-</td>
 <td>Delete existing files in output folder</td>
 </tr>
 <tr>
 <td><code>--verbose</code></td>
-<td>Flag</td>
+<td>FLAG</td>
 <td>No</td>
-<td>False</td>
+<td>-</td>
 <td>Enable verbose logging</td>
 </tr>
 </tbody>
 </table>
+
 <h3 id="differential-examples">Usage Examples<a class="headerlink" href="#differential-examples" title="Anchor link to this section">&para;</a></h3>
 <h4 id="differential-example-basic">Basic Example<a class="headerlink" href="#differential-example-basic" title="Anchor link to this section">&para;</a></h4>
+<p>Convert MSstats differential expression data:</p>
+<pre><code class="language-bash">quantmsioc transform differential \
+    --msstats-file msstats_comparisons.csv \
+    --sdrf-file metadata.sdrf.tsv \
+    --output-folder ./output</code></pre>
+
+<h4 id="differential-example-fdr">With Custom FDR Threshold<a class="headerlink" href="#differential-example-fdr" title="Anchor link to this section">&para;</a></h4>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>quantmsioc<span class="w"> </span>transform<span class="w"> </span>differential<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">    </span>--msstats-file<span class="w"> </span>tests/examples/DE/PXD033169.sdrf_openms_design_msstats_in_comparisons.csv<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">    </span>--sdrf-file<span class="w"> </span>tests/examples/DE/PXD033169.sdrf.tsv<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">    </span>--fdr-threshold<span class="w"> </span><span class="m">0</span>.01<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">    </span>--output-folder<span class="w"> </span>./output<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">    </span>--output-prefix<span class="w"> </span>de_stringent<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">    </span>--verbose
+</span></code></pre></div>
+<h4 id="differential-example-metadata">With Project Metadata<a class="headerlink" href="#differential-example-metadata" title="Anchor link to this section">&para;</a></h4>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>quantmsioc<span class="w"> </span>transform<span class="w"> </span>differential<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">    </span>--msstats-file<span class="w"> </span>tests/examples/DE/PXD033169.sdrf_openms_design_msstats_in_comparisons.csv<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">    </span>--sdrf-file<span class="w"> </span>tests/examples/DE/PXD033169.sdrf.tsv<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">    </span>--output-folder<span class="w"> </span>./output
-</span></code></pre></div>
-<h4 id="differential-example-fdr">With Custom FDR Threshold<a class="headerlink" href="#differential-example-fdr" title="Anchor link to this section">&para;</a></h4>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>quantmsioc<span class="w"> </span>transform<span class="w"> </span>differential<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">    </span>--msstats-file<span class="w"> </span>tests/examples/DE/PXD033169.sdrf_openms_design_msstats_in_comparisons.csv<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">    </span>--sdrf-file<span class="w"> </span>tests/examples/DE/PXD033169.sdrf.tsv<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">    </span>--fdr-threshold<span class="w"> </span><span class="m">0</span>.01<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">    </span>--output-folder<span class="w"> </span>./output<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">    </span>--output-prefix<span class="w"> </span>de_stringent<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">    </span>--verbose
-</span></code></pre></div>
-<h4 id="differential-example-metadata">With Project Metadata<a class="headerlink" href="#differential-example-metadata" title="Anchor link to this section">&para;</a></h4>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>quantmsioc<span class="w"> </span>transform<span class="w"> </span>differential<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">    </span>--msstats-file<span class="w"> </span>tests/examples/DE/PXD033169.sdrf_openms_design_msstats_in_comparisons.csv<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">    </span>--sdrf-file<span class="w"> </span>tests/examples/DE/PXD033169.sdrf.tsv<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">    </span>--project-file<span class="w"> </span>tests/examples/DE/project.json<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">    </span>--fdr-threshold<span class="w"> </span><span class="m">0</span>.05<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">    </span>--output-folder<span class="w"> </span>./output<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">    </span>--delete-existing
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">    </span>--project-file<span class="w"> </span>tests/examples/DE/project.json<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">    </span>--fdr-threshold<span class="w"> </span><span class="m">0</span>.05<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">    </span>--output-folder<span class="w"> </span>./output<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">    </span>--delete-existing
 </span></code></pre></div>
 <h3 id="differential-input-format">Input File Format<a class="headerlink" href="#differential-input-format" title="Anchor link to this section">&para;</a></h3>
 <p><strong>MSstats File</strong>: CSV file with comparison results</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>Protein,Label,log2FC,SE,Tvalue,DF,pvalue,adj.pvalue
-</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>P12345,Condition2-Condition1,2.5,0.3,8.33,10,0.0001,0.001
-</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>Q67890,Condition2-Condition1,-1.8,0.4,-4.5,10,0.002,0.01
+<div class="language-text highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>Protein,Label,log2FC,SE,Tvalue,DF,pvalue,adj.pvalue
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>P12345,Condition2-Condition1,2.5,0.3,8.33,10,0.0001,0.001
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>Q67890,Condition2-Condition1,-1.8,0.4,-4.5,10,0.002,0.01
 </span></code></pre></div>
 <h3 id="differential-output">Output Files<a class="headerlink" href="#differential-output" title="Anchor link to this section">&para;</a></h3>
 <ul>
@@ -1556,78 +1559,79 @@
 <h2 id="gene">gene<a class="headerlink" href="#gene" title="Anchor link to this section">&para;</a></h2>
 <p>Map gene information from FASTA to parquet format.</p>
 <h3 id="gene-description">Description<a class="headerlink" href="#gene-description" title="Anchor link to this section">&para;</a></h3>
-<p>Maps gene names and information from a FASTA file to protein identifications in quantms.io PSM or feature files. This command enriches protein data with gene-level metadata extracted from FASTA headers.</p>
+<p>Maps gene names and information from a FASTA file to protein identifications in quantms.io 
+    PSM or feature files. This command enriches protein data with gene-level metadata extracted 
+    from FASTA headers.</p>
+
 <h3 id="gene-parameters">Parameters<a class="headerlink" href="#gene-parameters" title="Anchor link to this section">&para;</a></h3>
 <table>
 <thead>
 <tr>
-<th>Parameter</th>
-<th>Type</th>
-<th>Required</th>
-<th>Default</th>
-<th>Description</th>
+<th>Parameter</th><th>Type</th><th>Required</th><th>Default</th><th>Description</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code>--parquet-path</code></td>
-<td>Path</td>
+<td>FILE</td>
 <td>Yes</td>
-<td>-</td>
+<td>Sentinel.UNSET</td>
 <td>PSM or feature parquet file path</td>
 </tr>
 <tr>
 <td><code>--fasta</code></td>
-<td>Path</td>
+<td>FILE</td>
 <td>Yes</td>
-<td>-</td>
+<td>Sentinel.UNSET</td>
 <td>FASTA file path</td>
 </tr>
 <tr>
 <td><code>--output-folder</code></td>
-<td>Path</td>
+<td>DIRECTORY</td>
 <td>Yes</td>
-<td>-</td>
+<td>Sentinel.UNSET</td>
 <td>Output directory for generated files</td>
 </tr>
 <tr>
 <td><code>--file-num</code></td>
-<td>Integer</td>
+<td>INTEGER</td>
 <td>No</td>
 <td>10</td>
 <td>Number of rows to read in each batch</td>
 </tr>
 <tr>
 <td><code>--partitions</code></td>
-<td>String</td>
+<td>TEXT</td>
 <td>No</td>
-<td>-</td>
+<td>Sentinel.UNSET</td>
 <td>Fields for splitting files (comma-separated)</td>
 </tr>
 <tr>
 <td><code>--species</code></td>
-<td>String</td>
+<td>TEXT</td>
 <td>No</td>
 <td><code>human</code></td>
-<td>Species name</td>
+<td>Species name (default: human)</td>
 </tr>
 </tbody>
 </table>
+
 <h3 id="gene-examples">Usage Examples<a class="headerlink" href="#gene-examples" title="Anchor link to this section">&para;</a></h3>
 <h4 id="gene-example-basic">Basic Example<a class="headerlink" href="#gene-example-basic" title="Anchor link to this section">&para;</a></h4>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>quantmsioc<span class="w"> </span>transform<span class="w"> </span>gene<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">    </span>--parquet-path<span class="w"> </span>./output/psm.parquet<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">    </span>--fasta<span class="w"> </span>tests/examples/fasta/Homo-sapiens.fasta<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">    </span>--output-folder<span class="w"> </span>./output
-</span></code></pre></div>
+<p>Map gene information to parquet file:</p>
+<pre><code class="language-bash">quantmsioc transform gene \
+    --parquet-path ./output/psm.parquet \
+    --fasta proteins.fasta \
+    --output-folder ./output</code></pre>
+
 <h4 id="gene-example-partition">With Partitioning<a class="headerlink" href="#gene-example-partition" title="Anchor link to this section">&para;</a></h4>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>quantmsioc<span class="w"> </span>transform<span class="w"> </span>gene<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">    </span>--parquet-path<span class="w"> </span>./output/feature.parquet<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">    </span>--fasta<span class="w"> </span>tests/examples/fasta/Homo-sapiens.fasta<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">    </span>--output-folder<span class="w"> </span>./output<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">    </span>--file-num<span class="w"> </span><span class="m">20</span><span class="w"> </span><span class="se">\</span>
-</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="w">    </span>--partitions<span class="w"> </span>reference_file_name<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="w">    </span>--species<span class="w"> </span>human
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>quantmsioc<span class="w"> </span>transform<span class="w"> </span>gene<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">    </span>--parquet-path<span class="w"> </span>./output/feature.parquet<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">    </span>--fasta<span class="w"> </span>tests/examples/fasta/Homo-sapiens.fasta<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">    </span>--output-folder<span class="w"> </span>./output<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">    </span>--file-num<span class="w"> </span><span class="m">20</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">    </span>--partitions<span class="w"> </span>reference_file_name<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">    </span>--species<span class="w"> </span>human
 </span></code></pre></div>
 <h3 id="gene-output">Output Files<a class="headerlink" href="#gene-output" title="Anchor link to this section">&para;</a></h3>
 <ul>
@@ -1645,62 +1649,63 @@
 <h2 id="ibaq">ibaq<a class="headerlink" href="#ibaq" title="Anchor link to this section">&para;</a></h2>
 <p>Convert feature data to iBAQ format.</p>
 <h3 id="ibaq-description">Description<a class="headerlink" href="#ibaq-description" title="Anchor link to this section">&para;</a></h3>
-<p>Transforms feature-level quantification data into iBAQ (intensity-Based Absolute Quantification) format. This command integrates feature quantification with sample metadata from SDRF files to generate iBAQ values.</p>
+<p>Transforms feature-level quantification data into iBAQ (intensity-Based Absolute Quantification) 
+    format. This command integrates feature quantification with sample metadata from SDRF files to 
+    generate iBAQ values.</p>
+
 <h3 id="ibaq-parameters">Parameters<a class="headerlink" href="#ibaq-parameters" title="Anchor link to this section">&para;</a></h3>
 <table>
 <thead>
 <tr>
-<th>Parameter</th>
-<th>Type</th>
-<th>Required</th>
-<th>Default</th>
-<th>Description</th>
+<th>Parameter</th><th>Type</th><th>Required</th><th>Default</th><th>Description</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code>--feature-file</code></td>
-<td>Path</td>
+<td>FILE</td>
 <td>Yes</td>
-<td>-</td>
+<td>Sentinel.UNSET</td>
 <td>Feature file path</td>
 </tr>
 <tr>
 <td><code>--sdrf-file</code></td>
-<td>Path</td>
+<td>FILE</td>
 <td>Yes</td>
-<td>-</td>
+<td>Sentinel.UNSET</td>
 <td>SDRF file for metadata extraction</td>
 </tr>
 <tr>
 <td><code>--output-folder</code></td>
-<td>Path</td>
+<td>DIRECTORY</td>
 <td>Yes</td>
-<td>-</td>
+<td>Sentinel.UNSET</td>
 <td>Output directory for generated files</td>
 </tr>
 <tr>
 <td><code>--output-prefix</code></td>
-<td>String</td>
+<td>TEXT</td>
 <td>No</td>
 <td><code>ibaq</code></td>
 <td>Prefix for output files</td>
 </tr>
 </tbody>
 </table>
+
 <h3 id="ibaq-examples">Usage Examples<a class="headerlink" href="#ibaq-examples" title="Anchor link to this section">&para;</a></h3>
 <h4 id="ibaq-example-basic">Basic Example<a class="headerlink" href="#ibaq-example-basic" title="Anchor link to this section">&para;</a></h4>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>quantmsioc<span class="w"> </span>transform<span class="w"> </span>ibaq<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">    </span>--feature-file<span class="w"> </span>./output/feature.parquet<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">    </span>--sdrf-file<span class="w"> </span>./metadata.sdrf.tsv<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="w">    </span>--output-folder<span class="w"> </span>./output
-</span></code></pre></div>
+<p>Convert feature data to iBAQ format:</p>
+<pre><code class="language-bash">quantmsioc transform ibaq \
+    --feature-file ./output/feature.parquet \
+    --sdrf-file ./metadata.sdrf.tsv \
+    --output-folder ./output</code></pre>
+
 <h4 id="ibaq-example-prefix">With Custom Prefix<a class="headerlink" href="#ibaq-example-prefix" title="Anchor link to this section">&para;</a></h4>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>quantmsioc<span class="w"> </span>transform<span class="w"> </span>ibaq<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">    </span>--feature-file<span class="w"> </span>./output/feature.parquet<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">    </span>--sdrf-file<span class="w"> </span>./metadata.sdrf.tsv<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">    </span>--output-folder<span class="w"> </span>./output<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="w">    </span>--output-prefix<span class="w"> </span>ibaq_quantification
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>quantmsioc<span class="w"> </span>transform<span class="w"> </span>ibaq<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">    </span>--feature-file<span class="w"> </span>./output/feature.parquet<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">    </span>--sdrf-file<span class="w"> </span>./metadata.sdrf.tsv<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">    </span>--output-folder<span class="w"> </span>./output<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">    </span>--output-prefix<span class="w"> </span>ibaq_quantification
 </span></code></pre></div>
 <h3 id="ibaq-output">Output Files<a class="headerlink" href="#ibaq-output" title="Anchor link to this section">&para;</a></h3>
 <ul>
@@ -1718,70 +1723,70 @@
 <h2 id="spectra">spectra<a class="headerlink" href="#spectra" title="Anchor link to this section">&para;</a></h2>
 <p>Map spectrum information from mzML to parquet format.</p>
 <h3 id="spectra-description">Description<a class="headerlink" href="#spectra-description" title="Anchor link to this section">&para;</a></h3>
-<p>Enriches PSM or feature data with additional spectral information extracted from mzML files. This command maps spectrum metadata and peak information to the corresponding peptide-spectrum matches.</p>
+<p>Enriches PSM or feature data with additional spectral information extracted from mzML files. 
+    This command maps spectrum metadata and peak information to the corresponding peptide-spectrum matches.</p>
+
 <h3 id="spectra-parameters">Parameters<a class="headerlink" href="#spectra-parameters" title="Anchor link to this section">&para;</a></h3>
 <table>
 <thead>
 <tr>
-<th>Parameter</th>
-<th>Type</th>
-<th>Required</th>
-<th>Default</th>
-<th>Description</th>
+<th>Parameter</th><th>Type</th><th>Required</th><th>Default</th><th>Description</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code>--parquet-path</code></td>
-<td>Path</td>
+<td>FILE</td>
 <td>Yes</td>
-<td>-</td>
+<td>Sentinel.UNSET</td>
 <td>PSM or feature parquet file path</td>
 </tr>
 <tr>
 <td><code>--mzml-directory</code></td>
-<td>Path</td>
+<td>DIRECTORY</td>
 <td>Yes</td>
-<td>-</td>
+<td>Sentinel.UNSET</td>
 <td>Directory containing mzML files</td>
 </tr>
 <tr>
 <td><code>--output-folder</code></td>
-<td>Path</td>
+<td>DIRECTORY</td>
 <td>Yes</td>
-<td>-</td>
+<td>Sentinel.UNSET</td>
 <td>Output directory for generated files</td>
 </tr>
 <tr>
 <td><code>--file-num</code></td>
-<td>Integer</td>
+<td>INTEGER</td>
 <td>No</td>
 <td>10</td>
 <td>Number of rows to read in each batch</td>
 </tr>
 <tr>
 <td><code>--partitions</code></td>
-<td>String</td>
+<td>TEXT</td>
 <td>No</td>
-<td>-</td>
+<td>Sentinel.UNSET</td>
 <td>Fields for splitting files (comma-separated)</td>
 </tr>
 </tbody>
 </table>
+
 <h3 id="spectra-examples">Usage Examples<a class="headerlink" href="#spectra-examples" title="Anchor link to this section">&para;</a></h3>
 <h4 id="spectra-example-basic">Basic Example<a class="headerlink" href="#spectra-example-basic" title="Anchor link to this section">&para;</a></h4>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>quantmsioc<span class="w"> </span>transform<span class="w"> </span>spectra<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="w">    </span>--parquet-path<span class="w"> </span>./output/psm.parquet<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="w">    </span>--mzml-directory<span class="w"> </span>./mzml_files<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="w">    </span>--output-folder<span class="w"> </span>./output
-</span></code></pre></div>
+<p>Map spectrum information to parquet:</p>
+<pre><code class="language-bash">quantmsioc transform spectra \
+    --parquet-path ./output/psm.parquet \
+    --mzml-directory ./mzml_files \
+    --output-folder ./output</code></pre>
+
 <h4 id="spectra-example-batch">With Batch Processing and Partitioning<a class="headerlink" href="#spectra-example-batch" title="Anchor link to this section">&para;</a></h4>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>quantmsioc<span class="w"> </span>transform<span class="w"> </span>spectra<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="w">    </span>--parquet-path<span class="w"> </span>./output/psm.parquet<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="w">    </span>--mzml-directory<span class="w"> </span>./mzml_files<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="w">    </span>--output-folder<span class="w"> </span>./output<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-13-5"><a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="w">    </span>--file-num<span class="w"> </span><span class="m">20</span><span class="w"> </span><span class="se">\</span>
-</span><span id="__span-13-6"><a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a><span class="w">    </span>--partitions<span class="w"> </span>reference_file_name
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>quantmsioc<span class="w"> </span>transform<span class="w"> </span>spectra<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">    </span>--parquet-path<span class="w"> </span>./output/psm.parquet<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">    </span>--mzml-directory<span class="w"> </span>./mzml_files<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">    </span>--output-folder<span class="w"> </span>./output<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">    </span>--file-num<span class="w"> </span><span class="m">20</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">    </span>--partitions<span class="w"> </span>reference_file_name
 </span></code></pre></div>
 <h3 id="spectra-output">Output Files<a class="headerlink" href="#spectra-output" title="Anchor link to this section">&para;</a></h3>
 <ul>
@@ -1799,62 +1804,62 @@
 <h2 id="uniprot">uniprot<a class="headerlink" href="#uniprot" title="Anchor link to this section">&para;</a></h2>
 <p>Map feature data to latest UniProt version.</p>
 <h3 id="uniprot-description">Description<a class="headerlink" href="#uniprot-description" title="Anchor link to this section">&para;</a></h3>
-<p>Maps peptides and features to the latest UniProt protein database using a FASTA file. This command updates protein identifications to match current UniProt accessions and annotations.</p>
+<p>Maps peptides and features to the latest UniProt protein database using a FASTA file. 
+    This command updates protein identifications to match current UniProt accessions and annotations.</p>
+
 <h3 id="uniprot-parameters">Parameters<a class="headerlink" href="#uniprot-parameters" title="Anchor link to this section">&para;</a></h3>
 <table>
 <thead>
 <tr>
-<th>Parameter</th>
-<th>Type</th>
-<th>Required</th>
-<th>Default</th>
-<th>Description</th>
+<th>Parameter</th><th>Type</th><th>Required</th><th>Default</th><th>Description</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code>--feature-file</code></td>
-<td>Path</td>
+<td>FILE</td>
 <td>Yes</td>
-<td>-</td>
+<td>Sentinel.UNSET</td>
 <td>Feature file path</td>
 </tr>
 <tr>
 <td><code>--fasta</code></td>
-<td>Path</td>
+<td>FILE</td>
 <td>Yes</td>
-<td>-</td>
+<td>Sentinel.UNSET</td>
 <td>UniProt FASTA file path</td>
 </tr>
 <tr>
 <td><code>--output-folder</code></td>
-<td>Path</td>
+<td>DIRECTORY</td>
 <td>Yes</td>
-<td>-</td>
+<td>Sentinel.UNSET</td>
 <td>Output directory for generated files</td>
 </tr>
 <tr>
 <td><code>--output-prefix</code></td>
-<td>String</td>
+<td>TEXT</td>
 <td>No</td>
-<td>-</td>
+<td>Sentinel.UNSET</td>
 <td>Prefix for output files</td>
 </tr>
 </tbody>
 </table>
+
 <h3 id="uniprot-examples">Usage Examples<a class="headerlink" href="#uniprot-examples" title="Anchor link to this section">&para;</a></h3>
 <h4 id="uniprot-example-basic">Basic Mapping<a class="headerlink" href="#uniprot-example-basic" title="Anchor link to this section">&para;</a></h4>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>quantmsioc<span class="w"> </span>transform<span class="w"> </span>uniprot<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="w">    </span>--feature-file<span class="w"> </span>./output/feature.parquet<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="w">    </span>--fasta<span class="w"> </span>tests/examples/fasta/Homo-sapiens.fasta<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-14-4"><a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="w">    </span>--output-folder<span class="w"> </span>./output
-</span></code></pre></div>
+<p>Map features to latest UniProt:</p>
+<pre><code class="language-bash">quantmsioc transform uniprot \
+    --feature-file ./output/feature.parquet \
+    --fasta uniprot_human.fasta \
+    --output-folder ./output</code></pre>
+
 <h4 id="uniprot-example-prefix">With Custom Prefix<a class="headerlink" href="#uniprot-example-prefix" title="Anchor link to this section">&para;</a></h4>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>quantmsioc<span class="w"> </span>transform<span class="w"> </span>uniprot<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-15-2"><a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="w">    </span>--feature-file<span class="w"> </span>./output/feature.parquet<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-15-3"><a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="w">    </span>--fasta<span class="w"> </span>./uniprot_human_2024.fasta<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-15-4"><a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="w">    </span>--output-folder<span class="w"> </span>./output<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-15-5"><a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a><span class="w">    </span>--output-prefix<span class="w"> </span>feature_updated
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>quantmsioc<span class="w"> </span>transform<span class="w"> </span>uniprot<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">    </span>--feature-file<span class="w"> </span>./output/feature.parquet<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">    </span>--fasta<span class="w"> </span>./uniprot_human_2024.fasta<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">    </span>--output-folder<span class="w"> </span>./output<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">    </span>--output-prefix<span class="w"> </span>feature_updated
 </span></code></pre></div>
 <h3 id="uniprot-output">Output Files<a class="headerlink" href="#uniprot-output" title="Anchor link to this section">&para;</a></h3>
 <ul>
@@ -1872,53 +1877,54 @@
 <h2 id="anndata">anndata<a class="headerlink" href="#anndata" title="Anchor link to this section">&para;</a></h2>
 <p>Merge multiple AE files into a file in AnnData format.</p>
 <h3 id="anndata-description">Description<a class="headerlink" href="#anndata-description" title="Anchor link to this section">&para;</a></h3>
-<p>Combines multiple absolute expression (AE) files from a directory into a single AnnData object (H5AD format). This command is useful for integrating data from multiple experiments for downstream analysis with scanpy or other Python-based tools.</p>
+<p>Combines multiple absolute expression (AE) files from a directory into a single AnnData object 
+    (H5AD format). This command is useful for integrating data from multiple experiments for 
+    downstream analysis with scanpy or other Python-based tools.</p>
+
 <h3 id="anndata-parameters">Parameters<a class="headerlink" href="#anndata-parameters" title="Anchor link to this section">&para;</a></h3>
 <table>
 <thead>
 <tr>
-<th>Parameter</th>
-<th>Type</th>
-<th>Required</th>
-<th>Default</th>
-<th>Description</th>
+<th>Parameter</th><th>Type</th><th>Required</th><th>Default</th><th>Description</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code>--directory</code></td>
-<td>Path</td>
+<td>DIRECTORY</td>
 <td>Yes</td>
-<td>-</td>
-<td>Directory for storing AE files</td>
+<td>Sentinel.UNSET</td>
+<td>The directory for storing AE files</td>
 </tr>
 <tr>
 <td><code>--output-folder</code></td>
-<td>Path</td>
+<td>DIRECTORY</td>
 <td>Yes</td>
-<td>-</td>
+<td>Sentinel.UNSET</td>
 <td>Output directory for generated files</td>
 </tr>
 <tr>
 <td><code>--output-prefix</code></td>
-<td>String</td>
+<td>TEXT</td>
 <td>No</td>
-<td>-</td>
+<td>Sentinel.UNSET</td>
 <td>Prefix for output files</td>
 </tr>
 </tbody>
 </table>
+
 <h3 id="anndata-examples">Usage Examples<a class="headerlink" href="#anndata-examples" title="Anchor link to this section">&para;</a></h3>
 <h4 id="anndata-example-basic">Basic Example<a class="headerlink" href="#anndata-example-basic" title="Anchor link to this section">&para;</a></h4>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>quantmsioc<span class="w"> </span>transform<span class="w"> </span>anndata<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-16-2"><a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="w">    </span>--directory<span class="w"> </span>./ae_files<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-16-3"><a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="w">    </span>--output-folder<span class="w"> </span>./output
-</span></code></pre></div>
+<p>Merge AE files into AnnData format:</p>
+<pre><code class="language-bash">quantmsioc transform anndata \
+    --directory ./ae_files \
+    --output-folder ./output</code></pre>
+
 <h4 id="anndata-example-prefix">With Custom Prefix<a class="headerlink" href="#anndata-example-prefix" title="Anchor link to this section">&para;</a></h4>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>quantmsioc<span class="w"> </span>transform<span class="w"> </span>anndata<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-17-2"><a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="w">    </span>--directory<span class="w"> </span>./ae_files<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-17-3"><a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="w">    </span>--output-folder<span class="w"> </span>./output<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-17-4"><a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="w">    </span>--output-prefix<span class="w"> </span>merged_ae
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>quantmsioc<span class="w"> </span>transform<span class="w"> </span>anndata<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">    </span>--directory<span class="w"> </span>./ae_files<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">    </span>--output-folder<span class="w"> </span>./output<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="w">    </span>--output-prefix<span class="w"> </span>merged_ae
 </span></code></pre></div>
 <h3 id="anndata-output">Output Files<a class="headerlink" href="#anndata-output" title="Anchor link to this section">&para;</a></h3>
 <ul>
