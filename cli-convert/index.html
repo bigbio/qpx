@@ -1358,7 +1358,7 @@
 <td><code>--report-path</code></td>
 <td>FILE</td>
 <td>Yes</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>DIA-NN report file path</td>
 </tr>
 <tr>
@@ -1372,56 +1372,56 @@
 <td><code>--mzml-info-folder</code></td>
 <td>DIRECTORY</td>
 <td>Yes</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>mzML info file folder</td>
 </tr>
 <tr>
 <td><code>--sdrf-path</code></td>
 <td>FILE</td>
 <td>Yes</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>SDRF file path for metadata</td>
 </tr>
 <tr>
 <td><code>--output-folder</code></td>
 <td>DIRECTORY</td>
 <td>Yes</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>Output directory for generated files</td>
 </tr>
 <tr>
 <td><code>--protein-file</code></td>
 <td>FILE</td>
 <td>No</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>Protein file with specific requirements</td>
 </tr>
 <tr>
 <td><code>--output-prefix</code></td>
 <td>TEXT</td>
 <td>No</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>Prefix for output files</td>
 </tr>
 <tr>
 <td><code>--partitions</code></td>
 <td>TEXT</td>
 <td>No</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>Field(s) for splitting files (comma-separated)</td>
 </tr>
 <tr>
 <td><code>--duckdb-max-memory</code></td>
 <td>TEXT</td>
 <td>No</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>Maximum memory for DuckDB (e.g., '4GB')</td>
 </tr>
 <tr>
 <td><code>--duckdb-threads</code></td>
 <td>INTEGER</td>
 <td>No</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>Number of threads for DuckDB</td>
 </tr>
 <tr>
@@ -1518,49 +1518,49 @@
 <td><code>--report-path</code></td>
 <td>FILE</td>
 <td>Yes</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>DIA-NN report file path</td>
 </tr>
 <tr>
 <td><code>--pg-matrix-path</code></td>
 <td>FILE</td>
 <td>Yes</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>DIA-NN protein quantities table file path</td>
 </tr>
 <tr>
 <td><code>--sdrf-path</code></td>
 <td>FILE</td>
 <td>Yes</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>SDRF file path for metadata</td>
 </tr>
 <tr>
 <td><code>--output-folder</code></td>
 <td>DIRECTORY</td>
 <td>Yes</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>Output directory for generated files</td>
 </tr>
 <tr>
 <td><code>--output-prefix</code></td>
 <td>TEXT</td>
 <td>No</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>Prefix for output files</td>
 </tr>
 <tr>
 <td><code>--duckdb-max-memory</code></td>
 <td>TEXT</td>
 <td>No</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>Maximum memory for DuckDB (e.g., '4GB')</td>
 </tr>
 <tr>
 <td><code>--duckdb-threads</code></td>
 <td>INTEGER</td>
 <td>No</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>Number of threads for DuckDB</td>
 </tr>
 <tr>
@@ -1631,14 +1631,14 @@
 <td><code>--msms-file</code></td>
 <td>FILE</td>
 <td>Yes</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>MaxQuant msms.txt file</td>
 </tr>
 <tr>
 <td><code>--output-folder</code></td>
 <td>DIRECTORY</td>
 <td>Yes</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>Output folder</td>
 </tr>
 <tr>
@@ -1652,7 +1652,7 @@
 <td><code>--output-prefix</code></td>
 <td>TEXT</td>
 <td>No</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>Output file prefix</td>
 </tr>
 <tr>
@@ -1666,8 +1666,8 @@
 <td><code>--n-workers</code></td>
 <td>INTEGER</td>
 <td>No</td>
-<td>8</td>
-<td>Number of parallel workers</td>
+<td>CPU cores + 1</td>
+<td>Number of parallel workers (default: CPU cores + 1)</td>
 </tr>
 <tr>
 <td><code>--verbose</code></td>
@@ -1726,35 +1726,35 @@
 <td><code>--evidence-file</code></td>
 <td>FILE</td>
 <td>Yes</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>MaxQuant evidence.txt file</td>
 </tr>
 <tr>
 <td><code>--sdrf-file</code></td>
 <td>FILE</td>
 <td>Yes</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>SDRF metadata file</td>
 </tr>
 <tr>
 <td><code>--output-folder</code></td>
 <td>DIRECTORY</td>
 <td>Yes</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>Output folder</td>
 </tr>
 <tr>
 <td><code>--protein-file</code></td>
 <td>FILE</td>
 <td>No</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>Protein list file for filtering</td>
 </tr>
 <tr>
 <td><code>--protein-groups-file</code></td>
 <td>FILE</td>
 <td>Yes</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>MaxQuant proteinGroups.txt file</td>
 </tr>
 <tr>
@@ -1768,15 +1768,15 @@
 <td><code>--output-prefix</code></td>
 <td>TEXT</td>
 <td>No</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>Output file prefix</td>
 </tr>
 <tr>
 <td><code>--n-workers</code></td>
 <td>INTEGER</td>
 <td>No</td>
-<td>8</td>
-<td>Number of parallel workers</td>
+<td>CPU cores + 1</td>
+<td>Number of parallel workers (default: CPU cores + 1)</td>
 </tr>
 <tr>
 <td><code>--verbose</code></td>
@@ -1845,28 +1845,28 @@
 <td><code>--protein-groups-file</code></td>
 <td>FILE</td>
 <td>Yes</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>MaxQuant proteinGroups.txt file</td>
 </tr>
 <tr>
 <td><code>--sdrf-file</code></td>
 <td>FILE</td>
 <td>Yes</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>SDRF metadata file</td>
 </tr>
 <tr>
 <td><code>--evidence-file</code></td>
 <td>FILE</td>
 <td>Yes</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>MaxQuant evidence.txt file</td>
 </tr>
 <tr>
 <td><code>--output-folder</code></td>
 <td>DIRECTORY</td>
 <td>Yes</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>Output folder</td>
 </tr>
 <tr>
@@ -1880,15 +1880,15 @@
 <td><code>--output-prefix</code></td>
 <td>TEXT</td>
 <td>No</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>Output file prefix</td>
 </tr>
 <tr>
 <td><code>--n-workers</code></td>
 <td>INTEGER</td>
 <td>No</td>
-<td>8</td>
-<td>Number of parallel workers</td>
+<td>CPU cores + 1</td>
+<td>Number of parallel workers (default: CPU cores + 1)</td>
 </tr>
 <tr>
 <td><code>--verbose</code></td>
@@ -1934,14 +1934,14 @@
 <td><code>--msms-file</code></td>
 <td>FILE</td>
 <td>Yes</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>the psm.tsv file, this will be used to extract the peptide information</td>
 </tr>
 <tr>
 <td><code>-o</code></td>
 <td>DIRECTORY</td>
 <td>Yes</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>Folder where the parquet file will be generated</td>
 </tr>
 <tr>
@@ -1955,7 +1955,7 @@
 <td><code>--output-prefix</code></td>
 <td>TEXT</td>
 <td>No</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>Prefix of the parquet file needed to generate the file name</td>
 </tr>
 </tbody>
@@ -2002,21 +2002,21 @@
 <td><code>--mztab-path</code></td>
 <td>FILE</td>
 <td>No</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>Input mzTab file path (required if creating a new indexer)</td>
 </tr>
 <tr>
 <td><code>--database-path</code></td>
 <td>FILE</td>
 <td>No</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>DuckDB database file path (if exists, will be opened; if not, will be created if mztab-path is provided)</td>
 </tr>
 <tr>
 <td><code>--output-folder</code></td>
 <td>DIRECTORY</td>
 <td>Yes</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>Output directory for generated files</td>
 </tr>
 <tr>
@@ -2087,21 +2087,21 @@
 <td><code>--mztab-path</code></td>
 <td>FILE</td>
 <td>No</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>Input mzTab file path (required if creating a new indexer)</td>
 </tr>
 <tr>
 <td><code>--database-path</code></td>
 <td>FILE</td>
 <td>No</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>DuckDB database file path (if exists, will be opened; if not, will be created if mztab-path is provided)</td>
 </tr>
 <tr>
 <td><code>--output-folder</code></td>
 <td>DIRECTORY</td>
 <td>Yes</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>Output directory for generated files</td>
 </tr>
 <tr>
@@ -2115,14 +2115,14 @@
 <td><code>--sdrf-file</code></td>
 <td>FILE</td>
 <td>Yes</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>SDRF file path</td>
 </tr>
 <tr>
 <td><code>--msstats-file</code></td>
 <td>FILE</td>
 <td>Yes</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>MSstats input file path</td>
 </tr>
 <tr>
@@ -2170,35 +2170,35 @@
 <td><code>--mztab-path</code></td>
 <td>FILE</td>
 <td>No</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>Input mzTab file path (required if creating a new indexer)</td>
 </tr>
 <tr>
 <td><code>--database-path</code></td>
 <td>FILE</td>
 <td>No</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>DuckDB database file path (if exists, will be opened; if not, will be created if mztab-path is provided)</td>
 </tr>
 <tr>
 <td><code>--msstats-file</code></td>
 <td>FILE</td>
 <td>Yes</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>Input msstats_in.csv file path for quantification</td>
 </tr>
 <tr>
 <td><code>--sdrf-file</code></td>
 <td>FILE</td>
 <td>Yes</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>SDRF file path</td>
 </tr>
 <tr>
 <td><code>--output-folder</code></td>
 <td>DIRECTORY</td>
 <td>Yes</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>Output directory for generated files</td>
 </tr>
 <tr>
@@ -2300,28 +2300,28 @@
 <td><code>--idxml-file</code></td>
 <td>TEXT</td>
 <td>Yes</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>the IdXML file containing identifications</td>
 </tr>
 <tr>
 <td><code>--output-folder</code></td>
 <td>TEXT</td>
 <td>Yes</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>Folder where the parquet file will be generated</td>
 </tr>
 <tr>
 <td><code>--mzml-file</code></td>
 <td>TEXT</td>
 <td>No</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>Optional mzML to attach spectra by scan</td>
 </tr>
 <tr>
 <td><code>--output-prefix-file</code></td>
 <td>TEXT</td>
 <td>No</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>Prefix of the parquet file needed to generate the file name</td>
 </tr>
 <tr>
@@ -2374,21 +2374,21 @@
 <td><code>--idxml-folder</code></td>
 <td>DIRECTORY</td>
 <td>No</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>Folder containing IdXML files to convert</td>
 </tr>
 <tr>
 <td><code>--idxml-files</code></td>
 <td>TEXT</td>
 <td>No</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>Comma-separated list of IdXML file paths</td>
 </tr>
 <tr>
 <td><code>--output-folder</code></td>
 <td>TEXT</td>
 <td>Yes</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>Folder where the merged parquet file will be generated</td>
 </tr>
 <tr>
@@ -2402,14 +2402,14 @@
 <td><code>--mzml-folder</code></td>
 <td>DIRECTORY</td>
 <td>No</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>Optional folder containing mzML files to attach spectra by scan</td>
 </tr>
 <tr>
 <td><code>--mzml-files</code></td>
 <td>TEXT</td>
 <td>No</td>
-<td>Sentinel.UNSET</td>
+<td>-</td>
 <td>Comma-separated list of mzML file paths</td>
 </tr>
 <tr>
