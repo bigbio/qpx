@@ -658,7 +658,7 @@ if __name__ == "__main__":
     mock_data = MockTestData()
 
     try:
-        print("Running MaxQuant tests (13 test nodes)...")
+        print("Running MaxQuant tests...")
 
         # Run all test functions
         test_core_functionality(mock_data)
@@ -700,7 +700,7 @@ if __name__ == "__main__":
         test_file_writing(mock_data)
         print("File writing tests passed!")
 
-        print("\nAll 13 MaxQuant test nodes passed!")
+        print("\nAll MaxQuant tests passed!")
 
     except Exception as e:
         print(f"Test failed: {str(e)}")

@@ -1,6 +1,7 @@
 """MaxQuant data processing module"""
 
 import logging
+import os
 import re
 from pathlib import Path
 from typing import Union, List, Dict, Optional, Tuple
@@ -495,7 +496,7 @@ class MaxQuant:
         import shutil
 
         if n_workers is None:
-            n_workers = 8
+            n_workers = os.cpu_count() + 1
 
         logger.info(f"Using parallel processing with {n_workers} workers")
 

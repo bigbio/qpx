@@ -52,8 +52,8 @@ def convert():
 )
 @click.option(
     "--n-workers",
-    help="Number of parallel workers",
-    default=8,
+    help="Number of parallel workers (default: CPU cores + 1)",
+    default=None,
     type=int,
 )
 @click.option("--verbose", help="Enable verbose logging", is_flag=True)
@@ -98,8 +98,9 @@ def convert_maxquant_psm_cmd(
         logger.info("Initializing MaxQuant PSM converter...")
         processor = MaxQuant(spectral_data)
 
+        workers_msg = f"{n_workers}" if n_workers else "CPU cores + 1"
         logger.info(
-            f"Starting PSM conversion with parallel processing (batch size: {batch_size:,}, workers: {n_workers})..."
+            f"Starting PSM conversion with parallel processing (batch size: {batch_size:,}, workers: {workers_msg})..."
         )
 
         processor.process_psm_file(
@@ -160,8 +161,8 @@ def convert_maxquant_psm_cmd(
 )
 @click.option(
     "--n-workers",
-    help="Number of parallel workers",
-    default=8,
+    help="Number of parallel workers (default: CPU cores + 1)",
+    default=None,
     type=int,
 )
 @click.option("--verbose", help="Enable verbose logging", is_flag=True)
@@ -210,8 +211,9 @@ def convert_maxquant_feature_cmd(
         logger.info("Initializing MaxQuant feature converter...")
         processor = MaxQuant()
 
+        workers_msg = f"{n_workers}" if n_workers else "CPU cores + 1"
         logger.info(
-            f"Starting feature conversion (batch size: {batch_size:,}, workers: {n_workers})..."
+            f"Starting feature conversion (batch size: {batch_size:,}, workers: {workers_msg})..."
         )
 
         logger.info(
@@ -274,8 +276,8 @@ def convert_maxquant_feature_cmd(
 )
 @click.option(
     "--n-workers",
-    help="Number of parallel workers",
-    default=8,
+    help="Number of parallel workers (default: CPU cores + 1)",
+    default=None,
     type=int,
 )
 @click.option("--verbose", help="Enable verbose logging", is_flag=True)
@@ -320,8 +322,9 @@ def convert_maxquant_pg_cmd(
         logger.info("Initializing MaxQuant converter...")
         processor = MaxQuant()
 
+        workers_msg = f"{n_workers}" if n_workers else "CPU cores + 1"
         logger.info(
-            f"Starting conversion (batch size: {batch_size:,}, workers: {n_workers})..."
+            f"Starting conversion (batch size: {batch_size:,}, workers: {workers_msg})..."
         )
 
         processor.process_pg_file(

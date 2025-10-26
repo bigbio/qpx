@@ -35,7 +35,20 @@ def generate_params_table(command):
             param_name = param_names[0] if param_names else f"--{param.name}"
             param_type = get_click_type_display(param)
             required = 'Yes' if param.required else 'No'
-            if param.default is not None:
+
+            # Extract default value from help text if it contains "(default: ...)"
+            description = param.help or ''
+            default_from_help = None
+            if '(default:' in description.lower():
+                import re
+                match = re.search(r'\(default:\s*([^)]+)\)', description, re.IGNORECASE)
+                if match:
+                    default_from_help = match.group(1).strip()
+
+            # Determine default value display
+            if default_from_help:
+                default = default_from_help
+            elif param.default is not None and str(param.default) != 'Sentinel.UNSET':
                 if param.is_flag:
                     default = '-'
                 elif isinstance(param.default, (int, float)):
@@ -46,7 +59,7 @@ def generate_params_table(command):
                     default = str(param.default)
             else:
                 default = '-'
-            description = param.help or ''
+
             table += f'<tr>\n<td><code>{param_name}</code></td>\n<td>{param_type}</td>\n<td>{required}</td>\n<td>{default}</td>\n<td>{description}</td>\n</tr>\n'
     table += '</tbody>\n</table>'
     return table
