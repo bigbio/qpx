@@ -705,3 +705,35 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"Test failed: {str(e)}")
         sys.exit(1)
+
+
+def test_memory_limit_initialization():
+    """Test MaxQuant initialization with memory limit parameter."""
+    # Test with default (None) - should use available memory
+    processor1 = MaxQuant()
+    assert hasattr(processor1, "memory_limit_gb")
+    assert processor1.memory_limit_gb > 0
+
+    # Test with specified memory limit
+    processor2 = MaxQuant(memory_limit_gb=10.0)
+    assert processor2.memory_limit_gb == 10.0
+
+    # Test with spectral_data flag and memory limit
+    processor3 = MaxQuant(spectral_data=True, memory_limit_gb=15.0)
+    assert processor3._spectral_data is True
+    assert processor3.memory_limit_gb == 15.0
+
+    print("Memory limit initialization tests passed!")
+
+
+def test_memory_limit_default():
+    """Test that default memory limit uses available system memory."""
+    import psutil
+
+    processor = MaxQuant()
+    expected_memory = psutil.virtual_memory().available / (1024**3)
+
+    # Allow small variance due to system changes
+    assert abs(processor.memory_limit_gb - expected_memory) < 1.0
+
+    print("Default memory limit test passed!")
