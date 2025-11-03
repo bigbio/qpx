@@ -52,9 +52,15 @@ def convert():
 )
 @click.option(
     "--n-workers",
-    help="Number of parallel workers (default: CPU cores + 1)",
+    help="Number of parallel workers",
     default=None,
     type=int,
+)
+@click.option(
+    "--memory-limit",
+    help="Memory limit in GB",
+    default=None,
+    type=float,
 )
 @click.option("--verbose", help="Enable verbose logging", is_flag=True)
 def convert_maxquant_psm_cmd(
@@ -64,6 +70,7 @@ def convert_maxquant_psm_cmd(
     output_prefix: Optional[str],
     spectral_data: bool = False,
     n_workers: Optional[int] = None,
+    memory_limit: Optional[float] = None,
     verbose: bool = False,
 ):
     """
@@ -75,7 +82,9 @@ def convert_maxquant_psm_cmd(
     Example:
         quantmsioc convert maxquant-psm \\
             --msms-file msms.txt \\
-            --output-folder ./output
+            --output-folder ./output \\
+            --n-workers 8 \\
+            --memory-limit 16
     """
     logger = get_logger("quantmsio.commands.maxquant")
     if verbose:
@@ -96,7 +105,14 @@ def convert_maxquant_psm_cmd(
         logger.info(f"Will save PSM file as: {filename}")
 
         logger.info("Initializing MaxQuant PSM converter...")
-        processor = MaxQuant(spectral_data)
+        processor = MaxQuant(spectral_data, memory_limit_gb=memory_limit)
+
+        if memory_limit:
+            logger.info(f"Memory limit set to {memory_limit:.1f} GB")
+        else:
+            logger.info(
+                f"Memory limit set to {processor.memory_limit_gb:.1f} GB (all available memory)"
+            )
 
         workers_msg = f"{n_workers}" if n_workers else "CPU cores + 1"
         logger.info(
@@ -161,9 +177,15 @@ def convert_maxquant_psm_cmd(
 )
 @click.option(
     "--n-workers",
-    help="Number of parallel workers (default: CPU cores + 1)",
+    help="Number of parallel workers",
     default=None,
     type=int,
+)
+@click.option(
+    "--memory-limit",
+    help="Memory limit in GB",
+    default=None,
+    type=float,
 )
 @click.option("--verbose", help="Enable verbose logging", is_flag=True)
 def convert_maxquant_feature_cmd(
@@ -175,6 +197,7 @@ def convert_maxquant_feature_cmd(
     batch_size: int,
     output_prefix: Optional[str],
     n_workers: Optional[int] = None,
+    memory_limit: Optional[float] = None,
     verbose: bool = False,
 ):
     """
@@ -188,7 +211,9 @@ def convert_maxquant_feature_cmd(
             --evidence-file evidence.txt \\
             --sdrf-file data.sdrf.tsv \\
             --protein-groups-file proteinGroups.txt \\
-            --output-folder ./output
+            --output-folder ./output \\
+            --n-workers 8 \\
+            --memory-limit 16
     """
     logger = get_logger("quantmsio.commands.maxquant")
     if verbose:
@@ -209,7 +234,12 @@ def convert_maxquant_feature_cmd(
         logger.info(f"Will save feature file as: {filename}")
 
         logger.info("Initializing MaxQuant feature converter...")
-        processor = MaxQuant()
+        processor = MaxQuant(memory_limit_gb=memory_limit)
+
+        if memory_limit:
+            logger.info(f"Memory limit set to {memory_limit:.1f} GB")
+        else:
+            logger.info(f"Memory limit set to {processor.memory_limit_gb:.1f} GB")
 
         workers_msg = f"{n_workers}" if n_workers else "CPU cores + 1"
         logger.info(
@@ -276,9 +306,15 @@ def convert_maxquant_feature_cmd(
 )
 @click.option(
     "--n-workers",
-    help="Number of parallel workers (default: CPU cores + 1)",
+    help="Number of parallel workers",
     default=None,
     type=int,
+)
+@click.option(
+    "--memory-limit",
+    help="Memory limit in GB",
+    default=None,
+    type=float,
 )
 @click.option("--verbose", help="Enable verbose logging", is_flag=True)
 def convert_maxquant_pg_cmd(
@@ -289,6 +325,7 @@ def convert_maxquant_pg_cmd(
     batch_size: int,
     output_prefix: Optional[str],
     n_workers: Optional[int] = None,
+    memory_limit: Optional[float] = None,
     verbose: bool = False,
 ):
     """
@@ -299,7 +336,9 @@ def convert_maxquant_pg_cmd(
             --protein-groups-file proteinGroups.txt \\
             --sdrf-file data.sdrf.tsv \\
             --evidence-file evidence.txt \\
-            --output-folder ./output
+            --output-folder ./output \\
+            --n-workers 8 \\
+            --memory-limit 16
     """
     logger = get_logger("quantmsio.commands.maxquant")
     if verbose:
@@ -320,7 +359,12 @@ def convert_maxquant_pg_cmd(
         logger.info(f"Will save protein groups file as: {filename}")
 
         logger.info("Initializing MaxQuant converter...")
-        processor = MaxQuant()
+        processor = MaxQuant(memory_limit_gb=memory_limit)
+
+        if memory_limit:
+            logger.info(f"Memory limit set to {memory_limit:.1f} GB")
+        else:
+            logger.info(f"Memory limit set to {processor.memory_limit_gb:.1f} GB")
 
         workers_msg = f"{n_workers}" if n_workers else "CPU cores + 1"
         logger.info(

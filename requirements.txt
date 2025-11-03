@@ -18,6 +18,9 @@ ddt
 mygene
 anndata
 pyteomics
+plotly>=5.0.0
+scikit-learn>=1.5.0
+umap-learn>=0.5.0
 mkdocs>=1.5.0
 mkdocs-material>=9.0.0
 markdown-exec[ansi]>=1.11.0

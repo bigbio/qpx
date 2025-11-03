@@ -82,7 +82,6 @@ View help for a specific command group:
 
 ```bash
 quantmsioc convert --help
-quantmsioc transform --help
 ```
 
 View detailed help for a specific command:

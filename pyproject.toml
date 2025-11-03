@@ -41,6 +41,9 @@ psutil = "*"
 pyteomics = "*"
 anndata = "*"
 venn = "*"
+plotly = ">=5.0.0"
+scikit-learn = ">=1.0.0"
+umap-learn = ">=0.5.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "*"

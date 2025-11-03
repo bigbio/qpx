@@ -157,7 +157,9 @@ def _process_pg_chunk_worker(args, sdrf_path=None, evidence_mapping_file=None):
 class MaxQuant:
     """MaxQuant data processor for converting output files to quantms.io format"""
 
-    def __init__(self, spectral_data: bool = False):
+    def __init__(
+        self, spectral_data: bool = False, memory_limit_gb: Optional[float] = None
+    ):
         self.sdrf_handler: Optional[SDRFHandler] = None
         self.experiment_type: Optional[str] = None
         self._sample_map: Optional[Dict] = None
@@ -165,6 +167,14 @@ class MaxQuant:
         self._current_sdrf_path: Optional[str] = None
 
         self._spectral_data = spectral_data
+
+        if memory_limit_gb is None:
+            import psutil
+
+            available_memory = psutil.virtual_memory().available / (1024**3)
+            self.memory_limit_gb = available_memory
+        else:
+            self.memory_limit_gb = memory_limit_gb
 
         self.psm_mapping = MAXQUANT_PSM_MAP
         self.feature_mapping = MAXQUANT_FEATURE_MAP

@@ -53,6 +53,7 @@ from quantmsio.commands.utils.project import (
     generate_pride_project_json_cmd as project_utils,
 )
 from quantmsio.commands.utils.stats import statistics_cmd as stats_utils
+from quantmsio.commands.utils.report import report_cmd as report_utils
 
 CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
 
@@ -102,6 +103,12 @@ def project():
     pass
 
 
+@cli.group()
+def report():
+    """Generate comprehensive reports for quantms.io projects."""
+    pass
+
+
 # Convert commands
 convert.add_command(convert_diann_cmd, name="diann")
 convert.add_command(convert_diann_pg_cmd, name="diann-pg")
@@ -134,6 +141,10 @@ stats.add_command(stats_utils, name="analyze")
 # Project commands
 project.add_command(project_utils, name="create")
 project.add_command(attach_utils, name="attach")
+
+# Report commands
+for command_name, command in report_utils.commands.items():
+    report.add_command(command, name=command_name)
 
 
 def quantms_io_main() -> None:
