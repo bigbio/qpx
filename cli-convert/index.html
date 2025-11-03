@@ -22,7 +22,7 @@
       
       
       <link rel="icon" href="../images/favicon.ico">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.22">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.23">
     
     
       
@@ -1666,8 +1666,15 @@
 <td><code>--n-workers</code></td>
 <td>INTEGER</td>
 <td>No</td>
-<td>CPU cores + 1</td>
-<td>Number of parallel workers (default: CPU cores + 1)</td>
+<td>-</td>
+<td>Number of parallel workers</td>
+</tr>
+<tr>
+<td><code>--memory-limit</code></td>
+<td>FLOAT</td>
+<td>No</td>
+<td>-</td>
+<td>Memory limit in GB</td>
 </tr>
 <tr>
 <td><code>--verbose</code></td>
@@ -1684,7 +1691,9 @@
 <p>Convert MaxQuant PSM data with default settings:</p>
 <pre><code class="language-bash">quantmsioc convert maxquant-psm \
     --msms-file msms.txt \
-    --output-folder ./output</code></pre>
+    --output-folder ./output \
+    --n-workers 8 \
+    --memory-limit 16</code></pre>
 
 <h4 id="maxquant-psm-example-spectral">With Spectral Data<a class="headerlink" href="#maxquant-psm-example-spectral" title="Anchor link to this section">&para;</a></h4>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>quantmsioc<span class="w"> </span>convert<span class="w"> </span>maxquant-psm<span class="w"> </span><span class="se">\</span>
@@ -1775,8 +1784,15 @@
 <td><code>--n-workers</code></td>
 <td>INTEGER</td>
 <td>No</td>
-<td>CPU cores + 1</td>
-<td>Number of parallel workers (default: CPU cores + 1)</td>
+<td>-</td>
+<td>Number of parallel workers</td>
+</tr>
+<tr>
+<td><code>--memory-limit</code></td>
+<td>FLOAT</td>
+<td>No</td>
+<td>-</td>
+<td>Memory limit in GB</td>
 </tr>
 <tr>
 <td><code>--verbose</code></td>
@@ -1795,7 +1811,9 @@
     --evidence-file evidence.txt \
     --sdrf-file data.sdrf.tsv \
     --protein-groups-file proteinGroups.txt \
-    --output-folder ./output</code></pre>
+    --output-folder ./output \
+    --n-workers 8 \
+    --memory-limit 16</code></pre>
 
 <h4 id="maxquant-feature-example-qvalue">With Protein Groups Q-value Mapping<a class="headerlink" href="#maxquant-feature-example-qvalue" title="Anchor link to this section">&para;</a></h4>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>quantmsioc<span class="w"> </span>convert<span class="w"> </span>maxquant-feature<span class="w"> </span><span class="se">\</span>
@@ -1887,8 +1905,15 @@
 <td><code>--n-workers</code></td>
 <td>INTEGER</td>
 <td>No</td>
-<td>CPU cores + 1</td>
-<td>Number of parallel workers (default: CPU cores + 1)</td>
+<td>-</td>
+<td>Number of parallel workers</td>
+</tr>
+<tr>
+<td><code>--memory-limit</code></td>
+<td>FLOAT</td>
+<td>No</td>
+<td>-</td>
+<td>Memory limit in GB</td>
 </tr>
 <tr>
 <td><code>--verbose</code></td>
@@ -1907,7 +1932,9 @@
     --protein-groups-file proteinGroups.txt \
     --sdrf-file data.sdrf.tsv \
     --evidence-file evidence.txt \
-    --output-folder ./output</code></pre>
+    --output-folder ./output \
+    --n-workers 8 \
+    --memory-limit 16</code></pre>
 
 <h3 id="maxquant-pg-output">Output Files<a class="headerlink" href="#maxquant-pg-output" title="Anchor link to this section">&para;</a></h3>
 <ul>
