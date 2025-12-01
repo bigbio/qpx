@@ -10,7 +10,7 @@
         "name": "file_metadata",
         "doc": "Metadata for the absolute expression file",
         "fields": [
-          {"name": "quantmsio_version", "type": "string", "doc": "Version of the quantms.io format"},
+          {"name": "qpx_version", "type": "string", "doc": "Version of the QPX format"},
           {"name": "creator", "type": "string", "doc": "Name of the tool or person who created the file"},
           {"name": "file_type", "type": "string", "doc": "Type of the file (absolute_file)"},
           {"name": "creation_date", "type": "string", "doc": "Date when the file was created"},

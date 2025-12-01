@@ -1,6 +1,6 @@
 == IBAQ Usage
 
-Users can now convert existing public datasets in PRIDE Archive to peptide features files using the quantms.io toolkit, remap the proteins to a new version of the UniProt database and recompute IBAQ values using ibaqpy after annotating the SDRF file. ibaqpy benefits from SDRF's compatibility with public proteomics repositories like PRIDE, facilitating seamless integration into submission workflows and downstream analyses. The use of SDRF automates the parsing of metadata, reducing manual effort and user error while enabling better cross-study comparisons.
+Users can now convert existing public datasets in PRIDE Archive to peptide features files using the QPX toolkit, remap the proteins to a new version of the UniProt database and recompute IBAQ values using ibaqpy after annotating the SDRF file. ibaqpy benefits from SDRF's compatibility with public proteomics repositories like PRIDE, facilitating seamless integration into submission workflows and downstream analyses. The use of SDRF automates the parsing of metadata, reducing manual effort and user error while enabling better cross-study comparisons.
 
 === convert to feature
 ==== quantms
@@ -19,7 +19,7 @@ In experiments analyzed using quantms with data-dependent acquisition, you need 
 
 [source, shell]
 ----
-quantmsioc convert-feature 
+qpxc convert-feature 
 --sdrf_file PXD004452-Hella-trypsin.sdrf.tsv 
 --msstats_file PXD004452-Hella-trypsin.sdrf_openms_design_msstats_in.csv
 --mztab_file PXD004452-Hella-trypsin.sdrf_openms_design_openms.mzTab 
@@ -35,7 +35,7 @@ The DIA experiment was processed by the DIANN software, and you need to obtain t
 
 [source, shell]
 ----
-quantmsioc convert-diann 
+qpxc convert-diann 
 --report_path diann_report.tsv 
 --qvalue_threshold 0.05 
 --mzml_info_folder mzml 
@@ -52,7 +52,7 @@ In MaxQuant, you need to download the `evidence` file and the `SDRF` file.
 
 [source, shell]
 ----
-quantmsioc convert-maxquant-feature
+qpxc convert-maxquant-feature
 --evidence_file evidence.txt
 --sdrf_file PXD014414.sdrf.tsv
 --output_folder result
@@ -67,7 +67,7 @@ You can download the latest `UniProt FASTA` file to remap the peptides and prote
 
 [source, shell]
 ----
-quantmsioc transform uniprot \
+qpxc transform uniprot \
 --feature-file PXD048325-29419338-aa11-47fb-b183-db1650465b57.feature.parquet \
 --fasta uniprotkb_Human_AND_reviewed_true_AND_m_2024_12_02.fasta \
 --output-folder result \
@@ -80,7 +80,7 @@ Finally, for use with `ibaqpy`, you need to inject experimental information into
 
 [source, shell]
 ----
-quantmsioc convert-ibaq 
+qpxc convert-ibaq 
 --feature_file res/PXD048325-29419338-aa11-47fb-b183-db1650465b57.feature.parquet 
 --sdrf_file PXD048325-Hela.sdrf.tsv 
 --output_folder ibaq 

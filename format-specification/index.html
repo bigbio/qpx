@@ -6,13 +6,13 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Python package documentation for quantmsio - A tool for working with mass spectrometry data">
+        <meta name="description" content="Python package documentation for qpx - A tool for working with mass spectrometry data">
       
       
         <meta name="author" content="BigBio Team">
       
       
-        <link rel="canonical" href="https://bigbio.github.io/quantms.io/package/format-specification/">
+        <link rel="canonical" href="https://bigbio.github.io/QPX/package/format-specification/">
       
       
         <link rel="prev" href="../cli-reference/">
@@ -29,7 +29,7 @@
     
     
       
-        <title>Format Specification - quantmsio</title>
+        <title>Format Specification - qpx</title>
       
     
     
@@ -151,7 +151,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#the-quantmsio-format-specification" class="md-skip">
+        <a href="#the-qpx-format-specification" class="md-skip">
           Skip to content
         </a>
       
@@ -167,7 +167,7 @@
 
 <header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href=".." title="quantmsio" class="md-header__button md-logo" aria-label="quantmsio" data-md-component="logo">
+    <a href=".." title="qpx" class="md-header__button md-logo" aria-label="qpx" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -181,7 +181,7 @@
       <div class="md-header__ellipsis">
         <div class="md-header__topic">
           <span class="md-ellipsis">
-            quantmsio
+            qpx
           </span>
         </div>
         <div class="md-header__topic" data-md-component="header-topic">
@@ -274,13 +274,13 @@
     
     
       <div class="md-header__source">
-        <a href="https://github.com/bigbio/quantms.io" title="Go to repository" class="md-source" data-md-component="source">
+        <a href="https://github.com/bigbio/QPX" title="Go to repository" class="md-source" data-md-component="source">
   <div class="md-source__icon md-icon">
     
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
   </div>
   <div class="md-source__repository">
-    bigbio/quantms.io
+    bigbio/QPX
   </div>
 </a>
       </div>
@@ -432,23 +432,23 @@
 
 <nav class="md-nav md-nav--primary md-nav--lifted md-nav--integrated" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href=".." title="quantmsio" class="md-nav__button md-logo" aria-label="quantmsio" data-md-component="logo">
+    <a href=".." title="qpx" class="md-nav__button md-logo" aria-label="qpx" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
 
     </a>
-    quantmsio
+    qpx
   </label>
   
     <div class="md-nav__source">
-      <a href="https://github.com/bigbio/quantms.io" title="Go to repository" class="md-source" data-md-component="source">
+      <a href="https://github.com/bigbio/QPX" title="Go to repository" class="md-source" data-md-component="source">
   <div class="md-source__icon md-icon">
     
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
   </div>
   <div class="md-source__repository">
-    bigbio/quantms.io
+    bigbio/QPX
   </div>
 </a>
     </div>
@@ -1356,7 +1356,7 @@
   <a href="#project" class="md-nav__link">
     <span class="md-ellipsis">
       
-        9. Project quantms.io
+        9. Project QPX
       
     </span>
   </a>
@@ -1520,9 +1520,9 @@
   
 
 
-<h1 id="the-quantmsio-format-specification">The quantms.io format specification<a class="headerlink" href="#the-quantmsio-format-specification" title="Anchor link to this section">&para;</a></h1>
+<h1 id="the-qpx-format-specification">The QPX format specification<a class="headerlink" href="#the-qpx-format-specification" title="Anchor link to this section">&para;</a></h1>
 <h2 id="executive-summary">1. Executive Summary<a class="headerlink" href="#executive-summary" title="Anchor link to this section">&para;</a></h2>
-<p>The quantms.io format is a modern, scalable data format designed specifically for proteomics data analysis. It addresses the limitations of existing formats like XML-based HUPO-PSI standards (mzML, mzIdentML) and tab-delimited formats like mzTab, which struggle with large-scale datasets and advanced analytical use cases.</p>
+<p>The QPX format is a modern, scalable data format designed specifically for proteomics data analysis. It addresses the limitations of existing formats like XML-based HUPO-PSI standards (mzML, mzIdentML) and tab-delimited formats like mzTab, which struggle with large-scale datasets and advanced analytical use cases.</p>
 <h3 id="11-key-benefits">1.1. Key Benefits<a class="headerlink" href="#11-key-benefits" title="Anchor link to this section">&para;</a></h3>
 <ul>
 <li><strong>Performance</strong>: Leverages columnar storage (Apache Parquet) to achieve significant improvements in storage efficiency (up to 70% reduction) and query performance.</li>
@@ -1541,7 +1541,7 @@
 </ul>
 <p>Each view can be serialized in appropriate formats (Parquet for complex data, TSV for matrices, JSON for metadata), creating a comprehensive ecosystem for proteomics data representation.</p>
 <h3 id="13-current-status">1.3. Current Status<a class="headerlink" href="#13-current-status" title="Anchor link to this section">&para;</a></h3>
-<p>The quantms.io format is currently at version 1.0 and is primarily implemented in the quantms workflow. It has been successfully applied to various proteomics datasets, demonstrating significant improvements in storage efficiency and analysis capabilities compared to traditional formats.</p>
+<p>The QPX format is currently at version 1.0 and is primarily implemented in the quantms workflow. It has been successfully applied to various proteomics datasets, demonstrating significant improvements in storage efficiency and analysis capabilities compared to traditional formats.</p>
 <blockquote>
 <p><strong>NOTE</strong></p>
 <p>We are not trying to do the following:</p>
@@ -1568,8 +1568,8 @@
 </ul>
 </blockquote>
 <h2 id="general-data-model">3. General data model and structure<a class="headerlink" href="#general-data-model" title="Anchor link to this section">&para;</a></h2>
-<p>The <code>quantms.io</code> (.qms) could be seen as a <strong>multiple view</strong> representation of a proteomics data analysis results. Similar to other tools that produce multiple output files for their analysis, like <a href="https://www.maxquant.org/">MaxQuant</a>, <a href="https://github.com/vdemichev/DiaNN">DIA-NN</a>, <a href="https://fragpipe.nesvilab.org/">FragPipe</a> or <a href="https://biognosys.com/software/spectronaut/">spectronaut</a>. Each view of the format can be serialized in different formats depending on the use case. The <strong>data model</strong> defines two main things, the <strong>view</strong> and how the view is <strong>serialized</strong>. Both views and serialization can be extended, and new views can be added on each <a href="#version">version</a> of the specification.</p>
-<p><img alt="Quantms.io file format relationship diagram showing the connections between different data views and serialization formats" src="../images/file-relation.png" style="width:80%" /></p>
+<p>The <code>QPX</code> (.qms) could be seen as a <strong>multiple view</strong> representation of a proteomics data analysis results. Similar to other tools that produce multiple output files for their analysis, like <a href="https://www.maxquant.org/">MaxQuant</a>, <a href="https://github.com/vdemichev/DiaNN">DIA-NN</a>, <a href="https://fragpipe.nesvilab.org/">FragPipe</a> or <a href="https://biognosys.com/software/spectronaut/">spectronaut</a>. Each view of the format can be serialized in different formats depending on the use case. The <strong>data model</strong> defines two main things, the <strong>view</strong> and how the view is <strong>serialized</strong>. Both views and serialization can be extended, and new views can be added on each <a href="#version">version</a> of the specification.</p>
+<p><img alt="QPX file format relationship diagram showing the connections between different data views and serialization formats" src="../images/file-relation.png" style="width:80%" /></p>
 <ul>
 <li>The <strong>data model view</strong> defines the structure, the fields and properties that will be included in a view for each peptide, psms, feature or protein.</li>
 <li>The <strong>data serialization</strong> defines the format in which the view will be serialized and what features of serialization will be supported, for example, compression, indexing, or slicing.</li>
@@ -1650,7 +1650,7 @@
 <p><strong>NOTE</strong></p>
 <p>Some of these data models fit better for some analytical methods than others, for example, the <strong>psm view</strong> <a href="#psm">psm</a> is more suitable for data-dependent acquisition (DDA) methods, and may not be present in data-independent acquisition (DIA) methods; while the <strong>feature view</strong> <a href="#feature">feature</a> could be generated in both DDA and DIA methods. Different expression view <a href="#differential">differential</a> are only present in those experiments while absolute-expression (based on IBAQ values) is only available on datasets where comparisons are not performed between conditions.</p>
 </blockquote>
-<p>The <code>.qms</code> contains all the files of a quantms.io experiment. It will contain metadata files and different views of the experiments; <a href="#general-data-model">general-data-model</a>. {#file-structure}</p>
+<p>The <code>.qms</code> contains all the files of a QPX experiment. It will contain metadata files and different views of the experiments; <a href="#general-data-model">general-data-model</a>. {#file-structure}</p>
 <h2 id="common-data-structures">4. Common data structures and formats<a class="headerlink" href="#common-data-structures" title="Anchor link to this section">&para;</a></h2>
 <p>We have some concepts that are common for some outputs and would be good to define and explain them here:</p>
 <h3 id="peptidoform">4.1. Peptidoform<a class="headerlink" href="#peptidoform" title="Anchor link to this section">&para;</a></h3>
@@ -1661,7 +1661,7 @@
 <li><a href="#peptide">peptide</a></li>
 </ul>
 <h3 id="modifications">4.2. Modifications<a class="headerlink" href="#modifications" title="Anchor link to this section">&para;</a></h3>
-<p>A modification is a chemical change in the peptide sequence. Modifications can be annotated in multiple ways in <code>quantms.io</code> format:</p>
+<p>A modification is a chemical change in the peptide sequence. Modifications can be annotated in multiple ways in <code>QPX</code> format:</p>
 <ol>
 <li>
 <p>As part of the Proforma notation inside the peptide sequence:</p>
@@ -1756,7 +1756,7 @@
 </ul>
 <p>The name/key of the controlled vocabulary MUST be provided; the value is optional.</p>
 <h2 id="serialization">5. Serialization formats<a class="headerlink" href="#serialization" title="Anchor link to this section">&para;</a></h2>
-<p>The <code>quantms.io</code> format has different serialization formats for each view. The serialization format defines how the view will be serialized and what features of serialization will be supported, for example, compression, indexing, or slicing. The following serialization formats are supported:</p>
+<p>The <code>QPX</code> format has different serialization formats for each view. The serialization format defines how the view will be serialized and what features of serialization will be supported, for example, compression, indexing, or slicing. The following serialization formats are supported:</p>
 <ul>
 <li><strong>tsv</strong>: Tab-separated values format.</li>
 <li><strong>parquet</strong>: Apache Parquet format.</li>
@@ -1780,7 +1780,7 @@
 <li><strong>Complex Data Types</strong>: Supports nested structures and data types like arrays, maps, and structs, allowing efficient storage of complex data.</li>
 </ul>
 <h4 id="parquet-slicing">Parquet slicing<a class="headerlink" href="#parquet-slicing" title="Anchor link to this section">&para;</a></h4>
-<p><code>quantms.io</code> supports slicing parquet files using any field when generating them.Upon storage, the files are organized into distinct folders according to the chosen slicing fields.</p>
+<p><code>QPX</code> supports slicing parquet files using any field when generating them.Upon storage, the files are organized into distinct folders according to the chosen slicing fields.</p>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>PXD004683/
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>│
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>├── sample_accession_1/
@@ -1810,7 +1810,7 @@
 </span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>  ]
 </span></code></pre></div>
 <h2 id="extensions">6. File extensions<a class="headerlink" href="#extensions" title="Anchor link to this section">&para;</a></h2>
-<p>File extensions are used to identify the file type. In <code>quantms.io</code> the extensions are constructed as follows: <code>*.{view}.{format}</code> where the view is one of the well-defined views in the specification and the format is one of the serialization formats. For example:</p>
+<p>File extensions are used to identify the file type. In <code>QPX</code> the extensions are constructed as follows: <code>*.{view}.{format}</code> where the view is one of the well-defined views in the specification and the format is one of the serialization formats. For example:</p>
 <ul>
 <li>An absolute expression file: <code>PXD000000-943a8f02-0527-4528-b1a3-b96de99ebe75.absolute.tsv</code></li>
 <li>A differential expression file: <code>PXD000000-943a8f02-0527-4528-b1a3-b96de99ebe75.differential.tsv</code></li>
@@ -1819,23 +1819,23 @@
 </ul>
 <blockquote>
 <p><strong>NOTE</strong></p>
-<p>In <code>quantms.io</code> we use the UUID to identify the project and the files <code>{PREFIX}-{UUID}.{view}.{format}</code>, it is optional, but for most of the code examples we will use it. <em>uuids</em>: A Universally Unique Identifier (UUID) URN Namespace, as defined in RFC 4122, provides a standardized method for generating globally unique identifiers across various systems and applications. The UUID URN Namespace ensures that each generated UUID is highly unlikely to collide with any other UUID, even when produced by different entities and systems.</p>
+<p>In <code>QPX</code> we use the UUID to identify the project and the files <code>{PREFIX}-{UUID}.{view}.{format}</code>, it is optional, but for most of the code examples we will use it. <em>uuids</em>: A Universally Unique Identifier (UUID) URN Namespace, as defined in RFC 4122, provides a standardized method for generating globally unique identifiers across various systems and applications. The UUID URN Namespace ensures that each generated UUID is highly unlikely to collide with any other UUID, even when produced by different entities and systems.</p>
 </blockquote>
 <h2 id="version">7. Versioning<a class="headerlink" href="#version" title="Anchor link to this section">&para;</a></h2>
-<p>The structure of the version is as follows <code>{major release}.{minor update}</code>: The current <code>quantms.io</code> specification version is: <strong>1.0</strong></p>
+<p>The structure of the version is as follows <code>{major release}.{minor update}</code>: The current <code>QPX</code> specification version is: <strong>1.0</strong></p>
 <ul>
-<li>All views (<a href="#psm">psm</a>, <a href="#feature">feature</a>, <a href="#pg">pg</a>) and serialization formats will have a version number in the way: <code>quantmsio_version: {}</code>. This will help to identify the version of the specification used to generate the file.</li>
+<li>All views (<a href="#psm">psm</a>, <a href="#feature">feature</a>, <a href="#pg">pg</a>) and serialization formats will have a version number in the way: <code>qpx_version: {}</code>. This will help to identify the version of the specification used to generate the file.</li>
 <li>Major release changes will be backward incompatible, while minor updates will be backward compatible.</li>
 </ul>
 <h2 id="software">8. Software provider<a class="headerlink" href="#software" title="Anchor link to this section">&para;</a></h2>
-<p>The data within quantms.io is mainly generated from <a href="https://github.com/bigbio/quantms">quantms workflow</a>. However, the format is open and can be used by any software provider that wants to generate the data in this format. The software provider and the version of the software used to generate the data will be stored in the project view <a href="#project">project</a> as:</p>
+<p>The data within QPX is mainly generated from <a href="https://github.com/bigbio/quantms">quantms workflow</a>. However, the format is open and can be used by any software provider that wants to generate the data in this format. The software provider and the version of the software used to generate the data will be stored in the project view <a href="#project">project</a> as:</p>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>&quot;software_provider&quot;: {
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    &quot;name&quot;: &quot;quantms&quot;,
 </span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    &quot;version&quot;: &quot;1.3.0&quot;
 </span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>  }
 </span></code></pre></div>
-<h2 id="project">9. Project quantms.io<a class="headerlink" href="#project" title="Anchor link to this section">&para;</a></h2>
-<p>The project view is the file that stores the metadata of the entire <code>quantms.io</code> project. The project view is a JSON file that contains the following fields:</p>
+<h2 id="project">9. Project QPX<a class="headerlink" href="#project" title="Anchor link to this section">&para;</a></h2>
+<p>The project view is the file that stores the metadata of the entire <code>QPX</code> project. The project view is a JSON file that contains the following fields:</p>
 <h3 id="91-project-fields">9.1. Project fields<a class="headerlink" href="#91-project-fields" title="Anchor link to this section">&para;</a></h3>
 <table>
 <thead>
@@ -1922,8 +1922,8 @@
 <td>list[key/value]</td>
 </tr>
 <tr>
-<td><code>quantmsio_version</code></td>
-<td>Version of the <code>quantms.io</code></td>
+<td><code>qpx_version</code></td>
+<td>Version of the <code>QPX</code></td>
 <td>string</td>
 </tr>
 <tr>
@@ -2081,7 +2081,7 @@
 </span><span id="__span-6-69"><a id="__codelineno-6-69" name="__codelineno-6-69" href="#__codelineno-6-69"></a>    &quot;name&quot;: &quot;quantms&quot;,
 </span><span id="__span-6-70"><a id="__codelineno-6-70" name="__codelineno-6-70" href="#__codelineno-6-70"></a>    &quot;version&quot;: &quot;1.3.0&quot;
 </span><span id="__span-6-71"><a id="__codelineno-6-71" name="__codelineno-6-71" href="#__codelineno-6-71"></a>  },
-</span><span id="__span-6-72"><a id="__codelineno-6-72" name="__codelineno-6-72" href="#__codelineno-6-72"></a>  &quot;quantmsio_version&quot;: &quot;1.0&quot;,
+</span><span id="__span-6-72"><a id="__codelineno-6-72" name="__codelineno-6-72" href="#__codelineno-6-72"></a>  &quot;qpx_version&quot;: &quot;1.0&quot;,
 </span><span id="__span-6-73"><a id="__codelineno-6-73" name="__codelineno-6-73" href="#__codelineno-6-73"></a>  &quot;comments&quot;: []
 </span><span id="__span-6-74"><a id="__codelineno-6-74" name="__codelineno-6-74" href="#__codelineno-6-74"></a>}
 </span></code></pre></div>
@@ -2145,7 +2145,7 @@
 <li><code>project_accession</code>: The project accession in PRIDE Archive</li>
 <li><code>project_title</code>: The project title in PRIDE Archive</li>
 <li><code>project_description</code>: The project description in PRIDE Archive</li>
-<li><code>quantmsio_version</code>: The version of the quantmsio used to generate the file</li>
+<li><code>qpx_version</code>: The version of the qpx used to generate the file</li>
 <li><code>factor_value</code>: The factor values used in the analysis (e.g.<code>tissue</code>)</li>
 </ul>
 <p>Please check also the differential expression example for more information: <a href="#differential">differential</a></p>
@@ -2166,7 +2166,7 @@
 <li>Store metadata information about the project, the workflow and the columns in the file.</li>
 </ul>
 <h3 id="132-format">13.2. Format<a class="headerlink" href="#132-format" title="Anchor link to this section">&para;</a></h3>
-<p>The differential expression format by quantms.io is based on the <a href="https://msstats.org/wp-content/uploads/2017/01/MSstats_v3.7.3_manual.pdf">MSstats</a> output:</p>
+<p>The differential expression format by QPX is based on the <a href="https://msstats.org/wp-content/uploads/2017/01/MSstats_v3.7.3_manual.pdf">MSstats</a> output:</p>
 <ul>
 <li><code>protein</code> -&gt; Protein Accession</li>
 <li><code>label</code> -&gt; Label for the contrast on which the fold changes and p-values are based on</li>
@@ -2226,12 +2226,12 @@
 <li><code>project_accession</code>: The project accession in PRIDE Archive</li>
 <li><code>project_title</code>: The project title in PRIDE Archive</li>
 <li><code>project_description</code>: The project description in PRIDE Archive</li>
-<li><code>quantmsio_version</code>: The version of the quantmsio used to generate the file.</li>
+<li><code>qpx_version</code>: The version of the qpx used to generate the file.</li>
 <li><code>factor_value</code>: The factor values used in the analysis (e.g. <code>phenotype</code>)</li>
 <li><code>adj_pvalue</code>: The FDR threshold used to filter the protein lists (e.g. <code>adj_pvalue &lt; 0.05</code>)</li>
 </ul>
 <h2 id="peptide-views">14. Peptide-based Views: psm, feature and peptide<a class="headerlink" href="#peptide-views" title="Anchor link to this section">&para;</a></h2>
-<p>Multiple peptide-level views are available for the <code>quantms.io</code> format. The views are the following:</p>
+<p>Multiple peptide-level views are available for the <code>QPX</code> format. The views are the following:</p>
 <ul>
 <li>
 <p><a href="#psm">psm</a>: Peptide Spectrum Match (psm) View—The psm view aims to cover detail on Peptide spectrum matches (psm) level for AI/ML training and other use-cases, mainly for DDA analytical methods.</p>
@@ -2539,9 +2539,9 @@
 <p>In quantms we use <code>consensus_support</code> where the value is the number of search engines that support the identification. This field could be added as an additional_score as: <code>consensus_result: 3</code></p>
 <p>The cv_params are stored as a list of key-value pairs, where the key is the name of the parameter, and the value is the value of the parameter. This is similar to the CVParams in the mzIdentML format. Please, be aware that search engine scores should be stored for psms in the column <code>additional_scores</code>.</p>
 <h4 id="psm-file-metadata">Psm file metadata<a class="headerlink" href="#psm-file-metadata" title="Anchor link to this section">&para;</a></h4>
-<p>For parquet psm files, the metadata of the file including quantms.io version and other metadata should be stored in the file. The metadata should be stored in the file as a key/value pair. The metadata should include the following fields:</p>
+<p>For parquet psm files, the metadata of the file including QPX version and other metadata should be stored in the file. The metadata should be stored in the file as a key/value pair. The metadata should include the following fields:</p>
 <ul>
-<li><code>quantmsio_version</code>: The version of the quantms.io format used to generate the file.</li>
+<li><code>qpx_version</code>: The version of the QPX format used to generate the file.</li>
 <li><code>software_provider</code>: The software provider and the version of the software used to generate the data.</li>
 <li><code>project_accession</code>: The project accession in PRIDE Archive if available.</li>
 <li><code>project_title</code>: The project title in PRIDE Archive if available.</li>
@@ -2572,7 +2572,7 @@
 </span><span id="__span-9-16"><a id="__codelineno-9-16" name="__codelineno-9-16" href="#__codelineno-9-16"></a>
 </span><span id="__span-9-17"><a id="__codelineno-9-17" name="__codelineno-9-17" href="#__codelineno-9-17"></a><span class="c1"># Define the custom metadata as key-value pairs</span>
 </span><span id="__span-9-18"><a id="__codelineno-9-18" name="__codelineno-9-18" href="#__codelineno-9-18"></a><span class="n">file_metadata</span> <span class="o">=</span> <span class="p">{</span>
-</span><span id="__span-9-19"><a id="__codelineno-9-19" name="__codelineno-9-19" href="#__codelineno-9-19"></a>    <span class="s1">&#39;quantmsio_version&#39;</span><span class="p">:</span> <span class="s1">&#39;1.0&#39;</span><span class="p">,</span>
+</span><span id="__span-9-19"><a id="__codelineno-9-19" name="__codelineno-9-19" href="#__codelineno-9-19"></a>    <span class="s1">&#39;qpx_version&#39;</span><span class="p">:</span> <span class="s1">&#39;1.0&#39;</span><span class="p">,</span>
 </span><span id="__span-9-20"><a id="__codelineno-9-20" name="__codelineno-9-20" href="#__codelineno-9-20"></a>    <span class="s1">&#39;software_provider&#39;</span><span class="p">:</span> <span class="s1">&#39;QuantMS 1.3.0&#39;</span><span class="p">,</span>
 </span><span id="__span-9-21"><a id="__codelineno-9-21" name="__codelineno-9-21" href="#__codelineno-9-21"></a>    <span class="s1">&#39;project_accession&#39;</span><span class="p">:</span> <span class="s1">&#39;PXD012345&#39;</span><span class="p">,</span>
 </span><span id="__span-9-22"><a id="__codelineno-9-22" name="__codelineno-9-22" href="#__codelineno-9-22"></a>    <span class="s1">&#39;project_title&#39;</span><span class="p">:</span> <span class="s1">&#39;Proteomics of Disease X&#39;</span><span class="p">,</span>
@@ -2609,7 +2609,7 @@
 <p>quantms also release the peptide table for MSstats. The goal of the feature table is to provide a more general peptide table and improve the annotations of the peptides with more columns.</p>
 </blockquote>
 <h4 id="feature-fields">Feature fields<a class="headerlink" href="#feature-fields" title="Anchor link to this section">&para;</a></h4>
-<p>The following table presents the fields needed to describe each feature in quantms.io. Some of the fields are shared with the psm view (<a href="#psm">psm</a>).</p>
+<p>The following table presents the fields needed to describe each feature in QPX. Some of the fields are shared with the psm view (<a href="#psm">psm</a>).</p>
 <table>
 <thead>
 <tr>
@@ -3334,7 +3334,7 @@
                 
                 
               
-              Thanks for your feedback! Help us improve by <a href="https://github.com/bigbio/quantms.io/issues" target="_blank" rel="noopener">opening an issue</a>.
+              Thanks for your feedback! Help us improve by <a href="https://github.com/bigbio/QPX/issues" target="_blank" rel="noopener">opening an issue</a>.
             </div>
           
         </div>
@@ -3426,7 +3426,7 @@
     
     
     
-    <a href="https://github.com/bigbio/quantms.io" target="_blank" rel="noopener" title="GitHub Repository" class="md-social__link">
+    <a href="https://github.com/bigbio/QPX" target="_blank" rel="noopener" title="GitHub Repository" class="md-social__link">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
     </a>
   
@@ -3434,7 +3434,7 @@
     
     
     
-    <a href="https://pypi.org/project/quantmsio/" target="_blank" rel="noopener" title="PyPI Package" class="md-social__link">
+    <a href="https://pypi.org/project/qpx/" target="_blank" rel="noopener" title="PyPI Package" class="md-social__link">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.8 200.5c-7.7-30.9-22.3-54.2-53.4-54.2h-40.1v47.4c0 36.8-31.2 67.8-66.8 67.8H172.7c-29.2 0-53.4 25-53.4 54.3v101.8c0 29 25.2 46 53.4 54.3 33.8 9.9 66.3 11.7 106.8 0 26.9-7.8 53.4-23.5 53.4-54.3v-40.7H226.2v-13.6h160.2c31.1 0 42.6-21.7 53.4-54.2 11.2-33.5 10.7-65.7 0-108.6M286.2 444.7a20.4 20.4 0 1 1 0-40.7 20.4 20.4 0 1 1 0 40.7M167.8 248.1h106.8c29.7 0 53.4-24.5 53.4-54.3V91.9c0-29-24.4-50.7-53.4-55.6-35.8-5.9-74.7-5.6-106.8.1-45.2 8-53.4 24.7-53.4 55.6v40.7h106.9v13.6h-147c-31.1 0-58.3 18.7-66.8 54.2-9.8 40.7-10.2 66.1 0 108.6 7.6 31.6 25.7 54.2 56.8 54.2H101v-48.8c0-35.3 30.5-66.4 66.8-66.4m-6.6-183.4a20.4 20.4 0 1 1 0 40.8 20.4 20.4 0 1 1 0-40.8"/></svg>
     </a>
   
@@ -3442,7 +3442,7 @@
     
     
     
-    <a href="https://github.com/bigbio/quantms.io/issues" target="_blank" rel="noopener" title="Report Issues" class="md-social__link">
+    <a href="https://github.com/bigbio/QPX/issues" target="_blank" rel="noopener" title="Report Issues" class="md-social__link">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M192 96c0-53 43-96 96-96s96 43 96 96v3.6c0 15.7-12.7 28.4-28.4 28.4H220.5c-15.7 0-28.4-12.7-28.4-28.4V96zm345.6 12.8c10.6 14.1 7.7 34.2-6.4 44.8l-97.8 73.3c5.3 8.9 9.3 18.7 11.8 29.1H544c17.7 0 32 14.3 32 32s-14.3 32-32 32h-96v32c0 2.6-.1 5.3-.2 7.9l83.4 62.5c14.1 10.6 17 30.7 6.4 44.8s-30.7 17-44.8 6.4l-63.1-47.3c-23.2 44.2-66.5 76.2-117.7 83.9V280c0-13.3-10.7-24-24-24s-24 10.7-24 24v230.2c-51.2-7.7-94.5-39.7-117.7-83.9l-63.1 47.3c-14.1 10.6-34.2 7.7-44.8-6.4s-7.7-34.2 6.4-44.8l83.4-62.5c-.1-2.6-.2-5.2-.2-7.9v-32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32h98.8c2.5-10.4 6.5-20.2 11.8-29.1l-97.8-73.3c-14.1-10.6-17-30.7-6.4-44.8s30.7-17 44.8-6.4L192 184c12.3-5.1 25.8-8 40-8h112c14.2 0 27.7 2.8 40 8l108.8-81.6c14.1-10.6 34.2-7.7 44.8 6.4"/></svg>
     </a>
   
@@ -3450,7 +3450,7 @@
     
     
     
-    <a href="https://github.com/bigbio/quantms.io/blob/main/README.md" target="_blank" rel="noopener" title="Documentation" class="md-social__link">
+    <a href="https://github.com/bigbio/QPX/blob/main/README.md" target="_blank" rel="noopener" title="Documentation" class="md-social__link">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M384 512H96c-53 0-96-43-96-96V96C0 43 43 0 96 0h304c26.5 0 48 21.5 48 48v288c0 20.9-13.4 38.7-32 45.3V448c17.7 0 32 14.3 32 32s-14.3 32-32 32zM96 384c-17.7 0-32 14.3-32 32s14.3 32 32 32h256v-64zm32-232c0 13.3 10.7 24 24 24h176c13.3 0 24-10.7 24-24s-10.7-24-24-24H152c-13.3 0-24 10.7-24 24m24 72c-13.3 0-24 10.7-24 24s10.7 24 24 24h176c13.3 0 24-10.7 24-24s-10.7-24-24-24z"/></svg>
     </a>
   

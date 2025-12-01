@@ -1,4 +1,4 @@
-= quantms.io tools
+= QPX tools
 :sectnums:
 :toc: left
 :doctype: book
@@ -6,7 +6,7 @@
 :figure-caption: Figure
 :pdf-page-size: A4
 
-quantms.io tools provides a standardized set of commands to generate
+QPX tools provides a standardized set of commands to generate
 different files for your project. It is mainly used to consolidate the
 data of each file and generate a standardized file representation.
 
@@ -37,7 +37,7 @@ P63261
 
 [source,shell]
 ----
-quantmsioc generate-pride-project-json
+qpxc generate-pride-project-json
    --project_accession PXD014414
    --sdrf PXD014414.sdrf.tsv
    --output_folder result
@@ -68,7 +68,7 @@ Example:
 
 [source,shell]
 ----
-quantmsioc convert-de
+qpxc convert-de
    --msstats_file PXD014414.sdrf_openms_design_msstats_in_comparisons.csv
    --sdrf_file PXD014414.sdrf.tsv
    --output_folder result
@@ -101,7 +101,7 @@ Example:
 
 [source,shell]
 ----
-quantmsioc convert-ae
+qpxc convert-ae
    --ibaq_file PXD004452-ibaq.csv
    --sdrf_file PXD014414.sdrf.tsv
    --output_folder result
@@ -132,7 +132,7 @@ Example:
 
 [source,shell]
 ----
-quantmsioc convert-feature
+qpxc convert-feature
    --sdrf_file PXD014414.sdrf.tsv
    --msstats_file PXD014414.sdrf_openms_design_msstats_in.csv
    --mztab_file PXD014414.sdrf_openms_design_openms.mzTab
@@ -157,7 +157,7 @@ Example:
 
 [source,shell]
 ----
-quantmsioc convert-maxquant-feature
+qpxc convert-maxquant-feature
    --evidence_file evidence.txt
    --sdrf_file PXD014414.sdrf.tsv
    --output_folder result
@@ -179,7 +179,7 @@ Example:
 
 [source,shell]
 ----
-quantmsioc convert-diann
+qpxc convert-diann
    --report_path diann_report.tsv
    --qvalue_threshold 0.05
    --mzml_info_folder mzml
@@ -213,7 +213,7 @@ Example:
 
 [source,shell]
 ----
-quantmsioc convert-psm
+qpxc convert-psm
    --mztab_file PXD014414.sdrf_openms_design_openms.mzTab
    --output_folder result
 ----
@@ -233,7 +233,7 @@ Example:
 
 [source,shell]
 ----
-quantmsioc convert-maxquant-psm
+qpxc convert-maxquant-psm
    --msms_file the msms.txt file, this will be used to extract the peptide information
    --output_folder result
 ----
@@ -252,7 +252,7 @@ Example:
 
 [source,shell]
 ----
-quantmsioc convert-idxml
+qpxc convert-idxml
    --idxml_file path/to/file.idXML
    --output_folder result
 ----
@@ -277,7 +277,7 @@ Example:
 
 [source,shell]
 ----
-quantmsioc compare-set-psms
+qpxc compare-set-psms
    -p PXD014414-comet.parquet
    -p PXD014414-sage.parquet
    -p PXD014414-msgf.parquet
@@ -298,7 +298,7 @@ Example:
 
 [source,shell]
 ----
-quantmsioc map-spectrum-message-to-parquet
+qpxc map-spectrum-message-to-parquet
    --parquet_path PXD014414-f4fb88f6-0a45-451d-a8a6-b6d58fb83670.psm.parquet
    --mzml_directory mzmls
    --output_folder result
@@ -320,7 +320,7 @@ Example:
 
 [source,shell]
 ----
-quantmsioc map-gene-msg-to-parquet
+qpxc map-gene-msg-to-parquet
 --parquet_path PXD000672-0beee055-ae78-4d97-b6ac-1f191e91bdd4.featrue.parquet
 --fasta_path Homo-sapiens-uniprot-reviewed-contaminants-decoy-202210.fasta
 --output_folder result
@@ -437,7 +437,7 @@ Example:
 
 [source,shell]
 ----
-quantmsioc attach-file
+qpxc attach-file
    --project_file PXD014414/project.json
    --attach_file PXD014414-943a8f02-0527-4528-b1a3-b96de99ebe75.featrue.parquet
    --category feature_file
@@ -458,7 +458,7 @@ This tool is used for statistics. Example:
 
 [source,shell]
 ----
-quantmsioc project-ae-statistics
+qpxc project-ae-statistics
    --absolute_path PXD010154-51b34353-227f-4d38-a181-6d42824de9f7.absolute.tsv
    --parquet_path PXD010154-51b34353-227f-4d38-a181-6d42824de9f7.featrue.parquet
    --save_path PXD014414.statistic.txt
@@ -466,7 +466,7 @@ quantmsioc project-ae-statistics
 
 [source,shell]
 ----
-quantmsioc parquet-psm-statistics
+qpxc parquet-psm-statistics
    --parquet_path PXD010154-51b34353-227f-4d38-a181-6d42824de9f7.psm.parquet
    --save_path PXD014414.statistic.txt
 ----
@@ -477,7 +477,7 @@ This tool is used for visualization. * plot-psm-peptides
 
 [source,shell]
 ----
-quantmsioc plot plot-psm-peptides
+qpxc plot plot-psm-peptides
    --psm_parquet_path PXD010154-51b34353-227f-4d38-a181-6d42824de9f7.psm.parquet
    --sdrf_path PXD010154.sdrf.tsv
    --save_path PXD014414_psm_peptides.svg
@@ -487,7 +487,7 @@ quantmsioc plot plot-psm-peptides
 
 [source,shell]
 ----
-quantmsioc plot plot-ibaq-distribution
+qpxc plot plot-ibaq-distribution
    --ibaq_path PXD010154-51b34353-227f-4d38-a181-6d42824de9f7.ibaq.tsv
    --select_column IbaqLog
    --save_path PXD014414_psm_peptides.svg
@@ -497,7 +497,7 @@ quantmsioc plot plot-ibaq-distribution
 
 [source,shell]
 ----
-quantmsioc plot plot-kde-intensity-distribution
+qpxc plot plot-kde-intensity-distribution
 --feature_path PXD010154-51b34353-227f-4d38-a181-6d42824de9f7.featrue.parquet
 --num_samples 10
 --save_path PXD014414_psm_peptides.svg
@@ -507,7 +507,7 @@ quantmsioc plot plot-kde-intensity-distribution
 
 [source,shell]
 ----
-quantmsioc plot plot-bar-peptide-distribution
+qpxc plot plot-bar-peptide-distribution
 --feature_path PXD010154-51b34353-227f-4d38-a181-6d42824de9f7.featrue.parquet
 --num_samples 10
 --save_path PXD014414_psm_peptides.svg
@@ -517,8 +517,9 @@ quantmsioc plot plot-bar-peptide-distribution
 
 [source,shell]
 ----
-quantmsioc plot plot-box-intensity-distribution
+qpxc plot plot-box-intensity-distribution
 --feature_path PXD010154-51b34353-227f-4d38-a181-6d42824de9f7.featrue.parquet
 --num_samples 10
 --save_path PXD014414_psm_peptides.svg
 ----
+
