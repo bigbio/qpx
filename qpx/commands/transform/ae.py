@@ -6,7 +6,7 @@ from qpx.utils.file_utils import extract_protein_list
 
 @click.command(
     "ae",
-    short_help="Convert IBAQ absolute file into QPX format",
+    short_help="Convert iBAQ absolute file into QPX format",
 )
 @click.option(
     "--ibaq-file",
