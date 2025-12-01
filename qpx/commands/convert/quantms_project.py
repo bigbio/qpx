@@ -90,7 +90,7 @@ def _initialize_project(
         project_handler = check_directory(str(output_folder_path), project_accession)
         project_handler.populate_from_pride_archive()
         project_handler.populate_from_sdrf(str(sdrf_file))
-        project_handler.add_quantms_version(qpx_version=qpx_version)
+        project_handler.add_qpx_version(qpx_version=qpx_version)
         project_handler.add_software_provider(
             sortware_name="quantms", sortware_version=quantms_version
         )

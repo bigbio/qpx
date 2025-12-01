@@ -969,9 +969,8 @@ class ProjectReportGenerator:
 
         return umap_df
 
-    def _create_ibaq_boxplot(self) -> Optional[str]:
+    def _create_ibaq_boxplot(self, plt, sns) -> Optional[str]:
         """Create FOT normalised iBAQ box plot."""
-        import matplotlib.pyplot as plt
         import base64
         import io
 
@@ -1004,29 +1003,13 @@ class ProjectReportGenerator:
         df_fot = df_fot.drop(columns=["sample_total"])
 
         # Process samples sequentially to avoid memory issues
-        max_box_upper = 0
         data_to_plot = []
 
         for sample in samples:
             sample_data = df_fot[df_fot["sample_accession"] == sample]["fot_intensity"]
             if len(sample_data) > 0:
-                q1 = np.percentile(sample_data, 25)
-                q3 = np.percentile(sample_data, 75)
-                iqr = q3 - q1
-                upper_fence = q3 + 1.5 * iqr
-                max_box_upper = max(max_box_upper, upper_fence)
-
                 filtered_data = sample_data[sample_data <= 1e9]
                 data_to_plot.append(filtered_data)
-
-        x_max = max_box_upper * 1.1
-
-        if x_max < 100:
-            x_max = round(x_max / 10) * 10
-        elif x_max < 1000:
-            x_max = round(x_max / 100) * 100
-        else:
-            x_max = round(x_max / 100) * 100
 
         num_samples = len(samples)
         fig_height = max(8, num_samples * 0.3)
@@ -1408,7 +1391,7 @@ class ProjectReportGenerator:
     </div>
     """
 
-    def _add_parquet_specific_plots(self, plots_html: List[str]) -> None:
+    def _add_parquet_specific_plots(self, plots_html: List[str], plt, sns) -> None:
         """Add plots specific to parquet files."""
         if self.ibaq_file.suffix != ".parquet":
             return
@@ -1419,7 +1402,7 @@ class ProjectReportGenerator:
             else "Project"
         )
 
-        boxplot_html = self._create_ibaq_boxplot()
+        boxplot_html = self._create_ibaq_boxplot(plt, sns)
         if boxplot_html:
             plots_html.append(
                 f"""
@@ -1910,7 +1893,7 @@ class ProjectReportGenerator:
             plots_html.append(sample_dist_html)
 
         # Add parquet-specific plots (ibaq boxplot and dimensionality reduction)
-        self._add_parquet_specific_plots(plots_html)
+        self._add_parquet_specific_plots(plots_html, plt, sns)
 
         self._save_html_report(output_file, plots_html)
 

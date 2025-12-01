@@ -504,7 +504,7 @@ class MaxQuant:
         import shutil
 
         if n_workers is None:
-            n_workers = os.cpu_count() + 1
+            n_workers = (os.cpu_count() or 4) + 1
 
         logger.info(f"Using parallel processing with {n_workers} workers")
 

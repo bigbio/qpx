@@ -147,7 +147,7 @@ class ProjectHandler:
         else:
             logger.info("A non-pride project is being created.")
 
-    def add_quantms_version(self, qpx_version: str) -> None:
+    def add_qpx_version(self, qpx_version: str) -> None:
         self.project.project_info["qpx_version"] = qpx_version
 
     def add_sdrf_project_properties(self, sdrf: SDRFHandler) -> None:

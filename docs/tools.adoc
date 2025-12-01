@@ -445,11 +445,11 @@ qpxc attach-file
 
 * Optional parameter
 
-[source,shell
+[source,shell]
+----
 --is_folder A boolean value that indicates if the file is a folder or not
 --replace_existing Whether to delete old files
---partitions The fields that are used to partition the data in the file. This is used to optimize the data retrieval and filtering of the data. This field is optional.]
-----
+--partitions The fields that are used to partition the data in the file. This is used to optimize the data retrieval and filtering of the data. This field is optional.
 ----
 
 == Statistics

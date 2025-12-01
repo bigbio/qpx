@@ -12,7 +12,7 @@ from qpx.core.idxml import IdXML, merge_idxml_parquet_files
 
 @click.command(
     "convert-idxml",
-    short_help="Convert IdXML to PSM parquet file in quantms io",
+    short_help="Convert IdXML to PSM parquet file in QPX",
 )
 @click.option(
     "--idxml-file",

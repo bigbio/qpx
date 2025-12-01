@@ -73,7 +73,7 @@ def generate_pride_project_json_cmd(
     # Populate the project handler with metadata from PRIDE Archive and SDRF file
     project_handler.populate_from_pride_archive()
     project_handler.populate_from_sdrf(str(sdrf_file))
-    project_handler.add_quantms_version(qpx_version=QPX_VERSION)
+    project_handler.add_qpx_version(qpx_version=QPX_VERSION)
     project_handler.add_software_provider(
         sortware_name=software_name, sortware_version=software_version
     )
