@@ -130,5 +130,5 @@ qpxc stats analyze psm \
 - Each command provides detailed help information using the `--help` parameter
 - See [Format Specification](format-specification.md) for output file formats
 - View the [online format specification](https://io.quantms.org/format-specification/) for detailed schema information
-- Visit the [GitHub Repository](https://github.com/bigbio/QPX) to report issues
+- Visit the [GitHub Repository](https://github.com/bigbio/qpx) to report issues
 

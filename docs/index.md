@@ -2,10 +2,10 @@
 
 A standardized format and toolkit for mass spectrometry proteomics data
 
-[![Python application](https://github.com/bigbio/QPX/actions/workflows/python-app.yml/badge.svg?branch=dev)](https://github.com/bigbio/QPX/actions/workflows/python-app.yml)
-[![Upload Python Package](https://github.com/bigbio/QPX/actions/workflows/python-publish.yml/badge.svg)](https://github.com/bigbio/QPX/actions/workflows/python-publish.yml)
+[![Python application](https://github.com/bigbio/qpx/actions/workflows/python-app.yml/badge.svg?branch=dev)](https://github.com/bigbio/qpx/actions/workflows/python-app.yml)
+[![Upload Python Package](https://github.com/bigbio/qpx/actions/workflows/python-publish.yml/badge.svg)](https://github.com/bigbio/qpx/actions/workflows/python-publish.yml)
 [![PyPI version](https://badge.fury.io/py/qpx.svg)](https://badge.fury.io/py/qpx)
-[![Codacy Badge](https://app.codacy.com/project/badge/Grade/e71a662e8d4f483094576c1d8f8888c3)](https://app.codacy.com/gh/bigbio/QPX/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
+[![Codacy Badge](https://app.codacy.com/project/badge/Grade/e71a662e8d4f483094576c1d8f8888c3)](https://app.codacy.com/gh/bigbio/qpx/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
 
 ---
 

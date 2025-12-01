@@ -96,11 +96,11 @@ echo "QC report generated: $QC_DIR/index.html"
 
 - **[CLI Reference](cli-reference.md)** - Complete command documentation
 - **[Format Specification](format-specification.md)** - Data format details
-- **[GitHub Repository](https://github.com/bigbio/QPX)** - Source code and more examples
+- **[GitHub Repository](https://github.com/bigbio/qpx)** - Source code and more examples
 
 ---
 
-**Need more examples?** Check the [`tests/examples/`](https://github.com/bigbio/QPX/tree/main/tests/examples) directory in the repository for real data files you can use for testing.
+**Need more examples?** Check the [`tests/examples/`](https://github.com/bigbio/qpx/tree/main/tests/examples) directory in the repository for real data files you can use for testing.
 
 [← Back to Examples Overview](examples-overview.md)
 

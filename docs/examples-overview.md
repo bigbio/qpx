@@ -38,5 +38,5 @@ Generate comprehensive QC reports:
 
 ---
 
-**Need more examples?** Check the [`tests/examples/`](https://github.com/bigbio/QPX/tree/main/tests/examples) directory in the repository for real data files you can use for testing.
+**Need more examples?** Check the [`tests/examples/`](https://github.com/bigbio/qpx/tree/main/tests/examples) directory in the repository for real data files you can use for testing.
 

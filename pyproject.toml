@@ -6,7 +6,7 @@ description = "Convert multiple files into QPX format"
 authors = ["BigBio Team <ypriverol@gmail.com>"]
 license = "Apache-2.0"
 readme = "README.md"
-repository = "https://github.com/bigbio/QPX"
+repository = "https://github.com/bigbio/qpx"
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: Apache Software License",

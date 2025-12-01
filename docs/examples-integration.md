@@ -34,7 +34,7 @@ nextflow run nf-mq-psm.nf \
     -profile docker
 ```
 
-**Full pipeline source**: [nextflow/nf-mq-psm/](https://github.com/bigbio/QPX/tree/main/nextflow/nf-mq-psm)
+**Full pipeline source**: [nextflow/nf-mq-psm/](https://github.com/bigbio/qpx/tree/main/nextflow/nf-mq-psm)
 
 ## Python API Usage
 

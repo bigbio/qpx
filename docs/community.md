@@ -3,15 +3,15 @@
 ## Get Help
 
 - **Documentation**: Browse the complete documentation on this site
-- **GitHub Issues**: [Report bugs or request features](https://github.com/bigbio/QPX/issues)
+- **GitHub Issues**: [Report bugs or request features](https://github.com/bigbio/qpx/issues)
 
 ## Contributing
 
 We welcome contributions! Here's how you can help:
 
-1. **Report bugs**: [Open an issue](https://github.com/bigbio/QPX/issues) with details
-2. **Suggest features**: [Propose new capabilities](https://github.com/bigbio/QPX/issues)
-3. **Submit code**: Fork the repository, develop, and [create a pull request](https://github.com/bigbio/QPX/pulls)
+1. **Report bugs**: [Open an issue](https://github.com/bigbio/qpx/issues) with details
+2. **Suggest features**: [Propose new capabilities](https://github.com/bigbio/qpx/issues)
+3. **Submit code**: Fork the repository, develop, and [create a pull request](https://github.com/bigbio/qpx/pulls)
 4. **Improve docs**: Help make documentation clearer by submitting PRs
 
 ## Core Contributors
@@ -32,7 +32,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 ```
 
-For the full license text, see the [LICENSE file](https://github.com/bigbio/QPX/blob/main/LICENSE) in the repository.
+For the full license text, see the [LICENSE file](https://github.com/bigbio/qpx/blob/main/LICENSE) in the repository.
 
 ---
 

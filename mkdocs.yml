@@ -5,8 +5,8 @@ site_author: BigBio Team
 # Documentation URLs:
 site_url: https://bigbio.github.io/QPX/package/
 
-repo_name: bigbio/QPX
-repo_url: https://github.com/bigbio/QPX
+repo_name: bigbio/qpx
+repo_url: https://github.com/bigbio/qpx
 # dev_addr: 127.0.0.1:8000
 
 theme:
@@ -131,16 +131,16 @@ nav:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/bigbio/QPX
+      link: https://github.com/bigbio/qpx
       name: GitHub Repository
     - icon: fontawesome/brands/python
       link: https://pypi.org/project/qpx/
       name: PyPI Package
     - icon: fontawesome/solid/bug
-      link: https://github.com/bigbio/QPX/issues
+      link: https://github.com/bigbio/qpx/issues
       name: Report Issues
     - icon: fontawesome/solid/book
-      link: https://github.com/bigbio/QPX/blob/main/README.md
+      link: https://github.com/bigbio/qpx/blob/main/README.md
       name: Documentation
   analytics:
     feedback:
@@ -156,6 +156,6 @@ extra:
           data: 0
           note: >-
             Thanks for your feedback! Help us improve by
-            <a href="https://github.com/bigbio/QPX/issues" target="_blank" rel="noopener">opening an issue</a>.
+            <a href="https://github.com/bigbio/qpx/issues" target="_blank" rel="noopener">opening an issue</a>.
 
 copyright: Copyright &copy; 2024 BigBio Team

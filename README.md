@@ -1,9 +1,9 @@
 # QPX
 
-[![Python application](https://github.com/bigbio/QPX/actions/workflows/python-app.yml/badge.svg?branch=dev)](https://github.com/bigbio/QPX/actions/workflows/python-app.yml)
-[![Upload Python Package](https://github.com/bigbio/QPX/actions/workflows/python-publish.yml/badge.svg)](https://github.com/bigbio/QPX/actions/workflows/python-publish.yml)
-[![Codacy Badge](https://app.codacy.com/project/badge/Grade/e71a662e8d4f483094576c1d8f8888c3)](https://app.codacy.com/gh/bigbio/QPX/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
-[![Codacy Badge](https://app.codacy.com/project/badge/Coverage/e71a662e8d4f483094576c1d8f8888c3)](https://app.codacy.com/gh/bigbio/QPX/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_Coverage)
+[![Python application](https://github.com/bigbio/qpx/actions/workflows/python-app.yml/badge.svg?branch=dev)](https://github.com/bigbio/qpx/actions/workflows/python-app.yml)
+[![Upload Python Package](https://github.com/bigbio/qpx/actions/workflows/python-publish.yml/badge.svg)](https://github.com/bigbio/qpx/actions/workflows/python-publish.yml)
+[![Codacy Badge](https://app.codacy.com/project/badge/Grade/e71a662e8d4f483094576c1d8f8888c3)](https://app.codacy.com/gh/bigbio/qpx/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
+[![Codacy Badge](https://app.codacy.com/project/badge/Coverage/e71a662e8d4f483094576c1d8f8888c3)](https://app.codacy.com/gh/bigbio/qpx/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_Coverage)
 [![PyPI version](https://badge.fury.io/py/qpx.svg)](https://badge.fury.io/py/qpx)
 
 A Python package for working with mass spectrometry data in the QPX format.
@@ -30,8 +30,8 @@ pip install qpx
 ```bash
 # Fork the repository on GitHub
 # Clone the repository
-git clone https://github.com/your-username/QPX.git
-cd QPX
+git clone https://github.com/your-username/qpx.git
+cd qpx
 
 # Install the package locally
 pip install .

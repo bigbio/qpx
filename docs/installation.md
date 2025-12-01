@@ -9,8 +9,8 @@ pip install qpx
 ## From Source
 
 ```bash
-git clone https://github.com/bigbio/QPX.git
-cd QPX
+git clone https://github.com/bigbio/qpx.git
+cd qpx
 pip install .
 ```
 
@@ -20,11 +20,11 @@ For contributing to the project:
 
 ```bash
 # 1. Fork the repository on GitHub
-# Visit https://github.com/bigbio/QPX and click "Fork"
+# Visit https://github.com/bigbio/qpx and click "Fork"
 
 # 2. Clone your fork
-git clone https://github.com/YOUR-USERNAME/QPX
-cd QPX
+git clone https://github.com/YOUR-USERNAME/qpx
+cd qpx
 
 # 3. Install dependencies
 # Using Poetry (recommended)
