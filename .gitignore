@@ -31,6 +31,7 @@ test_output*/
 output*/
 results*/
 *.parquet
+.hypothesis/
 
 # Log files
 *.log
@@ -78,3 +79,6 @@ site/
 
 # Big examples data
 tissues/
+
+# Kiro
+.kiro/

@@ -316,6 +316,12 @@ def convert_maxquant_feature_cmd(
     default=None,
     type=float,
 )
+@click.option(
+    "--standardized-intensities",
+    help="Calculate standardized intensity metrics (total_all_peptides_intensity and top3_intensity)",
+    is_flag=True,
+    default=False,
+)
 @click.option("--verbose", help="Enable verbose logging", is_flag=True)
 def convert_maxquant_pg_cmd(
     protein_groups_file: Path,
@@ -326,6 +332,7 @@ def convert_maxquant_pg_cmd(
     output_prefix: Optional[str],
     n_workers: Optional[int] = None,
     memory_limit: Optional[float] = None,
+    standardized_intensities: bool = False,
     verbose: bool = False,
 ):
     """
@@ -338,7 +345,8 @@ def convert_maxquant_pg_cmd(
             --evidence-file evidence.txt \\
             --output-folder ./output \\
             --n-workers 8 \\
-            --memory-limit 16
+            --memory-limit 16 \\
+            --standardized-intensities
     """
     logger = get_logger("qpx.commands.maxquant")
     if verbose:
@@ -371,6 +379,12 @@ def convert_maxquant_pg_cmd(
             f"Starting conversion (batch size: {batch_size:,}, workers: {workers_msg})..."
         )
 
+        if standardized_intensities:
+            logger.info(
+                "Standardized intensities enabled: will calculate "
+                "total_all_peptides_intensity and top3_intensity"
+            )
+
         processor.process_pg_file(
             protein_groups_path=str(protein_groups_file),
             output_path=str(output_path),
@@ -378,6 +392,7 @@ def convert_maxquant_pg_cmd(
             evidence_path=str(evidence_file),
             chunksize=batch_size,
             n_workers=n_workers,
+            calculate_standardized_intensities=standardized_intensities,
         )
         logger.info(f"Protein groups file successfully saved to: {output_path}")
 

@@ -1,7 +1,6 @@
 """Test metadata schema generator."""
 
 import shutil
-import tempfile
 from pathlib import Path
 
 import pytest

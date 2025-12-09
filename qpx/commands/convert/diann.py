@@ -103,6 +103,7 @@ def convert_diann_pg(
     duckdb_max_memory: Optional[str] = None,
     duckdb_threads: Optional[int] = None,
     batch_size: int = 100,
+    standardized_intensities: bool = False,
     verbose: bool = False,
 ) -> None:
     """
@@ -117,6 +118,8 @@ def convert_diann_pg(
         duckdb_max_memory: Optional maximum memory for DuckDB (e.g., "4GB")
         duckdb_threads: Optional number of threads for DuckDB
         file_num: Number of files to process simultaneously (default: 100)
+        standardized_intensities: Calculate total_all_peptides_intensity and
+            top3_intensity (default: False)
         verbose: Enable verbose logging
     """
     logger = get_logger("qpx.commands.diann")
@@ -135,6 +138,12 @@ def convert_diann_pg(
         filename = create_uuid_filename(prefix, ".pg.parquet")
         pg_output_path = output_folder / filename
 
+        if standardized_intensities:
+            logger.info(
+                "Standardized intensities enabled: will calculate "
+                "total_all_peptides_intensity and top3_intensity"
+            )
+
         dia_nn = DiaNNConvert(
             diann_report=report_path,
             pg_matrix_path=pg_matrix_path,
@@ -144,7 +153,9 @@ def convert_diann_pg(
         )
 
         dia_nn.write_pg_matrix_to_file(
-            output_path=str(pg_output_path), file_num=batch_size
+            output_path=str(pg_output_path),
+            file_num=batch_size,
+            calculate_standardized_intensities=standardized_intensities,
         )
 
     except Exception as e:
@@ -259,6 +270,12 @@ def convert_diann_cmd(**kwargs):
     default=100,
     type=int,
 )
+@click.option(
+    "--standardized-intensities",
+    help="Calculate standardized intensity metrics (total_all_peptides_intensity and top3_intensity)",
+    is_flag=True,
+    default=False,
+)
 @click.option("--verbose", help="Enable verbose logging", is_flag=True)
 def convert_diann_pg_cmd(**kwargs):
     """
@@ -272,6 +289,7 @@ def convert_diann_pg_cmd(**kwargs):
             --report-path report.tsv \\
             --pg-matrix-path report.pg_matrix.tsv \\
             --sdrf-path data.sdrf.tsv \\
-            --output-folder ./output
+            --output-folder ./output \\
+            --standardized-intensities
     """
     convert_diann_pg(**kwargs)

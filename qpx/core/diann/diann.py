@@ -33,10 +33,17 @@ from qpx.utils.file_utils import (
     save_slice_file,
     ParquetBatchWriter,
 )
+from qpx.utils.intensity_utils import (
+    calculate_total_all_peptides_intensity,
+    calculate_top3_intensity,
+    calculate_top3_peptide_intensity,
+)
 from qpx.utils.pride_utils import generate_scan_number
 
 DIANN_SQL = ", ".join([f'"{name}"' for name in DIANN_USECOLS])
-DIANN_PG_SQL = ", ".join([f'"{name}"' for name in DIANN_PG_USECOLS])
+DIANN_PG_SQL = ", ".join(
+    [f'"{name}"' for name in DIANN_PG_USECOLS] + ['"Precursor.Quantity"']
+)
 
 
 class DiaNNConvert(DiannDuckDB):
@@ -133,7 +140,60 @@ class DiaNNConvert(DiannDuckDB):
                 peptide_count[protein] += 1
         return peptide_count
 
-    def generate_pg_matrix(self, report):
+    def _aggregate_peptide_intensities_by_pg(
+        self, report: pd.DataFrame
+    ) -> pd.DataFrame:
+        """
+        Aggregate peptide intensities by protein group and RAW file.
+
+        Groups peptides by pg_accessions and reference_file_name, then calculates
+        total_all_peptides_intensity and top3_intensity using the shared utility functions.
+
+        Args:
+            report: DataFrame containing peptide-level data with columns:
+                - pg_accessions: Protein group accessions
+                - reference_file_name: RAW file name
+                - intensity: Peptide intensity (mapped from Precursor.Quantity)
+
+        Returns:
+            DataFrame with aggregated intensities containing columns:
+                - pg_accessions
+                - reference_file_name
+                - total_all_peptides_intensity
+                - top3_intensity
+        """
+        grouped = (
+            report.groupby(["pg_accessions", "reference_file_name"])["intensity"]
+            .apply(list)
+            .reset_index()
+        )
+        grouped.columns = [
+            "pg_accessions",
+            "reference_file_name",
+            "peptide_intensities",
+        ]
+
+        grouped["total_all_peptides_intensity"] = grouped["peptide_intensities"].apply(
+            calculate_total_all_peptides_intensity
+        )
+        grouped["top3_intensity"] = grouped["peptide_intensities"].apply(
+            calculate_top3_intensity
+        )
+
+        grouped.drop(columns=["peptide_intensities"], inplace=True)
+
+        return grouped
+
+    def generate_pg_matrix(
+        self, report, calculate_standardized_intensities: bool = False
+    ):
+        """Generate protein group matrix from report data.
+
+        Args:
+            report: Report DataFrame
+            calculate_standardized_intensities: Whether to include
+                total_all_peptides_intensity and top3_intensity (default: False)
+        """
         peptide_count = self.get_peptide_count(report)
         report.drop_duplicates(subset=["pg_accessions"], inplace=True)
         report["gg_accessions"] = report["gg_accessions"].str.split(";")
@@ -150,7 +210,6 @@ class DiaNNConvert(DiannDuckDB):
         )
         report.loc[:, "is_decoy"] = 0
 
-        # Add peptide and feature counts
         report.loc[:, "peptide_counts"] = report[
             ["unique_sequences", "total_sequences"]
         ].apply(
@@ -185,9 +244,6 @@ class DiaNNConvert(DiannDuckDB):
             axis=1,
         )
 
-        # Create intensities array (mapped from report.pg_matrix.tsv)
-        #   Here, 'pg_quantity' actually refers to the intensities of each protein group
-        #   in 'report.pg_matrix.tsv' corresponding to each RAW file.
         report.loc[:, "intensities"] = report[
             ["reference_file_name", "pg_quantity"]
         ].apply(
@@ -201,20 +257,51 @@ class DiaNNConvert(DiannDuckDB):
             axis=1,
         )
 
-        # Create additional_intensities array with proper structure
-        report.loc[:, "additional_intensities"] = report[
-            ["reference_file_name", "lfq"]
-        ].apply(
-            lambda rows: [
+        def build_additional_intensities(row):
+            sample_accession = self._sample_map[row["reference_file_name"]]
+            intensities_list = [
+                {"intensity_name": "lfq", "intensity_value": row["lfq"]},
+            ]
+            if calculate_standardized_intensities:
+                if "total_all_peptides_intensity" in row.index:
+                    value = row["total_all_peptides_intensity"]
+                    intensities_list.append(
+                        {
+                            "intensity_name": "total_all_peptides_intensity",
+                            "intensity_value": (
+                                float("nan") if pd.isna(value) else value
+                            ),
+                        }
+                    )
+                if "top3_intensity" in row.index:
+                    value = row["top3_intensity"]
+                    intensities_list.append(
+                        {
+                            "intensity_name": "top3_intensity",
+                            "intensity_value": (
+                                float("nan") if pd.isna(value) else value
+                            ),
+                        }
+                    )
+            return [
                 {
-                    "sample_accession": self._sample_map[rows["reference_file_name"]],
+                    "sample_accession": sample_accession,
                     "channel": "LFQ",
-                    "intensities": [
-                        {"intensity_name": "lfq", "intensity_value": rows["lfq"]},
-                    ],
+                    "intensities": intensities_list,
                 }
-            ],
-            axis=1,
+            ]
+
+        additional_cols = ["reference_file_name", "lfq"]
+        if (
+            calculate_standardized_intensities
+            and "total_all_peptides_intensity" in report.columns
+        ):
+            additional_cols.append("total_all_peptides_intensity")
+        if calculate_standardized_intensities and "top3_intensity" in report.columns:
+            additional_cols.append("top3_intensity")
+
+        report.loc[:, "additional_intensities"] = report[additional_cols].apply(
+            build_additional_intensities, axis=1
         )
 
         report.loc[:, "additional_scores"] = report["qvalue"].apply(
@@ -223,26 +310,37 @@ class DiaNNConvert(DiannDuckDB):
         report.loc[:, "contaminant"] = None
         report.loc[:, "anchor_protein"] = None
 
-        # Drop the raw count columns since we've transformed them
         report.drop(
-            columns=["unique_sequences", "total_features"],
+            columns=[
+                "unique_sequences",
+                "total_features",
+                "total_all_peptides_intensity",
+                "top3_intensity",
+            ],
             inplace=True,
             errors="ignore",
         )
 
         return report
 
-    def get_report_pg_matrix(self, report, pg_matrix, ref_name):
+    def get_report_pg_matrix(
+        self,
+        report,
+        pg_matrix,
+        ref_name,
+        calculate_standardized_intensities: bool = False,
+    ):
+        """Get report data merged with PG matrix for a specific reference file.
 
+        Args:
+            report: Report DataFrame
+            pg_matrix: PG matrix DataFrame
+            ref_name: Reference file name
+            calculate_standardized_intensities: Whether to calculate
+                total_all_peptides_intensity and top3_intensity (default: False)
+        """
         report_df = report[report["reference_file_name"] == ref_name].copy()
 
-        # 1. Count 'peptide_counts' (including unique sequences and total sequences)
-        #       Peptide sequence counts for this protein group in this specific file.
-        #       Contains unique sequences (specific to this protein group) and total sequences.
-        # 2. Count 'feature_counts' (including unique features and total features)
-        #       Peptide feature counts (peptide charge combinations) for this protein
-        #       group in this specific file.
-        #       Contains unique features (specific to this protein group) and total features.
         agg_df = (
             report_df.groupby(
                 ["pg_accessions", "pg_names", "gg_accessions", "reference_file_name"]
@@ -262,9 +360,57 @@ class DiaNNConvert(DiannDuckDB):
             .reset_index()
         )
 
+        if calculate_standardized_intensities and "intensity" in report_df.columns:
+            intensity_agg = (
+                report_df.groupby(
+                    [
+                        "pg_accessions",
+                        "pg_names",
+                        "gg_accessions",
+                        "reference_file_name",
+                    ]
+                )
+                .agg(
+                    peptide_intensities=("intensity", list),
+                    peptide_sequences=("stripped_sequence", list),
+                )
+                .reset_index()
+            )
+
+            intensity_agg["total_all_peptides_intensity"] = intensity_agg[
+                "peptide_intensities"
+            ].apply(calculate_total_all_peptides_intensity)
+
+            intensity_agg["top3_intensity"] = intensity_agg.apply(
+                lambda row: calculate_top3_peptide_intensity(
+                    row["peptide_sequences"], row["peptide_intensities"]
+                ),
+                axis=1,
+            )
+            intensity_agg.drop(
+                columns=["peptide_intensities", "peptide_sequences"], inplace=True
+            )
+
+            agg_df = pd.merge(
+                agg_df,
+                intensity_agg,
+                on=[
+                    "pg_accessions",
+                    "pg_names",
+                    "gg_accessions",
+                    "reference_file_name",
+                ],
+                how="left",
+            )
+
         report_df.drop(
-            columns=["stripped_sequence", "proteotypic", "precursor_id"], inplace=True
+            columns=["stripped_sequence", "proteotypic", "precursor_id"],
+            inplace=True,
+            errors="ignore",
         )
+        if "intensity" in report_df.columns:
+            report_df.drop(columns=["intensity"], inplace=True, errors="ignore")
+
         report_df = pd.merge(
             report_df,
             agg_df,
@@ -513,7 +659,20 @@ class DiaNNConvert(DiannDuckDB):
 
         return pg_matrix
 
-    def write_pg_matrix_to_file(self, output_path: str, file_num=20):
+    def write_pg_matrix_to_file(
+        self,
+        output_path: str,
+        file_num=20,
+        calculate_standardized_intensities: bool = False,
+    ):
+        """Write protein group matrix to parquet file.
+
+        Args:
+            output_path: Output parquet file path
+            file_num: Number of files to process simultaneously (default: 20)
+            calculate_standardized_intensities: Whether to calculate
+                total_all_peptides_intensity and top3_intensity (default: False)
+        """
         info_list = self.get_unique_references("Run")
         info_list = [
             info_list[i : i + file_num] for i in range(0, len(info_list), file_num)
@@ -522,10 +681,20 @@ class DiaNNConvert(DiannDuckDB):
         for refs in info_list:
             report = self.get_report_from_database(refs, DIANN_PG_SQL)
             report.rename(columns=DIANN_PG_MAP, inplace=True)
+            if "Precursor.Quantity" in report.columns:
+                report.rename(columns={"Precursor.Quantity": "intensity"}, inplace=True)
             report.dropna(subset=["pg_accessions"], inplace=True)
             for ref in refs:
-                df = self.get_report_pg_matrix(report, self.pg_matrix, ref)
-                df = self.generate_pg_matrix(df)
+                df = self.get_report_pg_matrix(
+                    report,
+                    self.pg_matrix,
+                    ref,
+                    calculate_standardized_intensities=calculate_standardized_intensities,
+                )
+                df = self.generate_pg_matrix(
+                    df,
+                    calculate_standardized_intensities=calculate_standardized_intensities,
+                )
                 pg_parquet = pa.Table.from_pandas(df, schema=PG_SCHEMA)
                 if not pqwriter:
                     pqwriter = pq.ParquetWriter(output_path, pg_parquet.schema)
@@ -545,9 +714,6 @@ class DiaNNConvert(DiannDuckDB):
         protein_list = extract_protein_list(protein_file) if protein_file else None
         protein_str = "|".join(protein_list) if protein_list else None
 
-        # Use the new generic batch writer
-        # Note: The schema for features is not explicitly defined here,
-        # so we will infer it from the first batch.
         batch_writer = None
 
         try:
@@ -556,7 +722,6 @@ class DiaNNConvert(DiannDuckDB):
             ):
                 if not feature_df.empty:
                     if batch_writer is None:
-                        # Infer schema from the first non-empty DataFrame
                         feature_schema = pa.Schema.from_pandas(feature_df)
                         batch_writer = ParquetBatchWriter(output_path, feature_schema)
 

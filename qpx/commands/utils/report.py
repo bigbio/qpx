@@ -104,7 +104,7 @@ def _detect_available_columns(
     except Exception as e:
         logger.warning(f"Could not read columns from {input_file}: {e}")
         logger.warning("Falling back to generating all possible columns")
-        return None
+        return set()
 
 
 @click.group(name="report", context_settings=CONTEXT_SETTINGS)
@@ -239,6 +239,7 @@ def generate_report_cmd(
 )
 @click.option(
     "--input",
+    "input_path",
     required=True,
     type=click.Path(exists=True, path_type=Path),
     help="Input file or folder path (folder mode auto-detects MaxQuant output files)",
@@ -261,7 +262,7 @@ def generate_report_cmd(
 )
 def generate_metadata_cmd(
     workflow: str,
-    input: Path,
+    input_path: Path,
     output: Path,
     model: Optional[str] = None,
     verbose: bool = False,
@@ -292,12 +293,12 @@ def generate_metadata_cmd(
         output.parent.mkdir(parents=True, exist_ok=True)
         logger.info(f"Using output file: {output}")
 
-        input_path = Path(input)
+        input_path = Path(input_path)
         file_map = _detect_workflow_files(input_path, workflow, logger)
 
         if not file_map:
             raise click.UsageError(
-                f"No workflow files found in: {input}. "
+                f"No workflow files found in: {input_path}. "
                 "For MaxQuant, expected files: msms.txt, evidence.txt, proteinGroups.txt"
             )
 
@@ -321,6 +322,8 @@ def generate_metadata_cmd(
             logger.info(f"Processing {model_type.upper()} from: {file_path.name}")
 
             available_columns = _detect_available_columns(file_path, workflow, logger)
+            if available_columns is None:
+                available_columns = set()
             logger.info(f"  Detected {len(available_columns)} columns")
 
             generator._reset_mappings()

@@ -7,6 +7,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 import pyarrow.parquet as pq
+from hypothesis import given, settings, strategies as st
 
 from qpx.core.maxquant.maxquant import (
     MaxQuant,
@@ -737,3 +738,173 @@ def test_memory_limit_default():
     assert abs(processor.memory_limit_gb - expected_memory) < 1.0
 
     print("Default memory limit test passed!")
+
+
+class TestStandardizedIntensityFields:
+    """Property-based tests for standardized intensity fields in MaxQuant output."""
+
+    @pytest.fixture(scope="class")
+    def test_data(self):
+        """Validate that all required test files exist."""
+        missing_files = []
+        for name, path in TEST_FILES.items():
+            if not path.exists():
+                missing_files.append(f"{name}: {path}")
+
+        if missing_files:
+            pytest.skip(f"Missing test files: {', '.join(missing_files)}")
+
+        return TEST_FILES
+
+    @staticmethod
+    def _to_list(data):
+        """Convert data to list, handling various array-like types."""
+        if hasattr(data, "to_pylist"):
+            return data.to_pylist()
+        if hasattr(data, "tolist"):
+            return data.tolist()
+        return data
+
+    @staticmethod
+    def _extract_intensity_names(additional_intensities):
+        """Extract all intensity names from additional_intensities entries."""
+        intensity_names = set()
+        for entry in additional_intensities:
+            if "intensities" not in entry:
+                continue
+            intensities = TestStandardizedIntensityFields._to_list(entry["intensities"])
+            for item in intensities:
+                if "intensity_name" in item:
+                    intensity_names.add(item["intensity_name"])
+        return intensity_names
+
+    @staticmethod
+    def _check_test_files_exist():
+        """Check if all test files exist, skip test if any are missing."""
+        missing = [
+            f"{name}: {path}" for name, path in TEST_FILES.items() if not path.exists()
+        ]
+        if missing:
+            pytest.skip(f"Missing test files: {', '.join(missing)}")
+
+    @settings(max_examples=100, deadline=None)
+    @given(num_rows=st.integers(min_value=1, max_value=5))
+    def test_property_standardized_fields_present_in_output(self, num_rows):
+        """
+        Property 4: For any processed PG data, additional_intensities should contain
+        entries with intensity_name "total_all_peptides_intensity" and "top3_intensity".
+
+        This property verifies that the standardized field names are consistently used
+        across all MaxQuant PG processing outputs.
+        """
+        self._check_test_files_exist()
+
+        pg_df = read_protein_groups(str(TEST_FILES["protein_groups"]))
+        pg_df_subset = pg_df.head(num_rows).copy()
+
+        if pg_df_subset.empty:
+            pytest.skip("No protein groups data available")
+
+        processor = MaxQuant()
+        table = processor.process_protein_groups_to_pg_table(
+            pg_df_subset,
+            sdrf_path=str(TEST_FILES["sdrf"]),
+            evidence_path=str(TEST_FILES["evidence"]),
+        )
+        result_df = table.to_pandas()
+
+        assert (
+            "additional_intensities" in result_df.columns
+        ), "additional_intensities column should be present in output"
+
+        self._verify_standardized_fields_in_rows(result_df)
+
+    def _verify_standardized_fields_in_rows(self, result_df):
+        """Verify standardized intensity fields are present in each row."""
+        for idx, row in result_df.iterrows():
+            additional_intensities = row["additional_intensities"]
+
+            # Handle None, empty list, or empty array cases safely
+            if additional_intensities is None:
+                continue
+            additional_intensities = self._to_list(additional_intensities)
+            if len(additional_intensities) == 0:
+                continue
+
+            intensity_names = self._extract_intensity_names(additional_intensities)
+
+            self._assert_paired_intensity_fields(idx, intensity_names)
+
+    @staticmethod
+    def _assert_paired_intensity_fields(idx, intensity_names):
+        """Assert that total_all_peptides_intensity and top3_intensity appear together."""
+        has_total = "total_all_peptides_intensity" in intensity_names
+        has_top3 = "top3_intensity" in intensity_names
+
+        if has_total and not has_top3:
+            pytest.fail(
+                f"Row {idx}: If total_all_peptides_intensity is present, top3_intensity should also be present"
+            )
+        if has_top3 and not has_total:
+            pytest.fail(
+                f"Row {idx}: If top3_intensity is present, total_all_peptides_intensity should also be present"
+            )
+
+    def test_standardized_fields_have_correct_structure(self, test_data):
+        """
+        Verify that standardized intensity entries have the correct structure
+        with sample_accession, channel, and intensities array.
+        """
+        if test_data is None:
+            pytest.skip("Test data not available")
+
+        processor = MaxQuant()
+
+        # Read and process a small subset of protein groups
+        pg_df = read_protein_groups(str(test_data["protein_groups"]))
+        pg_df_subset = pg_df.head(3).copy()
+
+        table = processor.process_protein_groups_to_pg_table(
+            pg_df_subset,
+            sdrf_path=str(test_data["sdrf"]),
+            evidence_path=str(test_data["evidence"]),
+        )
+        result_df = table.to_pandas()
+
+        # Check structure of additional_intensities entries
+        for idx, row in result_df.iterrows():
+            additional_intensities = row["additional_intensities"]
+
+            if additional_intensities is None or len(additional_intensities) == 0:
+                continue
+
+            # Convert to list if needed
+            if hasattr(additional_intensities, "to_pylist"):
+                additional_intensities = additional_intensities.to_pylist()
+            elif hasattr(additional_intensities, "tolist"):
+                additional_intensities = additional_intensities.tolist()
+
+            for entry in additional_intensities:
+                # Verify required fields in each entry
+                assert (
+                    "sample_accession" in entry
+                ), f"Row {idx}: Entry should have sample_accession"
+                assert "channel" in entry, f"Row {idx}: Entry should have channel"
+                assert (
+                    "intensities" in entry
+                ), f"Row {idx}: Entry should have intensities array"
+
+                # Verify intensities array structure
+                intensities = entry["intensities"]
+                if hasattr(intensities, "to_pylist"):
+                    intensities = intensities.to_pylist()
+                elif hasattr(intensities, "tolist"):
+                    intensities = intensities.tolist()
+
+                for intensity_item in intensities:
+                    assert (
+                        "intensity_name" in intensity_item
+                    ), f"Row {idx}: Intensity item should have intensity_name"
+                    assert (
+                        "intensity_value" in intensity_item
+                    ), f"Row {idx}: Intensity item should have intensity_value"

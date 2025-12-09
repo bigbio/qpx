@@ -41,6 +41,7 @@ class MetadataSchemaGenerator:
     def __init__(self):
         self.metadata_records: List[Dict[str, str]] = []
         self.ontology_mapping = self._load_ontology_mapping()
+        self.available_columns = None
 
     def add_column_metadata(
         self,

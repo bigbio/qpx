@@ -23,6 +23,10 @@ from qpx.core.common import (
 )
 from qpx.core.sdrf import SDRFHandler
 from qpx.utils.file_utils import ParquetBatchWriter
+from qpx.utils.intensity_utils import (
+    calculate_total_all_peptides_intensity,
+    calculate_top3_peptide_intensity,
+)
 
 logging.basicConfig(format="%(asctime)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -138,12 +142,19 @@ def _process_feature_chunk_worker(args, sdrf_path=None, protein_file=None):
     )
 
 
-def _process_pg_chunk_worker(args, sdrf_path=None, evidence_mapping_file=None):
+def _process_pg_chunk_worker(
+    args, sdrf_path=None, evidence_mapping_file=None, intensities_mapping_file=None
+):
     """Worker function for parallel PG processing"""
     chunk_file, chunk_id, temp_folder = args
     processor = MaxQuant()
     return processor._process_pg_chunk(
-        chunk_file, chunk_id, temp_folder, sdrf_path, evidence_mapping_file
+        chunk_file,
+        chunk_id,
+        temp_folder,
+        sdrf_path,
+        evidence_mapping_file,
+        intensities_mapping_file,
     )
 
 
@@ -327,8 +338,6 @@ class MaxQuant:
         intensities = []
         additional_intensities = []
 
-        # Process all TMT channels by checking both index-based (0-N) and 1-based (1-N+1) column names
-        # MaxQuant may use either "Reporter intensity 0" or "Reporter intensity 1" as the first column
         for i, channel_name in enumerate(tmt_channels):
             reporter_cols_to_try = [
                 f"Reporter intensity {i}",
@@ -503,10 +512,13 @@ class MaxQuant:
         from concurrent.futures import ProcessPoolExecutor, as_completed
         import shutil
 
+        cpu_count = os.cpu_count() or 4
         if n_workers is None:
-            n_workers = (os.cpu_count() or 4) + 1
+            n_workers = cpu_count + 1
 
-        logger.info(f"Using parallel processing with {n_workers} workers")
+        logger.info(
+            f"Using parallel processing with {n_workers} workers (CPU cores: {cpu_count})"
+        )
 
         output_path_obj = Path(output_path)
         temp_folder = output_path_obj.parent / f".temp_{output_path_obj.stem}"
@@ -1265,6 +1277,7 @@ class MaxQuant:
         temp_folder: Path,
         sdrf_path: str = None,
         evidence_mapping_file: str = None,
+        intensities_mapping_file: str = None,
     ) -> tuple:
         """Process single PG chunk in parallel worker"""
         import json
@@ -1279,6 +1292,15 @@ class MaxQuant:
                 mapping_data = json.load(f)
                 self._protein_to_samples = {k: set(v) for k, v in mapping_data.items()}
 
+        # Load pre-calculated standardized intensities mapping
+        if intensities_mapping_file:
+            with open(intensities_mapping_file, "r") as f:
+                intensities_data = json.load(f)
+                # Convert lists back to tuples
+                self._standardized_intensities = {
+                    k: tuple(v) for k, v in intensities_data.items()
+                }
+
         basic_cols = [col for col in MAXQUANT_PG_USECOLS if col in chunk_data.columns]
         intensity_cols = [
             col
@@ -1290,6 +1312,8 @@ class MaxQuant:
         additional_cols = []
         if "Majority protein IDs" in chunk_data.columns:
             additional_cols.append("Majority protein IDs")
+        if "id" in chunk_data.columns:
+            additional_cols.append("id")
 
         available_cols = list(set(basic_cols + intensity_cols + additional_cols))
         df_chunk = chunk_data[available_cols].copy()
@@ -1318,6 +1342,7 @@ class MaxQuant:
         evidence_path: str,
         chunksize: int = 10000,
         n_workers: int = None,
+        calculate_standardized_intensities: bool = False,
     ) -> None:
         """Process proteinGroups.txt to PG parquet format
 
@@ -1328,6 +1353,8 @@ class MaxQuant:
             evidence_path: Path to evidence.txt for sample mapping
             chunksize: Rows per chunk (default: 10000)
             n_workers: Number of workers (default: 8)
+            calculate_standardized_intensities: Whether to calculate
+                total_all_peptides_intensity and top3_intensity (default: False)
         """
         self._process_pg_file_parallel(
             protein_groups_path,
@@ -1336,6 +1363,7 @@ class MaxQuant:
             evidence_path,
             chunksize,
             n_workers,
+            calculate_standardized_intensities,
         )
 
     def _process_pg_file_parallel(
@@ -1346,6 +1374,7 @@ class MaxQuant:
         evidence_path: str,
         chunksize: int = 100000,
         n_workers: int = None,
+        calculate_standardized_intensities: bool = False,
     ) -> None:
         """Parallel PG processing with shared evidence mapping"""
         import json
@@ -1360,17 +1389,42 @@ class MaxQuant:
         mapping_file = (
             output_path_obj.parent / f".temp_pg_mapping_{output_path_obj.stem}.json"
         )
+        intensities_file = None
+
+        # Only calculate standardized intensities if requested
+        standardized_intensities = None
+        if calculate_standardized_intensities:
+            logger.info("Building standardized intensities mapping from evidence.txt")
+            standardized_intensities = self._build_standardized_intensities_mapping(
+                evidence_path
+            )
+            intensities_file = (
+                output_path_obj.parent
+                / f".temp_pg_intensities_{output_path_obj.stem}.json"
+            )
 
         try:
             with open(mapping_file, "w") as f:
                 mapping_data = {k: list(v) for k, v in protein_to_samples.items()}
                 json.dump(mapping_data, f)
 
+            if standardized_intensities is not None and intensities_file is not None:
+                with open(intensities_file, "w") as f:
+                    # Convert tuples to lists for JSON serialization
+                    intensities_data = {
+                        k: list(v) for k, v in standardized_intensities.items()
+                    }
+                    json.dump(intensities_data, f)
+
             self._parallel_process_file(
                 input_path=protein_groups_path,
                 output_path=output_path,
                 worker_func=_process_pg_chunk_worker,
-                worker_args=(sdrf_path, str(mapping_file)),
+                worker_args=(
+                    sdrf_path,
+                    str(mapping_file),
+                    str(intensities_file) if intensities_file else None,
+                ),
                 chunksize=chunksize,
                 n_workers=n_workers,
             )
@@ -1378,6 +1432,8 @@ class MaxQuant:
         finally:
             if mapping_file.exists():
                 mapping_file.unlink()
+            if intensities_file and intensities_file.exists():
+                intensities_file.unlink()
 
     def _apply_pg_mapping(self, df: pd.DataFrame) -> pd.DataFrame:
         """Apply MAXQUANT_PG_MAP mapping"""
@@ -1497,8 +1553,87 @@ class MaxQuant:
 
         return protein_to_samples
 
+    def _build_standardized_intensities_mapping(
+        self, evidence_path: str
+    ) -> Dict[str, Tuple[float, float]]:
+        """Build protein group ID to standardized intensities mapping from evidence.txt
+
+        Pre-calculates total_all_peptides_intensity and top3_intensity for each
+        protein group to avoid loading evidence data in parallel workers.
+
+        Args:
+            evidence_path: Path to evidence.txt
+
+        Returns:
+            Dict mapping protein group IDs to (total_intensity, top3_intensity) tuples
+        """
+        from collections import defaultdict
+
+        logger.info(f"Building standardized intensities mapping from {evidence_path}")
+
+        protein_data: Dict[str, Dict[str, list]] = defaultdict(
+            lambda: {"sequences": [], "intensities": []}
+        )
+        total_rows = 0
+
+        try:
+            for chunk in pd.read_csv(
+                evidence_path,
+                sep="\t",
+                chunksize=500000,
+                usecols=["Protein group IDs", "Intensity", "Sequence"],
+                low_memory=False,
+            ):
+                chunk = chunk.dropna(subset=["Protein group IDs", "Intensity"])
+
+                if len(chunk) == 0:
+                    continue
+
+                # Filter valid intensities
+                chunk = chunk[chunk["Intensity"] > 0]
+
+                for row in chunk.itertuples(index=False):
+                    protein_ids_str = str(row[0])  # Protein group IDs
+                    intensity = float(row[1])  # Intensity
+                    sequence = str(row[2]) if len(row) > 2 else ""  # Sequence
+
+                    for protein_id in protein_ids_str.split(";"):
+                        protein_id = protein_id.strip()
+                        if protein_id and protein_id != "nan":
+                            protein_data[protein_id]["sequences"].append(sequence)
+                            protein_data[protein_id]["intensities"].append(intensity)
+
+                total_rows += len(chunk)
+
+            # Calculate standardized intensities for each protein group
+            standardized_intensities: Dict[str, Tuple[float, float]] = {}
+
+            for protein_id, data in protein_data.items():
+                intensities = data["intensities"]
+                sequences = data["sequences"]
+                total_intensity = calculate_total_all_peptides_intensity(intensities)
+                top3_intensity = calculate_top3_peptide_intensity(
+                    sequences, intensities
+                )
+                standardized_intensities[protein_id] = (total_intensity, top3_intensity)
+
+            logger.info(
+                f"Calculated standardized intensities for {len(standardized_intensities)} "
+                f"protein groups from {total_rows} evidence rows"
+            )
+
+        except Exception as e:
+            logger.error(f"Error building standardized intensities mapping: {e}")
+            raise
+
+        return standardized_intensities
+
     def _process_pg_intensities(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Process PG intensity data with comprehensive intensity extraction"""
+        """Process PG intensity data with comprehensive intensity extraction
+
+        Includes standardized intensity calculation (total_all_peptides_intensity
+        and top3_intensity) when evidence data is available.
+        """
         intensities_list = []
         additional_intensities_list = []
 
@@ -1522,6 +1657,67 @@ class MaxQuant:
                     general_ibaq_col=general_ibaq_col,
                 )
             )
+
+            protein_group_id = str(row.get("id", "")) if "id" in row.index else ""
+
+            total_intensity = None
+            top3_intensity = None
+
+            # First try to use pre-calculated standardized intensities mapping
+            if (
+                hasattr(self, "_standardized_intensities")
+                and self._standardized_intensities is not None
+                and protein_group_id in self._standardized_intensities
+            ):
+                total_intensity, top3_intensity = self._standardized_intensities[
+                    protein_group_id
+                ]
+            # Fall back to calculating from evidence_df if available
+            elif hasattr(self, "_evidence_df") and self._evidence_df is not None:
+                if protein_group_id:
+                    total_intensity, top3_intensity = (
+                        self._calculate_standardized_pg_intensities(
+                            self._evidence_df, protein_group_id
+                        )
+                    )
+
+            # Append standardized intensities if calculated
+            if total_intensity is not None and top3_intensity is not None:
+                # Get sample accession and channel for the standardized intensities
+                sample_accession = reference_file_name
+                channel = "label free sample"
+
+                if (
+                    self._protein_to_samples
+                    and protein_group_id in self._protein_to_samples
+                ):
+                    sample_accessions = self._protein_to_samples[protein_group_id]
+                    if sample_accessions:
+                        sample_accession = next(iter(sample_accessions))
+                        channel = (
+                            self._get_channel_from_sdrf_for_sample(sample_accession)
+                            or "label free sample"
+                        )
+
+                if additional_intensities is None:
+                    additional_intensities = []
+
+                additional_intensities.append(
+                    {
+                        "sample_accession": sample_accession,
+                        "channel": channel,
+                        "intensities": [
+                            {
+                                "intensity_name": "total_all_peptides_intensity",
+                                "intensity_value": total_intensity,
+                            },
+                            {
+                                "intensity_name": "top3_intensity",
+                                "intensity_value": top3_intensity,
+                            },
+                        ],
+                    }
+                )
 
             intensities_list.append(intensities if intensities else [])
             additional_intensities_list.append(
@@ -1809,6 +2005,68 @@ class MaxQuant:
                 return int(row[col])
 
         return 1
+
+    def _calculate_standardized_pg_intensities(
+        self,
+        evidence_df: pd.DataFrame,
+        protein_group_id: str,
+    ) -> Tuple[float, float]:
+        """
+        Calculate standardized protein group intensities from evidence data.
+
+        Aggregates peptide intensities by protein group ID and calculates
+        total_all_peptides_intensity and top3_intensity using shared utility functions.
+
+        Args:
+            evidence_df: Evidence DataFrame containing peptide-level data
+            protein_group_id: Protein group ID to filter evidence data
+
+        Returns:
+            Tuple of (total_all_peptides_intensity, top3_intensity)
+        """
+        if "Protein group IDs" not in evidence_df.columns:
+            return float("nan"), float("nan")
+
+        mask = (
+            evidence_df["Protein group IDs"]
+            .astype(str)
+            .str.contains(
+                rf"(?:^|;){re.escape(protein_group_id)}(?:;|$)", regex=True, na=False
+            )
+        )
+        filtered_evidence = evidence_df[mask]
+
+        if filtered_evidence.empty:
+            return float("nan"), float("nan")
+
+        intensity_col = (
+            "Intensity" if "Intensity" in filtered_evidence.columns else None
+        )
+        if intensity_col is None:
+            return float("nan"), float("nan")
+
+        sequence_col = "Sequence" if "Sequence" in filtered_evidence.columns else None
+
+        peptide_intensities = filtered_evidence[intensity_col].dropna().tolist()
+
+        total_intensity = calculate_total_all_peptides_intensity(peptide_intensities)
+
+        if sequence_col is not None:
+            valid_mask = filtered_evidence[intensity_col].notna()
+            peptide_sequences = filtered_evidence.loc[valid_mask, sequence_col].tolist()
+            peptide_intensities = filtered_evidence.loc[
+                valid_mask, intensity_col
+            ].tolist()
+            top3_intensity = calculate_top3_peptide_intensity(
+                peptide_sequences, peptide_intensities
+            )
+        else:
+            # Fallback: if no sequence column, treat each row as a unique peptide
+            top3_intensity = calculate_top3_peptide_intensity(
+                [str(i) for i in range(len(peptide_intensities))], peptide_intensities
+            )
+
+        return total_intensity, top3_intensity
 
     def _calculate_pg_statistics(self, df: pd.DataFrame) -> pd.DataFrame:
         """Calculate PG statistics by orchestrating sub-processes"""
@@ -2099,13 +2357,16 @@ class MaxQuant:
         logger.info("Building protein-to-sample mapping from evidence.txt")
         self._protein_to_samples = self._build_protein_to_samples_mapping(evidence_path)
 
+        self._evidence_df = self.read_evidence(evidence_path) if evidence_path else None
+
         df_processed = self._apply_pg_mapping(df.copy())
         df_processed = self._process_pg_basic_fields(df_processed)
-        df_processed = self._process_pg_intensities(
-            df_processed
-        )  # Add intensity processing
+        df_processed = self._process_pg_intensities(df_processed)
         df_processed = self._calculate_pg_statistics(df_processed)
         df_processed = self._ensure_pg_schema_compliance(df_processed)
+
+        self._evidence_df = None
+
         return pa.Table.from_pandas(
             df_processed, schema=PG_SCHEMA, preserve_index=False
         )
