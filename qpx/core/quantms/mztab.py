@@ -2992,7 +2992,7 @@ class MzTabIndexer(DuckDB):
                 """
 
         if self._duckdb.execute(database_query).fetchone()[0] > 1:
-            print(
+            self.logger.warning(
                 "Cannot calculate unique values when multiple databases are present in the PSM table."
             )
 

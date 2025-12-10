@@ -1,3 +1,4 @@
+import logging
 import math
 import random
 from typing import Optional
@@ -9,6 +10,8 @@ import seaborn as sns
 from venn import venn
 
 from qpx.operate.tools import transform_ibaq
+
+logger = logging.getLogger(__name__)
 
 
 def plot_distribution_of_ibaq(
@@ -223,14 +226,14 @@ def plot_peptidoform_charge_venn(parquet_path_list: list, labels: list):
     for parquet_path, label in zip(parquet_path_list, labels):
         df = pd.read_parquet(parquet_path, columns=["peptidoform", "charge"])
         psm_message = f"Total number of PSM for {label}: {len(df)}"
-        print(psm_message)
+        logger.info(psm_message)
         unique_pep_forms: set = set(
             (df["peptidoform"] + df["charge"].astype(str)).to_list()
         )
         pep_form_message = (
             f"Total number of Peptidoform for {label}: {len(unique_pep_forms)}"
         )
-        print(pep_form_message)
+        logger.info(pep_form_message)
         data_map[label] = unique_pep_forms
     plt.figure(figsize=(16, 12), dpi=500)
     venn(
@@ -248,7 +251,7 @@ def plot_sequence_venn(parquet_path_list: list, labels: list):
         df = pd.read_parquet(parquet_path, columns=["sequence"])
         unique_seqs: set = set(df["sequence"].to_list())
         pep_message = f"Total number of peptide for {label}: {len(unique_seqs)}"
-        print(pep_message)
+        logger.info(pep_message)
         data_map[label] = unique_seqs
     plt.figure(figsize=(16, 12), dpi=500)
     venn(

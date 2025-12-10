@@ -6,6 +6,7 @@ This module contains the following classes:
     * SDRFHandler - class to handle SDRF files
 """
 
+import logging
 import re
 from pathlib import Path
 from typing import Optional, Union
@@ -14,6 +15,8 @@ import pandas as pd
 from pandas import DataFrame
 
 from qpx.core.common import SDRF_MAP, SDRF_USECOLS
+
+logger = logging.getLogger(__name__)
 
 
 def get_unique_from_column_substr(sdrf_table: DataFrame, substr: str) -> list:
@@ -349,7 +352,7 @@ class SDRFHandler:
                 ):
                     raise ValueError("The sample map is not unique")
                 else:
-                    print(
+                    logger.info(
                         "channel {} for sample {} already in the sample map".format(
                             channel, row["source name"]
                         )

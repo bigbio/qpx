@@ -6,10 +6,13 @@ ontology terms, and computation methods for different QPX data models (PSM, Feat
 """
 
 import csv
+import logging
 import pandas as pd
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 import pyarrow as pa
+
+logger = logging.getLogger(__name__)
 
 
 def _get_qpx_standard_fields() -> Set[str]:
@@ -219,7 +222,7 @@ class MetadataSchemaGenerator:
             return mapping
 
         except Exception as e:
-            print(f"Warning: Could not load ontology mapping: {e}")
+            logger.warning(f"Could not load ontology mapping: {e}")
             return {}
 
     def generate_file(self, output_path: str):
