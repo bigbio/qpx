@@ -1739,6 +1739,13 @@
 <td>Number of files to process simultaneously</td>
 </tr>
 <tr>
+<td><code>--standardized-intensities</code></td>
+<td>FLAG</td>
+<td>No</td>
+<td>-</td>
+<td>Calculate standardized intensity metrics (total_all_peptides_intensity and top3_intensity)</td>
+</tr>
+<tr>
 <td><code>--verbose</code></td>
 <td>FLAG</td>
 <td>No</td>
@@ -1755,7 +1762,8 @@
     --report-path report.tsv \
     --pg-matrix-path report.pg_matrix.tsv \
     --sdrf-path data.sdrf.tsv \
-    --output-folder ./output</code></pre>
+    --output-folder ./output \
+    --standardized-intensities</code></pre>
 
 <h4 id="diann-pg-example-performance">High-Performance Example<a class="headerlink" href="#diann-pg-example-performance" title="Anchor link to this section">&para;</a></h4>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>qpxc<span class="w"> </span>convert<span class="w"> </span>diann-pg<span class="w"> </span><span class="se">\</span>
@@ -2084,6 +2092,13 @@
 <td>Memory limit in GB</td>
 </tr>
 <tr>
+<td><code>--standardized-intensities</code></td>
+<td>FLAG</td>
+<td>No</td>
+<td>-</td>
+<td>Calculate standardized intensity metrics (total_all_peptides_intensity and top3_intensity)</td>
+</tr>
+<tr>
 <td><code>--verbose</code></td>
 <td>FLAG</td>
 <td>No</td>
@@ -2102,7 +2117,8 @@
     --evidence-file evidence.txt \
     --output-folder ./output \
     --n-workers 8 \
-    --memory-limit 16</code></pre>
+    --memory-limit 16 \
+    --standardized-intensities</code></pre>
 
 <h3 id="maxquant-pg-output">Output Files<a class="headerlink" href="#maxquant-pg-output" title="Anchor link to this section">&para;</a></h3>
 <ul>
