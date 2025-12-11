@@ -18,19 +18,20 @@ A Python package for working with mass spectrometry data in the QPX format.
 
 ## Installation
 
-### Install from PyPI
+> **Note:** QPX is not yet available on PyPI. Please install directly from GitHub until the first official release.
+
+### Install from GitHub (Recommended)
 
 ```bash
-# To install the stable release from PyPI:
-pip install qpx
+# Install the latest version directly from GitHub:
+pip install git+https://github.com/bigbio/qpx.git
 ```
 
-### Install from Source (Without PyPI)
+### Install from Source
 
 ```bash
-# Fork the repository on GitHub
 # Clone the repository
-git clone https://github.com/your-username/qpx.git
+git clone https://github.com/bigbio/qpx.git
 cd qpx
 
 # Install the package locally
@@ -48,6 +49,29 @@ poetry install
 # Or using pip
 pip install -r requirements.txt
 pip install -e .
+```
+
+### System Dependencies
+
+QPX depends on pyOpenMS, which requires certain system libraries. If you encounter errors related to missing shared libraries (e.g., `libglib-2.0.so.0`), install the required system dependencies:
+
+**Ubuntu/Debian:**
+```bash
+sudo apt-get update
+sudo apt-get install -y libglib2.0-0
+```
+
+**macOS:**
+```bash
+brew install glib
+```
+
+**Using Conda (Recommended for pyOpenMS):**
+```bash
+conda create -n qpx python=3.10
+conda activate qpx
+conda install -c bioconda pyopenms
+pip install git+https://github.com/bigbio/qpx.git
 ```
 
 ## Usage
