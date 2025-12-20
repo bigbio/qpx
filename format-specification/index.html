@@ -25,7 +25,7 @@
       
       
       <link rel="icon" href="../images/favicon.ico">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.0">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
     
     
       
@@ -33,7 +33,7 @@
       
     
     
-      <link rel="stylesheet" href="../assets/stylesheets/main.618322db.min.css">
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
       
         
         <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
@@ -1375,10 +1375,21 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. Metadata configuration view
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#absolute" class="md-nav__link">
     <span class="md-ellipsis">
       
-        11. Absolute quantification view
+        12. Absolute quantification view
       
     </span>
   </a>
@@ -1389,7 +1400,7 @@
   <a href="#anndata" class="md-nav__link">
     <span class="md-ellipsis">
       
-        12. AnnData view
+        13. AnnData view
       
     </span>
   </a>
@@ -1400,7 +1411,7 @@
   <a href="#differential" class="md-nav__link">
     <span class="md-ellipsis">
       
-        13. Differential expression view
+        14. Differential expression view
       
     </span>
   </a>
@@ -1411,7 +1422,7 @@
   <a href="#peptide-views" class="md-nav__link">
     <span class="md-ellipsis">
       
-        14. Peptide-based Views: psm, feature and peptide
+        15. Peptide-based Views: psm, feature and peptide
       
     </span>
   </a>
@@ -1422,7 +1433,7 @@
   <a href="#protein" class="md-nav__link">
     <span class="md-ellipsis">
       
-        15. Protein views: Protein groups and Protein summary
+        16. Protein views: Protein groups and Protein summary
       
     </span>
   </a>
@@ -1433,7 +1444,7 @@
   <a href="#proteinsummary" class="md-nav__link">
     <span class="md-ellipsis">
       
-        16. Protein view
+        17. Protein view
       
     </span>
   </a>
@@ -1444,7 +1455,7 @@
   <a href="#mz" class="md-nav__link">
     <span class="md-ellipsis">
       
-        17. Mass spectra view
+        18. Mass spectra view
       
     </span>
   </a>
@@ -1639,6 +1650,12 @@
 <td><a href="#sdrf">sdrf</a></td>
 </tr>
 <tr>
+<td>metadata</td>
+<td>metadata_file</td>
+<td><em>csv</em></td>
+<td><a href="#metadata">metadata</a></td>
+</tr>
+<tr>
 <td>project</td>
 <td>-</td>
 <td><em>json</em></td>
@@ -1653,6 +1670,43 @@
 <p>The <code>.qms</code> contains all the files of a QPX experiment. It will contain metadata files and different views of the experiments; <a href="#general-data-model">general-data-model</a>. {#file-structure}</p>
 <h2 id="common-data-structures">4. Common data structures and formats<a class="headerlink" href="#common-data-structures" title="Anchor link to this section">&para;</a></h2>
 <p>We have some concepts that are common for some outputs and would be good to define and explain them here:</p>
+<h3 id="field-classification">4.0. Field Classification<a class="headerlink" href="#field-classification" title="Anchor link to this section">&para;</a></h3>
+<p>Fields in QPX schemas are classified into three categories:</p>
+<ul>
+<li><strong>Primary Key (PK)</strong>: Fields that uniquely identify a record. These fields <strong>MUST NOT be null</strong> and are required for data integrity.</li>
+<li><strong>Nullable</strong>: Fields that exist in every record but may have null values for some observations (e.g., de novo peptides without protein mapping).</li>
+<li><strong>Optional</strong>: Fields that may not exist in the schema at all, depending on the workflow or instrument (e.g., ion mobility fields for non-TIMS instruments).</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Classification</th>
+<th>Column Exists</th>
+<th>Value Can Be Null</th>
+<th>Use Case</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Primary Key</strong></td>
+<td>Always</td>
+<td>Never</td>
+<td>Core identifiers</td>
+</tr>
+<tr>
+<td><strong>Nullable</strong></td>
+<td>Always</td>
+<td>Yes</td>
+<td>Workflow-dependent values</td>
+</tr>
+<tr>
+<td><strong>Optional</strong></td>
+<td>Sometimes</td>
+<td>Yes (if exists)</td>
+<td>Instrument/tool-specific fields</td>
+</tr>
+</tbody>
+</table>
 <h3 id="peptidoform">4.1. Peptidoform<a class="headerlink" href="#peptidoform" title="Anchor link to this section">&para;</a></h3>
 <p>A peptidoform is a peptide sequence with modifications. For example, the peptide sequence <code>PEPTIDM</code> with a modification of <code>Oxidation</code> would be <code>PEPTIDM[Oxidation]</code>. The peptidoform show be written using the <a href="https://github.com/HUPO-PSI/ProForma">Proforma specification</a>. This concept is used in the following outputs:</p>
 <ul>
@@ -2087,15 +2141,183 @@
 </span></code></pre></div>
 <h2 id="sdrf">10. SDRF view<a class="headerlink" href="#sdrf" title="Anchor link to this section">&para;</a></h2>
 <p>The Proteomics Sample and Data Relationship Format (<a href="https://github.com/bigbio/proteomics-sample-metadata">SDRF</a>) is a tab-delimited file format that describes the relationship between samples, data files, and the experimental factors. The SDRF is a key file in the proteomics data analysis workflow as it describes the relationship between the samples and the data files. The specification of the SDRF can be found in the <a href="https://github.com/bigbio/proteomics-sample-metadata">SDRF GitHub repository</a>.</p>
-<h2 id="absolute">11. Absolute quantification view<a class="headerlink" href="#absolute" title="Anchor link to this section">&para;</a></h2>
+<h2 id="metadata">11. Metadata configuration view<a class="headerlink" href="#metadata" title="Anchor link to this section">&para;</a></h2>
+<p>The metadata configuration view is a CSV file that documents column mappings, ontology terms, and computation methods for QPX data models (PSM, Feature, PG). This file provides provenance information about how each column in the QPX output was derived from the source data.</p>
+<h3 id="111-metadata-use-cases">11.1. Metadata use cases<a class="headerlink" href="#111-metadata-use-cases" title="Anchor link to this section">&para;</a></h3>
+<ul>
+<li>Document the mapping between source format columns (e.g., MaxQuant, DIA-NN) and QPX standardized columns.</li>
+<li>Provide ontology accessions for standardized terminology (e.g., MS:1000041 for charge state).</li>
+<li>Describe how computed fields are derived from source data.</li>
+<li>Enable reproducibility by tracking data transformations.</li>
+</ul>
+<h3 id="112-supported-workflows">11.2. Supported workflows<a class="headerlink" href="#112-supported-workflows" title="Anchor link to this section">&para;</a></h3>
+<p>The metadata generator supports the following proteomics workflows:</p>
+<table>
+<thead>
+<tr>
+<th>Workflow</th>
+<th>Description</th>
+<th>Source files</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>maxquant</code></td>
+<td>MaxQuant search results</td>
+<td>msms.txt, evidence.txt, proteinGroups.txt</td>
+</tr>
+<tr>
+<td><code>diann</code></td>
+<td>DIA-NN search results</td>
+<td>report.tsv, report.pg_matrix.tsv</td>
+</tr>
+<tr>
+<td><code>quantms-lfq</code></td>
+<td>quantms label-free quantification</td>
+<td>mzTab (PSM, PEP, PRT sections)</td>
+</tr>
+<tr>
+<td><code>quantms-tmt</code></td>
+<td>quantms TMT labeling</td>
+<td>mzTab (PSM, PEP, PRT sections)</td>
+</tr>
+<tr>
+<td><code>quantms-psm</code></td>
+<td>quantms PSM-level analysis</td>
+<td>mzTab (PSM section)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="113-format">11.3. Format<a class="headerlink" href="#113-format" title="Anchor link to this section">&para;</a></h3>
+<p>The metadata configuration format is a CSV file with the following fields:</p>
+<table>
+<thead>
+<tr>
+<th><strong>Field</strong></th>
+<th><strong>Description</strong></th>
+<th><strong>Type</strong></th>
+<th><strong>Nullable</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>model_view</code></td>
+<td>Data model type: psm, feature, pg, or ibaq</td>
+<td>string</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>file_name</code></td>
+<td>Source data file name (e.g., msms.txt, evidence.txt)</td>
+<td>string</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td><code>column_name</code></td>
+<td>Name of the column in QPX format or source column name</td>
+<td>string</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>ontology_accession</code></td>
+<td>Ontology term accession (e.g., MS:1000041, PRIDE:0000123)</td>
+<td>string</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td><code>full_name</code></td>
+<td>Full descriptive name of the column from ontology or specification</td>
+<td>string</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td><code>settings</code></td>
+<td>Description of how the value is computed or obtained</td>
+<td>string</td>
+<td>Yes</td>
+</tr>
+</tbody>
+</table>
+<p>Example:</p>
+<table>
+<thead>
+<tr>
+<th><em>model_view</em></th>
+<th><em>file_name</em></th>
+<th><em>column_name</em></th>
+<th><em>ontology_accession</em></th>
+<th><em>full_name</em></th>
+<th><em>settings</em></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>psm</td>
+<td>msms.txt</td>
+<td>charge</td>
+<td>MS:1000041</td>
+<td>charge state</td>
+<td>provided by 'Charge'</td>
+</tr>
+<tr>
+<td>psm</td>
+<td>msms.txt</td>
+<td>sequence</td>
+<td>MS:1001344</td>
+<td>AA sequence</td>
+<td>provided by 'Sequence'</td>
+</tr>
+<tr>
+<td>feature</td>
+<td>evidence.txt</td>
+<td>ion_mobility</td>
+<td></td>
+<td>ion mobility drift time</td>
+<td>computed from '1/K0' as inverse of 1/K0</td>
+</tr>
+<tr>
+<td>pg</td>
+<td>proteinGroups.txt</td>
+<td>pg_accessions</td>
+<td></td>
+<td></td>
+<td>provided by 'Protein IDs'</td>
+</tr>
+</tbody>
+</table>
+<h3 id="114-cli-usage">11.4. CLI usage<a class="headerlink" href="#114-cli-usage" title="Anchor link to this section">&para;</a></h3>
+<p>Generate metadata configuration file using the <code>qpxc</code> command-line tool:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>qpxc<span class="w"> </span>report<span class="w"> </span>metadata<span class="w"> </span>--workflow<span class="w"> </span>maxquant<span class="w"> </span>--input<span class="w"> </span>/path/to/maxquant/output<span class="w"> </span>--output<span class="w"> </span>metadata.csv
+</span></code></pre></div>
+<p>Options:</p>
+<ul>
+<li><code>--workflow</code>: Workflow name (maxquant, diann, quantms-lfq, quantms-tmt, quantms-psm)</li>
+<li><code>--input</code>: Path to input data file or directory</li>
+<li><code>--output</code>: Output path for the metadata CSV file</li>
+</ul>
+<h3 id="115-ontology-mapping">11.5. Ontology mapping<a class="headerlink" href="#115-ontology-mapping" title="Anchor link to this section">&para;</a></h3>
+<p>The metadata generator uses <code>docs/field_msg.tsv</code> as the source for ontology mappings. This file contains:</p>
+<ul>
+<li><code>field</code>: QPX field name</li>
+<li><code>ontology_name</code>: Human-readable ontology term name</li>
+<li><code>ontology_accession</code>: Ontology term accession (e.g., MS:1000041)</li>
+<li><code>desc</code>: Description of the field</li>
+</ul>
+<p>Supported ontologies include:</p>
+<ul>
+<li><strong>MS</strong> (PSI-MS): Mass spectrometry ontology terms</li>
+<li><strong>PRIDE</strong>: PRIDE database ontology terms</li>
+<li><strong>UNIMOD</strong>: Protein modification ontology terms</li>
+</ul>
+<h2 id="absolute">12. Absolute quantification view<a class="headerlink" href="#absolute" title="Anchor link to this section">&para;</a></h2>
 <p>Absolute quantification is the process of determining the absolute/baseline amount of a target protein in a sample. In proteomics, the main computational method to determine the absolute quantification is the intensity-based <a href="https://www.nature.com/articles/nature11848">absolute quantification (iBAQ) method</a>.</p>
-<h3 id="111-absolute-quantification-use-cases">11.1. Absolute quantification use cases<a class="headerlink" href="#111-absolute-quantification-use-cases" title="Anchor link to this section">&para;</a></h3>
+<h3 id="121-absolute-quantification-use-cases">12.1. Absolute quantification use cases<a class="headerlink" href="#121-absolute-quantification-use-cases" title="Anchor link to this section">&para;</a></h3>
 <ul>
 <li>Fast and easy visualization absolute expression (AE) results using iBAQ values.</li>
 <li>Store the AE results of each protein on each sample.</li>
 <li>It could be used as a proxy to understand the expression profile of a protein in different conditions, tissues and organisms.</li>
 </ul>
-<h3 id="112-format">11.2. Format<a class="headerlink" href="#112-format" title="Anchor link to this section">&para;</a></h3>
+<h3 id="122-format">12.2. Format<a class="headerlink" href="#122-format" title="Anchor link to this section">&para;</a></h3>
 <p>The absolute expression format is a tab-delimited file format that contains the following fields:</p>
 <ul>
 <li><code>protein</code> -&gt; Protein accession or semicolon-separated list of accessions for indistinguishable groups</li>
@@ -2130,11 +2352,11 @@
 <p>Example:</p>
 <p><code>#project_accession=PXD000000</code></p>
 <p>In addition, for each <code>Default</code> column of the matrix the following information should be added:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>#INFO=&lt;ID=protein, Number=inf, Type=String, Description=&quot;Protein Accession&quot;&gt;
-</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>#INFO=&lt;ID=sample_accession, Number=1, Type=String, Description=&quot;Sample Accession in the SDRF&quot;&gt;
-</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>#INFO=&lt;ID=condition, Number=1, Type=String, Description=&quot;Value of the factor value&quot;&gt;
-</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>#INFO=&lt;ID=ibaq, Number=1, Type=Float, Description=&quot;Intensity based absolute quantification&quot;&gt;
-</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>#INFO=&lt;ID=ibaq_normalized, Number=1, Type=Float, Description=&quot;normalized iBAQ&quot;&gt;
+<div class="language-text highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>#INFO=&lt;ID=protein, Number=inf, Type=String, Description=&quot;Protein Accession&quot;&gt;
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>#INFO=&lt;ID=sample_accession, Number=1, Type=String, Description=&quot;Sample Accession in the SDRF&quot;&gt;
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>#INFO=&lt;ID=condition, Number=1, Type=String, Description=&quot;Value of the factor value&quot;&gt;
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>#INFO=&lt;ID=ibaq, Number=1, Type=Float, Description=&quot;Intensity based absolute quantification&quot;&gt;
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>#INFO=&lt;ID=ibaq_normalized, Number=1, Type=Float, Description=&quot;normalized iBAQ&quot;&gt;
 </span></code></pre></div>
 <ul>
 <li>The <code>ID</code> is the column name in the matrix, the <code>Number</code> is the number of values in the column (separated by <code>;</code>), the <code>Type</code> is the type of the values in the column and the <code>Description</code> is a description of the column. The number of values in the column can go from 1 to <code>inf</code> (infinity).</li>
@@ -2149,23 +2371,23 @@
 <li><code>factor_value</code>: The factor values used in the analysis (e.g.<code>tissue</code>)</li>
 </ul>
 <p>Please check also the differential expression example for more information: <a href="#differential">differential</a></p>
-<h2 id="anndata">12. AnnData view<a class="headerlink" href="#anndata" title="Anchor link to this section">&para;</a></h2>
+<h2 id="anndata">13. AnnData view<a class="headerlink" href="#anndata" title="Anchor link to this section">&para;</a></h2>
 <p>The AnnData view is a collection of multiple AE files. Its obs represents the samples, var represents the proteins, and the conditions are stored in obs.</p>
 <ul>
 <li>Retrieve all the proteins for a given sample.</li>
 <li>Obtain all samples under the same condition.</li>
 </ul>
 <p><img alt="AnnData structure diagram showing how samples (obs), proteins (var), and conditions are organized in the data matrix" src="../images/anndata.png" /></p>
-<h2 id="differential">13. Differential expression view<a class="headerlink" href="#differential" title="Anchor link to this section">&para;</a></h2>
+<h2 id="differential">14. Differential expression view<a class="headerlink" href="#differential" title="Anchor link to this section">&para;</a></h2>
 <p>The differential expression view is a tab-delimited file format that contains the differential expression results between two contrasts, with the corresponding fold changes and p-values. The differential expression view is a key file in the proteomics data analysis workflow as it describes the differential expression between two conditions.</p>
-<h3 id="131-differential-expression-use-cases">13.1. Differential expression use cases<a class="headerlink" href="#131-differential-expression-use-cases" title="Anchor link to this section">&para;</a></h3>
+<h3 id="141-differential-expression-use-cases">14.1. Differential expression use cases<a class="headerlink" href="#141-differential-expression-use-cases" title="Anchor link to this section">&para;</a></h3>
 <ul>
 <li>Store the differential express proteins between two contrasts, with the corresponding fold changes and p-values.</li>
 <li>Enable easy visualization using tools like <a href="https://en.wikipedia.org/wiki/Volcano_plot_(statistics)">Volcano Plots</a>.</li>
 <li>Enable easy integration with other omics data resources.</li>
 <li>Store metadata information about the project, the workflow and the columns in the file.</li>
 </ul>
-<h3 id="132-format">13.2. Format<a class="headerlink" href="#132-format" title="Anchor link to this section">&para;</a></h3>
+<h3 id="142-format">14.2. Format<a class="headerlink" href="#142-format" title="Anchor link to this section">&para;</a></h3>
 <p>The differential expression format by QPX is based on the <a href="https://msstats.org/wp-content/uploads/2017/01/MSstats_v3.7.3_manual.pdf">MSstats</a> output:</p>
 <ul>
 <li><code>protein</code> -&gt; Protein Accession</li>
@@ -2208,14 +2430,14 @@
 <p>By default, the MSstats format does not have any header of metadata. We suggest adding a header to the output for better understanding of the file. By default, MSstats allows comments in the file if the line starts with <code>#</code>. The quantms output will start with some key value pairs that describe the project, the workflow and also the columns in the file. For example:</p>
 <p><code>#project_accession=PXD000000</code></p>
 <p>In addition, for each <code>Default</code> column of the matrix the following information should be added:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>#INFO=&lt;ID=protein, Number=inf, Type=String, Description=&quot;Protein Accession&quot;&gt;
-</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>#INFO=&lt;ID=label, Number=1, Type=String, Description=&quot;Label for the Conditions combination&quot;&gt;
-</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>#INFO=&lt;ID=log2fc, Number=1, Type=Double, Description=&quot;Log2 Fold Change&quot;&gt;
-</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>#INFO=&lt;ID=se, Number=1, Type=Double, Description=&quot;Standard error of the log2 fold change&quot;&gt;
-</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>#INFO=&lt;ID=df, Number=1, Type=Integer, Description=&quot;Degree of freedom of the Student test&quot;&gt;
-</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>#INFO=&lt;ID=pvalue, Number=1, Type=Double, Description=&quot;Raw p-values&quot;&gt;
-</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>#INFO=&lt;ID=adj_pvalue, Number=1, Type=Double, Description=&quot;P-values adjusted among all the proteins in the specific comparison using the approach by Benjamini and Hochberg&quot;&gt;
-</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>#INFO=&lt;ID=issue, Number=1, Type=String, Description=&quot;Issue column shows if there is any issue for inference in corresponding protein and comparison&quot;&gt;
+<div class="language-text highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>#INFO=&lt;ID=protein, Number=inf, Type=String, Description=&quot;Protein Accession&quot;&gt;
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>#INFO=&lt;ID=label, Number=1, Type=String, Description=&quot;Label for the Conditions combination&quot;&gt;
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>#INFO=&lt;ID=log2fc, Number=1, Type=Double, Description=&quot;Log2 Fold Change&quot;&gt;
+</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>#INFO=&lt;ID=se, Number=1, Type=Double, Description=&quot;Standard error of the log2 fold change&quot;&gt;
+</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>#INFO=&lt;ID=df, Number=1, Type=Integer, Description=&quot;Degree of freedom of the Student test&quot;&gt;
+</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>#INFO=&lt;ID=pvalue, Number=1, Type=Double, Description=&quot;Raw p-values&quot;&gt;
+</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>#INFO=&lt;ID=adj_pvalue, Number=1, Type=Double, Description=&quot;P-values adjusted among all the proteins in the specific comparison using the approach by Benjamini and Hochberg&quot;&gt;
+</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>#INFO=&lt;ID=issue, Number=1, Type=String, Description=&quot;Issue column shows if there is any issue for inference in corresponding protein and comparison&quot;&gt;
 </span></code></pre></div>
 <ul>
 <li>The <code>ID</code> is the column name in the matrix, the <code>Number</code> is the number of values in the column (separated by <code>;</code>), the <code>Type</code> is the type of the values in the column and the <code>Description</code> is a description of the column. The number of values in the column can go from 1 to <code>inf</code> (infinity).</li>
@@ -2230,7 +2452,7 @@
 <li><code>factor_value</code>: The factor values used in the analysis (e.g. <code>phenotype</code>)</li>
 <li><code>adj_pvalue</code>: The FDR threshold used to filter the protein lists (e.g. <code>adj_pvalue &lt; 0.05</code>)</li>
 </ul>
-<h2 id="peptide-views">14. Peptide-based Views: psm, feature and peptide<a class="headerlink" href="#peptide-views" title="Anchor link to this section">&para;</a></h2>
+<h2 id="peptide-views">15. Peptide-based Views: psm, feature and peptide<a class="headerlink" href="#peptide-views" title="Anchor link to this section">&para;</a></h2>
 <p>Multiple peptide-level views are available for the <code>QPX</code> format. The views are the following:</p>
 <ul>
 <li>
@@ -2243,7 +2465,7 @@
 <p><a href="#peptide">peptide</a>: Peptide View—The peptide view is a summary of quantified peptides by samples, the aim of this representation is to provide a simple summary of the number of peptides and their given quantity for each protein on each sample. This view is useful for quick visualization and data retrieval.</p>
 </li>
 </ul>
-<h3 id="psm">14.1. Peptide spectrum match (psm) view<a class="headerlink" href="#psm" title="Anchor link to this section">&para;</a></h3>
+<h3 id="psm">15.1. Peptide spectrum match (psm) view<a class="headerlink" href="#psm" title="Anchor link to this section">&para;</a></h3>
 <p>Peptide spectrum matches (psms) are the results of the <strong>identification</strong> of peptides in mass spectrometry data. PSMs are mainly the results of peptide identification by database search engines on data-dependent acquisition (DDA) experiments.</p>
 <h4 id="psm-use-cases">Psm use cases<a class="headerlink" href="#psm-use-cases" title="Anchor link to this section">&para;</a></h4>
 <ul>
@@ -2262,7 +2484,7 @@
 <li><strong>mzTab</strong>: Fields from PSM section</li>
 </ul>
 <h5 id="psm-core-fields">Core Identification Fields<a class="headerlink" href="#psm-core-fields" title="Anchor link to this section">&para;</a></h5>
-<p><strong>Note</strong>: These fields are shared with features and peptides.</p>
+<p><strong>Note</strong>: These fields are shared with features and peptides. Fields marked with <strong>(PK)</strong> are primary keys and MUST NOT be null.</p>
 <table>
 <thead>
 <tr>
@@ -2277,7 +2499,7 @@
 </thead>
 <tbody>
 <tr>
-<td><code>sequence</code></td>
+<td><code>sequence</code> <strong>(PK)</strong></td>
 <td>Unmodified peptide sequence (amino acid sequence only)</td>
 <td>string</td>
 <td>Stripped.Sequence</td>
@@ -2286,7 +2508,7 @@
 <td>sequence</td>
 </tr>
 <tr>
-<td><code>peptidoform</code></td>
+<td><code>peptidoform</code> <strong>(PK)</strong></td>
 <td>Complete peptide sequence with modifications in ProForma notation (see <a href="#peptidoform">peptidoform</a>)</td>
 <td>string</td>
 <td>Modified.Sequence</td>
@@ -2304,7 +2526,7 @@
 <td>-</td>
 </tr>
 <tr>
-<td><code>precursor_charge</code></td>
+<td><code>precursor_charge</code> <strong>(PK)</strong></td>
 <td>Charge state of the precursor ion</td>
 <td>int32</td>
 <td>Precursor.Charge</td>
@@ -2367,7 +2589,7 @@
 <td>-</td>
 </tr>
 <tr>
-<td><code>reference_file_name</code></td>
+<td><code>reference_file_name</code> <strong>(PK)</strong></td>
 <td>Spectrum file name with no path information and not including the file extension</td>
 <td>string</td>
 <td>Run</td>
@@ -2376,7 +2598,7 @@
 <td>spectra_ref</td>
 </tr>
 <tr>
-<td><code>scan</code></td>
+<td><code>scan</code> <strong>(PK)</strong></td>
 <td>Scan index (number of nativeId) of the spectrum identified: read <a href="#scan">scan</a></td>
 <td>string</td>
 <td><a href="#diann-scan">scan-diann</a></td>
@@ -2554,38 +2776,38 @@
 <li><code>compression_format</code>: [gzip, snappy, lzo, none]</li>
 </ul>
 <p>Example parquet in Python:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">pyarrow</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pa</span>
-</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">pyarrow.parquet</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pq</span>
-</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>
-</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="c1"># Define a sample schema for the Parquet file</span>
-</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="n">schema</span> <span class="o">=</span> <span class="n">pa</span><span class="o">.</span><span class="n">schema</span><span class="p">([</span>
-</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>    <span class="o">....</span>
-</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="p">])</span>
-</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>
-</span><span id="__span-9-9"><a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="c1"># Create sample data to write to the Parquet file</span>
-</span><span id="__span-9-10"><a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
-</span><span id="__span-9-11"><a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a>    <span class="o">....</span>
-</span><span id="__span-9-12"><a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a><span class="p">}</span>
-</span><span id="__span-9-13"><a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a>
-</span><span id="__span-9-14"><a id="__codelineno-9-14" name="__codelineno-9-14" href="#__codelineno-9-14"></a><span class="c1"># Convert the data to a PyArrow Table</span>
-</span><span id="__span-9-15"><a id="__codelineno-9-15" name="__codelineno-9-15" href="#__codelineno-9-15"></a><span class="n">table</span> <span class="o">=</span> <span class="n">pa</span><span class="o">.</span><span class="n">table</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">schema</span><span class="o">=</span><span class="n">schema</span><span class="p">)</span>
-</span><span id="__span-9-16"><a id="__codelineno-9-16" name="__codelineno-9-16" href="#__codelineno-9-16"></a>
-</span><span id="__span-9-17"><a id="__codelineno-9-17" name="__codelineno-9-17" href="#__codelineno-9-17"></a><span class="c1"># Define the custom metadata as key-value pairs</span>
-</span><span id="__span-9-18"><a id="__codelineno-9-18" name="__codelineno-9-18" href="#__codelineno-9-18"></a><span class="n">file_metadata</span> <span class="o">=</span> <span class="p">{</span>
-</span><span id="__span-9-19"><a id="__codelineno-9-19" name="__codelineno-9-19" href="#__codelineno-9-19"></a>    <span class="s1">&#39;qpx_version&#39;</span><span class="p">:</span> <span class="s1">&#39;1.0&#39;</span><span class="p">,</span>
-</span><span id="__span-9-20"><a id="__codelineno-9-20" name="__codelineno-9-20" href="#__codelineno-9-20"></a>    <span class="s1">&#39;software_provider&#39;</span><span class="p">:</span> <span class="s1">&#39;QuantMS 1.3.0&#39;</span><span class="p">,</span>
-</span><span id="__span-9-21"><a id="__codelineno-9-21" name="__codelineno-9-21" href="#__codelineno-9-21"></a>    <span class="s1">&#39;project_accession&#39;</span><span class="p">:</span> <span class="s1">&#39;PXD012345&#39;</span><span class="p">,</span>
-</span><span id="__span-9-22"><a id="__codelineno-9-22" name="__codelineno-9-22" href="#__codelineno-9-22"></a>    <span class="s1">&#39;project_title&#39;</span><span class="p">:</span> <span class="s1">&#39;Proteomics of Disease X&#39;</span><span class="p">,</span>
-</span><span id="__span-9-23"><a id="__codelineno-9-23" name="__codelineno-9-23" href="#__codelineno-9-23"></a>    <span class="s1">&#39;project_description&#39;</span><span class="p">:</span> <span class="s1">&#39;Project description&#39;</span><span class="p">,</span>
-</span><span id="__span-9-24"><a id="__codelineno-9-24" name="__codelineno-9-24" href="#__codelineno-9-24"></a>    <span class="s1">&#39;scan_format&#39;</span><span class="p">:</span> <span class="s1">&#39;scan&#39;</span><span class="p">,</span>
-</span><span id="__span-9-25"><a id="__codelineno-9-25" name="__codelineno-9-25" href="#__codelineno-9-25"></a>    <span class="s1">&#39;creator&#39;</span><span class="p">:</span> <span class="s1">&#39;John Doe&#39;</span><span class="p">,</span>
-</span><span id="__span-9-26"><a id="__codelineno-9-26" name="__codelineno-9-26" href="#__codelineno-9-26"></a>    <span class="s1">&#39;file_type&#39;</span><span class="p">:</span> <span class="s1">&#39;psm_file&#39;</span><span class="p">,</span>
-</span><span id="__span-9-27"><a id="__codelineno-9-27" name="__codelineno-9-27" href="#__codelineno-9-27"></a>    <span class="s1">&#39;creation_date&#39;</span><span class="p">:</span> <span class="s1">&#39;2021-01-01&#39;</span><span class="p">,</span>
-</span><span id="__span-9-28"><a id="__codelineno-9-28" name="__codelineno-9-28" href="#__codelineno-9-28"></a>    <span class="s1">&#39;uuid&#39;</span><span class="p">:</span> <span class="s1">&#39;943a8f02-0527-4528-b1a3-b96de99ebe75&#39;</span>
-</span><span id="__span-9-29"><a id="__codelineno-9-29" name="__codelineno-9-29" href="#__codelineno-9-29"></a><span class="p">}</span>
-</span><span id="__span-9-30"><a id="__codelineno-9-30" name="__codelineno-9-30" href="#__codelineno-9-30"></a>
-</span><span id="__span-9-31"><a id="__codelineno-9-31" name="__codelineno-9-31" href="#__codelineno-9-31"></a><span class="c1"># Write the Parquet file with metadata</span>
-</span><span id="__span-9-32"><a id="__codelineno-9-32" name="__codelineno-9-32" href="#__codelineno-9-32"></a><span class="n">pq</span><span class="o">.</span><span class="n">write_table</span><span class="p">(</span><span class="n">table</span><span class="p">,</span> <span class="s1">&#39;psm_data.parquet&#39;</span><span class="p">,</span> <span class="n">metadata</span><span class="o">=</span><span class="n">file_metadata</span><span class="p">)</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">pyarrow</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pa</span>
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">pyarrow.parquet</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pq</span>
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>
+</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="c1"># Define a sample schema for the Parquet file</span>
+</span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="n">schema</span> <span class="o">=</span> <span class="n">pa</span><span class="o">.</span><span class="n">schema</span><span class="p">([</span>
+</span><span id="__span-10-6"><a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>    <span class="o">....</span>
+</span><span id="__span-10-7"><a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="p">])</span>
+</span><span id="__span-10-8"><a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>
+</span><span id="__span-10-9"><a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="c1"># Create sample data to write to the Parquet file</span>
+</span><span id="__span-10-10"><a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
+</span><span id="__span-10-11"><a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a>    <span class="o">....</span>
+</span><span id="__span-10-12"><a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a><span class="p">}</span>
+</span><span id="__span-10-13"><a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a>
+</span><span id="__span-10-14"><a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a><span class="c1"># Convert the data to a PyArrow Table</span>
+</span><span id="__span-10-15"><a id="__codelineno-10-15" name="__codelineno-10-15" href="#__codelineno-10-15"></a><span class="n">table</span> <span class="o">=</span> <span class="n">pa</span><span class="o">.</span><span class="n">table</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">schema</span><span class="o">=</span><span class="n">schema</span><span class="p">)</span>
+</span><span id="__span-10-16"><a id="__codelineno-10-16" name="__codelineno-10-16" href="#__codelineno-10-16"></a>
+</span><span id="__span-10-17"><a id="__codelineno-10-17" name="__codelineno-10-17" href="#__codelineno-10-17"></a><span class="c1"># Define the custom metadata as key-value pairs</span>
+</span><span id="__span-10-18"><a id="__codelineno-10-18" name="__codelineno-10-18" href="#__codelineno-10-18"></a><span class="n">file_metadata</span> <span class="o">=</span> <span class="p">{</span>
+</span><span id="__span-10-19"><a id="__codelineno-10-19" name="__codelineno-10-19" href="#__codelineno-10-19"></a>    <span class="s1">&#39;qpx_version&#39;</span><span class="p">:</span> <span class="s1">&#39;1.0&#39;</span><span class="p">,</span>
+</span><span id="__span-10-20"><a id="__codelineno-10-20" name="__codelineno-10-20" href="#__codelineno-10-20"></a>    <span class="s1">&#39;software_provider&#39;</span><span class="p">:</span> <span class="s1">&#39;QuantMS 1.3.0&#39;</span><span class="p">,</span>
+</span><span id="__span-10-21"><a id="__codelineno-10-21" name="__codelineno-10-21" href="#__codelineno-10-21"></a>    <span class="s1">&#39;project_accession&#39;</span><span class="p">:</span> <span class="s1">&#39;PXD012345&#39;</span><span class="p">,</span>
+</span><span id="__span-10-22"><a id="__codelineno-10-22" name="__codelineno-10-22" href="#__codelineno-10-22"></a>    <span class="s1">&#39;project_title&#39;</span><span class="p">:</span> <span class="s1">&#39;Proteomics of Disease X&#39;</span><span class="p">,</span>
+</span><span id="__span-10-23"><a id="__codelineno-10-23" name="__codelineno-10-23" href="#__codelineno-10-23"></a>    <span class="s1">&#39;project_description&#39;</span><span class="p">:</span> <span class="s1">&#39;Project description&#39;</span><span class="p">,</span>
+</span><span id="__span-10-24"><a id="__codelineno-10-24" name="__codelineno-10-24" href="#__codelineno-10-24"></a>    <span class="s1">&#39;scan_format&#39;</span><span class="p">:</span> <span class="s1">&#39;scan&#39;</span><span class="p">,</span>
+</span><span id="__span-10-25"><a id="__codelineno-10-25" name="__codelineno-10-25" href="#__codelineno-10-25"></a>    <span class="s1">&#39;creator&#39;</span><span class="p">:</span> <span class="s1">&#39;John Doe&#39;</span><span class="p">,</span>
+</span><span id="__span-10-26"><a id="__codelineno-10-26" name="__codelineno-10-26" href="#__codelineno-10-26"></a>    <span class="s1">&#39;file_type&#39;</span><span class="p">:</span> <span class="s1">&#39;psm_file&#39;</span><span class="p">,</span>
+</span><span id="__span-10-27"><a id="__codelineno-10-27" name="__codelineno-10-27" href="#__codelineno-10-27"></a>    <span class="s1">&#39;creation_date&#39;</span><span class="p">:</span> <span class="s1">&#39;2021-01-01&#39;</span><span class="p">,</span>
+</span><span id="__span-10-28"><a id="__codelineno-10-28" name="__codelineno-10-28" href="#__codelineno-10-28"></a>    <span class="s1">&#39;uuid&#39;</span><span class="p">:</span> <span class="s1">&#39;943a8f02-0527-4528-b1a3-b96de99ebe75&#39;</span>
+</span><span id="__span-10-29"><a id="__codelineno-10-29" name="__codelineno-10-29" href="#__codelineno-10-29"></a><span class="p">}</span>
+</span><span id="__span-10-30"><a id="__codelineno-10-30" name="__codelineno-10-30" href="#__codelineno-10-30"></a>
+</span><span id="__span-10-31"><a id="__codelineno-10-31" name="__codelineno-10-31" href="#__codelineno-10-31"></a><span class="c1"># Write the Parquet file with metadata</span>
+</span><span id="__span-10-32"><a id="__codelineno-10-32" name="__codelineno-10-32" href="#__codelineno-10-32"></a><span class="n">pq</span><span class="o">.</span><span class="n">write_table</span><span class="p">(</span><span class="n">table</span><span class="p">,</span> <span class="s1">&#39;psm_data.parquet&#39;</span><span class="p">,</span> <span class="n">metadata</span><span class="o">=</span><span class="n">file_metadata</span><span class="p">)</span>
 </span></code></pre></div>
 <blockquote>
 <p><strong>NOTE</strong></p>
@@ -2595,7 +2817,7 @@
 <p>The global q-value represents the q-value at the level of the experiment. In OpenMS this is the PSM q-value that is by default global at the level of the experiment and the run. In DIA-NN, it represents <code>Global.Q.Value</code>. At the run level, the <code>Q.Value</code> will be collected by <code>additional_scores</code>.</p>
 <h4 id="psm-format">PSM Format Specification<a class="headerlink" href="#psm-format" title="Anchor link to this section">&para;</a></h4>
 <p>The psm view can be found in <a href="../psm.avsc">psm.avsc</a>.</p>
-<h3 id="feature">14.2. Peptide feature view<a class="headerlink" href="#feature" title="Anchor link to this section">&para;</a></h3>
+<h3 id="feature">15.2. Peptide feature view<a class="headerlink" href="#feature" title="Anchor link to this section">&para;</a></h3>
 <p>The peptide feature view (peptide features) aims to cover detail on quantified peptide information level at the <strong>msrun level</strong>, including peptide intensity in relation to the msrun and sample metadata. The <code>feature parquet file</code> is a parquet file that contains the details of the peptides quantified in the experiment and sample.</p>
 <p>The feature file is similar to the <a href="https://https://github.com/HUPO-PSI/mzTab/tree/master/specification_document-releases/1_0-Proteomics-Release">mztab</a> peptide table, the peptide evidence in <a href="https://cox-labs.github.io/coxdocs/output_tables.html">MaxQuant</a>, the <a href="https://github.com/vdemichev/DiaNN/blob/master/README.md#output">diann matrix table</a>.</p>
 <h4 id="feature-use-cases">Feature use cases<a class="headerlink" href="#feature-use-cases" title="Anchor link to this section">&para;</a></h4>
@@ -2896,15 +3118,15 @@
 <li><code>intensity</code>: Raw intensity value</li>
 </ul>
 <p><em>Example for TMT experiment:</em></p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>intensities: [
-</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>  {sample_accession: &quot;Sample-1&quot;, channel: &quot;TMT126&quot;, intensity: 1234.1},
-</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>  {sample_accession: &quot;Sample-2&quot;, channel: &quot;TMT127C&quot;, intensity: 5678.2}
-</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>]
+<div class="language-text highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>intensities: [
+</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>  {sample_accession: &quot;Sample-1&quot;, channel: &quot;TMT126&quot;, intensity: 1234.1},
+</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>  {sample_accession: &quot;Sample-2&quot;, channel: &quot;TMT127C&quot;, intensity: 5678.2}
+</span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>]
 </span></code></pre></div>
 <p><em>Example for LFQ experiment:</em></p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>intensities: [
-</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>  {sample_accession: &quot;Sample-1&quot;, channel: &quot;LFQ&quot;, intensity: 9876.5}
-</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>]
+<div class="language-text highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>intensities: [
+</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>  {sample_accession: &quot;Sample-1&quot;, channel: &quot;LFQ&quot;, intensity: 9876.5}
+</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>]
 </span></code></pre></div>
 <h4 id="additional-intensities-additional_intensities">Additional Intensities (<code>additional_intensities</code>)<a class="headerlink" href="#additional-intensities-additional_intensities" title="Anchor link to this section">&para;</a></h4>
 <p>The <code>additional_intensities</code> field contains <strong>derived/processed intensity values</strong> that are calculated from the primary intensities using different algorithms or normalization methods. Each entry contains the same sample and channel information plus an array of named intensity types:</p>
@@ -2914,17 +3136,17 @@
 <li><code>intensities</code>: Array of intensity types with names and values</li>
 </ul>
 <p><em>Example:</em></p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>additional_intensities: [
-</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>  {
-</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>    sample_accession: &quot;Sample-1&quot;,
-</span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>    channel: &quot;LFQ&quot;,
-</span><span id="__span-12-5"><a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a>    intensities: [
-</span><span id="__span-12-6"><a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a>      {intensity_name: &quot;normalize_intensity&quot;, intensity_value: 0.1234},
-</span><span id="__span-12-7"><a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a>      {intensity_name: &quot;lfq&quot;, intensity_value: 2345.6},
-</span><span id="__span-12-8"><a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a>      {intensity_name: &quot;ibaq&quot;, intensity_value: 4567.8}
-</span><span id="__span-12-9"><a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a>    ]
-</span><span id="__span-12-10"><a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a>  }
-</span><span id="__span-12-11"><a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a>]
+<div class="language-text highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>additional_intensities: [
+</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>  {
+</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>    sample_accession: &quot;Sample-1&quot;,
+</span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>    channel: &quot;LFQ&quot;,
+</span><span id="__span-13-5"><a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>    intensities: [
+</span><span id="__span-13-6"><a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a>      {intensity_name: &quot;normalize_intensity&quot;, intensity_value: 0.1234},
+</span><span id="__span-13-7"><a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a>      {intensity_name: &quot;lfq&quot;, intensity_value: 2345.6},
+</span><span id="__span-13-8"><a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a>      {intensity_name: &quot;ibaq&quot;, intensity_value: 4567.8}
+</span><span id="__span-13-9"><a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a>    ]
+</span><span id="__span-13-10"><a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a>  }
+</span><span id="__span-13-11"><a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a>]
 </span></code></pre></div>
 <h4 id="semantic-guidelines">Semantic Guidelines<a class="headerlink" href="#semantic-guidelines" title="Anchor link to this section">&para;</a></h4>
 <ul>
@@ -2936,7 +3158,7 @@
 <p>The <code>DIA-NN</code> scan is a string that contains the scan number of the MS2 used to identify the peptide. We use the <code>rt</code> field and the mzML information to get that number.</p>
 <h4 id="feature-format">Feature Format Specification<a class="headerlink" href="#feature-format" title="Anchor link to this section">&para;</a></h4>
 <p>The feature view can be found in <a href="../feature.avsc">feature.avsc</a>.</p>
-<h3 id="peptide">14.3. Peptide summary view<a class="headerlink" href="#peptide" title="Anchor link to this section">&para;</a></h3>
+<h3 id="peptide">15.3. Peptide summary view<a class="headerlink" href="#peptide" title="Anchor link to this section">&para;</a></h3>
 <p>The peptide summary view aims to cover detail on peptides quantified in the experiment and sample. A peptide could be a modified peptide (sequence with modifications) or non-modified peptide (sequence with no modifications) depending on the use case and the granularity of the data. The peptide view is a tab-delimited file format that claims to represent the peptides quantified in the experiment.</p>
 <h4 id="peptide-use-cases">Peptide use cases<a class="headerlink" href="#peptide-use-cases" title="Anchor link to this section">&para;</a></h4>
 <ul>
@@ -2998,13 +3220,13 @@
 </table>
 <h4 id="peptide-format">Peptide Format Specification<a class="headerlink" href="#peptide-format" title="Anchor link to this section">&para;</a></h4>
 <p>The peptide view can be found in <a href="../peptide.avsc">peptide.avsc</a>.</p>
-<h2 id="protein">15. Protein views: Protein groups and Protein summary<a class="headerlink" href="#protein" title="Anchor link to this section">&para;</a></h2>
+<h2 id="protein">16. Protein views: Protein groups and Protein summary<a class="headerlink" href="#protein" title="Anchor link to this section">&para;</a></h2>
 <p>We have two main reports for protein information.</p>
 <ul>
 <li>The <a href="#pg">pg</a> report is the output of the quantitative tool including quantms, MaxQuant or DIA-NN.</li>
 <li>The <a href="#proteinsummary">proteinsummary</a> is a protein summary is a summary of the protein quantified by samples.</li>
 </ul>
-<h3 id="pg">15.1. Protein group view<a class="headerlink" href="#pg" title="Anchor link to this section">&para;</a></h3>
+<h3 id="pg">16.1. Protein group view<a class="headerlink" href="#pg" title="Anchor link to this section">&para;</a></h3>
 <p>The protein group view is a tabular file that contains the details of the protein groups identified and quantified. The protein group is similar to the outputs of multiple tools such as MaxQuant, DIA-NN, and others.</p>
 <p>The file defines the relation between a protein groups and the raw file that contains the protein group. The protein group view is a key file in the proteomics data analysis workflow as it describes the protein groups identified and quantified in the experiment.</p>
 <h4 id="protein-group-use-cases">Protein group use cases<a class="headerlink" href="#protein-group-use-cases" title="Anchor link to this section">&para;</a></h4>
@@ -3014,6 +3236,7 @@
 <li>Store information about FDR and q-values for the protein groups identified/quantified.</li>
 </ul>
 <h4 id="protein-group-fields">Protein group fields<a class="headerlink" href="#protein-group-fields" title="Anchor link to this section">&para;</a></h4>
+<p>Fields marked with <strong>(PK)</strong> are primary keys and MUST NOT be null. Fields marked with <strong>(nullable)</strong> may have null values.</p>
 <table>
 <thead>
 <tr>
@@ -3027,7 +3250,7 @@
 </thead>
 <tbody>
 <tr>
-<td><code>pg_accessions</code></td>
+<td><code>pg_accessions</code> <strong>(PK)</strong></td>
 <td>Protein group accessions of all the proteins within this group</td>
 <td>array[string]</td>
 <td>Protein.Group</td>
@@ -3035,23 +3258,23 @@
 <td>Protein IDs</td>
 </tr>
 <tr>
-<td><code>pg_names</code></td>
+<td><code>pg_names</code> (nullable)</td>
 <td>Protein group names</td>
-<td>array[string]</td>
+<td>array[string], null</td>
 <td>Protein.Names</td>
 <td>-</td>
 <td>Protein names</td>
 </tr>
 <tr>
-<td><code>gg_accessions</code></td>
+<td><code>gg_accessions</code> (nullable)</td>
 <td>Gene group accessions, as a string array</td>
-<td>array[string]</td>
+<td>array[string], null</td>
 <td>Genes</td>
 <td>-</td>
 <td>Gene names</td>
 </tr>
 <tr>
-<td><code>reference_file_name</code></td>
+<td><code>reference_file_name</code> <strong>(PK)</strong></td>
 <td>The raw file containing the identified/quantified protein</td>
 <td>string</td>
 <td>Run</td>
@@ -3059,41 +3282,41 @@
 <td>combined</td>
 </tr>
 <tr>
-<td><code>peptide_counts</code></td>
+<td><code>peptide_counts</code> (nullable)</td>
 <td>Peptide sequence counts for this protein group in this specific file. Contains unique sequences (specific to this protein group) and total sequences.</td>
-<td>struct</td>
+<td>struct, null</td>
 <td>Unique.Stripped.Peptides</td>
 <td>Unique Peptides</td>
 <td>Unique peptides</td>
 </tr>
 <tr>
-<td><code>feature_counts</code></td>
+<td><code>feature_counts</code> (nullable)</td>
 <td>Peptide feature counts (peptide charge combinations) for this protein group in this specific file. Contains unique features (specific to this protein group) and total features.</td>
-<td>struct</td>
+<td>struct, null</td>
 <td>Precursor.Quantity</td>
 <td>Precursor Ions</td>
 <td>MS/MS count</td>
 </tr>
 <tr>
-<td><code>global_qvalue</code></td>
+<td><code>global_qvalue</code> (nullable)</td>
 <td>Global q-value of the protein group at the experiment level</td>
-<td>float</td>
+<td>float, null</td>
 <td>Global.PG.Q.Value</td>
 <td>-</td>
 <td>Q-value</td>
 </tr>
 <tr>
-<td><code>intensities</code></td>
+<td><code>intensities</code> (nullable)</td>
 <td>The primary intensity-based abundance of the protein group in the sample across different channels. Contains raw/primary measurements from the quantification tool.</td>
-<td><a href="#intensities">intensities</a></td>
+<td><a href="#intensities">intensities</a>, null</td>
 <td>PG.Quantity</td>
 <td>-</td>
 <td>Intensity, LFQ intensity</td>
 </tr>
 <tr>
-<td><code>additional_intensities</code></td>
+<td><code>additional_intensities</code> (nullable)</td>
 <td>Derived/processed intensity values calculated from primary intensities using different algorithms (normalization, LFQ, iBAQ, etc.).</td>
-<td><a href="#intensities">intensities</a></td>
+<td><a href="#intensities">intensities</a>, null</td>
 <td>PG.Normalised, PG.MaxLFQ</td>
 <td>-</td>
 <td>LFQ intensity, iBAQ</td>
@@ -3107,9 +3330,9 @@
 <td>Razor + unique peptides, Unique peptides</td>
 </tr>
 <tr>
-<td><code>anchor_protein</code></td>
+<td><code>anchor_protein</code> (nullable)</td>
 <td>Representative protein of the protein group (usually the first)</td>
-<td>string</td>
+<td>string, null</td>
 <td>-</td>
 <td>-</td>
 <td>First protein in Protein IDs</td>
@@ -3123,17 +3346,17 @@
 <td>Reverse</td>
 </tr>
 <tr>
-<td><code>contaminant</code></td>
+<td><code>contaminant</code> (nullable)</td>
 <td>Contaminant indicator</td>
-<td>int32</td>
+<td>int32, null</td>
 <td>-</td>
 <td>-</td>
 <td>Potential contaminant</td>
 </tr>
 <tr>
-<td><code>additional_scores</code></td>
+<td><code>additional_scores</code> (nullable)</td>
 <td>Additional scores and metrics</td>
-<td>array[struct]</td>
+<td>array[struct], null</td>
 <td>-</td>
 <td>-</td>
 <td>Score, Sequence coverage [%], Mol. weight [kDa], MS/MS count</td>
@@ -3142,9 +3365,9 @@
 </table>
 <h4 id="protein_additional_scores">protein additional scores<a class="headerlink" href="#protein_additional_scores" title="Anchor link to this section">&para;</a></h4>
 <p>At the protein level, additional scores should be store for each given protein group. The additional scores are stored as a list of key-value pairs, where the key is the name of the score (is RECOMMENDED to use HUPO-PSI MS ontology) and the value is an array of float32 values where the index of values matches to the index on the <code>pg_accessions</code> field. Additional scores are mainly the search engine and protein scores that want to be added at the protein group level.</p>
-<h2 id="proteinsummary">16. Protein view<a class="headerlink" href="#proteinsummary" title="Anchor link to this section">&para;</a></h2>
+<h2 id="proteinsummary">17. Protein view<a class="headerlink" href="#proteinsummary" title="Anchor link to this section">&para;</a></h2>
 <p>The protein view is a report of the proteins identified/quantified in the experiment. It doesn't contain major information about the inference of the protein group, but it contains the protein abundance and the protein identification scores.</p>
-<h3 id="161-use-cases">16.1. Use cases<a class="headerlink" href="#161-use-cases" title="Anchor link to this section">&para;</a></h3>
+<h3 id="171-use-cases">17.1. Use cases<a class="headerlink" href="#171-use-cases" title="Anchor link to this section">&para;</a></h3>
 <ul>
 <li>Fast reports of the proteins quantified/identified in an experiment with for Web interfaces and search engines.</li>
 <li>Connection to AE/DE formats that enable to talk about the coverage of the protein identification.</li>
@@ -3202,15 +3425,15 @@
 </table>
 <h4 id="protein-format">Protein Format Specification<a class="headerlink" href="#protein-format" title="Anchor link to this section">&para;</a></h4>
 <p>The protein view can be found in <a href="../protein.avsc">protein.avsc</a>.</p>
-<h2 id="mz">17. Mass spectra view<a class="headerlink" href="#mz" title="Anchor link to this section">&para;</a></h2>
+<h2 id="mz">18. Mass spectra view<a class="headerlink" href="#mz" title="Anchor link to this section">&para;</a></h2>
 <p>The mass spectra view is a tabular file that contains the details of the mass spectra identified and quantified. This view is based on <a href="https://github.com/lazear/mz_parquet">mz_parquet</a> format developed by Michael Lazear. The mz_parquet format is a parquet-based format that stores the mass spectra information in a columnar format.</p>
-<h3 id="171-mass-spectra-use-cases">17.1. Mass spectra use cases<a class="headerlink" href="#171-mass-spectra-use-cases" title="Anchor link to this section">&para;</a></h3>
+<h3 id="181-mass-spectra-use-cases">18.1. Mass spectra use cases<a class="headerlink" href="#181-mass-spectra-use-cases" title="Anchor link to this section">&para;</a></h3>
 <ul>
 <li>Retrieve all the precursor mass, retention time, and intensity in the file.</li>
 <li>Enable easy visualization and scanning on mass spectra level.</li>
 <li>AI/ML training and prediction on mass spectra level.</li>
 </ul>
-<h3 id="172-mass-spectra-fields">17.2. Mass spectra fields<a class="headerlink" href="#172-mass-spectra-fields" title="Anchor link to this section">&para;</a></h3>
+<h3 id="182-mass-spectra-fields">18.2. Mass spectra fields<a class="headerlink" href="#182-mass-spectra-fields" title="Anchor link to this section">&para;</a></h3>
 <table>
 <thead>
 <tr>
@@ -3469,10 +3692,10 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.tabs.sticky", "navigation.sections", "navigation.expand", "navigation.path", "navigation.top", "navigation.footer", "navigation.indexes", "navigation.instant", "navigation.tracking", "search.suggest", "search.highlight", "search.share", "toc.follow", "toc.integrate", "content.code.copy", "content.code.annotate", "content.tabs.link"], "search": "../assets/javascripts/workers/search.7a47a382.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.tabs.sticky", "navigation.sections", "navigation.expand", "navigation.path", "navigation.top", "navigation.footer", "navigation.indexes", "navigation.instant", "navigation.tracking", "search.suggest", "search.highlight", "search.share", "toc.follow", "toc.integrate", "content.code.copy", "content.code.annotate", "content.tabs.link"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../assets/javascripts/bundle.e71a0d61.min.js"></script>
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
       
         <script src="../assets/_markdown_exec_pyodide.js"></script>
       

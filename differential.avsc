@@ -36,7 +36,7 @@
           "fields": [
             {"name": "protein", "type": "string", "doc": "Protein Accession"},
             {"name": "label", "type": "string", "doc": "Label for the Conditions combination"},
-            {"name": "log2FC", "type": "float64", "doc": "Log2 Fold Change"},
+            {"name": "log2fc", "type": "float64", "doc": "Log2 Fold Change"},
             {"name": "se", "type": "float64", "doc": "Standard error of the log2 fold change"},
             {"name": "df", "type": "int32", "doc": "Degree of freedom of the Student test"},
             {"name": "pvalue", "type": "float64", "doc": "Raw p-values"},

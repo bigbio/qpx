@@ -29,7 +29,7 @@
 			"null",
 			{
 				"type": "record",
-				"name": "score",
+				"name": "best_score",
 				"fields": [
 					{ "name": "name", "type": "string" },
 					{ "name": "value", "type": "float32" }
@@ -40,7 +40,7 @@
 		{"name": "additional_scores", "type": ["null", {"type": "array",
 		"items": {
 			"type": "record",
-			"name": "score",
+			"name": "additional_score",
 			"fields": [
 				{"name": "name", "type": "string"},
 				{"name": "value", "type": "float32"}

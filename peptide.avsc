@@ -32,7 +32,7 @@
 					{ "name": "name", "type": "string", "doc": "Name of the modification (e.g., Oxidation)"},
 					{ "name": "accession", "type": ["null", "string"], "doc": "Accession of the modification (e.g., UNIMOD:35)"},
 					{
-						"name": "fields",
+						"name": "positions",
 						"type": {
 							"type": "array",
 							"items": {
@@ -40,7 +40,7 @@
 								"name": "modification_instance",
 								"doc": "An instance of a modification at a specific position with scores.",
 								"fields": [
-									{ "name": "position", "type": "int", "doc": "Position of the modification in the peptide sequence (1-based). Terminal mods are 0 (N-term) or len+1 (C-term)."},
+									{ "name": "position", "type": "string", "doc": "Position of the modification in format '{AA}.{position}' where AA is the amino acid code (or N-term/C-term) and position is 0 for N-term, 1-based for amino acids, or length+1 for C-term. Examples: 'M.4' for Met at position 4, 'N-term.0' for N-terminal modification, 'C-term.11' for C-terminal on 10-residue peptide"},
 									{
 										"name": "scores",
 										"type": ["null", {
@@ -50,8 +50,8 @@
 												"name": "score_entry",
 												"doc": "A score associated with the modification at this position.",
 												"fields": [
-													{ "name": "name", "type": "string", "doc": "Name of the score (e.g., FLR, PTM-score)"},
-													{ "name": "value", "type": ["null", "string"], "doc": "Value of the score." }
+													{ "name": "score_name", "type": "string", "doc": "Name of the score (e.g., localization_probability, PTM-score)"},
+													{ "name": "score_value", "type": "float32", "doc": "Value of the score for this specific position" }
 												]
 											}
 										}],
@@ -71,16 +71,17 @@
 	{"name": "best_id_score", "type": ["null", {
 		"type": "array",
 		"items": {
-			"type": "struct",
+			"type": "record",
+			"name": "score",
 			"fields": [
 				{"name": "score_name", "type": "string"},
 				{"name": "score_value", "type": "float32"}
 			]
 			}
 		}],
-	"doc": "A named score type and value representing an identification's measure of confidence or input feature"
+	"doc": "The best search engine score from all the features/psms identified"
 	},
-	{"name": "sample_accession", "type": "string", "doc": "The sample accession in the SDRF, which column is called source name"},
-	{"name": "abundance", "type": "float32", "doc": "The peptide abundance in the given sample accession"}
+	{"name": "sample_accession", "type": ["null", "string"], "doc": "The sample accession in the SDRF, which column is called source name"},
+	{"name": "abundance", "type": ["null", "float32"], "doc": "The peptide abundance in the given sample accession"}
 	]
 }

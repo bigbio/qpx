@@ -119,7 +119,10 @@
 		        {"name": "ion_mobility", "type": ["null", "float32"], "doc": "Ion mobility value for the precursor ion"},
             {"name": "number_peaks", "type": ["null", "int32"], "doc": "Number of peaks in the spectrum used for the peptide spectrum match"},
             {"name": "mz_array", "type": ["null", {"type": "array", "items": "float32"}], "doc": "Array of m/z values for the spectrum used for the peptide spectrum match"},
-            {"name": "intensity_array", "type": ["null", {"type": "array", "items": "float32"}], "doc": "Array of intensity values for the spectrum used for the peptide spectrum match"}
+            {"name": "intensity_array", "type": ["null", {"type": "array", "items": "float32"}], "doc": "Array of intensity values for the spectrum used for the peptide spectrum match"},
+            {"name": "charge_array", "type": ["null", {"type": "array", "items": "int32"}], "doc": "Array of fragment ion charge values for the spectrum used for the peptide spectrum match"},
+            {"name": "ion_type_array", "type": ["null", {"type": "array", "items": "string"}], "doc": "Array of fragment ion type annotations (e.g., b, y, a) for the spectrum used for the peptide spectrum match"},
+            {"name": "ion_mobility_array", "type": ["null", {"type": "array", "items": "float32"}], "doc": "Array of fragment ion mobility values for the spectrum used for the peptide spectrum match"}
           ]
         }
       },

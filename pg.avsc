@@ -21,19 +21,21 @@
 			"doc": "File-level metadata information"
 		},
 		{"name": "gg_accessions", "type": ["null",{"type": "array","items": "string"}], "doc": "Gene group accessions, as a string array"},
-		{"name": "pg_accessions", "type": ["null",{"type": "array","items": "string"}], "doc": "Protein accessions of all the proteins within this group"},
+		{"name": "pg_accessions", "type": {"type": "array","items": "string"}, "doc": "Protein accessions of all the proteins within this group"},
 		{"name": "pg_names", "type": ["null",{"type": "array","items": "string"}], "doc": "Protein group names (descriptive names for the proteins)"},
 		{"name": "gg_names", "type": ["null", {"type": "array", "items": "string"}], "doc": "Gene names corresponding to the proteins in the group"},
 		{"name": "reference_file_name", "type": "string", "doc": "The raw file containing the identified/quantified protein group"},
 		{"name": "peptide_counts", "type": ["null", {
-			"type": "struct",
+			"type": "record",
+			"name": "peptide_count_record",
 			"fields": [
 				{"name": "unique_sequences", "type": "int", "doc": "Number of peptide sequences unique to this protein group within this file"},
 				{"name": "total_sequences", "type": "int", "doc": "Total number of peptide sequences identified for this protein group in this file"}
 			]
 		}], "doc": "Peptide sequence counts for this protein group in this specific file"},
 		{"name": "feature_counts", "type": ["null", {
-			"type": "struct",
+			"type": "record",
+			"name": "feature_count_record",
 			"fields": [
 				{"name": "unique_features", "type": "int", "doc": "Number of unique peptide features (peptide charge combinations) specific to this protein group within this file"},
 				{"name": "total_features", "type": "int", "doc": "Total number of peptide features identified for this protein group in this file"}
@@ -44,7 +46,8 @@
 		{"name": "intensities", "type": ["null",{
 			"type": "array",
 			"items": {
-				"type": "struct",
+				"type": "record",
+				"name": "intensity_record",
 				"fields": [
 					{"name": "sample_accession", "type": "string"},
 					{"name": "channel", "type": "string"},
@@ -57,14 +60,16 @@
 		{"name": "additional_intensities", "type": ["null",{
 			"type": "array",
 			"items": {
-				"type": "struct",
+				"type": "record",
+				"name": "additional_intensity_record",
 				"fields": [
 					{"name": "sample_accession", "type": "string"},
 					{"name": "channel", "type": "string"},
 					{"name": "intensities", "type": {
 						"type": "array",
 						"items": {
-							"type": "struct",
+							"type": "record",
+							"name": "intensity_pair",
 							"fields": [
 								{"name": "intensity_name", "type": "string"},
 								{"name": "intensity_value", "type": "float32"}
@@ -78,14 +83,15 @@
 		},
 		{"name": "is_decoy", "type": "int", "doc": "Decoy indicator, 1 if the protein group is a decoy, 0 if target"},
 		{"name": "contaminant", "type": ["null", "int"], "doc": "If the protein is a contaminant (1) or not (0)"},
-		{"name": "peptides", "type": {"type": "array","items": { "type": "struct", "fields": [{ "name": "protein_name", "type": "string" }, { "name": "peptide_count", "type": "int" }]}}, "doc": "Number of peptides per protein in the protein group"},
+		{"name": "peptides", "type": {"type": "array","items": { "type": "record", "name": "peptide_count_per_protein", "fields": [{ "name": "protein_name", "type": "string" }, { "name": "peptide_count", "type": "int" }]}}, "doc": "Number of peptides per protein in the protein group"},
 		{"name": "anchor_protein", "type": ["null", "string"], "doc": "The anchor protein of the protein group (leading protein or representative)"},
 		{"name": "sequence_coverage", "type": ["null", "float32"], "doc": "Percentage of the protein sequence covered by identified peptides"},
 		{"name": "molecular_weight", "type": ["null", "float32"], "doc": "Molecular weight of the protein in kDa"},
 		{"name": "additional_scores", "type": ["null", {
 			"type": "array",
 			"items": {
-				"type": "struct",
+				"type": "record",
+				"name": "score",
 				"fields": [
 					{"name": "score_name", "type": "string"},
 					{"name": "score_value", "type": "float32"}
@@ -97,7 +103,8 @@
 		{"name": "cv_params", "type": ["null", {
 			"type": "array",
 			"items": {
-				"type": "struct",
+				"type": "record",
+				"name": "cv_param",
 				"fields": [
 					{"name": "cv_name", "type": "string"},
 					{"name": "cv_value", "type": "string"}
