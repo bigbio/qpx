@@ -26,7 +26,7 @@ gg_names			"Gene names, as string array"
 rt_start			
 rt_stop			
 andromeda_score	Andromeda:score	MS:1002338	The probability based score of the Andromeda search engine.
-andromeda_delta_score	Andromeda: delta score	MS:1003433	
+andromeda_delta_score	Andromeda:delta score	MS:1003433	Score difference to the second best identified peptide with a different amino acid sequence.
 percolator_score	percolator:score	MS:1001492	Percolator:score.
 openms_score	OpenMS:Best PSM Score	MS:1003114	The score of the best PSM selected by the underlying identification tool
 msgf_score	MS-GF:RawScore	MS:1002049	MS-GF raw score.
