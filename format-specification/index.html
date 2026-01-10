@@ -12,13 +12,13 @@
         <meta name="author" content="BigBio Team">
       
       
-        <link rel="canonical" href="https://bigbio.github.io/QPX/package/format-specification/">
+        <link rel="canonical" href="https://qpx.quantms.org/format-specification/">
       
       
         <link rel="prev" href="../cli-reference/">
       
       
-        <link rel="next" href="../community/">
+        <link rel="next" href="../troubleshooting/">
       
       
         
@@ -1122,6 +1122,8 @@
       
         
       
+        
+      
     
     
     
@@ -1471,6 +1473,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1675,7 +1705,7 @@
 <ul>
 <li><strong>Primary Key (PK)</strong>: Fields that uniquely identify a record. These fields <strong>MUST NOT be null</strong> and are required for data integrity.</li>
 <li><strong>Nullable</strong>: Fields that exist in every record but may have null values for some observations (e.g., de novo peptides without protein mapping).</li>
-<li><strong>Optional</strong>: Fields that may not exist in the schema at all, depending on the workflow or instrument (e.g., ion mobility fields for non-TIMS instruments).</li>
+<li><strong>Optional</strong>: Fields that may not exist in the schema at all, depending on the workflow or instrument (e.g., ion mobility fields for non-TIMS instruments, spectral arrays when <code>--spectral-data</code> is not enabled).</li>
 </ul>
 <table>
 <thead>
@@ -1707,6 +1737,29 @@
 </tr>
 </tbody>
 </table>
+<h4 id="notation-in-field-tables">Notation in Field Tables<a class="headerlink" href="#notation-in-field-tables" title="Anchor link to this section">&para;</a></h4>
+<p>In the field tables throughout this specification:</p>
+<ul>
+<li><strong>(PK)</strong> - Primary key field, must not be null</li>
+<li><strong>(nullable)</strong> - Field always exists but value can be null</li>
+<li><strong>(optional)</strong> - Field may not exist in the file; if present, value can be null</li>
+</ul>
+<p>When a field type includes <code>null</code> (e.g., <code>float, null</code>), it indicates the field is nullable. Fields in sections marked as "optional" may be omitted entirely from the output file.</p>
+<h4 id="example-spectral-data-fields">Example: Spectral Data Fields<a class="headerlink" href="#example-spectral-data-fields" title="Anchor link to this section">&para;</a></h4>
+<p>The spectral data fields (<code>mz_array</code>, <code>intensity_array</code>, <code>charge_array</code>, <code>ion_type_array</code>, <code>ion_mobility_array</code>) are <strong>optional</strong>. This means:</p>
+<ol>
+<li>The columns may not exist in the Parquet file at all (e.g., when <code>--spectral-data</code> flag is not used)</li>
+<li>If the columns exist, individual values may still be null</li>
+<li>The file metadata defines which optional columns are present</li>
+</ol>
+<p>This design follows the Parquet best practice of storing only the columns you need, as discussed in <a href="https://github.com/bigbio/qpx/issues/108">issue #108</a>: <em>"If you don't care about a column and you are willing to tell the reader exactly which columns to read, you pay for exactly what you ask for and nothing else."</em></p>
+<h4 id="example-protein-position-fields">Example: Protein Position Fields<a class="headerlink" href="#example-protein-position-fields" title="Anchor link to this section">&para;</a></h4>
+<p>As discussed in <a href="https://github.com/bigbio/qpx/issues/91">issue #91</a>, fields like <code>protein_start</code> and <code>protein_end</code> (peptide position within protein) should be <strong>optional</strong>, not nullable. The reasoning: these values are always calculable from sequence data, so either:</p>
+<ul>
+<li>The entire column is present with complete data, OR</li>
+<li>The entire column is absent (not computed by the tool)</li>
+</ul>
+<p>Individual null values within an otherwise populated column should be avoided for calculable fields.</p>
 <h3 id="peptidoform">4.1. Peptidoform<a class="headerlink" href="#peptidoform" title="Anchor link to this section">&para;</a></h3>
 <p>A peptidoform is a peptide sequence with modifications. For example, the peptide sequence <code>PEPTIDM</code> with a modification of <code>Oxidation</code> would be <code>PEPTIDM[Oxidation]</code>. The peptidoform show be written using the <a href="https://github.com/HUPO-PSI/ProForma">Proforma specification</a>. This concept is used in the following outputs:</p>
 <ul>
@@ -2651,8 +2704,8 @@
 </tr>
 </tbody>
 </table>
-<h5 id="psm-spectral-fields">Spectral Data Fields<a class="headerlink" href="#psm-spectral-fields" title="Anchor link to this section">&para;</a></h5>
-<p><strong>Note</strong>: These fields are optional for use cases requiring spectrum-level information.</p>
+<h5 id="psm-spectral-fields">Spectral Data Fields (optional)<a class="headerlink" href="#psm-spectral-fields" title="Anchor link to this section">&para;</a></h5>
+<p><strong>Note</strong>: These fields are <strong>optional</strong> - they may not exist in the file at all. When the <code>--spectral-data</code> flag is used during conversion, these columns are included. See <a href="#field-classification">Field Classification</a> for the distinction between nullable and optional fields.</p>
 <table>
 <thead>
 <tr>
@@ -2667,7 +2720,7 @@
 </thead>
 <tbody>
 <tr>
-<td><code>ion_mobility</code></td>
+<td><code>ion_mobility</code> (optional)</td>
 <td>Ion mobility value for the precursor ion</td>
 <td>float, null</td>
 <td>-</td>
@@ -2676,7 +2729,7 @@
 <td>-</td>
 </tr>
 <tr>
-<td><code>number_peaks</code></td>
+<td><code>number_peaks</code> (optional)</td>
 <td>Number of peaks in the spectrum used for the peptide spectrum match</td>
 <td>int32, null</td>
 <td>-</td>
@@ -2685,7 +2738,7 @@
 <td>-</td>
 </tr>
 <tr>
-<td><code>mz_array</code></td>
+<td><code>mz_array</code> (optional)</td>
 <td>Array of m/z values for the spectrum used for the peptide spectrum match</td>
 <td>array[float], null</td>
 <td>-</td>
@@ -2694,7 +2747,7 @@
 <td>-</td>
 </tr>
 <tr>
-<td><code>intensity_array</code></td>
+<td><code>intensity_array</code> (optional)</td>
 <td>Array of intensity values for the spectrum used for the peptide spectrum match</td>
 <td>array[float], null</td>
 <td>-</td>
@@ -2703,7 +2756,7 @@
 <td>-</td>
 </tr>
 <tr>
-<td><code>charge_array</code></td>
+<td><code>charge_array</code> (optional)</td>
 <td>Array of fragment ion charge values for the spectrum used for the peptide spectrum match</td>
 <td>array[int], null</td>
 <td>-</td>
@@ -2712,7 +2765,7 @@
 <td>-</td>
 </tr>
 <tr>
-<td><code>ion_type_array</code></td>
+<td><code>ion_type_array</code> (optional)</td>
 <td>Array of fragment ion type annotations (e.g., b, y, a) for the spectrum used for the peptide spectrum match</td>
 <td>array[string], null</td>
 <td>-</td>
@@ -2721,7 +2774,7 @@
 <td>-</td>
 </tr>
 <tr>
-<td><code>ion_mobility_array</code></td>
+<td><code>ion_mobility_array</code> (optional)</td>
 <td>Array of fragment ion mobility values for the spectrum used for the peptide spectrum match</td>
 <td>array[float], null</td>
 <td>-</td>
@@ -2753,13 +2806,123 @@
 </ul>
 </blockquote>
 <h4 id="psm-cv-params">Psm CV parameters<a class="headerlink" href="#psm-cv-params" title="Anchor link to this section">&para;</a></h4>
-<p>Cv params are a key-value pairs list that allows to store additional information for a given psm. For example, it could be used to store the following, mzIdentML information:</p>
+<p>CV params are a key-value pairs list that allows storing additional information for a given PSM using controlled vocabulary terms.</p>
+<h5 id="design-philosophy-human-readable-names">Design Philosophy: Human-Readable Names<a class="headerlink" href="#design-philosophy-human-readable-names" title="Anchor link to this section">&para;</a></h5>
+<p>QPX uses <strong>human-readable term names</strong> (not ontology accessions) in <code>cv_params</code>. This design choice aligns QPX with successful omics data standards:</p>
+<table>
+<thead>
+<tr>
+<th>Format</th>
+<th>Approach</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>GTF</strong> (genomics)</td>
+<td>Readable attributes</td>
+<td><code>gene_name "BRCA2"</code></td>
+</tr>
+<tr>
+<td><strong>AnnData</strong> (single-cell)</td>
+<td>DataFrame column names</td>
+<td><code>cell_type</code>, <code>disease</code></td>
+</tr>
+<tr>
+<td><strong>QPX</strong> (proteomics)</td>
+<td>Readable CV names</td>
+<td><code>dissociation method</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Why this approach?</strong></p>
+<ol>
+<li><strong>Cross-omics compatibility</strong> - Follows conventions used in GTF, AnnData, and other widely-adopted formats</li>
+<li><strong>Self-documenting data</strong> - Users can understand files without external lookups</li>
+<li><strong>Pragmatic over pedantic</strong> - The specification documents formal definitions; data stays readable</li>
+<li><strong>Modern format philosophy</strong> - Moves away from verbose XML-style formats toward practical columnar formats</li>
+</ol>
+<h5 id="cv-term-format">CV Term Format<a class="headerlink" href="#cv-term-format" title="Anchor link to this section">&para;</a></h5>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="p">{</span>
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">  </span><span class="nt">&quot;cv_params&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;cv_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;dissociation method&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;cv_value&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;HCD&quot;</span><span class="w"> </span><span class="p">},</span>
+</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;cv_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;normalized collision energy&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;cv_value&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;28&quot;</span><span class="w"> </span><span class="p">}</span>
+</span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="w">  </span><span class="p">]</span>
+</span><span id="__span-10-6"><a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="p">}</span>
+</span></code></pre></div>
+<blockquote>
+<p><strong>NOTE</strong>: Search engine scores should be stored in the <code>additional_scores</code> field, not in <code>cv_params</code>.</p>
+</blockquote>
+<h5 id="common-cv-terms">Common CV Terms Reference<a class="headerlink" href="#common-cv-terms" title="Anchor link to this section">&para;</a></h5>
+<p>The following table documents recommended CV terms with their PSI-MS accessions for reference:</p>
+<table>
+<thead>
+<tr>
+<th>CV Name</th>
+<th>PSI-MS Accession</th>
+<th>Description</th>
+<th>Example Values</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>dissociation method</td>
+<td>MS:1000044</td>
+<td>Fragmentation method for MS2 acquisition</td>
+<td>HCD, CID, ETD, ECD, UVPD</td>
+</tr>
+<tr>
+<td>collision energy</td>
+<td>MS:1000045</td>
+<td>Collision energy in eV</td>
+<td>28, 35</td>
+</tr>
+<tr>
+<td>normalized collision energy</td>
+<td>MS:1000138</td>
+<td>NCE as percentage</td>
+<td>28, 30</td>
+</tr>
+<tr>
+<td>isolation window target m/z</td>
+<td>MS:1000827</td>
+<td>Target m/z for precursor isolation</td>
+<td>500.25</td>
+</tr>
+<tr>
+<td>isolation window lower offset</td>
+<td>MS:1000828</td>
+<td>Lower offset from target m/z</td>
+<td>1.5</td>
+</tr>
+<tr>
+<td>isolation window upper offset</td>
+<td>MS:1000829</td>
+<td>Upper offset from target m/z</td>
+<td>1.5</td>
+</tr>
+<tr>
+<td>number of unmatched peaks</td>
+<td>-</td>
+<td>Peaks not matched to theoretical fragments</td>
+<td>3</td>
+</tr>
+</tbody>
+</table>
+<h5 id="fragmentation-cv-terms">Fragmentation Information<a class="headerlink" href="#fragmentation-cv-terms" title="Anchor link to this section">&para;</a></h5>
+<p>For AI/ML applications such as MS2 intensity prediction and de novo sequencing, fragmentation method and collision energy are critical metadata:</p>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="p">{</span>
+</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">  </span><span class="nt">&quot;cv_params&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;cv_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;dissociation method&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;cv_value&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;HCD&quot;</span><span class="w"> </span><span class="p">},</span>
+</span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;cv_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;normalized collision energy&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;cv_value&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;28&quot;</span><span class="w"> </span><span class="p">}</span>
+</span><span id="__span-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="w">  </span><span class="p">]</span>
+</span><span id="__span-11-6"><a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="p">}</span>
+</span></code></pre></div>
+<p><strong>Data sources:</strong></p>
 <ul>
-<li>'prot:FDR threshold': 0.01</li>
-<li>number of unmatched peaks: 3</li>
+<li><strong>mzML files</strong>: Extract from spectrum metadata (scan-level parameters)</li>
+<li><strong>SDRF files</strong>: Use <code>comment[dissociation method]</code> column (experiment-level)</li>
 </ul>
-<p>In quantms we use <code>consensus_support</code> where the value is the number of search engines that support the identification. This field could be added as an additional_score as: <code>consensus_result: 3</code></p>
-<p>The cv_params are stored as a list of key-value pairs, where the key is the name of the parameter, and the value is the value of the parameter. This is similar to the CVParams in the mzIdentML format. Please, be aware that search engine scores should be stored for psms in the column <code>additional_scores</code>.</p>
 <h4 id="psm-file-metadata">Psm file metadata<a class="headerlink" href="#psm-file-metadata" title="Anchor link to this section">&para;</a></h4>
 <p>For parquet psm files, the metadata of the file including QPX version and other metadata should be stored in the file. The metadata should be stored in the file as a key/value pair. The metadata should include the following fields:</p>
 <ul>
@@ -2776,38 +2939,38 @@
 <li><code>compression_format</code>: [gzip, snappy, lzo, none]</li>
 </ul>
 <p>Example parquet in Python:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">pyarrow</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pa</span>
-</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">pyarrow.parquet</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pq</span>
-</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>
-</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="c1"># Define a sample schema for the Parquet file</span>
-</span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="n">schema</span> <span class="o">=</span> <span class="n">pa</span><span class="o">.</span><span class="n">schema</span><span class="p">([</span>
-</span><span id="__span-10-6"><a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>    <span class="o">....</span>
-</span><span id="__span-10-7"><a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="p">])</span>
-</span><span id="__span-10-8"><a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>
-</span><span id="__span-10-9"><a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="c1"># Create sample data to write to the Parquet file</span>
-</span><span id="__span-10-10"><a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
-</span><span id="__span-10-11"><a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a>    <span class="o">....</span>
-</span><span id="__span-10-12"><a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a><span class="p">}</span>
-</span><span id="__span-10-13"><a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a>
-</span><span id="__span-10-14"><a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a><span class="c1"># Convert the data to a PyArrow Table</span>
-</span><span id="__span-10-15"><a id="__codelineno-10-15" name="__codelineno-10-15" href="#__codelineno-10-15"></a><span class="n">table</span> <span class="o">=</span> <span class="n">pa</span><span class="o">.</span><span class="n">table</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">schema</span><span class="o">=</span><span class="n">schema</span><span class="p">)</span>
-</span><span id="__span-10-16"><a id="__codelineno-10-16" name="__codelineno-10-16" href="#__codelineno-10-16"></a>
-</span><span id="__span-10-17"><a id="__codelineno-10-17" name="__codelineno-10-17" href="#__codelineno-10-17"></a><span class="c1"># Define the custom metadata as key-value pairs</span>
-</span><span id="__span-10-18"><a id="__codelineno-10-18" name="__codelineno-10-18" href="#__codelineno-10-18"></a><span class="n">file_metadata</span> <span class="o">=</span> <span class="p">{</span>
-</span><span id="__span-10-19"><a id="__codelineno-10-19" name="__codelineno-10-19" href="#__codelineno-10-19"></a>    <span class="s1">&#39;qpx_version&#39;</span><span class="p">:</span> <span class="s1">&#39;1.0&#39;</span><span class="p">,</span>
-</span><span id="__span-10-20"><a id="__codelineno-10-20" name="__codelineno-10-20" href="#__codelineno-10-20"></a>    <span class="s1">&#39;software_provider&#39;</span><span class="p">:</span> <span class="s1">&#39;QuantMS 1.3.0&#39;</span><span class="p">,</span>
-</span><span id="__span-10-21"><a id="__codelineno-10-21" name="__codelineno-10-21" href="#__codelineno-10-21"></a>    <span class="s1">&#39;project_accession&#39;</span><span class="p">:</span> <span class="s1">&#39;PXD012345&#39;</span><span class="p">,</span>
-</span><span id="__span-10-22"><a id="__codelineno-10-22" name="__codelineno-10-22" href="#__codelineno-10-22"></a>    <span class="s1">&#39;project_title&#39;</span><span class="p">:</span> <span class="s1">&#39;Proteomics of Disease X&#39;</span><span class="p">,</span>
-</span><span id="__span-10-23"><a id="__codelineno-10-23" name="__codelineno-10-23" href="#__codelineno-10-23"></a>    <span class="s1">&#39;project_description&#39;</span><span class="p">:</span> <span class="s1">&#39;Project description&#39;</span><span class="p">,</span>
-</span><span id="__span-10-24"><a id="__codelineno-10-24" name="__codelineno-10-24" href="#__codelineno-10-24"></a>    <span class="s1">&#39;scan_format&#39;</span><span class="p">:</span> <span class="s1">&#39;scan&#39;</span><span class="p">,</span>
-</span><span id="__span-10-25"><a id="__codelineno-10-25" name="__codelineno-10-25" href="#__codelineno-10-25"></a>    <span class="s1">&#39;creator&#39;</span><span class="p">:</span> <span class="s1">&#39;John Doe&#39;</span><span class="p">,</span>
-</span><span id="__span-10-26"><a id="__codelineno-10-26" name="__codelineno-10-26" href="#__codelineno-10-26"></a>    <span class="s1">&#39;file_type&#39;</span><span class="p">:</span> <span class="s1">&#39;psm_file&#39;</span><span class="p">,</span>
-</span><span id="__span-10-27"><a id="__codelineno-10-27" name="__codelineno-10-27" href="#__codelineno-10-27"></a>    <span class="s1">&#39;creation_date&#39;</span><span class="p">:</span> <span class="s1">&#39;2021-01-01&#39;</span><span class="p">,</span>
-</span><span id="__span-10-28"><a id="__codelineno-10-28" name="__codelineno-10-28" href="#__codelineno-10-28"></a>    <span class="s1">&#39;uuid&#39;</span><span class="p">:</span> <span class="s1">&#39;943a8f02-0527-4528-b1a3-b96de99ebe75&#39;</span>
-</span><span id="__span-10-29"><a id="__codelineno-10-29" name="__codelineno-10-29" href="#__codelineno-10-29"></a><span class="p">}</span>
-</span><span id="__span-10-30"><a id="__codelineno-10-30" name="__codelineno-10-30" href="#__codelineno-10-30"></a>
-</span><span id="__span-10-31"><a id="__codelineno-10-31" name="__codelineno-10-31" href="#__codelineno-10-31"></a><span class="c1"># Write the Parquet file with metadata</span>
-</span><span id="__span-10-32"><a id="__codelineno-10-32" name="__codelineno-10-32" href="#__codelineno-10-32"></a><span class="n">pq</span><span class="o">.</span><span class="n">write_table</span><span class="p">(</span><span class="n">table</span><span class="p">,</span> <span class="s1">&#39;psm_data.parquet&#39;</span><span class="p">,</span> <span class="n">metadata</span><span class="o">=</span><span class="n">file_metadata</span><span class="p">)</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">pyarrow</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pa</span>
+</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">pyarrow.parquet</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pq</span>
+</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>
+</span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="c1"># Define a sample schema for the Parquet file</span>
+</span><span id="__span-12-5"><a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="n">schema</span> <span class="o">=</span> <span class="n">pa</span><span class="o">.</span><span class="n">schema</span><span class="p">([</span>
+</span><span id="__span-12-6"><a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a>    <span class="o">....</span>
+</span><span id="__span-12-7"><a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a><span class="p">])</span>
+</span><span id="__span-12-8"><a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a>
+</span><span id="__span-12-9"><a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a><span class="c1"># Create sample data to write to the Parquet file</span>
+</span><span id="__span-12-10"><a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a><span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
+</span><span id="__span-12-11"><a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a>    <span class="o">....</span>
+</span><span id="__span-12-12"><a id="__codelineno-12-12" name="__codelineno-12-12" href="#__codelineno-12-12"></a><span class="p">}</span>
+</span><span id="__span-12-13"><a id="__codelineno-12-13" name="__codelineno-12-13" href="#__codelineno-12-13"></a>
+</span><span id="__span-12-14"><a id="__codelineno-12-14" name="__codelineno-12-14" href="#__codelineno-12-14"></a><span class="c1"># Convert the data to a PyArrow Table</span>
+</span><span id="__span-12-15"><a id="__codelineno-12-15" name="__codelineno-12-15" href="#__codelineno-12-15"></a><span class="n">table</span> <span class="o">=</span> <span class="n">pa</span><span class="o">.</span><span class="n">table</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">schema</span><span class="o">=</span><span class="n">schema</span><span class="p">)</span>
+</span><span id="__span-12-16"><a id="__codelineno-12-16" name="__codelineno-12-16" href="#__codelineno-12-16"></a>
+</span><span id="__span-12-17"><a id="__codelineno-12-17" name="__codelineno-12-17" href="#__codelineno-12-17"></a><span class="c1"># Define the custom metadata as key-value pairs</span>
+</span><span id="__span-12-18"><a id="__codelineno-12-18" name="__codelineno-12-18" href="#__codelineno-12-18"></a><span class="n">file_metadata</span> <span class="o">=</span> <span class="p">{</span>
+</span><span id="__span-12-19"><a id="__codelineno-12-19" name="__codelineno-12-19" href="#__codelineno-12-19"></a>    <span class="s1">&#39;qpx_version&#39;</span><span class="p">:</span> <span class="s1">&#39;1.0&#39;</span><span class="p">,</span>
+</span><span id="__span-12-20"><a id="__codelineno-12-20" name="__codelineno-12-20" href="#__codelineno-12-20"></a>    <span class="s1">&#39;software_provider&#39;</span><span class="p">:</span> <span class="s1">&#39;QuantMS 1.3.0&#39;</span><span class="p">,</span>
+</span><span id="__span-12-21"><a id="__codelineno-12-21" name="__codelineno-12-21" href="#__codelineno-12-21"></a>    <span class="s1">&#39;project_accession&#39;</span><span class="p">:</span> <span class="s1">&#39;PXD012345&#39;</span><span class="p">,</span>
+</span><span id="__span-12-22"><a id="__codelineno-12-22" name="__codelineno-12-22" href="#__codelineno-12-22"></a>    <span class="s1">&#39;project_title&#39;</span><span class="p">:</span> <span class="s1">&#39;Proteomics of Disease X&#39;</span><span class="p">,</span>
+</span><span id="__span-12-23"><a id="__codelineno-12-23" name="__codelineno-12-23" href="#__codelineno-12-23"></a>    <span class="s1">&#39;project_description&#39;</span><span class="p">:</span> <span class="s1">&#39;Project description&#39;</span><span class="p">,</span>
+</span><span id="__span-12-24"><a id="__codelineno-12-24" name="__codelineno-12-24" href="#__codelineno-12-24"></a>    <span class="s1">&#39;scan_format&#39;</span><span class="p">:</span> <span class="s1">&#39;scan&#39;</span><span class="p">,</span>
+</span><span id="__span-12-25"><a id="__codelineno-12-25" name="__codelineno-12-25" href="#__codelineno-12-25"></a>    <span class="s1">&#39;creator&#39;</span><span class="p">:</span> <span class="s1">&#39;John Doe&#39;</span><span class="p">,</span>
+</span><span id="__span-12-26"><a id="__codelineno-12-26" name="__codelineno-12-26" href="#__codelineno-12-26"></a>    <span class="s1">&#39;file_type&#39;</span><span class="p">:</span> <span class="s1">&#39;psm_file&#39;</span><span class="p">,</span>
+</span><span id="__span-12-27"><a id="__codelineno-12-27" name="__codelineno-12-27" href="#__codelineno-12-27"></a>    <span class="s1">&#39;creation_date&#39;</span><span class="p">:</span> <span class="s1">&#39;2021-01-01&#39;</span><span class="p">,</span>
+</span><span id="__span-12-28"><a id="__codelineno-12-28" name="__codelineno-12-28" href="#__codelineno-12-28"></a>    <span class="s1">&#39;uuid&#39;</span><span class="p">:</span> <span class="s1">&#39;943a8f02-0527-4528-b1a3-b96de99ebe75&#39;</span>
+</span><span id="__span-12-29"><a id="__codelineno-12-29" name="__codelineno-12-29" href="#__codelineno-12-29"></a><span class="p">}</span>
+</span><span id="__span-12-30"><a id="__codelineno-12-30" name="__codelineno-12-30" href="#__codelineno-12-30"></a>
+</span><span id="__span-12-31"><a id="__codelineno-12-31" name="__codelineno-12-31" href="#__codelineno-12-31"></a><span class="c1"># Write the Parquet file with metadata</span>
+</span><span id="__span-12-32"><a id="__codelineno-12-32" name="__codelineno-12-32" href="#__codelineno-12-32"></a><span class="n">pq</span><span class="o">.</span><span class="n">write_table</span><span class="p">(</span><span class="n">table</span><span class="p">,</span> <span class="s1">&#39;psm_data.parquet&#39;</span><span class="p">,</span> <span class="n">metadata</span><span class="o">=</span><span class="n">file_metadata</span><span class="p">)</span>
 </span></code></pre></div>
 <blockquote>
 <p><strong>NOTE</strong></p>
@@ -3118,15 +3281,15 @@
 <li><code>intensity</code>: Raw intensity value</li>
 </ul>
 <p><em>Example for TMT experiment:</em></p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>intensities: [
-</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>  {sample_accession: &quot;Sample-1&quot;, channel: &quot;TMT126&quot;, intensity: 1234.1},
-</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>  {sample_accession: &quot;Sample-2&quot;, channel: &quot;TMT127C&quot;, intensity: 5678.2}
-</span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>]
+<div class="language-text highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>intensities: [
+</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>  {sample_accession: &quot;Sample-1&quot;, channel: &quot;TMT126&quot;, intensity: 1234.1},
+</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>  {sample_accession: &quot;Sample-2&quot;, channel: &quot;TMT127C&quot;, intensity: 5678.2}
+</span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>]
 </span></code></pre></div>
 <p><em>Example for LFQ experiment:</em></p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>intensities: [
-</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>  {sample_accession: &quot;Sample-1&quot;, channel: &quot;LFQ&quot;, intensity: 9876.5}
-</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>]
+<div class="language-text highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>intensities: [
+</span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>  {sample_accession: &quot;Sample-1&quot;, channel: &quot;LFQ&quot;, intensity: 9876.5}
+</span><span id="__span-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>]
 </span></code></pre></div>
 <h4 id="additional-intensities-additional_intensities">Additional Intensities (<code>additional_intensities</code>)<a class="headerlink" href="#additional-intensities-additional_intensities" title="Anchor link to this section">&para;</a></h4>
 <p>The <code>additional_intensities</code> field contains <strong>derived/processed intensity values</strong> that are calculated from the primary intensities using different algorithms or normalization methods. Each entry contains the same sample and channel information plus an array of named intensity types:</p>
@@ -3136,17 +3299,17 @@
 <li><code>intensities</code>: Array of intensity types with names and values</li>
 </ul>
 <p><em>Example:</em></p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>additional_intensities: [
-</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>  {
-</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>    sample_accession: &quot;Sample-1&quot;,
-</span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>    channel: &quot;LFQ&quot;,
-</span><span id="__span-13-5"><a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>    intensities: [
-</span><span id="__span-13-6"><a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a>      {intensity_name: &quot;normalize_intensity&quot;, intensity_value: 0.1234},
-</span><span id="__span-13-7"><a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a>      {intensity_name: &quot;lfq&quot;, intensity_value: 2345.6},
-</span><span id="__span-13-8"><a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a>      {intensity_name: &quot;ibaq&quot;, intensity_value: 4567.8}
-</span><span id="__span-13-9"><a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a>    ]
-</span><span id="__span-13-10"><a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a>  }
-</span><span id="__span-13-11"><a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a>]
+<div class="language-text highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>additional_intensities: [
+</span><span id="__span-15-2"><a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>  {
+</span><span id="__span-15-3"><a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>    sample_accession: &quot;Sample-1&quot;,
+</span><span id="__span-15-4"><a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a>    channel: &quot;LFQ&quot;,
+</span><span id="__span-15-5"><a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a>    intensities: [
+</span><span id="__span-15-6"><a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a>      {intensity_name: &quot;normalize_intensity&quot;, intensity_value: 0.1234},
+</span><span id="__span-15-7"><a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a>      {intensity_name: &quot;lfq&quot;, intensity_value: 2345.6},
+</span><span id="__span-15-8"><a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a>      {intensity_name: &quot;ibaq&quot;, intensity_value: 4567.8}
+</span><span id="__span-15-9"><a id="__codelineno-15-9" name="__codelineno-15-9" href="#__codelineno-15-9"></a>    ]
+</span><span id="__span-15-10"><a id="__codelineno-15-10" name="__codelineno-15-10" href="#__codelineno-15-10"></a>  }
+</span><span id="__span-15-11"><a id="__codelineno-15-11" name="__codelineno-15-11" href="#__codelineno-15-11"></a>]
 </span></code></pre></div>
 <h4 id="semantic-guidelines">Semantic Guidelines<a class="headerlink" href="#semantic-guidelines" title="Anchor link to this section">&para;</a></h4>
 <ul>
@@ -3608,13 +3771,13 @@
         
         
           
-          <a href="../community/" class="md-footer__link md-footer__link--next" aria-label="Next: Community">
+          <a href="../troubleshooting/" class="md-footer__link md-footer__link--next" aria-label="Next: Troubleshooting">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Community
+                Troubleshooting
               </div>
             </div>
             <div class="md-footer__button md-icon">
