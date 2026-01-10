@@ -18,6 +18,10 @@ from qpx.core.common import (
     DIANN_PG_MATRIX_MAP,
     DIANN_PG_USECOLS,
     DIANN_USECOLS,
+    DIANN_EXTENDED_COLS,
+    DIANN_SCORE_COLS,
+    DIANN_INTENSITY_COLS,
+    DIANN_IM_COLS,
     PG_SCHEMA,
 )
 from qpx.core.duckdb import DiannDuckDB
@@ -45,6 +49,24 @@ DIANN_PG_SQL = ", ".join(
     [f'"{name}"' for name in DIANN_PG_USECOLS] + ['"Precursor.Quantity"']
 )
 
+# Mapping from DIA-NN column names to QPX column names for extended columns
+DIANN_EXTENDED_MAP = {
+    "CScore": "cscore",
+    "Evidence": "evidence",
+    "Spectrum.Similarity": "spectrum_similarity",
+    "Averagine": "averagine",
+    "Mass.Evidence": "mass_evidence",
+    "Decoy.Evidence": "decoy_evidence",
+    "Decoy.Score": "decoy_score",
+    "Lib.Q.Value": "lib_qvalue",
+    "Lib.PG.Q.Value": "lib_pg_qvalue",
+    "Lib.PEP": "lib_pep",
+    "Ms1.Area": "ms1_area",
+    "iIM": "iim",
+    "Predicted.IM": "predicted_im",
+    "Predicted.iIM": "predicted_iim",
+}
+
 
 class DiaNNConvert(DiannDuckDB):
     """Convert DIA-NN report to QPX format."""
@@ -63,36 +85,82 @@ class DiaNNConvert(DiannDuckDB):
             worker_threads=duckdb_threads,
             pg_matrix_path=pg_matrix_path,
         )
+        # Detect available extended columns in the report
+        self._available_extended_cols = self._detect_extended_columns()
+        self._extended_sql = self._build_extended_sql()
         if pg_matrix_path:
             self.pg_matrix = self.get_pg_matrix(pg_matrix_path)
         if sdrf_path:
             sdrf_handler = SDRFHandler(sdrf_path)
             self._sample_map = sdrf_handler.get_sample_map_run()
 
+    def _detect_extended_columns(self) -> list:
+        """Detect which extended DIA-NN columns are available in the report.
+
+        Returns:
+            List of available extended column names (DIA-NN format)
+        """
+        try:
+            # Get column names from the report table
+            result = self.query_to_df("SELECT * FROM report LIMIT 0")
+            available_cols = set(result.columns)
+            # Find which extended columns exist
+            extended_available = [
+                col for col in DIANN_EXTENDED_MAP.keys() if col in available_cols
+            ]
+            if extended_available:
+                logging.info(
+                    f"Detected {len(extended_available)} extended DIA-NN columns: {extended_available}"
+                )
+            return extended_available
+        except Exception as e:
+            logging.warning(f"Could not detect extended columns: {e}")
+            return []
+
+    def _build_extended_sql(self) -> str:
+        """Build SQL clause for extended columns.
+
+        Returns:
+            SQL string for selecting extended columns with renaming
+        """
+        if not self._available_extended_cols:
+            return ""
+        # Build SQL with column aliases for renaming
+        sql_parts = [
+            f'"{col}" AS "{DIANN_EXTENDED_MAP[col]}"'
+            for col in self._available_extended_cols
+        ]
+        return ", " + ", ".join(sql_parts)
+
     def destroy_duckdb_database(self):
         """Clean up DuckDB resources."""
         self.destroy_database()
 
     def get_report_from_database(
-        self, runs: list, sql: str = DIANN_SQL
+        self, runs: list, sql: str = DIANN_SQL, include_extended: bool = True
     ) -> pd.DataFrame:
         """Get report data from database for specified runs.
 
         Args:
             runs: List of runs to get data for
             sql: SQL query to use
+            include_extended: Whether to include extended columns if available
 
         Returns:
             DataFrame with report data
         """
         s = time.time()
+        # Include extended columns if requested and available
+        full_sql = sql
+        if include_extended and self._extended_sql:
+            full_sql = sql + self._extended_sql
         report = self.query_to_df(
             """
             select {}
             from report
             where Run IN {}
             """.format(
-                sql, tuple(runs)
+                full_sql, tuple(runs)
             )
         )
         et = time.time() - s
@@ -585,7 +653,13 @@ class DiaNNConvert(DiannDuckDB):
             ],
             axis=1,
         )
-        report.loc[:, "is_decoy"] = "0"
+        # Use Decoy column if available (DIA-NN 2.0+), otherwise default to 0 (target)
+        if "is_decoy" in report.columns:
+            report.loc[:, "is_decoy"] = report["is_decoy"].apply(
+                lambda x: "1" if x == 1 or x == True or x == "1" else "0"
+            )
+        else:
+            report.loc[:, "is_decoy"] = "0"
         report.loc[:, "unique"] = report["pg_accessions"].apply(
             lambda x: "0" if ";" in str(x) else "1"
         )
@@ -594,44 +668,115 @@ class DiaNNConvert(DiannDuckDB):
         report["pg_accessions"] = report["pg_accessions"].str.split(";")
         report.loc[:, "anchor_protein"] = report["pg_accessions"].str[0]
         report.loc[:, "gg_names"] = report["gg_names"].str.split(",")
-        report.loc[:, "additional_intensities"] = report[
-            ["reference_file_name", "channel", "lfq"]
-        ].apply(
-            lambda rows: [
+
+        # Build additional_intensities with LFQ and MS1.Area if available
+        def build_additional_intensities(row):
+            intensities_list = [
+                {"intensity_name": "lfq", "intensity_value": row["lfq"]},
+            ]
+            # Add MS1.Area if present in the data
+            if "ms1_area" in row.index and pd.notna(row.get("ms1_area")):
+                intensities_list.append(
+                    {"intensity_name": "ms1_area", "intensity_value": row["ms1_area"]}
+                )
+            return [
                 {
                     "sample_accession": self._sample_map[
-                        rows["reference_file_name"] + "-" + rows["channel"]
+                        row["reference_file_name"] + "-" + row["channel"]
                     ],
-                    "channel": rows["channel"],
-                    "intensities": [
-                        {"intensity_name": "lfq", "intensity_value": rows["lfq"]},
-                    ],
+                    "channel": row["channel"],
+                    "intensities": intensities_list,
                 }
-            ],
-            axis=1,
+            ]
+
+        additional_intensity_cols = ["reference_file_name", "channel", "lfq"]
+        if "ms1_area" in report.columns:
+            additional_intensity_cols.append("ms1_area")
+        report.loc[:, "additional_intensities"] = report[additional_intensity_cols].apply(
+            build_additional_intensities, axis=1
         )
-        report.loc[:, "additional_scores"] = report[
-            ["qvalue", "pg_qvalue", "global_qvalue"]
-        ].apply(
-            lambda row: [
+
+        # Build additional_scores with available quality metrics
+        def build_additional_scores(row):
+            scores = [
                 {"score_name": "qvalue", "score_value": row["qvalue"]},
                 {"score_name": "pg_qvalue", "score_value": row["pg_qvalue"]},
                 {"score_name": "global_qvalue", "score_value": row["global_qvalue"]},
-            ],
-            axis=1,
+            ]
+            # Add extended quality scores if available
+            score_mappings = [
+                ("cscore", "cscore"),
+                ("evidence", "evidence"),
+                ("spectrum_similarity", "spectrum_similarity"),
+                ("averagine", "averagine"),
+                ("mass_evidence", "mass_evidence"),
+                ("decoy_evidence", "decoy_evidence"),
+                ("decoy_score", "decoy_score"),
+                ("lib_qvalue", "lib_qvalue"),
+                ("lib_pg_qvalue", "lib_pg_qvalue"),
+                ("lib_pep", "lib_pep"),
+            ]
+            for col_name, score_name in score_mappings:
+                if col_name in row.index and pd.notna(row.get(col_name)):
+                    scores.append({"score_name": score_name, "score_value": row[col_name]})
+            return scores
+
+        score_cols = ["qvalue", "pg_qvalue", "global_qvalue"]
+        # Add extended score columns if they exist
+        extended_score_mapping = {
+            "CScore": "cscore",
+            "Evidence": "evidence",
+            "Spectrum.Similarity": "spectrum_similarity",
+            "Averagine": "averagine",
+            "Mass.Evidence": "mass_evidence",
+            "Decoy.Evidence": "decoy_evidence",
+            "Decoy.Score": "decoy_score",
+            "Lib.Q.Value": "lib_qvalue",
+            "Lib.PG.Q.Value": "lib_pg_qvalue",
+            "Lib.PEP": "lib_pep",
+        }
+        for diann_col, qpx_col in extended_score_mapping.items():
+            if qpx_col in report.columns:
+                score_cols.append(qpx_col)
+        report.loc[:, "additional_scores"] = report[score_cols].apply(
+            build_additional_scores, axis=1
         )
-        report.loc[:, "cv_params"] = report[["precursor_quantification_score"]].apply(
-            lambda rows: [
+
+        # Build cv_params with precursor quantification score and ion mobility reference values
+        def build_cv_params(row):
+            params = [
                 {
                     "cv_name": "precursor_quantification_score",
-                    "cv_value": str(rows["precursor_quantification_score"]),
+                    "cv_value": str(row["precursor_quantification_score"]),
                 }
-            ],
-            axis=1,
-        )
+            ]
+            # Add ion mobility reference values if available
+            im_mappings = [
+                ("iim", "iIM"),
+                ("predicted_im", "Predicted.IM"),
+                ("predicted_iim", "Predicted.iIM"),
+            ]
+            for col_name, cv_name in im_mappings:
+                if col_name in row.index and pd.notna(row.get(col_name)):
+                    params.append({"cv_name": cv_name, "cv_value": str(row[col_name])})
+            return params
+
+        cv_param_cols = ["precursor_quantification_score"]
+        im_col_mapping = {
+            "iIM": "iim",
+            "Predicted.IM": "predicted_im",
+            "Predicted.iIM": "predicted_iim",
+        }
+        for diann_col, qpx_col in im_col_mapping.items():
+            if qpx_col in report.columns:
+                cv_param_cols.append(qpx_col)
+        report.loc[:, "cv_params"] = report[cv_param_cols].apply(build_cv_params, axis=1)
+
         report.loc[:, "scan_reference_file_name"] = None
         report.loc[:, "gg_accessions"] = None
-        report.loc[:, "ion_mobility"] = None
+        # Use ion_mobility from DIA-NN IM column if available, otherwise None
+        if "ion_mobility" not in report.columns:
+            report.loc[:, "ion_mobility"] = None
         report.loc[:, "start_ion_mobility"] = None
         report.loc[:, "stop_ion_mobility"] = None
 

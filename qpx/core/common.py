@@ -93,7 +93,40 @@ DIANN_MAP = {
     "Modified.Sequence": "peptidoform",
     "Genes": "gg_names",
     "Run": "reference_file_name",
+    # Ion mobility columns (for TIMS-TOF data)
+    "IM": "ion_mobility",
+    # Decoy indicator (added in DIA-NN 2.0)
+    "Decoy": "is_decoy",
+    # Precursor identifier
+    "Precursor.Id": "precursor_id",
 }
+
+# DIA-NN columns that map to additional_scores (quality metrics)
+# These are read separately and structured into the additional_scores field
+DIANN_SCORE_COLS: List[str] = [
+    "CScore",
+    "Evidence",
+    "Spectrum.Similarity",
+    "Averagine",
+    "Mass.Evidence",
+    "Decoy.Evidence",
+    "Decoy.Score",
+    "Lib.Q.Value",
+    "Lib.PG.Q.Value",
+    "Lib.PEP",
+]
+
+# DIA-NN columns that map to additional_intensities (MS1 quantification)
+DIANN_INTENSITY_COLS: List[str] = [
+    "Ms1.Area",
+]
+
+# DIA-NN ion mobility columns for cv_params
+DIANN_IM_COLS: List[str] = [
+    "iIM",           # Reference ion mobility from spectral library
+    "Predicted.IM",  # Predicted ion mobility based on iIM
+    "Predicted.iIM", # iIM predicted based on measured IM
+]
 
 # "PG.Quantity" and "PG.Normalised" were removed from the main report
 #   (report.parquet) starting from DIA-NN version 2.0.
@@ -119,8 +152,12 @@ DIANN_PG_MATRIX_MAP = {
     "Genes": "gg_accessions",
 }
 
+# Core columns that are always read and mapped
 DIANN_USECOLS = list(DIANN_MAP.keys())
 DIANN_PG_USECOLS = list(DIANN_PG_MAP.keys())
+
+# Extended columns for optional advanced metrics (may not exist in all DIA-NN versions)
+DIANN_EXTENDED_COLS = DIANN_SCORE_COLS + DIANN_INTENSITY_COLS + DIANN_IM_COLS
 
 MAXQUANT_PSM_MAP = {
     "Sequence": "sequence",

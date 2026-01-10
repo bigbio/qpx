@@ -255,7 +255,42 @@ additional_intensities: [
 
 ---
 
-## 7. Conclusion
+## 7. Implementation Status
+
+The following changes have been implemented to address the gaps:
+
+### 7.1. Changes to `qpx/core/common.py`
+
+1. **Added ion mobility mapping**: `"IM": "ion_mobility"`
+2. **Added decoy indicator mapping**: `"Decoy": "is_decoy"` (for DIA-NN 2.0+)
+3. **Added precursor ID mapping**: `"Precursor.Id": "precursor_id"`
+4. **Created new constant lists**:
+   - `DIANN_SCORE_COLS`: Quality scoring columns (CScore, Evidence, Spectrum.Similarity, etc.)
+   - `DIANN_INTENSITY_COLS`: MS1 quantification columns (Ms1.Area)
+   - `DIANN_IM_COLS`: Ion mobility reference columns (iIM, Predicted.IM, Predicted.iIM)
+   - `DIANN_EXTENDED_COLS`: Combined list of all optional columns
+
+### 7.2. Changes to `qpx/core/diann/diann.py`
+
+1. **Dynamic column detection**: Added `_detect_extended_columns()` method to discover which optional columns exist in the DIA-NN report
+2. **Extended SQL construction**: Added `_build_extended_sql()` to include available extended columns in queries
+3. **Updated `add_additional_msg()`**:
+   - Now uses `is_decoy` from DIA-NN Decoy column when available
+   - Builds `additional_scores` with all available quality metrics
+   - Builds `additional_intensities` with MS1.Area when available
+   - Builds `cv_params` with ion mobility reference values when available
+   - Uses `ion_mobility` from the IM column instead of hardcoding to None
+
+### 7.3. Backward Compatibility
+
+All changes are backward compatible:
+- Extended columns are optional and detected at runtime
+- If columns don't exist in the DIA-NN report, they are simply not included
+- Core functionality remains unchanged for existing workflows
+
+---
+
+## 8. Conclusion
 
 The QPX data model is **ready for standard DIA-NN workflows** involving:
 - Peptide/protein identification
