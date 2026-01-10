@@ -15,6 +15,7 @@ on:
           - full-conversion-suite
           - lfq-only
           - tmt-only
+          - diann-pride
 
 jobs:
   integration-tests:
@@ -151,3 +152,191 @@ jobs:
           name: qpx-example-outputs-${{ github.ref_name }}
           path: examples/output/
           retention-days: 90
+
+  # DIA-NN PRIDE Parquet Integration Test
+  # Tests conversion of real DIA-NN parquet files from PRIDE archive
+  diann-pride-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: ${{ github.event.inputs.test_type == 'all' || github.event.inputs.test_type == 'diann-pride' || github.event_name == 'release' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install poetry
+          poetry install
+
+      - name: Download DIA-NN parquet from PRIDE
+        run: |
+          mkdir -p test_data/pride_diann
+          echo "Downloading DIA-NN parquet from PRIDE (PXD068392)..."
+          curl -L -o test_data/pride_diann/diann_report.parquet \
+            "https://ftp.pride.ebi.ac.uk/pride/data/archive/2025/11/PXD068392/WholeProteome_DIANNreport.parquet"
+          echo "Download complete. File size:"
+          ls -lh test_data/pride_diann/diann_report.parquet
+
+      - name: Inspect parquet columns
+        run: |
+          echo "=== Inspecting DIA-NN parquet columns ==="
+          poetry run python -c "
+          import pyarrow.parquet as pq
+          pf = pq.ParquetFile('test_data/pride_diann/diann_report.parquet')
+          cols = [f.name for f in pf.schema_arrow]
+          print(f'Total columns: {len(cols)}')
+          print('Columns:', cols)
+
+          # Check for extended columns
+          from qpx.core.common import DIANN_EXTENDED_COLS, DIANN_MAP
+          print()
+          print('=== Core columns present ===')
+          for col in DIANN_MAP.keys():
+              status = '✓' if col in cols else '✗'
+              print(f'  {status} {col}')
+
+          print()
+          print('=== Extended columns present ===')
+          for col in DIANN_EXTENDED_COLS:
+              status = '✓' if col in cols else '✗'
+              print(f'  {status} {col}')
+          "
+
+      - name: Generate SDRF from parquet runs
+        run: |
+          echo "=== Generating minimal SDRF file ==="
+          poetry run python -c "
+          import pyarrow.parquet as pq
+
+          # Read unique runs
+          pf = pq.ParquetFile('test_data/pride_diann/diann_report.parquet')
+          table = pf.read(columns=['Run'])
+          runs = list(set(table['Run'].to_pylist()))[:10]  # Limit to 10 for testing
+          print(f'Found {len(runs)} unique runs (using first 10)')
+
+          # Create SDRF
+          with open('test_data/pride_diann/test.sdrf.tsv', 'w') as f:
+              f.write('source name\tcomment[data file]\tcomment[label]\tcomment[fraction identifier]\tcharacteristics[biological replicate]\n')
+              for i, run in enumerate(runs):
+                  run_name = run.split('.')[0] if '.' in run else run
+                  f.write(f'Sample_{i+1}\t{run_name}.raw\tLFQ\t1\t1\n')
+
+          print('SDRF created:')
+          with open('test_data/pride_diann/test.sdrf.tsv') as f:
+              print(f.read())
+          "
+
+      - name: Convert DIA-NN parquet to QPX feature format
+        run: |
+          echo "=== Converting DIA-NN parquet to QPX feature format ==="
+          mkdir -p test_data/pride_diann/output
+
+          poetry run python -m qpx.qpxc convert diann \
+            --report-path test_data/pride_diann/diann_report.parquet \
+            --qvalue-threshold 0.01 \
+            --sdrf-path test_data/pride_diann/test.sdrf.tsv \
+            --output-folder test_data/pride_diann/output \
+            --output-prefix pride_diann \
+            --duckdb-max-memory 4GB \
+            --duckdb-threads 2 \
+            --file-num 2
+        env:
+          PYTHONIOENCODING: utf-8
+
+      - name: Validate QPX output
+        run: |
+          echo "=== Validating QPX output ==="
+          poetry run python -c "
+          import pyarrow.parquet as pq
+          from pathlib import Path
+
+          output_dir = Path('test_data/pride_diann/output')
+          feature_files = list(output_dir.glob('*.feature.parquet'))
+
+          if not feature_files:
+              print('ERROR: No feature files generated!')
+              exit(1)
+
+          print(f'Generated {len(feature_files)} feature files:')
+          for f in feature_files:
+              print(f'  - {f.name} ({f.stat().st_size / 1024:.1f} KB)')
+
+          # Read first file and validate schema
+          pf = pq.ParquetFile(feature_files[0])
+          schema = pf.schema_arrow
+          cols = [f.name for f in schema]
+
+          print()
+          print('=== Schema validation ===')
+          required_cols = [
+              'sequence', 'peptidoform', 'precursor_charge',
+              'reference_file_name', 'intensities', 'additional_scores',
+              'additional_intensities', 'is_decoy', 'ion_mobility'
+          ]
+
+          all_present = True
+          for col in required_cols:
+              status = '✓' if col in cols else '✗'
+              print(f'  {status} {col}')
+              if col not in cols:
+                  all_present = False
+
+          if not all_present:
+              print('ERROR: Missing required columns!')
+              exit(1)
+
+          # Read sample data and check additional_scores content
+          table = pf.read()
+          df = table.to_pandas()
+
+          print()
+          print('=== Sample data ===')
+          print(f'Total rows: {len(df)}')
+
+          # Check additional_scores structure
+          if 'additional_scores' in df.columns and len(df) > 0:
+              sample_scores = df['additional_scores'].iloc[0]
+              if sample_scores:
+                  score_names = [s['score_name'] for s in sample_scores]
+                  print(f'Score names in output: {score_names}')
+
+                  # Verify core scores are present
+                  core_scores = ['qvalue', 'pg_qvalue', 'global_qvalue']
+                  for score in core_scores:
+                      if score not in score_names:
+                          print(f'WARNING: {score} not in additional_scores')
+
+          # Check additional_intensities structure
+          if 'additional_intensities' in df.columns and len(df) > 0:
+              sample_intensities = df['additional_intensities'].iloc[0]
+              if sample_intensities and len(sample_intensities) > 0:
+                  intensity_names = [
+                      i['intensity_name']
+                      for entry in sample_intensities
+                      for i in entry.get('intensities', [])
+                  ]
+                  print(f'Intensity names in output: {intensity_names}')
+
+          # Check ion_mobility
+          if 'ion_mobility' in df.columns:
+              has_im = df['ion_mobility'].notna().any()
+              print(f'Has ion mobility data: {has_im}')
+
+          print()
+          print('=== Validation PASSED ===')
+          "
+        env:
+          PYTHONIOENCODING: utf-8
+
+      - name: Upload QPX output artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pride-diann-qpx-output
+          path: test_data/pride_diann/output/
+          retention-days: 7
