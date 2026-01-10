@@ -123,9 +123,9 @@ DIANN_INTENSITY_COLS: List[str] = [
 
 # DIA-NN ion mobility columns for cv_params
 DIANN_IM_COLS: List[str] = [
-    "iIM",           # Reference ion mobility from spectral library
+    "iIM",  # Reference ion mobility from spectral library
     "Predicted.IM",  # Predicted ion mobility based on iIM
-    "Predicted.iIM", # iIM predicted based on measured IM
+    "Predicted.iIM",  # iIM predicted based on measured IM
 ]
 
 # "PG.Quantity" and "PG.Normalised" were removed from the main report

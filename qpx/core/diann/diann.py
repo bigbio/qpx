@@ -692,9 +692,9 @@ class DiaNNConvert(DiannDuckDB):
         additional_intensity_cols = ["reference_file_name", "channel", "lfq"]
         if "ms1_area" in report.columns:
             additional_intensity_cols.append("ms1_area")
-        report.loc[:, "additional_intensities"] = report[additional_intensity_cols].apply(
-            build_additional_intensities, axis=1
-        )
+        report.loc[:, "additional_intensities"] = report[
+            additional_intensity_cols
+        ].apply(build_additional_intensities, axis=1)
 
         # Build additional_scores with available quality metrics
         def build_additional_scores(row):
@@ -718,7 +718,9 @@ class DiaNNConvert(DiannDuckDB):
             ]
             for col_name, score_name in score_mappings:
                 if col_name in row.index and pd.notna(row.get(col_name)):
-                    scores.append({"score_name": score_name, "score_value": row[col_name]})
+                    scores.append(
+                        {"score_name": score_name, "score_value": row[col_name]}
+                    )
             return scores
 
         score_cols = ["qvalue", "pg_qvalue", "global_qvalue"]
@@ -770,7 +772,9 @@ class DiaNNConvert(DiannDuckDB):
         for diann_col, qpx_col in im_col_mapping.items():
             if qpx_col in report.columns:
                 cv_param_cols.append(qpx_col)
-        report.loc[:, "cv_params"] = report[cv_param_cols].apply(build_cv_params, axis=1)
+        report.loc[:, "cv_params"] = report[cv_param_cols].apply(
+            build_cv_params, axis=1
+        )
 
         report.loc[:, "scan_reference_file_name"] = None
         report.loc[:, "gg_accessions"] = None
