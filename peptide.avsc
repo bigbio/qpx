@@ -51,7 +51,8 @@
 												"doc": "A score associated with the modification at this position.",
 												"fields": [
 													{ "name": "score_name", "type": "string", "doc": "Name of the score (e.g., localization_probability, PTM-score)"},
-													{ "name": "score_value", "type": "float32", "doc": "Value of the score for this specific position" }
+													{ "name": "score_value", "type": "double", "doc": "Value of the score for this specific position" },
+																			{ "name": "higher_better", "type": ["null", "boolean"], "doc": "If true, higher score values indicate better matches; if false, lower values are better. Null when direction is unknown." }
 												]
 											}
 										}],
@@ -75,7 +76,8 @@
 			"name": "score",
 			"fields": [
 				{"name": "score_name", "type": "string"},
-				{"name": "score_value", "type": "float32"}
+				{"name": "score_value", "type": "double"},
+			{"name": "higher_better", "type": ["null", "boolean"], "doc": "If true, higher score values indicate better matches; if false, lower values are better. Null when direction is unknown."}
 			]
 			}
 		}],

@@ -56,7 +56,8 @@
 												"doc": "A score associated with the modification at this specific position.",
 												"fields": [
 													{ "name": "score_name", "type": "string", "doc": "Name of the score (e.g., localization_probability, PTM-score)"},
-													{ "name": "score_value", "type": "float32", "doc": "Value of the score for this specific position" }
+													{ "name": "score_value", "type": "double", "doc": "Value of the score for this specific position" },
+													{ "name": "higher_better", "type": ["null", "boolean"], "doc": "If true, higher score values indicate better matches; if false, lower values are better. Null when direction is unknown." }
 												]
 											}
 										}],
@@ -72,7 +73,7 @@
 		"doc": "List of modifications with details on position and position-specific scores."
 		},
 		{"name": "precursor_charge", "type": "int32", "doc": "Precursor charge"},
-		{"name": "posterior_error_probability", "type": ["null", "float32"], "doc": "Posterior error probability for the given peptide or psm match."},
+		{"name": "posterior_error_probability", "type": ["null", "double"], "doc": "Posterior error probability for the given peptide or psm match."},
 		{"name": "is_decoy", "type": "int32", "doc": "Decoy indicator, 1 if the PSM is a decoy, 0 target"},
 		{"name": "calculated_mz", "type": "float32", "doc": "Theoretical peptide mass-to-charge ratio based on identified sequence and modifications"},
 		{"name": "observed_mz", "type": "float32", "doc": "Experimental peptide mass-to-charge ratio of identified peptide (in Da)"},
@@ -83,7 +84,8 @@
 				"name": "additional_score",
 				"fields": [
 					{"name": "score_name", "type": "string"},
-					{"name": "score_value", "type": "float32"}
+					{"name": "score_value", "type": "double"},
+					{"name": "higher_better", "type": ["null", "boolean"], "doc": "If true, higher score values indicate better matches; if false, lower values are better. Null when direction is unknown."}
 				]
 				}
 			}],
@@ -149,7 +151,7 @@
 		{"name": "pg_accessions", "type": ["null", {"type": "array","items": "string"}], "doc": "Protein group accessions of all the proteins that the peptide maps to"},
 		{"name": "anchor_protein", "type": "string", "doc": "One protein accession that represents the protein group"},
 		{"name": "unique", "type": ["null", "int32"], "doc": "Unique peptide indicator, if the peptide maps to a single protein, the value is 1, otherwise 0"},
-		{"name": "pg_global_qvalue", "type": ["null", "float32"], "doc": "Global q-value of the protein group at the experiment level"},
+		{"name": "pg_global_qvalue", "type": ["null", "double"], "doc": "Global q-value of the protein group at the experiment level"},
 		{"name": "start_ion_mobility", "type": ["null", "float32"], "doc": "start ion mobility value for the precursor ion"},
 		{"name": "stop_ion_mobility", "type": ["null", "float32"], "doc": "stop ion mobility value for the precursor ion"},
 		{"name": "gg_accessions", "type": ["null", {"type": "array", "items": "string"}], "doc": "Gene accessions, as string array"},

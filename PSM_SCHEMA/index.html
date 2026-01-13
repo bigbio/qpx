@@ -1114,8 +1114,6 @@
       
         
       
-        
-      
     
     
     
@@ -1206,34 +1204,6 @@
     
   
     Format Specification
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../troubleshooting/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Troubleshooting
   
 
     
@@ -1358,20 +1328,12 @@
 <li><strong>Spectral Arrays</strong>: mz_array, intensity_array, charge_array, ion_type_array all correctly processed</li>
 </ul>
 <h2 id="psm-schema-fields-22-total">PSM Schema Fields (22 total)<a class="headerlink" href="#psm-schema-fields-22-total" title="Anchor link to this section">&para;</a></h2>
-<h3 id="field-classification">Field Classification<a class="headerlink" href="#field-classification" title="Anchor link to this section">&para;</a></h3>
-<p>Fields are classified as:</p>
-<ul>
-<li><strong>PK</strong> (Primary Key): Must not be null, required for data integrity</li>
-<li><strong>nullable</strong>: Column always exists, but value can be null</li>
-<li><strong>optional</strong>: Column may not exist in file at all</li>
-</ul>
 <h3 id="core-identification-fields-14">Core Identification Fields (14)<a class="headerlink" href="#core-identification-fields-14" title="Anchor link to this section">&para;</a></h3>
 <table>
 <thead>
 <tr>
 <th>Field</th>
 <th>Type</th>
-<th>Classification</th>
 <th>Description</th>
 </tr>
 </thead>
@@ -1379,85 +1341,71 @@
 <tr>
 <td>sequence</td>
 <td>string</td>
-<td>PK</td>
 <td>Unmodified peptide sequence</td>
 </tr>
 <tr>
 <td>peptidoform</td>
 <td>string</td>
-<td>PK</td>
 <td>Peptide sequence with modifications (ProForma)</td>
 </tr>
 <tr>
 <td>modifications</td>
 <td>list[struct]</td>
-<td>nullable</td>
 <td>Modification details with positions and scores</td>
 </tr>
 <tr>
 <td>precursor_charge</td>
 <td>int32</td>
-<td>PK</td>
 <td>Precursor ion charge</td>
 </tr>
 <tr>
 <td>posterior_error_probability</td>
-<td>float32</td>
-<td>nullable</td>
+<td>float64</td>
 <td>PEP value</td>
 </tr>
 <tr>
 <td>is_decoy</td>
 <td>int32</td>
-<td>required</td>
 <td>Decoy indicator (1=decoy, 0=target)</td>
 </tr>
 <tr>
 <td>calculated_mz</td>
 <td>float32</td>
-<td>required</td>
 <td>Theoretical m/z</td>
 </tr>
 <tr>
 <td>observed_mz</td>
 <td>float32</td>
-<td>required</td>
 <td>Experimental m/z</td>
 </tr>
 <tr>
 <td>additional_scores</td>
 <td>list[struct]</td>
-<td>nullable</td>
-<td>Search engine scores</td>
+<td>Search engine scores with name, value, and higher_better direction indicator</td>
 </tr>
 <tr>
 <td>predicted_rt</td>
 <td>float32</td>
-<td>nullable</td>
 <td>Predicted retention time (seconds)</td>
 </tr>
 <tr>
 <td>reference_file_name</td>
 <td>string</td>
-<td>PK</td>
 <td>Reference file name</td>
 </tr>
 <tr>
 <td>cv_params</td>
 <td>list[struct]</td>
-<td>nullable</td>
 <td>CV parameters</td>
 </tr>
 <tr>
 <td>scan</td>
 <td>string</td>
-<td>PK</td>
 <td>Scan number</td>
 </tr>
 <tr>
 <td>rt</td>
 <td>float32</td>
-<td>nullable</td>
 <td>MS2 retention time (seconds)</td>
 </tr>
 </tbody>
@@ -1468,7 +1416,6 @@
 <tr>
 <th>Field</th>
 <th>Type</th>
-<th>Classification</th>
 <th>Description</th>
 </tr>
 </thead>
@@ -1476,19 +1423,16 @@
 <tr>
 <td>protein_accessions</td>
 <td>list[string]</td>
-<td>nullable</td>
 <td>Protein accessions</td>
 </tr>
 </tbody>
 </table>
-<h3 id="spectral-data-fields-7-optional">Spectral Data Fields (7) - Optional<a class="headerlink" href="#spectral-data-fields-7-optional" title="Anchor link to this section">&para;</a></h3>
-<p><strong>Note</strong>: These fields are <strong>optional</strong> - they may not exist in the file at all. Use <code>--spectral-data</code> flag during conversion to include these columns.</p>
+<h3 id="spectral-data-fields-7">Spectral Data Fields (7)<a class="headerlink" href="#spectral-data-fields-7" title="Anchor link to this section">&para;</a></h3>
 <table>
 <thead>
 <tr>
 <th>Field</th>
 <th>Type</th>
-<th>Classification</th>
 <th>Description</th>
 </tr>
 </thead>
@@ -1496,48 +1440,40 @@
 <tr>
 <td>ion_mobility</td>
 <td>float32</td>
-<td>optional</td>
 <td>Ion mobility value</td>
 </tr>
 <tr>
 <td>number_peaks</td>
 <td>int32</td>
-<td>optional</td>
 <td>Number of peaks</td>
 </tr>
 <tr>
 <td>mz_array</td>
 <td>list[float32]</td>
-<td>optional</td>
 <td>m/z values array</td>
 </tr>
 <tr>
 <td>intensity_array</td>
 <td>list[float32]</td>
-<td>optional</td>
 <td>Intensity values array</td>
 </tr>
 <tr>
 <td>charge_array</td>
 <td>list[int32]</td>
-<td>optional</td>
 <td>Fragment ion charge array</td>
 </tr>
 <tr>
 <td>ion_type_array</td>
 <td>list[string]</td>
-<td>optional</td>
 <td>Ion type annotations (b, y, a, etc.)</td>
 </tr>
 <tr>
 <td>ion_mobility_array</td>
 <td>list[float32]</td>
-<td>optional</td>
 <td>Fragment ion mobility array</td>
 </tr>
 </tbody>
 </table>
-<p><strong>Nullable vs Optional</strong>: These fields are <em>optional</em> (column may be absent), not just <em>nullable</em> (column exists with null values). See <a href="../format-specification/#field-classification">Field Classification</a> for details.</p>
 <h2 id="how-to-generate-examples">How to Generate Examples<a class="headerlink" href="#how-to-generate-examples" title="Anchor link to this section">&para;</a></h2>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Basic PSM (without spectral data)</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>qpxc<span class="w"> </span>convert<span class="w"> </span>maxquant-psm<span class="w"> </span><span class="se">\</span>
@@ -1605,9 +1541,9 @@
 </span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="w">    </span><span class="p">}</span>
 </span><span id="__span-1-15"><a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="w">  </span><span class="p">],</span>
 </span><span id="__span-1-16"><a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="w">  </span><span class="nt">&quot;additional_scores&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-</span><span id="__span-1-17"><a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;score_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;andromeda_score&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;score_value&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">175.73</span><span class="w"> </span><span class="p">},</span>
-</span><span id="__span-1-18"><a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;score_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;andromeda_delta_score&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;score_value&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">160.47</span><span class="w"> </span><span class="p">},</span>
-</span><span id="__span-1-19"><a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;score_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;parent_ion_fraction&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;score_value&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.0</span><span class="w"> </span><span class="p">}</span>
+</span><span id="__span-1-17"><a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;score_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;andromeda_score&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;score_value&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">175.73</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;higher_better&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"> </span><span class="p">},</span>
+</span><span id="__span-1-18"><a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;score_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;andromeda_delta_score&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;score_value&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">160.47</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;higher_better&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"> </span><span class="p">},</span>
+</span><span id="__span-1-19"><a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;score_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;parent_ion_fraction&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;score_value&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.0</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;higher_better&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w"> </span><span class="p">}</span>
 </span><span id="__span-1-20"><a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a><span class="w">  </span><span class="p">]</span>
 </span><span id="__span-1-21"><a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a><span class="p">}</span>
 </span></code></pre></div>
@@ -1621,77 +1557,42 @@
 </span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">  </span><span class="nt">&quot;ion_type_array&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;y1&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;y2&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;b3&quot;</span><span class="p">,</span><span class="w"> </span><span class="err">...</span><span class="p">]</span>
 </span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="p">}</span>
 </span></code></pre></div>
-<h3 id="psm-with-fragmentation-information-via-cv_params">PSM with Fragmentation Information (via cv_params)<a class="headerlink" href="#psm-with-fragmentation-information-via-cv_params" title="Anchor link to this section">&para;</a></h3>
-<p>Fragmentation method and collision energy should be stored as CV terms in the <code>cv_params</code> field:</p>
-<div class="language-json highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="p">{</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nt">&quot;sequence&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;PEPTIDESEQ&quot;</span><span class="p">,</span>
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span><span class="nt">&quot;cv_params&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;cv_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;dissociation method&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;cv_value&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;HCD&quot;</span><span class="w"> </span><span class="p">},</span>
-</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;cv_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;normalized collision energy&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;cv_value&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;28&quot;</span><span class="w"> </span><span class="p">}</span>
-</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">  </span><span class="p">]</span>
-</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="p">}</span>
-</span></code></pre></div>
-<p><strong>Why human-readable names?</strong> QPX uses readable term names (like <code>dissociation method</code>) instead of ontology accessions (like <code>MS:1000044</code>) to align with successful omics formats such as GTF and AnnData. This makes data self-documenting while the specification provides formal definitions. See <a href="../format-specification/#psm-cv-params">Design Philosophy</a> for details.</p>
-<p><strong>Common fragmentation CV terms:</strong></p>
-<table>
-<thead>
-<tr>
-<th>CV Name</th>
-<th>Example Values</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>dissociation method</td>
-<td>HCD, CID, ETD, ECD, UVPD</td>
-</tr>
-<tr>
-<td>collision energy</td>
-<td>28, 35 (in eV)</td>
-</tr>
-<tr>
-<td>normalized collision energy</td>
-<td>28, 30 (percentage)</td>
-</tr>
-</tbody>
-</table>
-<p>Full reference with PSI-MS accessions: <a href="../format-specification/#common-cv-terms">Common CV Terms</a></p>
 <h3 id="de-novo-no-protein-association">De Novo / No Protein Association<a class="headerlink" href="#de-novo-no-protein-association" title="Anchor link to this section">&para;</a></h3>
 <p>For De Novo analysis where PSMs have no protein mapping, <code>protein_accessions</code> is nullable:</p>
-<div class="language-json highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="p">{</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="nt">&quot;sequence&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;PEPTIDESEQ&quot;</span><span class="p">,</span>
-</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span><span class="nt">&quot;protein_accessions&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span>
-</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="p">}</span>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="p">{</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nt">&quot;sequence&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;PEPTIDESEQ&quot;</span><span class="p">,</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span><span class="nt">&quot;protein_accessions&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="p">}</span>
 </span></code></pre></div>
 <h2 id="how-to-read-examples">How to Read Examples<a class="headerlink" href="#how-to-read-examples" title="Anchor link to this section">&para;</a></h2>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">pyarrow.parquet</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pq</span>
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
-</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="c1"># Read PSM file</span>
-</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="n">table</span> <span class="o">=</span> <span class="n">pq</span><span class="o">.</span><span class="n">read_table</span><span class="p">(</span><span class="s2">&quot;examples/psm/maxquant-basic.psm.parquet&quot;</span><span class="p">)</span>
-</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="n">df</span> <span class="o">=</span> <span class="n">table</span><span class="o">.</span><span class="n">to_pandas</span><span class="p">()</span>
-</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>
-</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="c1"># View sample data</span>
-</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="nb">print</span><span class="p">(</span><span class="n">df</span><span class="p">[[</span><span class="s1">&#39;sequence&#39;</span><span class="p">,</span> <span class="s1">&#39;peptidoform&#39;</span><span class="p">,</span> <span class="s1">&#39;precursor_charge&#39;</span><span class="p">,</span> <span class="s1">&#39;scan&#39;</span><span class="p">]]</span><span class="o">.</span><span class="n">head</span><span class="p">())</span>
-</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>
-</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="c1"># View modifications</span>
-</span><span id="__span-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="nb">print</span><span class="p">(</span><span class="n">df</span><span class="p">[</span><span class="s1">&#39;modifications&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">head</span><span class="p">())</span>
-</span><span id="__span-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a>
-</span><span id="__span-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="c1"># View additional scores</span>
-</span><span id="__span-5-14"><a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="nb">print</span><span class="p">(</span><span class="n">df</span><span class="p">[</span><span class="s1">&#39;additional_scores&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">head</span><span class="p">())</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">pyarrow.parquet</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pq</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="c1"># Read PSM file</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="n">table</span> <span class="o">=</span> <span class="n">pq</span><span class="o">.</span><span class="n">read_table</span><span class="p">(</span><span class="s2">&quot;examples/psm/maxquant-basic.psm.parquet&quot;</span><span class="p">)</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="n">df</span> <span class="o">=</span> <span class="n">table</span><span class="o">.</span><span class="n">to_pandas</span><span class="p">()</span>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="c1"># View sample data</span>
+</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="nb">print</span><span class="p">(</span><span class="n">df</span><span class="p">[[</span><span class="s1">&#39;sequence&#39;</span><span class="p">,</span> <span class="s1">&#39;peptidoform&#39;</span><span class="p">,</span> <span class="s1">&#39;precursor_charge&#39;</span><span class="p">,</span> <span class="s1">&#39;scan&#39;</span><span class="p">]]</span><span class="o">.</span><span class="n">head</span><span class="p">())</span>
+</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>
+</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="c1"># View modifications</span>
+</span><span id="__span-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="nb">print</span><span class="p">(</span><span class="n">df</span><span class="p">[</span><span class="s1">&#39;modifications&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">head</span><span class="p">())</span>
+</span><span id="__span-4-12"><a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>
+</span><span id="__span-4-13"><a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="c1"># View additional scores</span>
+</span><span id="__span-4-14"><a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="nb">print</span><span class="p">(</span><span class="n">df</span><span class="p">[</span><span class="s1">&#39;additional_scores&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">head</span><span class="p">())</span>
 </span></code></pre></div>
 <h2 id="related-files">Related Files<a class="headerlink" href="#related-files" title="Anchor link to this section">&para;</a></h2>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>docs/
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>|-- psm.avsc                    # Avro schema definition
-</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>+-- format-specification.md     # Format specification (PSM: L700-851)
-</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>
-</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>qpx/core/
-</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>|-- format.py                   # PyArrow schema (PEPTIDE_FIELDS, PSM_UNIQUE_FIELDS)
-</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>|-- common.py                   # PSM_SCHEMA, MAXQUANT_PSM_MAP
-</span><span id="__span-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>+-- maxquant/maxquant.py        # MaxQuant converter (process_psm_file)
-</span><span id="__span-6-9"><a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>
-</span><span id="__span-6-10"><a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>tests/examples/maxquant/
-</span><span id="__span-6-11"><a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>|-- maxquant_simple/msms.txt    # Test data for PSM conversion
-</span><span id="__span-6-12"><a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>+-- maxquant_full/              # Full example with spectral data
+<div class="language-text highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>docs/
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>|-- psm.avsc                    # Avro schema definition
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>+-- format-specification.md     # Format specification (PSM: L700-851)
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>qpx/core/
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>|-- format.py                   # PyArrow schema (PEPTIDE_FIELDS, PSM_UNIQUE_FIELDS)
+</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>|-- common.py                   # PSM_SCHEMA, MAXQUANT_PSM_MAP
+</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>+-- maxquant/maxquant.py        # MaxQuant converter (process_psm_file)
+</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>
+</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>tests/examples/maxquant/
+</span><span id="__span-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>|-- maxquant_simple/msms.txt    # Test data for PSM conversion
+</span><span id="__span-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a>+-- maxquant_full/              # Full example with spectral data
 </span></code></pre></div>
 <h2 id="feedback-welcome">Feedback Welcome<a class="headerlink" href="#feedback-welcome" title="Anchor link to this section">&para;</a></h2>
 <p>This PR is intended to facilitate discussion on the PSM schema. Please review:</p>

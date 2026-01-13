@@ -41,8 +41,8 @@
 				{"name": "total_features", "type": "int", "doc": "Total number of peptide features identified for this protein group in this file"}
 			]
 		}], "doc": "Peptide feature counts for this protein group in this specific file"},
-		{"name": "global_qvalue", "type": ["null", "float32"], "doc": "Global q-value of the protein group at the experiment level"},
-		{"name": "pg_qvalue", "type": ["null", "float32"], "doc": "Protein group q-value at the run level (DIA-NN specific)"},
+		{"name": "global_qvalue", "type": ["null", "double"], "doc": "Global q-value of the protein group at the experiment level"},
+		{"name": "pg_qvalue", "type": ["null", "double"], "doc": "Protein group q-value at the run level (DIA-NN specific)"},
 		{"name": "intensities", "type": ["null",{
 			"type": "array",
 			"items": {
@@ -94,7 +94,8 @@
 				"name": "score",
 				"fields": [
 					{"name": "score_name", "type": "string"},
-					{"name": "score_value", "type": "float32"}
+					{"name": "score_value", "type": "double"},
+					{"name": "higher_better", "type": ["null", "boolean"], "doc": "If true, higher score values indicate better matches; if false, lower values are better. Null when direction is unknown."}
 				]
 				}
 			}],

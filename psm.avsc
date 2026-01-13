@@ -64,7 +64,8 @@
                                   "doc": "A score associated with the modification at this specific position.",
                                   "fields": [
                                     { "name": "score_name", "type": "string", "doc": "Name of the score (e.g., localization_probability, PTM-score)"},
-                                    { "name": "score_value", "type": "float32", "doc": "Value of the score for this specific position" }
+                                    { "name": "score_value", "type": "double", "doc": "Value of the score for this specific position" },
+                                    { "name": "higher_better", "type": ["null", "boolean"], "doc": "If true, higher score values indicate better matches; if false, lower values are better. Null when direction is unknown." }
                                   ]
                                 }
                               }],
@@ -80,7 +81,7 @@
             "doc": "List of modifications with details on position and position-specific scores."
             },
             {"name": "precursor_charge", "type": "int32", "doc": "Precursor charge"},
-            {"name": "posterior_error_probability", "type": ["null", "float32"], "doc": "Posterior error probability for the given peptide spectrum match"},
+            {"name": "posterior_error_probability", "type": ["null", "double"], "doc": "Posterior error probability for the given peptide spectrum match"},
             {"name": "is_decoy", "type": "int32", "doc": "Decoy indicator, 1 if the PSM is a decoy, 0 target"},
             {"name": "calculated_mz", "type": "float32", "doc": "Theoretical peptide mass-to-charge ratio based on identified sequence and modifications"},
             {"name": "observed_mz", "type": "float32", "doc": "Experimental peptide mass-to-charge ratio of identified peptide (in Da)"},
@@ -91,7 +92,8 @@
                 "name": "additional_score",
                 "fields": [
                   {"name": "score_name", "type": "string"},
-                  {"name": "score_value", "type": "float32"}
+                  {"name": "score_value", "type": "double"},
+                  {"name": "higher_better", "type": ["null", "boolean"], "doc": "If true, higher score values indicate better matches; if false, lower values are better. Null when direction is unknown."}
                 ]
                 }
               }],
