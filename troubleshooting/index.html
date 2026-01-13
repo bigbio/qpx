@@ -1475,18 +1475,16 @@
 <p><strong>Problem</strong>: <code>FileNotFoundError</code> when running convert commands.</p>
 <p><strong>Solutions</strong>:</p>
 <ol>
-<li>
-<p>Use absolute paths:
-   <div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>qpxc<span class="w"> </span>convert<span class="w"> </span>maxquant-psm<span class="w"> </span><span class="se">\</span>
+<li>Use absolute paths:</li>
+</ol>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>qpxc<span class="w"> </span>convert<span class="w"> </span>maxquant-psm<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">    </span>--msms-file<span class="w"> </span>/full/path/to/msms.txt<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">    </span>--output-folder<span class="w"> </span>/full/path/to/output
-</span></code></pre></div></p>
-</li>
-<li>
-<p>Verify the file exists:
+</span></code></pre></div>
+<ol>
+<li>Verify the file exists:
    <div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>ls<span class="w"> </span>-la<span class="w"> </span>path/to/file.txt
-</span></code></pre></div></p>
-</li>
+</span></code></pre></div></li>
 </ol>
 <h3 id="memory-errors-with-large-files">Memory errors with large files<a class="headerlink" href="#memory-errors-with-large-files" title="Anchor link to this section">&para;</a></h3>
 <p><strong>Problem</strong>: <code>MemoryError</code> or system becomes unresponsive with large datasets.</p>
@@ -1515,15 +1513,15 @@
 <p>Verify the file format matches the expected format for the converter</p>
 </li>
 <li>
-<p>Check for file corruption:
-   <div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>head<span class="w"> </span>-20<span class="w"> </span>input_file.txt
-</span></code></pre></div></p>
+<p>Check for file corruption:</p>
 </li>
-<li>
-<p>Ensure the file encoding is UTF-8:
+</ol>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>head<span class="w"> </span>-20<span class="w"> </span>input_file.txt
+</span></code></pre></div>
+<ol>
+<li>Ensure the file encoding is UTF-8:
    <div class="language-bash highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>file<span class="w"> </span>input_file.txt
-</span></code></pre></div></p>
-</li>
+</span></code></pre></div></li>
 </ol>
 <h2 id="output-issues">Output Issues<a class="headerlink" href="#output-issues" title="Anchor link to this section">&para;</a></h2>
 <h3 id="empty-output-files">Empty output files<a class="headerlink" href="#empty-output-files" title="Anchor link to this section">&para;</a></h3>
@@ -1550,13 +1548,13 @@
 <p>Check if the input file contains the required source columns</p>
 </li>
 <li>
-<p>For spectral data, ensure <code>--spectral-data</code> flag is used:
-   <div class="language-bash highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>qpxc<span class="w"> </span>convert<span class="w"> </span>maxquant-psm<span class="w"> </span>--msms-file<span class="w"> </span>msms.txt<span class="w"> </span>--output-folder<span class="w"> </span>./<span class="w"> </span>--spectral-data
-</span></code></pre></div></p>
+<p>For spectral data, ensure <code>--spectral-data</code> flag is used:</p>
 </li>
-<li>
-<p>Review the <a href="../format-specification/">Format Specification</a> for required vs optional fields</p>
-</li>
+</ol>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>qpxc<span class="w"> </span>convert<span class="w"> </span>maxquant-psm<span class="w"> </span>--msms-file<span class="w"> </span>msms.txt<span class="w"> </span>--output-folder<span class="w"> </span>./<span class="w"> </span>--spectral-data
+</span></code></pre></div>
+<ol>
+<li>Review the <a href="../format-specification/">Format Specification</a> for required vs optional fields</li>
 </ol>
 <h2 id="sdrf-issues">SDRF Issues<a class="headerlink" href="#sdrf-issues" title="Anchor link to this section">&para;</a></h2>
 <h3 id="sample-name-mismatches">Sample name mismatches<a class="headerlink" href="#sample-name-mismatches" title="Anchor link to this section">&para;</a></h3>

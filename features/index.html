@@ -1423,12 +1423,8 @@
 <p><img alt="Data Conversion Flow" src="../images/data_conversion.png" /></p>
 <p>Convert data from leading proteomics software to standardized QPX format:</p>
 <ol>
-<li>
-<p><strong>MaxQuant</strong> result files:</p>
-</li>
-<li>
-<p><code>msms.txt</code>: MS/MS scan information (PSM data)</p>
-</li>
+<li><strong>MaxQuant</strong> result files:</li>
+<li><code>msms.txt</code>: MS/MS scan information (PSM data)</li>
 <li><code>evidence.txt</code>: Peptide evidence (Feature data)</li>
 <li><code>proteinGroups.txt</code>: Protein identification results</li>
 <li>
@@ -1437,9 +1433,7 @@
 <li>
 <p><strong>DIA-NN</strong> result files:</p>
 </li>
-<li>
-<p><code>report.tsv</code> or <code>report.parquet</code>: DIA-NN main report</p>
-</li>
+<li><code>report.tsv</code> or <code>report.parquet</code>: DIA-NN main report</li>
 <li><code>pg_matrix.tsv</code>: Protein group matrix</li>
 <li><code>*.sdrf.tsv</code>: SDRF-Proteomics metadata (optional)</li>
 <li>
@@ -1448,27 +1442,21 @@
 <li>
 <p><strong>FragPipe</strong> result files:</p>
 </li>
-<li>
-<p><code>psm.tsv</code>: PSM identifications</p>
-</li>
+<li><code>psm.tsv</code>: PSM identifications</li>
 <li>
 <p><code>*.sdrf.tsv</code>: SDRF-Proteomics metadata (optional)</p>
 </li>
 <li>
 <p><strong>OpenMS/idXML</strong> files:</p>
 </li>
-<li>
-<p><code>*.idXML</code>: Identification results</p>
-</li>
+<li><code>*.idXML</code>: Identification results</li>
 <li>
 <p><code>*.mzML</code>: Corresponding spectra files (optional, for batch processing)</p>
 </li>
 <li>
 <p><strong>mzTab</strong> (quantms pipeline) files:</p>
 </li>
-<li>
-<p><code>*.mzTab</code>: Standard proteomics format (PSM/PEP/PRT sections)</p>
-</li>
+<li><code>*.mzTab</code>: Standard proteomics format (PSM/PEP/PRT sections)</li>
 <li><code>*msstats*.csv</code>: MSstats/MSstatsTMT input files (optional)</li>
 </ol>
 <p><strong>Output format</strong>: All conversions produce standardized parquet files:</p>
