@@ -1173,6 +1173,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#mzidentml" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        mzidentml
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#related-commands" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1535,6 +1546,7 @@
 <li><a href="#quantms-pg">quantms-pg</a> - Convert mzTab to protein group format</li>
 <li><a href="#idxml">idxml</a> - Convert single idXML file to PSM format</li>
 <li><a href="#idxml-batch">idxml-batch</a> - Convert multiple idXML files to merged PSM format</li>
+<li><a href="#mzidentml">mzidentml</a> - Convert mzIdentML file to PSM format</li>
 </ul>
 <hr />
 <h2 id="diann">diann<a class="headerlink" href="#diann" title="Anchor link to this section">&para;</a></h2>
@@ -2711,6 +2723,166 @@
 <li>Ensure consistent naming when using basename matching</li>
 <li>Verify file order when using index-based matching</li>
 <li>Check temporary directory has sufficient space for large batches</li>
+</ul>
+<hr />
+<h2 id="mzidentml">mzidentml<a class="headerlink" href="#mzidentml" title="Anchor link to this section">&para;</a></h2>
+<p>Convert mzIdentML (.mzid) files to QPX PSM parquet format.</p>
+<h3 id="mzidentml-description">Description<a class="headerlink" href="#mzidentml-description" title="Anchor link to this section">&para;</a></h3>
+<p>This command takes a mzIdentML file and converts it to the QPX parquet
+    format for PSM data. Supports both .mzid and .mzid.gz compressed files.</p>
+
+<h3 id="mzidentml-parameters">Parameters<a class="headerlink" href="#mzidentml-parameters" title="Anchor link to this section">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th><th>Type</th><th>Required</th><th>Default</th><th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--mzid-file</code></td>
+<td>FILE</td>
+<td>Yes</td>
+<td>-</td>
+<td>mzIdentML file (.mzid or .mzid.gz)</td>
+</tr>
+<tr>
+<td><code>--output-folder</code></td>
+<td>DIRECTORY</td>
+<td>Yes</td>
+<td>-</td>
+<td>Output folder</td>
+</tr>
+<tr>
+<td><code>--mzml-file</code></td>
+<td>FILE</td>
+<td>No</td>
+<td>-</td>
+<td>Optional single mzML file to attach spectra by scan</td>
+</tr>
+<tr>
+<td><code>--mzml-folder</code></td>
+<td>DIRECTORY</td>
+<td>No</td>
+<td>-</td>
+<td>Optional folder containing mzML files (matches by reference_file_name)</td>
+</tr>
+<tr>
+<td><code>--output-prefix</code></td>
+<td>TEXT</td>
+<td>No</td>
+<td>-</td>
+<td>Output file prefix</td>
+</tr>
+<tr>
+<td><code>--spectral-data</code></td>
+<td>FLAG</td>
+<td>No</td>
+<td>-</td>
+<td>Include spectral data fields</td>
+</tr>
+<tr>
+<td><code>--verbose</code></td>
+<td>FLAG</td>
+<td>No</td>
+<td>-</td>
+<td>Enable verbose logging</td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="mzidentml-examples">Usage Examples<a class="headerlink" href="#mzidentml-examples" title="Anchor link to this section">&para;</a></h3>
+<h4 id="mzidentml-example-basic">Basic Example<a class="headerlink" href="#mzidentml-example-basic" title="Anchor link to this section">&para;</a></h4>
+<p>Convert an mzIdentML file with default settings:</p>
+<pre><code class="language-bash">qpxc convert mzidentml \
+    --mzid-file data.mzid \
+    --output-folder ./output \
+    --output-prefix pride-psm</code></pre>
+
+<h4 id="mzidentml-example-spectral">With Spectral Data from Single mzML<a class="headerlink" href="#mzidentml-example-spectral" title="Anchor link to this section">&para;</a></h4>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>qpxc<span class="w"> </span>convert<span class="w"> </span>mzidentml<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="w">    </span>--mzid-file<span class="w"> </span>/path/to/results.mzid<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="w">    </span>--mzml-file<span class="w"> </span>/path/to/spectra.mzML<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="w">    </span>--output-folder<span class="w"> </span>./output<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-13-5"><a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="w">    </span>--spectral-data<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-13-6"><a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a><span class="w">    </span>--output-prefix<span class="w"> </span>psm_with_spectra
+</span></code></pre></div>
+<h4 id="mzidentml-example-multi-mzml">With Spectral Data from Multiple mzML Files<a class="headerlink" href="#mzidentml-example-multi-mzml" title="Anchor link to this section">&para;</a></h4>
+<p>When your mzIdentML references multiple mzML files, use the <code>--mzml-folder</code> option:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>qpxc<span class="w"> </span>convert<span class="w"> </span>mzidentml<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="w">    </span>--mzid-file<span class="w"> </span>/path/to/results.mzid.gz<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="w">    </span>--mzml-folder<span class="w"> </span>/path/to/mzml_files/<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-14-4"><a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="w">    </span>--output-folder<span class="w"> </span>./output<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-14-5"><a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a><span class="w">    </span>--spectral-data<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-14-6"><a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a><span class="w">    </span>--output-prefix<span class="w"> </span>psm_multi_mzml
+</span></code></pre></div>
+<p>The converter automatically matches PSMs to mzML files based on the <code>reference_file_name</code> field in the mzIdentML. File matching is case-insensitive and supports both <code>.mzML</code> and <code>.mzML.gz</code> extensions.</p>
+<h3 id="mzidentml-native-id">Supported Native ID Formats<a class="headerlink" href="#mzidentml-native-id" title="Anchor link to this section">&para;</a></h3>
+<p>The converter supports multiple native ID formats for scan number extraction:</p>
+<table>
+<thead>
+<tr>
+<th>Format</th>
+<th>Vendor/Source</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>scan=XXX</code></td>
+<td>Thermo</td>
+<td><code>controllerType=0 controllerNumber=1 scan=12345</code></td>
+</tr>
+<tr>
+<td><code>cycle=XXX</code></td>
+<td>Waters/Agilent</td>
+<td><code>sample=1 period=1 cycle=1055 experiment=4</code></td>
+</tr>
+<tr>
+<td><code>index=XXX</code></td>
+<td>Generic</td>
+<td><code>index=500</code></td>
+</tr>
+<tr>
+<td><code>spectrum=XXX</code></td>
+<td>Various</td>
+<td><code>spectrum=999</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="mzidentml-output">Output Files<a class="headerlink" href="#mzidentml-output" title="Anchor link to this section">&para;</a></h3>
+<ul>
+<li><strong>Output</strong>: <code>{output-prefix}-{uuid}.psm.parquet</code></li>
+<li><strong>Format</strong>: Parquet file containing PSM-level data</li>
+<li><strong>Schema</strong>: Conforms to QPX PSM specification</li>
+</ul>
+<h3 id="mzidentml-features">Supported mzIdentML Features<a class="headerlink" href="#mzidentml-features" title="Anchor link to this section">&para;</a></h3>
+<ul>
+<li><strong>Compressed files</strong>: Supports both <code>.mzid</code> and <code>.mzid.gz</code> formats</li>
+<li><strong>Modifications</strong>: Full support for UNIMOD and custom modifications</li>
+<li><strong>Scores</strong>: Extracts all CV-term scores with <code>higher_better</code> flag annotation</li>
+<li><strong>Decoy detection</strong>: Automatic detection via <code>isDecoy</code> attribute</li>
+<li><strong>Multi-file support</strong>: Handles mzIdentML referencing multiple spectra files</li>
+</ul>
+<h3 id="mzidentml-best-practices">Best Practices<a class="headerlink" href="#mzidentml-best-practices" title="Anchor link to this section">&para;</a></h3>
+<ul>
+<li>Use <code>--mzml-folder</code> when mzIdentML references multiple mzML files</li>
+<li>Ensure mzML file names match those referenced in mzIdentML (case-insensitive)</li>
+<li>Use compressed <code>.mzid.gz</code> files to save disk space</li>
+<li>Enable <code>--spectral-data</code> only when spectral arrays are needed for downstream analysis</li>
+</ul>
+<h3 id="mzidentml-issues">Common Issues<a class="headerlink" href="#mzidentml-issues" title="Anchor link to this section">&para;</a></h3>
+<p><strong>Issue</strong>: No spectra attached from mzML folder</p>
+<ul>
+<li><strong>Solution</strong>: Verify mzML file names match <code>reference_file_name</code> in mzIdentML</li>
+</ul>
+<p><strong>Issue</strong>: zlib errors when reading mzML.gz files</p>
+<ul>
+<li><strong>Solution</strong>: Decompress mzML.gz files or re-download if corrupted</li>
+</ul>
+<p><strong>Issue</strong>: Scan numbers not extracted correctly</p>
+<ul>
+<li><strong>Solution</strong>: Check if your native ID format is supported; the converter auto-detects common formats</li>
 </ul>
 <hr />
 <h2 id="related-commands">Related Commands<a class="headerlink" href="#related-commands" title="Anchor link to this section">&para;</a></h2>
