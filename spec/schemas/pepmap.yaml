@@ -1,0 +1,20 @@
+name: pepmap
+file_type: pepmap_file
+primary_key: [peptidoform]
+doc: "Deduplicated peptide-to-protein mapping. One row per unique peptidoform."
+
+fields:
+  sequence:
+    type: string
+    required: true
+    doc: "Unmodified peptide sequence"
+  peptidoform:
+    type: string
+    required: true
+    doc: "ProForma notation"
+  pg_accessions:
+    type: "list<pg_protein>"
+    doc: "Protein accessions with optional peptide positions (start, end, pre, post)"
+  is_unique:
+    type: bool
+    doc: "True if peptide maps to exactly one protein"

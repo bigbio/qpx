@@ -1,0 +1,44 @@
+name: run
+file_type: run_file
+primary_key: [run_file_name]
+doc: "MS acquisition run metadata, one row per run"
+
+fields:
+  run_accession:
+    type: string
+    required: true
+    doc: "Unique run identifier (SDRF assay name)"
+  run_file_name:
+    type: string
+    required: true
+    doc: "Raw data file name (without extension)"
+  file_name:
+    type: string
+    doc: "Original file name with extension (e.g. S1_Frontal_1.raw)"
+
+  # Sample-channel mapping (supports multiplexed runs)
+  samples:
+    type: "list<sample_channel>"
+    required: true
+    doc: "Sample-channel mappings with replicate info"
+
+  # Run properties
+  fraction:
+    type: string
+    doc: "Fraction identifier"
+
+  # Instrument and method (plain strings; CV mappings in ontology.parquet)
+  instrument:
+    type: string
+    doc: "Mass spectrometer name"
+  enzymes:
+    type: "list<string>"
+    doc: "Proteolytic enzyme names"
+  dissociation_method:
+    type: string
+    doc: "Fragmentation method name (HCD, CID, ETD)"
+
+  # Search configuration
+  modification_parameters:
+    type: "list<modification_param>"
+    doc: "Modifications configured in database search"

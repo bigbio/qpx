@@ -1,0 +1,55 @@
+name: sample
+file_type: sample_file
+primary_key: [sample_accession]
+doc: "Biological sample metadata, one row per sample"
+extra_columns: true
+
+fields:
+  sample_accession:
+    type: string
+    required: true
+    doc: "Unique sample identifier (SDRF source name)"
+  organism:
+    type: string
+    required: true
+    doc: "Species (e.g. Homo sapiens)"
+  organism_part:
+    type: string
+    required: true
+    doc: "Tissue or organ (e.g. Brain; Frontal cortex)"
+  disease:
+    type: string
+    optional: true
+    doc: "Disease state (omitted when absent from SDRF)"
+  cell_line:
+    type: string
+    optional: true
+    doc: "Cell line name (omitted when absent from SDRF)"
+  cell_type:
+    type: string
+    optional: true
+    doc: "Cell type (omitted when absent from SDRF)"
+  sex:
+    type: string
+    optional: true
+    doc: "Biological sex (omitted when absent from SDRF)"
+  age:
+    type: string
+    optional: true
+    doc: "Age of specimen (omitted when absent from SDRF)"
+  developmental_stage:
+    type: string
+    optional: true
+    doc: "Developmental stage (omitted when absent from SDRF)"
+  ancestry:
+    type: string
+    optional: true
+    doc: "Ancestry category (omitted when absent from SDRF)"
+  individual:
+    type: string
+    optional: true
+    doc: "Individual/patient identifier (omitted when absent from SDRF)"
+  sample_description:
+    type: string
+    optional: true
+    doc: "Free-text sample description (omitted when absent from SDRF)"

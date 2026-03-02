@@ -1,0 +1,93 @@
+name: psm
+file_type: psm_file
+primary_key: [sequence, charge, run_file_name, scan]
+doc: "Peptide Spectrum Matches from identification searches"
+
+fields:
+  # Core identification (shared with Feature)
+  sequence:
+    type: string
+    required: true
+    doc: "Unmodified peptide sequence"
+  peptidoform:
+    type: string
+    required: true
+    doc: "ProForma notation"
+  modifications:
+    type: "list<modification>"
+    doc: "Structured modifications"
+  charge:
+    type: int16
+    required: true
+    doc: "Precursor charge"
+  posterior_error_probability:
+    type: float64
+    doc: "PEP - probability PSM is incorrect (lower is better)"
+  is_decoy:
+    type: bool
+    required: true
+    doc: "Decoy match flag"
+  calculated_mz:
+    type: float32
+    required: true
+    doc: "Theoretical m/z"
+  observed_mz:
+    type: float32
+    required: true
+    doc: "Experimental m/z"
+  mass_error_ppm:
+    type: float32
+    doc: "Mass error in ppm: 1e6 * (observed_mz - calculated_mz) / calculated_mz"
+  additional_scores:
+    type: "list<score>"
+    doc: "Search engine scores"
+  predicted_rt:
+    type: float32
+    doc: "Predicted RT (seconds)"
+  run_file_name:
+    type: string
+    required: true
+    doc: "Run file containing this PSM"
+  cv_params:
+    type: "list<cv_param>"
+    doc: "CV parameters"
+  scan:
+    type: "list<int32>"
+    required: true
+    doc: "Scan ID (array of int components)"
+  rt:
+    type: float32
+    doc: "Retention time (seconds)"
+  ion_mobility:
+    type: float32
+    doc: "Ion mobility"
+  missed_cleavages:
+    type: int16
+    doc: "Number of missed enzymatic cleavages (MS:1003044)"
+
+  # PSM-specific fields
+  protein_accessions:
+    type: "list<string>"
+    doc: "Protein accessions the peptide maps to"
+
+  # Cross-linking (XL-MS)
+  cross_links:
+    type: "list<cross_link>"
+    doc: "Cross-link information for XL-MS experiments"
+
+  # Spectral data (optional - may be stored in mz.parquet instead)
+  mz_array:
+    type: "list<float32>"
+    doc: "Spectrum m/z values"
+  intensity_array:
+    type: "list<float32>"
+    doc: "Spectrum intensity values"
+  charge_array:
+    type: "list<int32>"
+    doc: "Fragment charge values"
+  ion_type_array:
+    type: "list<string>"
+    doc: "Fragment ion type annotations (b, y, a, etc.)"
+  ion_mobility_array:
+    type: "list<float32>"
+    doc: "Fragment ion mobility values"

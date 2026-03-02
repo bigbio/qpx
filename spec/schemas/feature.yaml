@@ -1,0 +1,123 @@
+name: feature
+file_type: feature_file
+primary_key: [sequence, charge, run_file_name, anchor_protein]
+doc: "Quantified peptide features per MS run"
+
+fields:
+  # Core identification
+  sequence:
+    type: string
+    required: true
+    doc: "Unmodified peptide sequence"
+  peptidoform:
+    type: string
+    required: true
+    doc: "ProForma notation"
+  modifications:
+    type: "list<modification>"
+    doc: "Structured modifications"
+  charge:
+    type: int16
+    required: true
+    doc: "Charge state"
+  posterior_error_probability:
+    type: float64
+    doc: "PEP for the peptide match"
+  is_decoy:
+    type: bool
+    required: true
+    doc: "Decoy flag"
+  calculated_mz:
+    type: float32
+    required: true
+    doc: "Theoretical m/z"
+  observed_mz:
+    type: float32
+    required: true
+    doc: "Experimental m/z"
+  mass_error_ppm:
+    type: float32
+    doc: "Mass error in ppm: 1e6 * (observed_mz - calculated_mz) / calculated_mz"
+  additional_scores:
+    type: "list<score>"
+    doc: "Search engine scores"
+  predicted_rt:
+    type: float32
+    doc: "Predicted RT (seconds)"
+  run_file_name:
+    type: string
+    required: true
+    doc: "Run file name"
+  cv_params:
+    type: "list<cv_param>"
+    doc: "CV parameters"
+  scan:
+    type: "list<int32>"
+    required: true
+    doc: "Scan ID (array of int components)"
+  rt:
+    type: float32
+    doc: "Retention time (seconds)"
+  ion_mobility:
+    type: float32
+    doc: "Ion mobility"
+  missed_cleavages:
+    type: int16
+    doc: "Number of missed enzymatic cleavages (MS:1003044)"
+
+  # Quantification
+  intensities:
+    type: "list<intensity>"
+    doc: "Primary intensities per label"
+  additional_intensities:
+    type: "list<additional_intensity>"
+    doc: "Tool-provided intensities (normalized, LFQ, iBAQ) read from upstream output"
+
+  # Protein mapping
+  pg_accessions:
+    type: "list<pg_protein>"
+    doc: "Protein group accessions with optional peptide positions (start, end)"
+  anchor_protein:
+    type: string
+    required: true
+    doc: "Representative protein"
+  unique:
+    type: bool
+    doc: "Unique peptide indicator"
+  pg_global_qvalue:
+    type: float64
+    optional: true
+    doc: "Global q-value of PG"
+  pg_positions:
+    type: "list<protein_position>"
+    optional: true
+    doc: "Peptide positions per protein"
+
+  # Ion mobility window
+  ion_mobility_start:
+    type: float32
+    doc: "Start ion mobility"
+  ion_mobility_stop:
+    type: float32
+    doc: "Stop ion mobility"
+
+  # Gene annotations
+  gg_accessions:
+    type: "list<string>"
+    optional: true
+    doc: "Gene group identifiers (gene symbols; Ensembl IDs when available)"
+  gg_names:
+    type: "list<string>"
+    optional: true
+    doc: "Gene group names (gene symbols from tool output)"
+
+  # Spectra reference
+  id_run_file_name:
+    type: string
+    doc: "Run file containing best PSM"
+  rt_start:
+    type: float32
+    doc: "RT window start"
+  rt_stop:
+    type: float32
+    doc: "RT window end"

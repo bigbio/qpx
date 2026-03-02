@@ -1,0 +1,37 @@
+name: provenance
+file_type: provenance_file
+primary_key: [step_order]
+doc: "Processing provenance - one row per pipeline step"
+
+fields:
+  step_order:
+    type: int32
+    required: true
+    doc: "Execution order (1, 2, 3, ...)"
+  step_category:
+    type: string
+    required: true
+    doc: "Broad category (workflow, database_search, quantification, etc.)"
+  step_name:
+    type: string
+    required: true
+    doc: "Specific name (sequence_search, psm_rescoring, etc.)"
+  tool_name:
+    type: string
+    required: true
+    doc: "Tool that performed this step"
+  tool_version:
+    type: string
+    doc: "Tool version"
+  tool_uri:
+    type: string
+    doc: "Container URI or tool URL"
+  parameters:
+    type: "list<parameter>"
+    doc: "Key-value pairs of important settings"
+  config:
+    type: string
+    doc: "Full tool configuration as JSON string"
+  output_views:
+    type: "list<string>"
+    doc: "QPX views this step generated (e.g., ['psm', 'feature'])"

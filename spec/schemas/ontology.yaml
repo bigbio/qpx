@@ -1,0 +1,35 @@
+name: ontology
+file_type: ontology_file
+primary_key: [field_name, view]
+doc: "Field-to-ontology mappings. Makes the dataset self-describing"
+
+fields:
+  field_name:
+    type: string
+    required: true
+    doc: "snake_case QPX field or score name"
+  ontology_name:
+    type: string
+    doc: "Proper ontology term name"
+  ontology_accession:
+    type: string
+    doc: "Ontology accession identifier (e.g., MS:1002252)"
+  ontology_source:
+    type: string
+    doc: "Ontology prefix (MS, UBERON, UNIMOD, etc.)"
+  ontology_version:
+    type: string
+    doc: "Version of the ontology used for resolution (e.g., 4.1.235)"
+  view:
+    type: string
+    required: true
+    doc: "QPX view this field belongs to (psm, feature, pg, etc.)"
+  description:
+    type: string
+    doc: "Human-readable description"
+  source_column_name:
+    type: string
+    doc: "Original column name in the tool output (e.g., Precursor.Quantity)"
+  source_tool:
+    type: string
+    doc: "Tool name that produced this field (e.g., DIA-NN)"

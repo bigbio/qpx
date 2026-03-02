@@ -1,0 +1,87 @@
+name: pg
+file_type: pg_file
+primary_key: [anchor_protein, run_file_name]
+doc: "Protein groups with per-run quantification"
+
+fields:
+  # Protein group identity
+  pg_accessions:
+    type: "list<string>"
+    required: true
+    doc: "Protein accessions within this group"
+  pg_names:
+    type: "list<string>"
+    doc: "Protein group names"
+  gg_accessions:
+    type: "list<string>"
+    doc: "Gene group identifiers (gene symbols; Ensembl IDs when available)"
+  gg_names:
+    type: "list<string>"
+    doc: "Gene group names (gene symbols from tool output)"
+  gg_qvalue:
+    type: float64
+    nullable: true
+    doc: "Gene group q-value (e.g., DIA-NN GG.Q.Value)"
+  anchor_protein:
+    type: string
+    required: true
+    doc: "Anchor/leading protein of the group"
+
+  # Run-level context
+  run_file_name:
+    type: string
+    required: true
+    doc: "Raw file name"
+
+  # Quality metrics
+  global_qvalue:
+    type: float64
+    doc: "Global q-value at experiment level"
+  pg_qvalue:
+    type: float64
+    doc: "Protein group q-value at run level"
+
+  # Quantification
+  intensities:
+    type: "list<intensity>"
+    doc: "Primary intensity per label"
+  additional_intensities:
+    type: "list<additional_intensity>"
+    doc: "Tool-provided intensities (normalized, LFQ, iBAQ) read from upstream output"
+
+  # Flags
+  is_decoy:
+    type: bool
+    required: true
+    doc: "Decoy flag"
+  contaminant:
+    type: bool
+    doc: "Contaminant flag"
+
+  # Peptide/feature counts
+  peptides:
+    type: "list<peptide_per_protein>"
+    required: true
+    doc: "Peptide counts per protein in the group"
+  peptide_counts:
+    type: peptide_counts
+    doc: "Unique/total peptide sequence counts"
+  feature_counts:
+    type: feature_counts
+    doc: "Unique/total feature counts"
+
+  # Protein properties
+  sequence_coverage:
+    type: float32
+    doc: "Sequence coverage percentage"
+  molecular_weight:
+    type: float32
+    doc: "Molecular weight (kDa)"
+
+  # Scores and metadata
+  additional_scores:
+    type: "list<score>"
+    doc: "Additional scores"
+  cv_params:
+    type: "list<cv_param>"
+    doc: "CV parameters"

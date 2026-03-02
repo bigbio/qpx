@@ -12,31 +12,31 @@
         <meta name="author" content="BigBio Team">
       
       
-        <link rel="canonical" href="https://qpx.quantms.org/troubleshooting/">
+        <link rel="canonical" href="https://qpx.quantms.org/spec/pg/">
       
       
-        <link rel="prev" href="../spec/ontology/">
+        <link rel="prev" href="../feature/">
       
       
-        <link rel="next" href="../community/">
+        <link rel="next" href="../mz/">
       
       
         
       
       
-      <link rel="icon" href="../images/favicon.svg">
+      <link rel="icon" href="../../images/favicon.svg">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.3">
     
     
       
-        <title>Troubleshooting - qpx</title>
+        <title>Protein Group View - qpx</title>
       
     
     
-      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
   
@@ -114,13 +114,13 @@
       
     
     
-      <link rel="stylesheet" href="../assets/_markdown_exec_pyodide.css">
+      <link rel="stylesheet" href="../../assets/_markdown_exec_pyodide.css">
     
-      <link rel="stylesheet" href="../assets/_markdown_exec_ansi.css">
+      <link rel="stylesheet" href="../../assets/_markdown_exec_ansi.css">
     
-      <link rel="stylesheet" href="../stylesheets/quantms-theme.css">
+      <link rel="stylesheet" href="../../stylesheets/quantms-theme.css">
     
-    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
   
@@ -147,7 +147,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#troubleshooting" class="md-skip">
+        <a href="#protein-group-view" class="md-skip">
           Skip to content
         </a>
       
@@ -163,7 +163,7 @@
 
 <header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href=".." title="qpx" class="md-header__button md-logo" aria-label="qpx" data-md-component="logo">
+    <a href="../.." title="qpx" class="md-header__button md-logo" aria-label="qpx" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -183,7 +183,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Troubleshooting
+              Protein Group View
             
           </span>
         </div>
@@ -297,7 +297,7 @@
     
     
       <li class="md-tabs__item">
-        <a href=".." class="md-tabs__link">
+        <a href="../.." class="md-tabs__link">
           
   
   
@@ -319,7 +319,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../examples/" class="md-tabs__link">
+        <a href="../../examples/" class="md-tabs__link">
           
   
   
@@ -337,11 +337,13 @@
   
   
   
+    
+  
   
     
     
-      <li class="md-tabs__item">
-        <a href="../spec/" class="md-tabs__link">
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
           
   
   
@@ -363,7 +365,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../guide/" class="md-tabs__link">
+        <a href="../../guide/" class="md-tabs__link">
           
   
   
@@ -381,13 +383,11 @@
   
   
   
-    
-  
   
     
     
-      <li class="md-tabs__item md-tabs__item--active">
-        <a href="../spec/schemas/" class="md-tabs__link">
+      <li class="md-tabs__item">
+        <a href="../schemas/" class="md-tabs__link">
           
   
   
@@ -407,7 +407,7 @@
   
   
     <li class="md-tabs__item">
-      <a href="../community/" class="md-tabs__link">
+      <a href="../../community/" class="md-tabs__link">
         
   
   
@@ -450,7 +450,7 @@
 
 <nav class="md-nav md-nav--primary md-nav--lifted md-nav--integrated" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href=".." title="qpx" class="md-nav__button md-logo" aria-label="qpx" data-md-component="logo">
+    <a href="../.." title="qpx" class="md-nav__button md-logo" aria-label="qpx" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -507,7 +507,7 @@
         
           
           <div class="md-nav__link md-nav__container">
-            <a href=".." class="md-nav__link ">
+            <a href="../.." class="md-nav__link ">
               
   
   
@@ -551,7 +551,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../quickstart/" class="md-nav__link">
+      <a href="../../quickstart/" class="md-nav__link">
         
   
   
@@ -619,7 +619,7 @@
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../examples/" class="md-nav__link ">
+            <a href="../../examples/" class="md-nav__link ">
               
   
   
@@ -663,7 +663,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../examples/quickstart/" class="md-nav__link">
+      <a href="../../examples/quickstart/" class="md-nav__link">
         
   
   
@@ -691,7 +691,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../examples/workflows/" class="md-nav__link">
+      <a href="../../examples/workflows/" class="md-nav__link">
         
   
   
@@ -719,7 +719,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../examples/integration/" class="md-nav__link">
+      <a href="../../examples/integration/" class="md-nav__link">
         
   
   
@@ -747,7 +747,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../examples/qc/" class="md-nav__link">
+      <a href="../../examples/qc/" class="md-nav__link">
         
   
   
@@ -779,6 +779,8 @@
       
   
   
+    
+  
   
   
     
@@ -802,22 +804,23 @@
     
     
       
+        
+        
+      
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-          
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../spec/" class="md-nav__link ">
+            <a href="../" class="md-nav__link ">
               
   
   
@@ -835,13 +838,13 @@
             </a>
             
               
-              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="">
                 <span class="md-nav__icon md-icon"></span>
               </label>
             
           </div>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_3">
             <span class="md-nav__icon md-icon"></span>
             
@@ -879,10 +882,13 @@
       
       
         
+          
+          
+        
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
       
         
         
@@ -891,7 +897,7 @@
         <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_2" >
         
           
-          <label class="md-nav__link" for="__nav_3_2" id="__nav_3_2_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_3_2" id="__nav_3_2_label" tabindex="">
             
   
   
@@ -927,7 +933,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../spec/peptidoform/" class="md-nav__link">
+      <a href="../peptidoform/" class="md-nav__link">
         
   
   
@@ -955,7 +961,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../spec/modifications/" class="md-nav__link">
+      <a href="../modifications/" class="md-nav__link">
         
   
   
@@ -983,7 +989,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../spec/intensities/" class="md-nav__link">
+      <a href="../intensities/" class="md-nav__link">
         
   
   
@@ -1011,7 +1017,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../spec/scores/" class="md-nav__link">
+      <a href="../scores/" class="md-nav__link">
         
   
   
@@ -1039,7 +1045,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../spec/scan/" class="md-nav__link">
+      <a href="../scan/" class="md-nav__link">
         
   
   
@@ -1072,8 +1078,10 @@
                 
   
   
+    
   
   
+  
     
     
       
@@ -1094,20 +1102,21 @@
     
       
       
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
         
           
+          
         
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_3" >
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_3" checked>
         
           
-          <label class="md-nav__link" for="__nav_3_3" id="__nav_3_3_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_3_3" id="__nav_3_3_label" tabindex="">
             
   
   
@@ -1125,7 +1134,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_3_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_3_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_3_3">
             <span class="md-nav__icon md-icon"></span>
             
@@ -1143,7 +1152,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../spec/psm/" class="md-nav__link">
+      <a href="../psm/" class="md-nav__link">
         
   
   
@@ -1171,7 +1180,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../spec/feature/" class="md-nav__link">
+      <a href="../feature/" class="md-nav__link">
         
   
   
@@ -1196,10 +1205,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../spec/pg/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Protein Group View
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -1215,6 +1251,103 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#use-cases" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Use cases
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Schema
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recommended-intensity-names" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recommended Intensity Names
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recommended-score-names" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recommended Score Names
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tool-mappings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tool Mappings
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Notes
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1227,7 +1360,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../spec/mz/" class="md-nav__link">
+      <a href="../mz/" class="md-nav__link">
         
   
   
@@ -1255,7 +1388,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../spec/pepmap/" class="md-nav__link">
+      <a href="../pepmap/" class="md-nav__link">
         
   
   
@@ -1283,7 +1416,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../spec/views/" class="md-nav__link">
+      <a href="../views/" class="md-nav__link">
         
   
   
@@ -1333,10 +1466,13 @@
       
       
         
+          
+          
+        
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
       
         
         
@@ -1345,7 +1481,7 @@
         <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_4" >
         
           
-          <label class="md-nav__link" for="__nav_3_4" id="__nav_3_4_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_3_4" id="__nav_3_4_label" tabindex="">
             
   
   
@@ -1381,7 +1517,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../spec/anndata/" class="md-nav__link">
+      <a href="../anndata/" class="md-nav__link">
         
   
   
@@ -1409,7 +1545,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../spec/absolute/" class="md-nav__link">
+      <a href="../absolute/" class="md-nav__link">
         
   
   
@@ -1437,7 +1573,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../spec/differential/" class="md-nav__link">
+      <a href="../differential/" class="md-nav__link">
         
   
   
@@ -1491,10 +1627,13 @@
       
       
         
+          
+          
+        
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
       
         
         
@@ -1503,7 +1642,7 @@
         <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_5" >
         
           
-          <label class="md-nav__link" for="__nav_3_5" id="__nav_3_5_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_3_5" id="__nav_3_5_label" tabindex="">
             
   
   
@@ -1539,7 +1678,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../spec/dataset/" class="md-nav__link">
+      <a href="../dataset/" class="md-nav__link">
         
   
   
@@ -1567,7 +1706,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../spec/sample/" class="md-nav__link">
+      <a href="../sample/" class="md-nav__link">
         
   
   
@@ -1595,7 +1734,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../spec/run/" class="md-nav__link">
+      <a href="../run/" class="md-nav__link">
         
   
   
@@ -1623,7 +1762,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../spec/provenance/" class="md-nav__link">
+      <a href="../provenance/" class="md-nav__link">
         
   
   
@@ -1651,7 +1790,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../spec/sdrf-mapping/" class="md-nav__link">
+      <a href="../sdrf-mapping/" class="md-nav__link">
         
   
   
@@ -1703,10 +1842,13 @@
       
       
         
+          
+          
+        
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
       
         
         
@@ -1715,7 +1857,7 @@
         <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_6" >
         
           
-          <label class="md-nav__link" for="__nav_3_6" id="__nav_3_6_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_3_6" id="__nav_3_6_label" tabindex="">
             
   
   
@@ -1751,7 +1893,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../spec/serialization/" class="md-nav__link">
+      <a href="../serialization/" class="md-nav__link">
         
   
   
@@ -1779,7 +1921,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../spec/file-naming/" class="md-nav__link">
+      <a href="../file-naming/" class="md-nav__link">
         
   
   
@@ -1807,7 +1949,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../spec/versioning/" class="md-nav__link">
+      <a href="../versioning/" class="md-nav__link">
         
   
   
@@ -1835,7 +1977,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../spec/tool-mappings/" class="md-nav__link">
+      <a href="../tool-mappings/" class="md-nav__link">
         
   
   
@@ -1913,7 +2055,7 @@
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../guide/" class="md-nav__link ">
+            <a href="../../guide/" class="md-nav__link ">
               
   
   
@@ -1957,7 +2099,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guide/convert/" class="md-nav__link">
+      <a href="../../guide/convert/" class="md-nav__link">
         
   
   
@@ -1985,7 +2127,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guide/transform/" class="md-nav__link">
+      <a href="../../guide/transform/" class="md-nav__link">
         
   
   
@@ -2013,7 +2155,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guide/visualize/" class="md-nav__link">
+      <a href="../../guide/visualize/" class="md-nav__link">
         
   
   
@@ -2041,7 +2183,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guide/stats/" class="md-nav__link">
+      <a href="../../guide/stats/" class="md-nav__link">
         
   
   
@@ -2069,7 +2211,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../guide/project/" class="md-nav__link">
+      <a href="../../guide/project/" class="md-nav__link">
         
   
   
@@ -2101,10 +2243,8 @@
       
   
   
-    
   
   
-  
     
     
       
@@ -2118,22 +2258,21 @@
     
     
       
-        
-        
-      
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
         
           
-          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
             
   
   
@@ -2151,7 +2290,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_5">
             <span class="md-nav__icon md-icon"></span>
             
@@ -2169,7 +2308,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../spec/schemas/" class="md-nav__link">
+      <a href="../schemas/" class="md-nav__link">
         
   
   
@@ -2197,7 +2336,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../spec/ontology/" class="md-nav__link">
+      <a href="../ontology/" class="md-nav__link">
         
   
   
@@ -2222,37 +2361,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Troubleshooting
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../../troubleshooting/" class="md-nav__link">
         
   
   
@@ -2268,114 +2380,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#installation-issues" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Installation Issues
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#conversion-issues" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Conversion Issues
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#output-issues" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Output Issues
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#validation-issues" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Validation Issues
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#sdrf-issues" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        SDRF Issues
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#query-issues" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Query Issues
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#performance-issues" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Performance Issues
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#getting-more-help" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Getting More Help
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -2395,7 +2399,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../community/" class="md-nav__link">
+      <a href="../../community/" class="md-nav__link">
         
   
   
@@ -2431,6 +2435,49 @@
 
 
 
+  <nav class="md-path" aria-label="Navigation" >
+    <ol class="md-path__list">
+      
+      
+        
+  
+  
+    
+    
+      <li class="md-path__item">
+        <a href="../" class="md-path__link">
+          
+  <span class="md-ellipsis">
+    Format Specification
+  </span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+    
+    
+      <li class="md-path__item">
+        <a href="../psm/" class="md-path__link">
+          
+  <span class="md-ellipsis">
+    Data Views
+  </span>
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ol>
+  </nav>
+
               
               <article class="md-content__inner md-typeset">
                 
@@ -2441,295 +2488,997 @@
   
 
 
-<h1 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Anchor link to this section">&para;</a></h1>
-<p>Common issues and solutions when using qpx.</p>
-<h2 id="installation-issues">Installation Issues<a class="headerlink" href="#installation-issues" title="Anchor link to this section">&para;</a></h2>
-<h3 id="modulenotfounderror-no-module-named-qpx">ModuleNotFoundError: No module named 'qpx'<a class="headerlink" href="#modulenotfounderror-no-module-named-qpx" title="Anchor link to this section">&para;</a></h3>
-<p><strong>Problem</strong>: Python cannot find the qpx package after installation.</p>
-<p><strong>Solutions</strong>:</p>
-<ol>
-<li>Ensure you're using the correct Python environment:</li>
-</ol>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>which<span class="w"> </span>python
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>which<span class="w"> </span>qpxc
+<h1 id="protein-group-view">Protein Group View<a class="headerlink" href="#protein-group-view" title="Anchor link to this section">&para;</a></h1>
+<p>The protein group (PG) view is a tabular Parquet file that contains the details of protein groups identified and quantified per raw file. It captures the relationship between protein groups and the raw files in which they were detected, including peptide counts, feature counts, quality metrics, and intensity-based quantification.</p>
+<p>This view is analogous to outputs from tools such as MaxQuant (<code>proteinGroups.txt</code>), DIA-NN (<code>pg_matrix</code>), and FragPipe protein group reports.</p>
+<h2 id="use-cases">Use cases<a class="headerlink" href="#use-cases" title="Anchor link to this section">&para;</a></h2>
+<ul>
+<li>Retrieve all protein groups identified or quantified in a given raw file.</li>
+<li>Retrieve protein group abundance by file and condition.</li>
+<li>Store and query FDR q-values for protein groups at both the run and experiment level.</li>
+<li>Support downstream statistical analysis by providing per-file protein-level quantification.</li>
+</ul>
+<h2 id="schema">Schema<a class="headerlink" href="#schema" title="Anchor link to this section">&para;</a></h2>
+<p>Fields marked with <strong>(PK)</strong> are primary keys and MUST NOT be null. Fields marked with <strong>(nullable)</strong> may have null values. See the full YAML schema in <a href="../schemas/pg.yaml"><code>pg.yaml</code></a>.</p>
+<h3 id="identity">Identity<a class="headerlink" href="#identity" title="Anchor link to this section">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Type</th>
+<th>Required</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>pg_accessions</code></td>
+<td>Protein accessions of all proteins within this group</td>
+<td><code>array[string]</code></td>
+<td>Yes (PK)</td>
+</tr>
+<tr>
+<td><code>pg_names</code></td>
+<td>Descriptive names for the proteins in the group</td>
+<td><code>array[string]</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>gg_accessions</code></td>
+<td>Gene group accessions as a string array</td>
+<td><code>array[string]</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>gg_names</code></td>
+<td>Gene names corresponding to the proteins in the group</td>
+<td><code>array[string]</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>gg_qvalue</code></td>
+<td>Gene group q-value (e.g., DIA-NN GG.Q.Value)</td>
+<td><code>float64</code>, null</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>anchor_protein</code></td>
+<td>Representative protein of the group (leading protein)</td>
+<td><code>string</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>run_file_name</code></td>
+<td>The raw file containing the identified/quantified protein group</td>
+<td><code>string</code></td>
+<td>Yes (PK)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="counts">Counts<a class="headerlink" href="#counts" title="Anchor link to this section">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Type</th>
+<th>Required</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>peptide_counts</code></td>
+<td>Peptide sequence counts for this protein group in this file</td>
+<td><code>struct</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>peptide_counts.unique_sequences</code></td>
+<td>Number of peptide sequences unique to this protein group within this file</td>
+<td><code>int</code></td>
+<td>--</td>
+</tr>
+<tr>
+<td><code>peptide_counts.total_sequences</code></td>
+<td>Total number of peptide sequences identified for this protein group in this file</td>
+<td><code>int</code></td>
+<td>--</td>
+</tr>
+<tr>
+<td><code>feature_counts</code></td>
+<td>Peptide feature counts (peptide-charge combinations) for this protein group</td>
+<td><code>struct</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>feature_counts.unique_features</code></td>
+<td>Number of unique peptide features specific to this protein group within this file</td>
+<td><code>int</code></td>
+<td>--</td>
+</tr>
+<tr>
+<td><code>feature_counts.total_features</code></td>
+<td>Total number of peptide features identified for this protein group in this file</td>
+<td><code>int</code></td>
+<td>--</td>
+</tr>
+</tbody>
+</table>
+<h3 id="quality">Quality<a class="headerlink" href="#quality" title="Anchor link to this section">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Type</th>
+<th>Required</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>global_qvalue</code></td>
+<td>Global q-value of the protein group at the experiment level</td>
+<td><code>float64</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>pg_qvalue</code></td>
+<td>Protein group q-value at the run level</td>
+<td><code>float64</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>is_decoy</code></td>
+<td>Whether the protein group is a decoy (<code>true</code>) or a target (<code>false</code>)</td>
+<td><code>bool</code></td>
+<td>Yes</td>
+</tr>
+<tr>
+<td><code>contaminant</code></td>
+<td>Contaminant flag</td>
+<td><code>bool</code>, null</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>sequence_coverage</code></td>
+<td>Percentage of the protein sequence covered by identified peptides</td>
+<td><code>float32</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>molecular_weight</code></td>
+<td>Molecular weight of the protein in kDa</td>
+<td><code>float32</code></td>
+<td>No</td>
+</tr>
+</tbody>
+</table>
+<h3 id="quantification">Quantification<a class="headerlink" href="#quantification" title="Anchor link to this section">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Type</th>
+<th>Required</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>intensities</code></td>
+<td>Primary intensity-based abundance of the protein group across labels. See <a href="../intensities/">Intensities</a></td>
+<td><code>array[struct]</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>additional_intensities</code></td>
+<td>Pre-computed intensity values from the upstream tool (normalized, LFQ, iBAQ, etc.). See <a href="../intensities/">Intensities</a></td>
+<td><code>array[struct]</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>additional_scores</code></td>
+<td>Additional scores and metrics (posterior error probability, confidence, etc.). See <a href="../scores/">Scores</a></td>
+<td><code>array[struct]</code></td>
+<td>No</td>
+</tr>
+</tbody>
+</table>
+<p>Each entry in <code>intensities</code> contains:</p>
+<table>
+<thead>
+<tr>
+<th>Sub-field</th>
+<th>Description</th>
+<th>Type</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>label</code></td>
+<td>Label identifier (e.g., TMT126, LFQ)</td>
+<td><code>string</code></td>
+</tr>
+<tr>
+<td><code>intensity</code></td>
+<td>Raw intensity value</td>
+<td><code>float32</code></td>
+</tr>
+</tbody>
+</table>
+<p>Each entry in <code>additional_intensities</code> contains:</p>
+<table>
+<thead>
+<tr>
+<th>Sub-field</th>
+<th>Description</th>
+<th>Type</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>label</code></td>
+<td>Label identifier (e.g., TMT126, LFQ)</td>
+<td><code>string</code></td>
+</tr>
+<tr>
+<td><code>intensities</code></td>
+<td>Array of name-value pairs for derived intensities</td>
+<td><code>array[struct{intensity_name, intensity_value}]</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="peptide-detail">Peptide detail<a class="headerlink" href="#peptide-detail" title="Anchor link to this section">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Type</th>
+<th>Required</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>peptides</code></td>
+<td>Number of peptides per individual protein in the protein group</td>
+<td><code>array[struct]</code></td>
+<td>Yes</td>
+</tr>
+</tbody>
+</table>
+<p>Each entry in <code>peptides</code> contains:</p>
+<table>
+<thead>
+<tr>
+<th>Sub-field</th>
+<th>Description</th>
+<th>Type</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>protein_name</code></td>
+<td>Protein accession</td>
+<td><code>string</code></td>
+</tr>
+<tr>
+<td><code>peptide_count</code></td>
+<td>Number of peptides for this protein</td>
+<td><code>int</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="cv-params">CV params<a class="headerlink" href="#cv-params" title="Anchor link to this section">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Type</th>
+<th>Required</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>cv_params</code></td>
+<td>Optional list of controlled vocabulary parameters for additional metadata</td>
+<td><code>array[struct{cv_name, cv_value}]</code></td>
+<td>No</td>
+</tr>
+</tbody>
+</table>
+<h2 id="example">Example<a class="headerlink" href="#example" title="Anchor link to this section">&para;</a></h2>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="p">{</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="nt">&quot;pg_accessions&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;P04217&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;A0A024R4E5&quot;</span><span class="p">],</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span><span class="nt">&quot;pg_names&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;Alpha-1B-glycoprotein&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;Alpha-1B-glycoprotein variant&quot;</span><span class="p">],</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nt">&quot;gg_accessions&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;A1BG&quot;</span><span class="p">],</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nt">&quot;gg_names&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;A1BG&quot;</span><span class="p">],</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">  </span><span class="nt">&quot;anchor_protein&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;P04217&quot;</span><span class="p">,</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span><span class="nt">&quot;run_file_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;20230101_sample_01&quot;</span><span class="p">,</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">  </span><span class="nt">&quot;peptide_counts&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">    </span><span class="nt">&quot;unique_sequences&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">12</span><span class="p">,</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">    </span><span class="nt">&quot;total_sequences&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">18</span>
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">  </span><span class="p">},</span>
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">  </span><span class="nt">&quot;feature_counts&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">    </span><span class="nt">&quot;unique_features&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">24</span><span class="p">,</span>
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="w">    </span><span class="nt">&quot;total_features&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">36</span>
+</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="w">  </span><span class="p">},</span>
+</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="w">  </span><span class="nt">&quot;global_qvalue&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.001</span><span class="p">,</span>
+</span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="w">  </span><span class="nt">&quot;pg_qvalue&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.005</span><span class="p">,</span>
+</span><span id="__span-0-18"><a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="w">  </span><span class="nt">&quot;is_decoy&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+</span><span id="__span-0-19"><a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="w">  </span><span class="nt">&quot;contaminant&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+</span><span id="__span-0-20"><a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="w">  </span><span class="nt">&quot;sequence_coverage&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">45.2</span><span class="p">,</span>
+</span><span id="__span-0-21"><a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="w">  </span><span class="nt">&quot;molecular_weight&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">54.3</span><span class="p">,</span>
+</span><span id="__span-0-22"><a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="w">  </span><span class="nt">&quot;intensities&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+</span><span id="__span-0-23"><a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a><span class="w">    </span><span class="p">{</span>
+</span><span id="__span-0-24"><a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a><span class="w">      </span><span class="nt">&quot;label&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;TMT126&quot;</span><span class="p">,</span>
+</span><span id="__span-0-25"><a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a><span class="w">      </span><span class="nt">&quot;intensity&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1.5e8</span>
+</span><span id="__span-0-26"><a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a><span class="w">    </span><span class="p">}</span>
+</span><span id="__span-0-27"><a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a><span class="w">  </span><span class="p">],</span>
+</span><span id="__span-0-28"><a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a><span class="w">  </span><span class="nt">&quot;additional_intensities&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+</span><span id="__span-0-29"><a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a><span class="w">    </span><span class="p">{</span>
+</span><span id="__span-0-30"><a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a><span class="w">      </span><span class="nt">&quot;label&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;TMT126&quot;</span><span class="p">,</span>
+</span><span id="__span-0-31"><a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a><span class="w">      </span><span class="nt">&quot;intensities&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+</span><span id="__span-0-32"><a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a><span class="w">        </span><span class="p">{</span><span class="nt">&quot;intensity_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;LFQ&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;intensity_value&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1.2e8</span><span class="p">},</span>
+</span><span id="__span-0-33"><a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a><span class="w">        </span><span class="p">{</span><span class="nt">&quot;intensity_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;iBAQ&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;intensity_value&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">3.4e7</span><span class="p">}</span>
+</span><span id="__span-0-34"><a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a><span class="w">      </span><span class="p">]</span>
+</span><span id="__span-0-35"><a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a><span class="w">    </span><span class="p">}</span>
+</span><span id="__span-0-36"><a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a><span class="w">  </span><span class="p">],</span>
+</span><span id="__span-0-37"><a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a><span class="w">  </span><span class="nt">&quot;peptides&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+</span><span id="__span-0-38"><a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a><span class="w">    </span><span class="p">{</span><span class="nt">&quot;protein_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;P04217&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;peptide_count&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">15</span><span class="p">},</span>
+</span><span id="__span-0-39"><a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a><span class="w">    </span><span class="p">{</span><span class="nt">&quot;protein_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;A0A024R4E5&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;peptide_count&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">}</span>
+</span><span id="__span-0-40"><a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a><span class="w">  </span><span class="p">],</span>
+</span><span id="__span-0-41"><a id="__codelineno-0-41" name="__codelineno-0-41" href="#__codelineno-0-41"></a><span class="w">  </span><span class="nt">&quot;additional_scores&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+</span><span id="__span-0-42"><a id="__codelineno-0-42" name="__codelineno-0-42" href="#__codelineno-0-42"></a><span class="w">    </span><span class="p">{</span><span class="nt">&quot;score_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;posterior_error_probability&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;score_value&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.0001</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;higher_better&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">}</span>
+</span><span id="__span-0-43"><a id="__codelineno-0-43" name="__codelineno-0-43" href="#__codelineno-0-43"></a><span class="w">  </span><span class="p">],</span>
+</span><span id="__span-0-44"><a id="__codelineno-0-44" name="__codelineno-0-44" href="#__codelineno-0-44"></a><span class="w">  </span><span class="nt">&quot;cv_params&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span>
+</span><span id="__span-0-45"><a id="__codelineno-0-45" name="__codelineno-0-45" href="#__codelineno-0-45"></a><span class="p">}</span>
 </span></code></pre></div>
-<ol>
-<li>Reinstall in the active environment:</li>
-</ol>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>pip<span class="w"> </span>install<span class="w"> </span>--force-reinstall<span class="w"> </span>qpx
-</span></code></pre></div>
-<ol>
-<li>If using conda, ensure the environment is activated:</li>
-</ol>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>conda<span class="w"> </span>activate<span class="w"> </span>qpx
-</span></code></pre></div>
-<h3 id="python-version-incompatibility">Python version incompatibility<a class="headerlink" href="#python-version-incompatibility" title="Anchor link to this section">&para;</a></h3>
-<p><strong>Problem</strong>: Installation fails with Python version errors.</p>
-<p><strong>Solution</strong>: qpx requires Python 3.10 or higher. Check your version:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>python<span class="w"> </span>--version
-</span></code></pre></div>
-<p>If needed, install a compatible Python version:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># Using conda</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>conda<span class="w"> </span>create<span class="w"> </span>-n<span class="w"> </span>qpx<span class="w"> </span><span class="nv">python</span><span class="o">=</span><span class="m">3</span>.10
-</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>conda<span class="w"> </span>activate<span class="w"> </span>qpx
-</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>pip<span class="w"> </span>install<span class="w"> </span>qpx
-</span></code></pre></div>
-<h3 id="missing-dependencies">Missing dependencies<a class="headerlink" href="#missing-dependencies" title="Anchor link to this section">&para;</a></h3>
-<p><strong>Problem</strong>: Import errors for packages like <code>venn</code>, <code>pyopenms</code>, or <code>anndata</code>.</p>
-<p><strong>Solution</strong>: Install the missing package:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>pip<span class="w"> </span>install<span class="w"> </span>venn<span class="w"> </span>pyopenms<span class="w"> </span>anndata
-</span></code></pre></div>
-<h2 id="conversion-issues">Conversion Issues<a class="headerlink" href="#conversion-issues" title="Anchor link to this section">&para;</a></h2>
-<h3 id="file-not-found-errors">File not found errors<a class="headerlink" href="#file-not-found-errors" title="Anchor link to this section">&para;</a></h3>
-<p><strong>Problem</strong>: <code>FileNotFoundError</code> when running convert commands.</p>
-<p><strong>Solutions</strong>:</p>
-<ol>
-<li>Use absolute paths:</li>
-</ol>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>qpxc<span class="w"> </span>convert<span class="w"> </span>maxquant<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">    </span>--msms-file<span class="w"> </span>/full/path/to/msms.txt<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">    </span>--output-folder<span class="w"> </span>/full/path/to/output
-</span></code></pre></div>
-<ol>
-<li>Verify the file exists:
-   <div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>ls<span class="w"> </span>-la<span class="w"> </span>path/to/file.txt
-</span></code></pre></div></li>
-</ol>
-<h3 id="memory-errors-with-large-files">Memory errors with large files<a class="headerlink" href="#memory-errors-with-large-files" title="Anchor link to this section">&para;</a></h3>
-<p><strong>Problem</strong>: <code>MemoryError</code> or system becomes unresponsive with large datasets.</p>
-<p><strong>Solutions</strong>:</p>
-<ol>
-<li>
-<p>Process files in batches if supported by the command</p>
-</li>
-<li>
-<p>Increase available memory or use a machine with more RAM</p>
-</li>
-<li>
-<p>For DIA-NN reports, use the <code>--qvalue-threshold</code> to filter data:
-   <div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>qpxc<span class="w"> </span>convert<span class="w"> </span>diann<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">    </span>--report-path<span class="w"> </span>report.tsv<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">    </span>--sdrf-path<span class="w"> </span>metadata.sdrf.tsv<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">    </span>--mzml-info-folder<span class="w"> </span>./mzml_info<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">    </span>--qvalue-threshold<span class="w"> </span><span class="m">0</span>.01<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">    </span>--output-folder<span class="w"> </span>./output
-</span></code></pre></div></p>
-</li>
-<li>
-<p>For MaxQuant, use the <code>--batch-size</code> and <code>--memory-limit</code> options:
-   <div class="language-bash highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>qpxc<span class="w"> </span>convert<span class="w"> </span>maxquant<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">    </span>--msms-file<span class="w"> </span>msms.txt<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">    </span>--output-folder<span class="w"> </span>./output<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">    </span>--batch-size<span class="w"> </span><span class="m">50000</span><span class="w"> </span><span class="se">\</span>
-</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">    </span>--memory-limit<span class="w"> </span><span class="m">8</span>
-</span></code></pre></div></p>
-</li>
-</ol>
-<h3 id="invalid-file-format-errors">Invalid file format errors<a class="headerlink" href="#invalid-file-format-errors" title="Anchor link to this section">&para;</a></h3>
-<p><strong>Problem</strong>: <code>ValueError</code> or parsing errors when reading input files.</p>
-<p><strong>Solutions</strong>:</p>
-<ol>
-<li>
-<p>Verify the file format matches the expected format for the converter</p>
-</li>
-<li>
-<p>Check for file corruption:</p>
-</li>
-</ol>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>head<span class="w"> </span>-20<span class="w"> </span>input_file.txt
-</span></code></pre></div>
-<ol>
-<li>Ensure the file encoding is UTF-8:
-   <div class="language-bash highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>file<span class="w"> </span>input_file.txt
-</span></code></pre></div></li>
-</ol>
-<h2 id="output-issues">Output Issues<a class="headerlink" href="#output-issues" title="Anchor link to this section">&para;</a></h2>
-<h3 id="empty-output-files">Empty output files<a class="headerlink" href="#empty-output-files" title="Anchor link to this section">&para;</a></h3>
-<p><strong>Problem</strong>: Parquet files are created but contain no data.</p>
-<p><strong>Solutions</strong>:</p>
-<ol>
-<li>
-<p>Check if input data passes quality filters (q-value, PEP thresholds)</p>
-</li>
-<li>
-<p>Verify column names match expected format for the software</p>
-</li>
-<li>
-<p>Use <code>--verbose</code> flag to see processing details:
-   <div class="language-bash highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>qpxc<span class="w"> </span>convert<span class="w"> </span>maxquant<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="w">    </span>--msms-file<span class="w"> </span>msms.txt<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="w">    </span>--output-folder<span class="w"> </span>./<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="w">    </span>--verbose
-</span></code></pre></div></p>
-</li>
-</ol>
-<h3 id="missing-columns-in-output">Missing columns in output<a class="headerlink" href="#missing-columns-in-output" title="Anchor link to this section">&para;</a></h3>
-<p><strong>Problem</strong>: Expected columns are not present in the output Parquet file.</p>
-<p><strong>Solutions</strong>:</p>
-<ol>
-<li>
-<p>Check if the input file contains the required source columns</p>
-</li>
-<li>
-<p>For spectral data, ensure <code>--spectral-data</code> flag is used:</p>
-</li>
-</ol>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>qpxc<span class="w"> </span>convert<span class="w"> </span>maxquant<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="w">    </span>--msms-file<span class="w"> </span>msms.txt<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="w">    </span>--output-folder<span class="w"> </span>./<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="w">    </span>--spectral-data
-</span></code></pre></div>
-<ol>
-<li>Review the <a href="../spec/">Format Specification</a> for required vs optional fields</li>
-</ol>
-<h2 id="validation-issues">Validation Issues<a class="headerlink" href="#validation-issues" title="Anchor link to this section">&para;</a></h2>
-<h3 id="validating-a-dataset">Validating a dataset<a class="headerlink" href="#validating-a-dataset" title="Anchor link to this section">&para;</a></h3>
-<p>Use the <code>validate</code> command to check a dataset against the canonical schemas:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="c1"># Validate all structures in a dataset</span>
-</span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>qpxc<span class="w"> </span>validate<span class="w"> </span>--dataset-path<span class="w"> </span>./PXD014414
-</span><span id="__span-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>
-</span><span id="__span-14-4"><a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="c1"># Validate a specific structure</span>
-</span><span id="__span-14-5"><a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a>qpxc<span class="w"> </span>validate<span class="w"> </span>--dataset-path<span class="w"> </span>./PXD014414<span class="w"> </span>--structure<span class="w"> </span>feature
-</span><span id="__span-14-6"><a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a>
-</span><span id="__span-14-7"><a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a><span class="c1"># Validate a single Parquet file</span>
-</span><span id="__span-14-8"><a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a>qpxc<span class="w"> </span>validate<span class="w"> </span>--file<span class="w"> </span>./data.feature.parquet
-</span></code></pre></div>
-<h3 id="common-validation-errors">Common validation errors<a class="headerlink" href="#common-validation-errors" title="Anchor link to this section">&para;</a></h3>
-<p><strong>Missing required column</strong>: A required column is absent from the Parquet file. Check the <a href="../spec/schemas/">schema reference</a> for required fields.</p>
-<p><strong>Type mismatch</strong>: A column has a different Arrow type than the schema expects. This usually means the data was written with an older version of qpx or a different tool.</p>
-<p><strong>Null values in non-nullable columns</strong>: Required columns should not contain null values. Check your input data and conversion pipeline.</p>
-<p><strong>Duplicate primary key</strong>: Rows with identical primary key values exist. This may indicate duplicate entries in the source data.</p>
-<h3 id="programmatic-validation">Programmatic validation<a class="headerlink" href="#programmatic-validation" title="Anchor link to this section">&para;</a></h3>
-<p>You can also validate from Python:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">qpx</span>
-</span><span id="__span-15-2"><a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>
-</span><span id="__span-15-3"><a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="k">with</span> <span class="n">qpx</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="s2">&quot;./PXD014414&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">ds</span><span class="p">:</span>
-</span><span id="__span-15-4"><a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a>    <span class="n">results</span> <span class="o">=</span> <span class="n">ds</span><span class="o">.</span><span class="n">validate</span><span class="p">()</span>
-</span><span id="__span-15-5"><a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a>    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">result</span> <span class="ow">in</span> <span class="n">results</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-</span><span id="__span-15-6"><a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a>        <span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">summary</span><span class="p">)</span>
-</span><span id="__span-15-7"><a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a>        <span class="k">for</span> <span class="n">issue</span> <span class="ow">in</span> <span class="n">result</span><span class="o">.</span><span class="n">issues</span><span class="p">:</span>
-</span><span id="__span-15-8"><a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a>            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  [</span><span class="si">{</span><span class="n">issue</span><span class="o">.</span><span class="n">severity</span><span class="si">}</span><span class="s2">] </span><span class="si">{</span><span class="n">issue</span><span class="o">.</span><span class="n">message</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-</span></code></pre></div>
-<h2 id="sdrf-issues">SDRF Issues<a class="headerlink" href="#sdrf-issues" title="Anchor link to this section">&para;</a></h2>
-<h3 id="sample-name-mismatches">Sample name mismatches<a class="headerlink" href="#sample-name-mismatches" title="Anchor link to this section">&para;</a></h3>
-<p><strong>Problem</strong>: Samples in data files don't match SDRF sample names.</p>
-<p><strong>Solutions</strong>:</p>
-<ol>
-<li>
-<p>Ensure <code>source name</code> column in SDRF matches file names (without extension)</p>
-</li>
-<li>
-<p>Check for whitespace or case sensitivity issues:</p>
-</li>
-</ol>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
-</span><span id="__span-16-2"><a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="n">sdrf</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="s1">&#39;experiment.sdrf.tsv&#39;</span><span class="p">,</span> <span class="n">sep</span><span class="o">=</span><span class="s1">&#39;</span><span class="se">\t</span><span class="s1">&#39;</span><span class="p">)</span>
-</span><span id="__span-16-3"><a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="nb">print</span><span class="p">(</span><span class="n">sdrf</span><span class="p">[</span><span class="s1">&#39;source name&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">unique</span><span class="p">())</span>
-</span></code></pre></div>
-<h3 id="missing-factor-values">Missing factor values<a class="headerlink" href="#missing-factor-values" title="Anchor link to this section">&para;</a></h3>
-<p><strong>Problem</strong>: Factor values are not extracted from SDRF.</p>
-<p><strong>Solution</strong>: Ensure factor columns follow the format <code>factor value[factor_name]</code>:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>source name    factor value[disease]    factor value[organism part]
-</span><span id="__span-17-2"><a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>sample1        healthy                  liver
-</span><span id="__span-17-3"><a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>sample2        cancer                   liver
-</span></code></pre></div>
-<h3 id="converting-sdrf-to-qpx-metadata">Converting SDRF to QPX metadata<a class="headerlink" href="#converting-sdrf-to-qpx-metadata" title="Anchor link to this section">&para;</a></h3>
-<p>Use the dedicated SDRF converter to produce <code>sample.parquet</code> and <code>run.parquet</code>:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-18-1"><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>qpxc<span class="w"> </span>convert<span class="w"> </span>sdrf<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-18-2"><a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="w">    </span>--sdrf-file<span class="w"> </span>metadata.sdrf.tsv<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-18-3"><a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="w">    </span>--output-folder<span class="w"> </span>./output
-</span></code></pre></div>
-<h2 id="query-issues">Query Issues<a class="headerlink" href="#query-issues" title="Anchor link to this section">&para;</a></h2>
-<h3 id="sql-query-errors">SQL query errors<a class="headerlink" href="#sql-query-errors" title="Anchor link to this section">&para;</a></h3>
-<p><strong>Problem</strong>: SQL queries fail with column or table not found errors.</p>
-<p><strong>Solutions</strong>:</p>
-<ol>
-<li>
-<p>Check available structures in the dataset:
-   <div class="language-bash highlight"><pre><span></span><code><span id="__span-19-1"><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>qpxc<span class="w"> </span>info<span class="w"> </span>--dataset-path<span class="w"> </span>./PXD014414
-</span></code></pre></div></p>
-</li>
-<li>
-<p>Check the schema for a specific structure:
-   <div class="language-bash highlight"><pre><span></span><code><span id="__span-20-1"><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>qpxc<span class="w"> </span>info<span class="w"> </span>schema<span class="w"> </span>--dataset-path<span class="w"> </span>./PXD014414<span class="w"> </span>--structure<span class="w"> </span>feature
-</span></code></pre></div></p>
-</li>
-<li>
-<p>Table names in SQL match the QPX structure names: <code>psm</code>, <code>feature</code>, <code>pg</code>, <code>mz</code>, <code>sample</code>, <code>run</code>, <code>dataset</code>, <code>ontology</code>, <code>provenance</code>.</p>
-</li>
-</ol>
-<h3 id="memory-issues-with-large-queries">Memory issues with large queries<a class="headerlink" href="#memory-issues-with-large-queries" title="Anchor link to this section">&para;</a></h3>
-<p><strong>Solutions</strong>:</p>
-<ol>
-<li>
-<p>Use <code>--duckdb-memory</code> to increase DuckDB memory:
-   <div class="language-bash highlight"><pre><span></span><code><span id="__span-21-1"><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>qpxc<span class="w"> </span>query<span class="w"> </span>sql<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-21-2"><a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a><span class="w">    </span>--dataset-path<span class="w"> </span>./PXD014414<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-21-3"><a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a><span class="w">    </span>--sql<span class="w"> </span><span class="s2">&quot;SELECT * FROM feature&quot;</span><span class="w"> </span><span class="se">\</span>
-</span><span id="__span-21-4"><a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a><span class="w">    </span>--duckdb-memory<span class="w"> </span>32GB
-</span></code></pre></div></p>
-</li>
-<li>
-<p>Use <code>--limit</code> or SQL <code>LIMIT</code> to restrict results</p>
-</li>
-<li>
-<p>Export large results directly to Parquet:
-   <div class="language-bash highlight"><pre><span></span><code><span id="__span-22-1"><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>qpxc<span class="w"> </span>query<span class="w"> </span>sql<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-22-2"><a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a><span class="w">    </span>--dataset-path<span class="w"> </span>./PXD014414<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-22-3"><a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a><span class="w">    </span>--sql<span class="w"> </span><span class="s2">&quot;SELECT * FROM feature&quot;</span><span class="w"> </span><span class="se">\</span>
-</span><span id="__span-22-4"><a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a><span class="w">    </span>--output<span class="w"> </span>results.parquet<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-22-5"><a id="__codelineno-22-5" name="__codelineno-22-5" href="#__codelineno-22-5"></a><span class="w">    </span>--output-format<span class="w"> </span>parquet
-</span></code></pre></div></p>
-</li>
-</ol>
-<h2 id="performance-issues">Performance Issues<a class="headerlink" href="#performance-issues" title="Anchor link to this section">&para;</a></h2>
-<h3 id="slow-processing">Slow processing<a class="headerlink" href="#slow-processing" title="Anchor link to this section">&para;</a></h3>
-<p><strong>Solutions</strong>:</p>
-<ol>
-<li>
-<p>Use SSD storage for input/output files</p>
-</li>
-<li>
-<p>Increase available RAM</p>
-</li>
-<li>
-<p>For large datasets, consider processing samples in parallel</p>
-</li>
-<li>
-<p>Use compressed input files (.gz) to reduce I/O</p>
-</li>
-</ol>
-<h3 id="high-memory-usage">High memory usage<a class="headerlink" href="#high-memory-usage" title="Anchor link to this section">&para;</a></h3>
-<p><strong>Solutions</strong>:</p>
-<ol>
-<li>
-<p>Close other applications to free memory</p>
-</li>
-<li>
-<p>Process smaller batches of data</p>
-</li>
-<li>
-<p>Use streaming/chunked processing where available</p>
-</li>
-</ol>
-<h2 id="getting-more-help">Getting More Help<a class="headerlink" href="#getting-more-help" title="Anchor link to this section">&para;</a></h2>
-<p>If your issue isn't listed here:</p>
-<ol>
-<li>
-<p><strong>Search existing issues</strong>: <a href="https://github.com/bigbio/qpx/issues">GitHub Issues</a></p>
-</li>
-<li>
-<p><strong>Enable verbose logging</strong>: Add <code>--verbose</code> to any command for detailed output</p>
-</li>
-<li>
-<p><strong>Create a new issue</strong>: Include:</p>
-</li>
-<li>qpx version (<code>qpxc --version</code>)</li>
-<li>Python version (<code>python --version</code>)</li>
-<li>Operating system</li>
-<li>Complete error message</li>
-<li>Minimal reproducible example</li>
-</ol>
+<h2 id="recommended-intensity-names">Recommended Intensity Names<a class="headerlink" href="#recommended-intensity-names" title="Anchor link to this section">&para;</a></h2>
+<p>The following names are commonly used in <code>additional_intensities</code> for the PG view. Use consistent naming so downstream tools can recognise them across datasets.</p>
+<table>
+<thead>
+<tr>
+<th><code>intensity_name</code></th>
+<th>Source tool(s)</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>maxlfq</code></td>
+<td>DIA-NN, MaxQuant, FragPipe</td>
+<td>MaxLFQ normalised protein group quantity</td>
+</tr>
+<tr>
+<td><code>lfq</code></td>
+<td>MaxQuant</td>
+<td>Label-free quantification intensity</td>
+</tr>
+<tr>
+<td><code>ibaq</code></td>
+<td>MaxQuant</td>
+<td>Intensity-based absolute quantification</td>
+</tr>
+<tr>
+<td><code>topn</code></td>
+<td>DIA-NN</td>
+<td>Top-N normalised protein group quantity</td>
+</tr>
+<tr>
+<td><code>normalize_intensity</code></td>
+<td>quantms</td>
+<td>Median-normalised intensity</td>
+</tr>
+<tr>
+<td><code>spectral_count</code></td>
+<td>FragPipe, MaxQuant</td>
+<td>Number of PSMs for razor peptides</td>
+</tr>
+<tr>
+<td><code>unique_spectral_count</code></td>
+<td>FragPipe</td>
+<td>Number of PSMs for unique peptides only</td>
+</tr>
+<tr>
+<td><code>total_spectral_count</code></td>
+<td>FragPipe</td>
+<td>Number of PSMs for all peptides (razor + shared)</td>
+</tr>
+<tr>
+<td><code>genes_maxlfq</code></td>
+<td>DIA-NN</td>
+<td>Gene-group level MaxLFQ quantity</td>
+</tr>
+<tr>
+<td><code>genes_maxlfq_unique</code></td>
+<td>DIA-NN</td>
+<td>Gene-group MaxLFQ using only proteotypic peptides</td>
+</tr>
+<tr>
+<td><code>ratio_h_l</code></td>
+<td>MaxQuant (SILAC)</td>
+<td>Heavy-to-light protein ratio</td>
+</tr>
+<tr>
+<td><code>ratio_h_l_normalized</code></td>
+<td>MaxQuant (SILAC)</td>
+<td>Normalised heavy-to-light ratio</td>
+</tr>
+<tr>
+<td><code>reporter_intensity</code></td>
+<td>MaxQuant (TMT/iTRAQ)</td>
+<td>Raw reporter-ion intensity</td>
+</tr>
+<tr>
+<td><code>reporter_intensity_corrected</code></td>
+<td>MaxQuant (TMT/iTRAQ)</td>
+<td>Isotope-purity-corrected reporter intensity</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition tip">
+<p class="admonition-title">Spectral counts as intensities</p>
+<p>Spectral counts are quantitative measures that vary per run and per label, so they fit naturally in <code>additional_intensities</code>. Store them as float values (e.g., <code>3.0</code> instead of <code>3</code>) since the struct uses <code>float32</code>.</p>
+</div>
+<div class="admonition tip">
+<p class="admonition-title">Gene-group quantities</p>
+<p>DIA-NN reports protein-group level (<code>PG.MaxLFQ</code>) and gene-group level (<code>Genes.MaxLFQ</code>) quantities separately. Store gene-group quantities in <code>additional_intensities</code> with names prefixed <code>genes_</code> (e.g., <code>genes_maxlfq</code>, <code>genes_maxlfq_unique</code>). The <code>gg_accessions</code> field identifies the gene group.</p>
+</div>
+<h2 id="recommended-score-names">Recommended Score Names<a class="headerlink" href="#recommended-score-names" title="Anchor link to this section">&para;</a></h2>
+<p>The following score names are commonly used in <code>additional_scores</code> for the PG view. For the full list of recommended score names and naming conventions, see <a href="../scores/">Scores</a>.</p>
+<table>
+<thead>
+<tr>
+<th><code>score_name</code></th>
+<th>Source tool(s)</th>
+<th>Direction</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>posterior_error_probability</code></td>
+<td>MaxQuant</td>
+<td>lower is better</td>
+<td>Protein-group PEP</td>
+</tr>
+<tr>
+<td><code>andromeda_score</code></td>
+<td>MaxQuant</td>
+<td>higher is better</td>
+<td>Andromeda protein-level score</td>
+</tr>
+<tr>
+<td><code>protein_probability</code></td>
+<td>FragPipe</td>
+<td>higher is better</td>
+<td>ProteinProphet probability</td>
+</tr>
+<tr>
+<td><code>top_peptide_probability</code></td>
+<td>FragPipe</td>
+<td>higher is better</td>
+<td>Highest PeptideProphet probability among peptides</td>
+</tr>
+<tr>
+<td><code>pg_maxlfq_quality</code></td>
+<td>DIA-NN</td>
+<td>higher is better</td>
+<td>QuantUMS quality for PG.MaxLFQ estimate</td>
+</tr>
+<tr>
+<td><code>genes_maxlfq_quality</code></td>
+<td>DIA-NN</td>
+<td>higher is better</td>
+<td>QuantUMS quality for gene-level MaxLFQ</td>
+</tr>
+<tr>
+<td><code>pg_pep</code></td>
+<td>DIA-NN</td>
+<td>lower is better</td>
+<td>Posterior error probability at the protein group level</td>
+</tr>
+<tr>
+<td><code>gg_qvalue</code></td>
+<td>DIA-NN</td>
+<td>lower is better</td>
+<td>Gene group q-value</td>
+</tr>
+<tr>
+<td><code>lib_pg_qvalue</code></td>
+<td>DIA-NN</td>
+<td>lower is better</td>
+<td>Library protein group q-value</td>
+</tr>
+<tr>
+<td><code>protein_qvalue</code></td>
+<td>DIA-NN</td>
+<td>lower is better</td>
+<td>Unique protein q-value (proteotypic evidence)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="tool-mappings">Tool Mappings<a class="headerlink" href="#tool-mappings" title="Anchor link to this section">&para;</a></h2>
+<p>This section shows how output columns from common search engines and pipelines map to <code>pg.parquet</code> fields.</p>
+<div class="admonition info">
+<p class="admonition-title">Wide-to-long conversion</p>
+<p>MaxQuant, DIA-NN, and FragPipe output protein groups in <strong>wide format</strong> (one row per protein group, one column per experiment/run). QPX uses <strong>long format</strong> (one row per protein group <strong>per run</strong>). Converters must melt wide-format columns into separate rows keyed by <code>run_file_name</code>.</p>
+</div>
+<h3 id="maxquant-proteingroupstxt">MaxQuant (<code>proteinGroups.txt</code>)<a class="headerlink" href="#maxquant-proteingroupstxt" title="Anchor link to this section">&para;</a></h3>
+<div class="tabbed-set tabbed-alternate" data-tabs="1:4"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><input id="__tabbed_1_3" name="__tabbed_1" type="radio" /><input id="__tabbed_1_4" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">Identity &amp; Metadata</label><label for="__tabbed_1_2">Counts</label><label for="__tabbed_1_3">Quantification</label><label for="__tabbed_1_4">Quality</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<table>
+<thead>
+<tr>
+<th>MaxQuant column</th>
+<th>QPX field</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Protein IDs</code></td>
+<td><code>pg_accessions</code></td>
+<td>Semicolon-separated → array</td>
+</tr>
+<tr>
+<td><code>Majority protein IDs</code></td>
+<td><code>anchor_protein</code></td>
+<td>First accession of majority IDs</td>
+</tr>
+<tr>
+<td><code>Protein names</code></td>
+<td><code>pg_names</code></td>
+<td>Semicolon-separated → array</td>
+</tr>
+<tr>
+<td><code>Gene names</code></td>
+<td><code>gg_names</code></td>
+<td>Semicolon-separated → array</td>
+</tr>
+<tr>
+<td><code>Sequence coverage [%]</code></td>
+<td><code>sequence_coverage</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>Mol. weight [kDa]</code></td>
+<td><code>molecular_weight</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>Reverse</code></td>
+<td><code>is_decoy</code></td>
+<td><code>"+"</code> → <code>true</code>, else <code>false</code></td>
+</tr>
+<tr>
+<td><code>Potential contaminant</code></td>
+<td><code>contaminant</code></td>
+<td><code>"+"</code> → <code>1</code>, else <code>0</code></td>
+</tr>
+<tr>
+<td><code>Only identified by site</code></td>
+<td><code>cv_params</code></td>
+<td><code>{cv_name: "only_identified_by_site", cv_value: "true"}</code></td>
+</tr>
+<tr>
+<td><code>Identification type [exp]</code></td>
+<td><code>cv_params</code></td>
+<td><code>{cv_name: "identification_type", cv_value: "By MS/MS"}</code></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="tabbed-block">
+<table>
+<thead>
+<tr>
+<th>MaxQuant column</th>
+<th>QPX field</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Unique peptides</code></td>
+<td><code>peptide_counts.unique_sequences</code></td>
+<td>Peptides exclusive to this PG</td>
+</tr>
+<tr>
+<td><code>Peptides</code> or <code>Razor + unique peptides</code></td>
+<td><code>peptide_counts.total_sequences</code></td>
+<td>Total assigned peptides</td>
+</tr>
+<tr>
+<td><code>Peptide counts (all)</code></td>
+<td><code>peptides</code></td>
+<td>Per-protein peptide counts</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="tabbed-block">
+<table>
+<thead>
+<tr>
+<th>MaxQuant column</th>
+<th>QPX field</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Intensity [exp]</code></td>
+<td><code>intensities</code></td>
+<td>Primary raw intensity per run</td>
+</tr>
+<tr>
+<td><code>LFQ intensity [exp]</code></td>
+<td><code>additional_intensities</code> → <code>lfq</code></td>
+<td>MaxLFQ normalised</td>
+</tr>
+<tr>
+<td><code>iBAQ [exp]</code></td>
+<td><code>additional_intensities</code> → <code>ibaq</code></td>
+<td>Intensity-based absolute quantification</td>
+</tr>
+<tr>
+<td><code>MS/MS count [exp]</code></td>
+<td><code>additional_intensities</code> → <code>spectral_count</code></td>
+<td>PSM count as float</td>
+</tr>
+<tr>
+<td><code>Reporter intensity [channel]</code></td>
+<td><code>intensities</code></td>
+<td>For TMT/iTRAQ, one entry per channel</td>
+</tr>
+<tr>
+<td><code>Reporter intensity corrected [channel]</code></td>
+<td><code>additional_intensities</code> → <code>reporter_intensity_corrected</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>Ratio H/L [exp]</code></td>
+<td><code>additional_intensities</code> → <code>ratio_h_l</code></td>
+<td>SILAC ratio</td>
+</tr>
+<tr>
+<td><code>Ratio H/L normalized [exp]</code></td>
+<td><code>additional_intensities</code> → <code>ratio_h_l_normalized</code></td>
+<td>Normalised SILAC ratio</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="tabbed-block">
+<table>
+<thead>
+<tr>
+<th>MaxQuant column</th>
+<th>QPX field</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Q-value</code></td>
+<td><code>global_qvalue</code></td>
+<td>Protein group FDR</td>
+</tr>
+<tr>
+<td><code>Score</code></td>
+<td><code>additional_scores</code> → <code>andromeda_score</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>PEP</code></td>
+<td><code>additional_scores</code> → <code>posterior_error_probability</code></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<h3 id="dia-nn-main-report">DIA-NN (main report)<a class="headerlink" href="#dia-nn-main-report" title="Anchor link to this section">&para;</a></h3>
+<p>DIA-NN's main report is precursor-level. PG-level columns (<code>PG.*</code>, <code>Genes.*</code>) are repeated for every precursor in the group within a run. Deduplicate by <code>Protein.Group</code> + <code>Run</code> to produce one <code>pg.parquet</code> row.</p>
+<div class="tabbed-set tabbed-alternate" data-tabs="2:3"><input checked="checked" id="__tabbed_2_1" name="__tabbed_2" type="radio" /><input id="__tabbed_2_2" name="__tabbed_2" type="radio" /><input id="__tabbed_2_3" name="__tabbed_2" type="radio" /><div class="tabbed-labels"><label for="__tabbed_2_1">Identity</label><label for="__tabbed_2_2">Quantification</label><label for="__tabbed_2_3">Quality</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<table>
+<thead>
+<tr>
+<th>DIA-NN column</th>
+<th>QPX field</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Protein.Group</code></td>
+<td><code>pg_accessions</code></td>
+<td>Semicolon-separated → array; also <code>anchor_protein</code> (first accession)</td>
+</tr>
+<tr>
+<td><code>Protein.Names</code></td>
+<td><code>pg_names</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>Genes</code></td>
+<td><code>gg_names</code> / <code>gg_accessions</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>Run</code></td>
+<td><code>run_file_name</code></td>
+<td>Raw file name without path</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="tabbed-block">
+<table>
+<thead>
+<tr>
+<th>DIA-NN column</th>
+<th>QPX field</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>PG.Quantity</code></td>
+<td><code>intensities</code></td>
+<td>Non-normalised protein group quantity</td>
+</tr>
+<tr>
+<td><code>PG.MaxLFQ</code></td>
+<td><code>additional_intensities</code> → <code>maxlfq</code></td>
+<td>QuantUMS/MaxLFQ normalised</td>
+</tr>
+<tr>
+<td><code>PG.Normalised</code></td>
+<td><code>additional_intensities</code> → <code>normalize_intensity</code></td>
+<td>Normalised PG quantity</td>
+</tr>
+<tr>
+<td><code>PG.TopN</code></td>
+<td><code>additional_intensities</code> → <code>topn</code></td>
+<td>Top-N normalised quantity</td>
+</tr>
+<tr>
+<td><code>Genes.MaxLFQ</code></td>
+<td><code>additional_intensities</code> → <code>genes_maxlfq</code></td>
+<td>Gene-group MaxLFQ</td>
+</tr>
+<tr>
+<td><code>Genes.MaxLFQ.Unique</code></td>
+<td><code>additional_intensities</code> → <code>genes_maxlfq_unique</code></td>
+<td>Gene-group MaxLFQ (proteotypic only)</td>
+</tr>
+<tr>
+<td><code>Genes.TopN</code></td>
+<td><code>additional_intensities</code> → <code>genes_topn</code></td>
+<td>Gene-group Top-N</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="tabbed-block">
+<table>
+<thead>
+<tr>
+<th>DIA-NN column</th>
+<th>QPX field</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Global.PG.Q.Value</code></td>
+<td><code>global_qvalue</code></td>
+<td>Experiment-level PG FDR</td>
+</tr>
+<tr>
+<td><code>PG.Q.Value</code></td>
+<td><code>pg_qvalue</code></td>
+<td>Run-level PG FDR</td>
+</tr>
+<tr>
+<td><code>PG.PEP</code></td>
+<td><code>additional_scores</code> → <code>pg_pep</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>PG.MaxLFQ.Quality</code></td>
+<td><code>additional_scores</code> → <code>pg_maxlfq_quality</code></td>
+<td>QuantUMS quality metric</td>
+</tr>
+<tr>
+<td><code>GG.Q.Value</code></td>
+<td><code>additional_scores</code> → <code>gg_qvalue</code></td>
+<td>Gene group q-value</td>
+</tr>
+<tr>
+<td><code>Lib.PG.Q.Value</code></td>
+<td><code>additional_scores</code> → <code>lib_pg_qvalue</code></td>
+<td>Library PG q-value</td>
+</tr>
+<tr>
+<td><code>Protein.Q.Value</code></td>
+<td><code>additional_scores</code> → <code>protein_qvalue</code></td>
+<td>Unique protein q-value</td>
+</tr>
+<tr>
+<td><code>Genes.MaxLFQ.Quality</code></td>
+<td><code>additional_scores</code> → <code>genes_maxlfq_quality</code></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<h3 id="fragpipe-combined_proteintsv">FragPipe (<code>combined_protein.tsv</code>)<a class="headerlink" href="#fragpipe-combined_proteintsv" title="Anchor link to this section">&para;</a></h3>
+<p>FragPipe outputs are pre-filtered (no decoys or contaminants). Per-experiment columns are prefixed with the experiment name.</p>
+<div class="tabbed-set tabbed-alternate" data-tabs="3:4"><input checked="checked" id="__tabbed_3_1" name="__tabbed_3" type="radio" /><input id="__tabbed_3_2" name="__tabbed_3" type="radio" /><input id="__tabbed_3_3" name="__tabbed_3" type="radio" /><input id="__tabbed_3_4" name="__tabbed_3" type="radio" /><div class="tabbed-labels"><label for="__tabbed_3_1">Identity &amp; Metadata</label><label for="__tabbed_3_2">Counts</label><label for="__tabbed_3_3">Quantification</label><label for="__tabbed_3_4">Quality</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<table>
+<thead>
+<tr>
+<th>FragPipe column</th>
+<th>QPX field</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Protein ID</code></td>
+<td><code>anchor_protein</code></td>
+<td>Leading protein accession</td>
+</tr>
+<tr>
+<td><code>Protein ID</code> + <code>Indistinguishable Proteins</code></td>
+<td><code>pg_accessions</code></td>
+<td>Combine into array</td>
+</tr>
+<tr>
+<td><code>Description</code></td>
+<td><code>pg_names</code></td>
+<td>Protein description</td>
+</tr>
+<tr>
+<td><code>Gene</code></td>
+<td><code>gg_names</code> / <code>gg_accessions</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>Coverage</code></td>
+<td><code>sequence_coverage</code></td>
+<td>Percentage (0–100)</td>
+</tr>
+<tr>
+<td><code>Protein Length</code></td>
+<td><code>cv_params</code></td>
+<td><code>{cv_name: "sequence_length", cv_value: "495"}</code></td>
+</tr>
+<tr>
+<td><code>Protein Existence</code></td>
+<td><code>cv_params</code></td>
+<td><code>{cv_name: "protein_existence", cv_value: "1"}</code></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="tabbed-block">
+<table>
+<thead>
+<tr>
+<th>FragPipe column</th>
+<th>QPX field</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>[exp] Total Peptides</code></td>
+<td><code>peptide_counts.total_sequences</code></td>
+<td>Per-experiment peptide count</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="tabbed-block">
+<table>
+<thead>
+<tr>
+<th>FragPipe column</th>
+<th>QPX field</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>[exp] Intensity</code></td>
+<td><code>intensities</code></td>
+<td>Primary razor peptide intensity</td>
+</tr>
+<tr>
+<td><code>[exp] MaxLFQ Intensity</code></td>
+<td><code>additional_intensities</code> → <code>maxlfq</code></td>
+<td>MaxLFQ normalised</td>
+</tr>
+<tr>
+<td><code>[exp] MaxLFQ Unique Intensity</code></td>
+<td><code>additional_intensities</code> → <code>maxlfq_unique</code></td>
+<td>MaxLFQ using only unique peptides</td>
+</tr>
+<tr>
+<td><code>[exp] Unique Intensity</code></td>
+<td><code>additional_intensities</code> → <code>unique_intensity</code></td>
+<td>Intensity from unique peptides only</td>
+</tr>
+<tr>
+<td><code>[exp] Spectral Count</code></td>
+<td><code>additional_intensities</code> → <code>spectral_count</code></td>
+<td>Razor peptide PSMs</td>
+</tr>
+<tr>
+<td><code>[exp] Unique Spectral Count</code></td>
+<td><code>additional_intensities</code> → <code>unique_spectral_count</code></td>
+<td>Unique peptide PSMs</td>
+</tr>
+<tr>
+<td><code>[exp] Total Spectral Count</code></td>
+<td><code>additional_intensities</code> → <code>total_spectral_count</code></td>
+<td>All peptide PSMs</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="tabbed-block">
+<table>
+<thead>
+<tr>
+<th>FragPipe column</th>
+<th>QPX field</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Protein Probability</code></td>
+<td><code>additional_scores</code> → <code>protein_probability</code></td>
+<td>ProteinProphet score</td>
+</tr>
+<tr>
+<td><code>Top Peptide Probability</code></td>
+<td><code>additional_scores</code> → <code>top_peptide_probability</code></td>
+<td>Best PeptideProphet score</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="admonition note">
+<p class="admonition-title">FragPipe q-values</p>
+<p>FragPipe does not report explicit protein-group q-values. The <code>Protein Probability</code> (from ProteinProphet) is filtered at a given FDR threshold (typically 1%) before writing <code>combined_protein.tsv</code>. Set <code>global_qvalue</code> to null and store the probability in <code>additional_scores</code>.</p>
+</div>
+<h2 id="notes">Notes<a class="headerlink" href="#notes" title="Anchor link to this section">&para;</a></h2>
+<div class="admonition note">
+<p class="admonition-title">Relationship to other views</p>
+<p>The PG view provides per-file protein group quantification. For derived per-sample summaries (protein counts, abundances, etc.), see <a href="../views/">API Views</a>. For downstream absolute or differential expression results, see the <a href="../absolute/">Absolute Expression</a> and <a href="../differential/">Differential Expression</a> views.</p>
+</div>
+<div class="admonition warning">
+<p class="admonition-title">Primary key constraints</p>
+<p>The combination of <code>pg_accessions</code> and <code>run_file_name</code> forms the composite primary key. Both fields MUST NOT be null. Each record represents a single protein group observed in a single raw file.</p>
+</div>
 
 
 
@@ -2819,7 +3568,7 @@
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../spec/ontology/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Ontology Mapping">
+          <a href="../feature/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Feature View">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -2829,20 +3578,20 @@
                 Previous
               </span>
               <div class="md-ellipsis">
-                Ontology Mapping
+                Feature View
               </div>
             </div>
           </a>
         
         
           
-          <a href="../community/" class="md-footer__link md-footer__link--next" aria-label="Next: Community">
+          <a href="../mz/" class="md-footer__link md-footer__link--next" aria-label="Next: Mass Spectra View">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Community
+                Mass Spectra View
               </div>
             </div>
             <div class="md-footer__button md-icon">
@@ -2920,12 +3669,12 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.tabs.sticky", "navigation.sections", "navigation.expand", "navigation.path", "navigation.top", "navigation.footer", "navigation.indexes", "navigation.instant", "navigation.tracking", "search.suggest", "search.highlight", "search.share", "toc.follow", "toc.integrate", "content.code.copy", "content.code.annotate", "content.tabs.link"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.tabs.sticky", "navigation.sections", "navigation.expand", "navigation.path", "navigation.top", "navigation.footer", "navigation.indexes", "navigation.instant", "navigation.tracking", "search.suggest", "search.highlight", "search.share", "toc.follow", "toc.integrate", "content.code.copy", "content.code.annotate", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
-        <script src="../assets/_markdown_exec_pyodide.js"></script>
+        <script src="../../assets/_markdown_exec_pyodide.js"></script>
       
     
   </body>

@@ -1,0 +1,4018 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Python package documentation for qpx - A tool for working with mass spectrometry data">
+      
+      
+        <meta name="author" content="BigBio Team">
+      
+      
+        <link rel="canonical" href="https://qpx.quantms.org/spec/ontology/">
+      
+      
+        <link rel="prev" href="../schemas/">
+      
+      
+        <link rel="next" href="../../troubleshooting/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../images/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.3">
+    
+    
+      
+        <title>Ontology Mapping - qpx</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+  
+  
+    
+      
+      
+    
+  
+    
+      
+      
+    
+  
+    
+      
+      
+    
+  
+    
+      
+      
+    
+  
+    
+      
+      
+    
+  
+    
+      
+      
+    
+  
+    
+      
+      
+    
+  
+    
+      
+      
+    
+  
+    
+      
+      
+    
+  
+    
+      
+      
+    
+  
+    
+      
+      
+    
+  
+    
+      
+      
+    
+  
+  
+  <style>:root{--md-admonition-icon--note:url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2016%2016%22%3E%3Cpath%20d%3D%22M1%207.775V2.75C1%201.784%201.784%201%202.75%201h5.025c.464%200%20.91.184%201.238.513l6.25%206.25a1.75%201.75%200%200%201%200%202.474l-5.026%205.026a1.75%201.75%200%200%201-2.474%200l-6.25-6.25A1.75%201.75%200%200%201%201%207.775m1.5%200c0%20.066.026.13.073.177l6.25%206.25a.25.25%200%200%200%20.354%200l5.025-5.025a.25.25%200%200%200%200-.354l-6.25-6.25a.25.25%200%200%200-.177-.073H2.75a.25.25%200%200%200-.25.25ZM6%205a1%201%200%201%201%200%202%201%201%200%200%201%200-2%22/%3E%3C/svg%3E');--md-admonition-icon--abstract:url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2016%2016%22%3E%3Cpath%20d%3D%22M2.5%201.75v11.5c0%20.138.112.25.25.25h3.17a.75.75%200%200%201%200%201.5H2.75A1.75%201.75%200%200%201%201%2013.25V1.75C1%20.784%201.784%200%202.75%200h8.5C12.216%200%2013%20.784%2013%201.75v7.736a.75.75%200%200%201-1.5%200V1.75a.25.25%200%200%200-.25-.25h-8.5a.25.25%200%200%200-.25.25m13.274%209.537zl-4.557%204.45a.75.75%200%200%201-1.055-.008l-1.943-1.95a.75.75%200%200%201%201.062-1.058l1.419%201.425%204.026-3.932a.75.75%200%201%201%201.048%201.074M4.75%204h4.5a.75.75%200%200%201%200%201.5h-4.5a.75.75%200%200%201%200-1.5M4%207.75A.75.75%200%200%201%204.75%207h2a.75.75%200%200%201%200%201.5h-2A.75.75%200%200%201%204%207.75%22/%3E%3C/svg%3E');--md-admonition-icon--info:url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2016%2016%22%3E%3Cpath%20d%3D%22M0%208a8%208%200%201%201%2016%200A8%208%200%200%201%200%208m8-6.5a6.5%206.5%200%201%200%200%2013%206.5%206.5%200%200%200%200-13M6.5%207.75A.75.75%200%200%201%207.25%207h1a.75.75%200%200%201%20.75.75v2.75h.25a.75.75%200%200%201%200%201.5h-2a.75.75%200%200%201%200-1.5h.25v-2h-.25a.75.75%200%200%201-.75-.75M8%206a1%201%200%201%201%200-2%201%201%200%200%201%200%202%22/%3E%3C/svg%3E');--md-admonition-icon--tip:url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2016%2016%22%3E%3Cpath%20d%3D%22M3.499.75a.75.75%200%200%201%201.5%200v.996C5.9%202.903%206.793%203.65%207.662%204.376l.24.202c-.036-.694.055-1.422.426-2.163C9.1.873%2010.794-.045%2012.622.26%2014.408.558%2016%201.94%2016%204.25c0%201.278-.954%202.575-2.44%202.734l.146.508.065.22c.203.701.412%201.455.476%202.226.142%201.707-.4%203.03-1.487%203.898C11.714%2014.671%2010.27%2015%208.75%2015h-6a.75.75%200%200%201%200-1.5h1.376a4.5%204.5%200%200%201-.563-1.191%203.84%203.84%200%200%201-.05-2.063%204.65%204.65%200%200%201-2.025-.293.75.75%200%200%201%20.525-1.406c1.357.507%202.376-.006%202.698-.318l.009-.01a.747.747%200%200%201%201.06%200%20.75.75%200%200%201-.012%201.074c-.912.92-.992%201.835-.768%202.586.221.74.745%201.337%201.196%201.621H8.75c1.343%200%202.398-.296%203.074-.836.635-.507%201.036-1.31.928-2.602-.05-.603-.216-1.224-.422-1.93l-.064-.221c-.12-.407-.246-.84-.353-1.29a2.4%202.4%200%200%201-.507-.441%203.1%203.1%200%200%201-.633-1.248.75.75%200%200%201%201.455-.364c.046.185.144.436.31.627.146.168.353.305.712.305.738%200%201.25-.615%201.25-1.25%200-1.47-.95-2.315-2.123-2.51-1.172-.196-2.227.387-2.706%201.345-.46.92-.27%201.774.019%203.062l.042.19.01.05c.348.443.666.949.94%201.553a.75.75%200%201%201-1.365.62c-.553-1.217-1.32-1.94-2.3-2.768L6.7%205.527c-.814-.68-1.75-1.462-2.692-2.619a3.7%203.7%200%200%200-1.023.88c-.406.495-.663%201.036-.722%201.508.116.122.306.21.591.239.388.038.797-.06%201.032-.19a.75.75%200%200%201%20.728%201.31c-.515.287-1.23.439-1.906.373-.682-.067-1.473-.38-1.879-1.193L.75%205.677V5.5c0-.984.48-1.94%201.077-2.664.46-.559%201.05-1.055%201.673-1.353z%22/%3E%3C/svg%3E');--md-admonition-icon--success:url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2016%2016%22%3E%3Cpath%20d%3D%22M13.78%204.22a.75.75%200%200%201%200%201.06l-7.25%207.25a.75.75%200%200%201-1.06%200L2.22%209.28a.75.75%200%200%201%20.018-1.042.75.75%200%200%201%201.042-.018L6%2010.94l6.72-6.72a.75.75%200%200%201%201.06%200%22/%3E%3C/svg%3E');--md-admonition-icon--question:url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2016%2016%22%3E%3Cpath%20d%3D%22M0%208a8%208%200%201%201%2016%200A8%208%200%200%201%200%208m8-6.5a6.5%206.5%200%201%200%200%2013%206.5%206.5%200%200%200%200-13M6.92%206.085h.001a.749.749%200%201%201-1.342-.67c.169-.339.436-.701.849-.977C6.845%204.16%207.369%204%208%204a2.76%202.76%200%200%201%201.637.525c.503.377.863.965.863%201.725%200%20.448-.115.83-.329%201.15-.205.307-.47.513-.692.662-.109.072-.22.138-.313.195l-.006.004a6%206%200%200%200-.26.16%201%201%200%200%200-.276.245.75.75%200%200%201-1.248-.832c.184-.264.42-.489.692-.661q.154-.1.313-.195l.007-.004c.1-.061.182-.11.258-.161a1%201%200%200%200%20.277-.245C8.96%206.514%209%206.427%209%206.25a.61.61%200%200%200-.262-.525A1.27%201.27%200%200%200%208%205.5c-.369%200-.595.09-.74.187a1%201%200%200%200-.34.398M9%2011a1%201%200%201%201-2%200%201%201%200%200%201%202%200%22/%3E%3C/svg%3E');--md-admonition-icon--warning:url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2016%2016%22%3E%3Cpath%20d%3D%22M6.457%201.047c.659-1.234%202.427-1.234%203.086%200l6.082%2011.378A1.75%201.75%200%200%201%2014.082%2015H1.918a1.75%201.75%200%200%201-1.543-2.575Zm1.763.707a.25.25%200%200%200-.44%200L1.698%2013.132a.25.25%200%200%200%20.22.368h12.164a.25.25%200%200%200%20.22-.368Zm.53%203.996v2.5a.75.75%200%200%201-1.5%200v-2.5a.75.75%200%200%201%201.5%200M9%2011a1%201%200%201%201-2%200%201%201%200%200%201%202%200%22/%3E%3C/svg%3E');--md-admonition-icon--failure:url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2016%2016%22%3E%3Cpath%20d%3D%22M2.344%202.343za8%208%200%200%201%2011.314%2011.314A8.002%208.002%200%200%201%20.234%2010.089a8%208%200%200%201%202.11-7.746m1.06%2010.253a6.5%206.5%200%201%200%209.108-9.275%206.5%206.5%200%200%200-9.108%209.275M6.03%204.97%208%206.94l1.97-1.97a.749.749%200%200%201%201.275.326.75.75%200%200%201-.215.734L9.06%208l1.97%201.97a.749.749%200%200%201-.326%201.275.75.75%200%200%201-.734-.215L8%209.06l-1.97%201.97a.749.749%200%200%201-1.275-.326.75.75%200%200%201%20.215-.734L6.94%208%204.97%206.03a.75.75%200%200%201%20.018-1.042.75.75%200%200%201%201.042-.018%22/%3E%3C/svg%3E');--md-admonition-icon--danger:url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2016%2016%22%3E%3Cpath%20d%3D%22M9.504.43a1.516%201.516%200%200%201%202.437%201.713L10.415%205.5h2.123c1.57%200%202.346%201.909%201.22%203.004l-7.34%207.142a1.25%201.25%200%200%201-.871.354h-.302a1.25%201.25%200%200%201-1.157-1.723L5.633%2010.5H3.462c-1.57%200-2.346-1.909-1.22-3.004zm1.047%201.074L3.286%208.571A.25.25%200%200%200%203.462%209H6.75a.75.75%200%200%201%20.694%201.034l-1.713%204.188%206.982-6.793A.25.25%200%200%200%2012.538%207H9.25a.75.75%200%200%201-.683-1.06l2.008-4.418.003-.006-.004-.009-.006-.006-.008-.001q-.005%200-.009.004%22/%3E%3C/svg%3E');--md-admonition-icon--bug:url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2016%2016%22%3E%3Cpath%20d%3D%22M4.72.22a.75.75%200%200%201%201.06%200l1%20.999a3.5%203.5%200%200%201%202.441%200l.999-1a.748.748%200%200%201%201.265.332.75.75%200%200%201-.205.729l-.775.776c.616.63.995%201.493.995%202.444v.327q0%20.15-.025.292c.408.14.764.392%201.029.722l1.968-.787a.75.75%200%200%201%20.556%201.392L13%207.258V9h2.25a.75.75%200%200%201%200%201.5H13v.5q-.002.615-.141%201.186l2.17.868a.75.75%200%200%201-.557%201.392l-2.184-.873A5%205%200%200%201%208%2016a5%205%200%200%201-4.288-2.427l-2.183.873a.75.75%200%200%201-.558-1.392l2.17-.868A5%205%200%200%201%203%2011v-.5H.75a.75.75%200%200%201%200-1.5H3V7.258L.971%206.446a.75.75%200%200%201%20.558-1.392l1.967.787c.265-.33.62-.583%201.03-.722a1.7%201.7%200%200%201-.026-.292V4.5c0-.951.38-1.814.995-2.444L4.72%201.28a.75.75%200%200%201%200-1.06m.53%206.28a.75.75%200%200%200-.75.75V11a3.5%203.5%200%201%200%207%200V7.25a.75.75%200%200%200-.75-.75ZM6.173%205h3.654A.17.17%200%200%200%2010%204.827V4.5a2%202%200%201%200-4%200v.327c0%20.096.077.173.173.173%22/%3E%3C/svg%3E');--md-admonition-icon--example:url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2016%2016%22%3E%3Cpath%20d%3D%22M5%205.782V2.5h-.25a.75.75%200%200%201%200-1.5h6.5a.75.75%200%200%201%200%201.5H11v3.282l3.666%205.76C15.619%2013.04%2014.543%2015%2012.767%2015H3.233c-1.776%200-2.852-1.96-1.899-3.458Zm-2.4%206.565a.75.75%200%200%200%20.633%201.153h9.534a.75.75%200%200%200%20.633-1.153L12.225%2010.5h-8.45ZM9.5%202.5h-3V6c0%20.143-.04.283-.117.403L4.73%209h6.54L9.617%206.403A.75.75%200%200%201%209.5%206Z%22/%3E%3C/svg%3E');--md-admonition-icon--quote:url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2016%2016%22%3E%3Cpath%20d%3D%22M1.75%202.5h10.5a.75.75%200%200%201%200%201.5H1.75a.75.75%200%200%201%200-1.5m4%205h8.5a.75.75%200%200%201%200%201.5h-8.5a.75.75%200%200%201%200-1.5m0%205h8.5a.75.75%200%200%201%200%201.5h-8.5a.75.75%200%200%201%200-1.5M2.5%207.75v6a.75.75%200%200%201-1.5%200v-6a.75.75%200%200%201%201.5%200%22/%3E%3C/svg%3E');}</style>
+
+
+
+    
+    
+      
+    
+    
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_markdown_exec_pyodide.css">
+    
+      <link rel="stylesheet" href="../../assets/_markdown_exec_ansi.css">
+    
+      <link rel="stylesheet" href="../../stylesheets/quantms-theme.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+  
+
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="blue" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#field-ontology-mapping" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="qpx" class="md-header__button md-logo" aria-label="qpx" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            qpx
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Ontology Mapping
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="blue" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="blue" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/bigbio/qpx" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    bigbio/qpx
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../.." class="md-tabs__link">
+          
+  
+  
+    
+  
+  Home
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../examples/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Examples
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Format Specification
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guide/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../schemas/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../community/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Community
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--lifted md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="qpx" class="md-nav__button md-logo" aria-label="qpx" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    qpx
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/bigbio/qpx" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    bigbio/qpx
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_1" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../.." class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1" id="__nav_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Home
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../examples/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Examples
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/workflows/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Workflow Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Integration Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/qc/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QC Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Format Specification
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Format Specification
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_2" id="__nav_3_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Common Concepts
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Common Concepts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../peptidoform/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Peptidoform
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modifications/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Modifications
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../intensities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Intensities
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../scores/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scores & CV Terms
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../scan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scan Numbers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_3" id="__nav_3_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Views
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Data Views
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../psm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PSM View
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../feature/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Feature View
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pg/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Protein Group View
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mz/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mass Spectra View
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pepmap/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Peptide-Protein Map
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../views/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Views
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_4" id="__nav_3_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Expression Views (AnnData)
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Expression Views (AnnData)
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../anndata/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AnnData Concepts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../absolute/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Absolute Expression
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../differential/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Differential Expression
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_5" id="__nav_3_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Metadata
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Metadata
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../dataset/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dataset Metadata
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sample/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sample Metadata
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../run/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Run Metadata
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../provenance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Processing Provenance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sdrf-mapping/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SDRF Conversion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_6" id="__nav_3_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Technical
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Technical
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../serialization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Serialization & Parquet
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../file-naming/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    File Extensions & Naming
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../versioning/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Versioning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tool-mappings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tool Field Mappings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../guide/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/convert/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Convert Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/transform/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Transform Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/visualize/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Visualization Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/stats/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Statistics Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guide/project/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../schemas/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Schemas
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Ontology Mapping
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Ontology Mapping
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#ontology-parquet" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ontology.parquet -- machine-readable mapping
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sample" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sample Metadata (sample.parquet)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#run" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Run Metadata (run.parquet)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dataset" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dataset Metadata (dataset.parquet)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#psm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PSM View (psm.parquet)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#feature" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Feature View (feature.parquet)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pg" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Protein Group View (pg.parquet)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mz" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Mass Spectra View (mz.parquet)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scores" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Score Fields
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#qpx-specific" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        QPX-specific Fields
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#compatibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Compatibility with lamindb and AnnData
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ontology-references" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ontology references
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../community/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Community
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+                
+
+
+
+
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="field-ontology-mapping">Field Ontology Mapping<a class="headerlink" href="#field-ontology-mapping" title="Anchor link to this section">&para;</a></h1>
+<p>QPX fields are mapped to controlled vocabulary (CV) and ontology terms where applicable. This mapping provides formal semantic definitions for each field, enabling interoperability with proteomics standards, biological databases, and data management platforms like lamindb.</p>
+<div class="admonition important">
+<p class="admonition-title">snake_case everywhere</p>
+<p>All QPX field names and score names use <strong>snake_case</strong> -- no colons, dots, spaces, or mixed case. This ensures every name is a valid identifier in SQL, Python, R, and any query language without quoting. The proper ontology term name (e.g., <code>Comet:xcorr</code> for <code>comet_xcorr</code>) and accession (e.g., <code>MS:1002252</code>) are stored in this mapping.</p>
+</div>
+<p>QPX uses three categories of ontologies:</p>
+<ol>
+<li><strong>PSI-MS</strong> (<a href="https://www.ebi.ac.uk/ols4/ontologies/ms">MS</a>) -- mass spectrometry terms for instrument, acquisition, and identification fields.</li>
+<li><strong>Biological ontologies</strong> -- for sample metadata fields: NCBI Taxonomy, UBERON, EFO/MONDO, Cell Ontology, etc.</li>
+<li><strong>UniMod</strong> (<a href="https://www.unimod.org/">UNIMOD</a>) -- for post-translational modification definitions.</li>
+</ol>
+<div class="admonition info">
+<p class="admonition-title">Fields without ontology mappings</p>
+<p>Fields with blank ontology entries are QPX-specific fields without standardized CV terms. These fields are defined entirely by the QPX specification.</p>
+</div>
+<h2 id="ontology-parquet"><code>ontology.parquet</code> -- machine-readable mapping<a class="headerlink" href="#ontology-parquet" title="Anchor link to this section">&para;</a></h2>
+<p>Each QPX dataset includes an <code>ontology.parquet</code> file that stores the field-to-ontology mapping in a queryable format. This makes the dataset self-describing -- any consumer can look up the proper ontology term for any field or score name without external documentation.</p>
+<p>See the full YAML schema in <a href="../schemas/ontology.yaml"><code>ontology.yaml</code></a>.</p>
+<h3 id="schema">Schema<a class="headerlink" href="#schema" title="Anchor link to this section">&para;</a></h3>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">pyarrow</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pa</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">ontology_schema</span> <span class="o">=</span> <span class="n">pa</span><span class="o">.</span><span class="n">schema</span><span class="p">([</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">pa</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="s2">&quot;field_name&quot;</span><span class="p">,</span> <span class="n">pa</span><span class="o">.</span><span class="n">string</span><span class="p">()),</span>          <span class="c1"># snake_case QPX field name (e.g. &quot;comet_xcorr&quot;)</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">pa</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="s2">&quot;ontology_name&quot;</span><span class="p">,</span> <span class="n">pa</span><span class="o">.</span><span class="n">string</span><span class="p">(),</span> <span class="n">nullable</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>  <span class="c1"># proper ontology term (e.g. &quot;Comet:xcorr&quot;)</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">pa</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="s2">&quot;ontology_accession&quot;</span><span class="p">,</span> <span class="n">pa</span><span class="o">.</span><span class="n">string</span><span class="p">(),</span> <span class="n">nullable</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>  <span class="c1"># CV accession (e.g. &quot;MS:1002252&quot;)</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">pa</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="s2">&quot;ontology_source&quot;</span><span class="p">,</span> <span class="n">pa</span><span class="o">.</span><span class="n">string</span><span class="p">(),</span> <span class="n">nullable</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>  <span class="c1"># ontology prefix (e.g. &quot;MS&quot;, &quot;UBERON&quot;, &quot;UNIMOD&quot;)</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="n">pa</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="s2">&quot;ontology_version&quot;</span><span class="p">,</span> <span class="n">pa</span><span class="o">.</span><span class="n">string</span><span class="p">(),</span> <span class="n">nullable</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>  <span class="c1"># version of the ontology (e.g. &quot;4.1.235&quot;)</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="n">pa</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="s2">&quot;view&quot;</span><span class="p">,</span> <span class="n">pa</span><span class="o">.</span><span class="n">string</span><span class="p">()),</span>                <span class="c1"># which view (e.g. &quot;psm&quot;, &quot;feature&quot;, &quot;sample&quot;)</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>    <span class="n">pa</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="s2">&quot;description&quot;</span><span class="p">,</span> <span class="n">pa</span><span class="o">.</span><span class="n">string</span><span class="p">(),</span> <span class="n">nullable</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>  <span class="c1"># human-readable description</span>
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>    <span class="n">pa</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="s2">&quot;source_column_name&quot;</span><span class="p">,</span> <span class="n">pa</span><span class="o">.</span><span class="n">string</span><span class="p">(),</span> <span class="n">nullable</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>  <span class="c1"># original column name in tool output</span>
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>    <span class="n">pa</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="s2">&quot;source_tool&quot;</span><span class="p">,</span> <span class="n">pa</span><span class="o">.</span><span class="n">string</span><span class="p">(),</span> <span class="n">nullable</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>  <span class="c1"># tool that produced this field</span>
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="p">])</span>
+</span></code></pre></div>
+<h3 id="example-rows">Example rows<a class="headerlink" href="#example-rows" title="Anchor link to this section">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>field_name</th>
+<th>ontology_name</th>
+<th>ontology_accession</th>
+<th>ontology_source</th>
+<th>view</th>
+<th>description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>comet_xcorr</code></td>
+<td>Comet:xcorr</td>
+<td>MS:1002252</td>
+<td>MS</td>
+<td>psm</td>
+<td>Cross-correlation score from Comet</td>
+</tr>
+<tr>
+<td><code>organism</code></td>
+<td>organism</td>
+<td>NCBITaxon</td>
+<td>NCBITaxon</td>
+<td>sample</td>
+<td>Species</td>
+</tr>
+<tr>
+<td><code>organism_part</code></td>
+<td>organism part</td>
+<td>UBERON</td>
+<td>UBERON</td>
+<td>sample</td>
+<td>Anatomical structure</td>
+</tr>
+<tr>
+<td><code>rt</code></td>
+<td>retention time</td>
+<td>MS:1000894</td>
+<td>MS</td>
+<td>psm</td>
+<td>Retention time (seconds)</td>
+</tr>
+<tr>
+<td><code>anchor_protein</code></td>
+<td>anchor protein</td>
+<td>MS:1001591</td>
+<td>MS</td>
+<td>feature</td>
+<td>Representative protein</td>
+</tr>
+</tbody>
+</table>
+<h3 id="querying">Querying<a class="headerlink" href="#querying" title="Anchor link to this section">&para;</a></h3>
+<div class="language-sql highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1">-- Look up the ontology term for a field</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="k">SELECT</span><span class="w"> </span><span class="n">ontology_name</span><span class="p">,</span><span class="w"> </span><span class="n">ontology_accession</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="k">FROM</span><span class="w"> </span><span class="s1">&#39;PXD014414.ontology.parquet&#39;</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="k">WHERE</span><span class="w"> </span><span class="n">field_name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">&#39;comet_xcorr&#39;</span><span class="p">;</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="c1">-- All fields with PSI-MS mappings</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="k">SELECT</span><span class="w"> </span><span class="n">field_name</span><span class="p">,</span><span class="w"> </span><span class="n">ontology_name</span><span class="p">,</span><span class="w"> </span><span class="n">ontology_accession</span>
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="k">FROM</span><span class="w"> </span><span class="s1">&#39;PXD014414.ontology.parquet&#39;</span>
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="k">WHERE</span><span class="w"> </span><span class="n">ontology_source</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">&#39;MS&#39;</span><span class="p">;</span>
+</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>
+</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="c1">-- All sample metadata ontology mappings</span>
+</span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="k">SELECT</span><span class="w"> </span><span class="n">field_name</span><span class="p">,</span><span class="w"> </span><span class="n">ontology_name</span><span class="p">,</span><span class="w"> </span><span class="n">ontology_source</span>
+</span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="k">FROM</span><span class="w"> </span><span class="s1">&#39;PXD014414.ontology.parquet&#39;</span>
+</span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="k">WHERE</span><span class="w"> </span><span class="k">view</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">&#39;sample&#39;</span><span class="p">;</span>
+</span></code></pre></div>
+<hr />
+<h2 id="sample">Sample Metadata (<code>sample.parquet</code>)<a class="headerlink" href="#sample" title="Anchor link to this section">&para;</a></h2>
+<p>Sample metadata fields map to biological ontologies. These mappings are critical for integration with lamindb/bionty and for validating annotations against community-standard registries.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Ontology</th>
+<th>Ontology Accession</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sample_accession</code></td>
+<td>---</td>
+<td>---</td>
+<td>Unique sample identifier (= SDRF <code>source name</code>)</td>
+</tr>
+<tr>
+<td><code>organism</code></td>
+<td>NCBI Taxonomy</td>
+<td><a href="https://www.ebi.ac.uk/ols4/ontologies/ncbitaxon">NCBITaxon</a></td>
+<td>Species (e.g., <code>Homo sapiens</code> = NCBITaxon:9606)</td>
+</tr>
+<tr>
+<td><code>organism_part</code></td>
+<td>UBERON</td>
+<td><a href="https://www.ebi.ac.uk/ols4/ontologies/uberon">UBERON</a></td>
+<td>Anatomical structure (e.g., <code>heart</code> = UBERON:0000948)</td>
+</tr>
+<tr>
+<td><code>disease</code></td>
+<td>EFO / MONDO</td>
+<td><a href="https://www.ebi.ac.uk/ols4/ontologies/efo">EFO</a>, <a href="https://www.ebi.ac.uk/ols4/ontologies/mondo">MONDO</a></td>
+<td>Disease state (e.g., <code>breast cancer</code> = MONDO:0007254)</td>
+</tr>
+<tr>
+<td><code>cell_line</code></td>
+<td>Cellosaurus</td>
+<td><a href="https://www.cellosaurus.org/">Cellosaurus</a></td>
+<td>Cell line (e.g., <code>HeLa</code> = CVCL_0030)</td>
+</tr>
+<tr>
+<td><code>cell_type</code></td>
+<td>Cell Ontology</td>
+<td><a href="https://www.ebi.ac.uk/ols4/ontologies/cl">CL</a></td>
+<td>Cell type (e.g., <code>T cell</code> = CL:0000084)</td>
+</tr>
+<tr>
+<td><code>sex</code></td>
+<td>PATO</td>
+<td><a href="https://www.ebi.ac.uk/ols4/ontologies/pato">PATO</a></td>
+<td>Biological sex (e.g., <code>female</code> = PATO:0000383)</td>
+</tr>
+<tr>
+<td><code>age</code></td>
+<td>---</td>
+<td>---</td>
+<td>Age of the specimen (free text)</td>
+</tr>
+<tr>
+<td><code>developmental_stage</code></td>
+<td>HsapDv / MmusDv</td>
+<td><a href="https://www.ebi.ac.uk/ols4/ontologies/hsapdv">HsapDv</a></td>
+<td>Developmental stage</td>
+</tr>
+<tr>
+<td><code>ancestry</code></td>
+<td>HANCESTRO</td>
+<td><a href="https://www.ebi.ac.uk/ols4/ontologies/hancestro">HANCESTRO</a></td>
+<td>Ancestry category</td>
+</tr>
+<tr>
+<td><code>individual</code></td>
+<td>---</td>
+<td>---</td>
+<td>Individual/patient identifier</td>
+</tr>
+<tr>
+<td><code>sample_description</code></td>
+<td>---</td>
+<td>---</td>
+<td>Free-text sample description</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition tip">
+<p class="admonition-title">lamindb / bionty compatibility</p>
+<p>Each sample metadata field maps to a bionty registry:</p>
+<table>
+<thead>
+<tr>
+<th>QPX field</th>
+<th>bionty registry</th>
+<th>Example validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>organism</code></td>
+<td><code>bt.Organism</code></td>
+<td><code>bt.Organism.from_source(name="Homo sapiens")</code></td>
+</tr>
+<tr>
+<td><code>organism_part</code></td>
+<td><code>bt.Tissue</code></td>
+<td><code>bt.Tissue.from_source(name="heart")</code></td>
+</tr>
+<tr>
+<td><code>disease</code></td>
+<td><code>bt.Disease</code></td>
+<td><code>bt.Disease.from_source(name="breast cancer")</code></td>
+</tr>
+<tr>
+<td><code>cell_line</code></td>
+<td><code>bt.CellLine</code></td>
+<td><code>bt.CellLine.from_source(name="HeLa")</code></td>
+</tr>
+<tr>
+<td><code>cell_type</code></td>
+<td><code>bt.CellType</code></td>
+<td><code>bt.CellType.from_source(name="T cell")</code></td>
+</tr>
+</tbody>
+</table>
+<p>See <a href="#compatibility">Compatibility with lamindb and AnnData</a> for details.</p>
+</div>
+<hr />
+<h2 id="run">Run Metadata (<code>run.parquet</code>)<a class="headerlink" href="#run" title="Anchor link to this section">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Ontology</th>
+<th>Ontology Accession</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>run_accession</code></td>
+<td>---</td>
+<td>---</td>
+<td>Unique run identifier (= SDRF <code>assay name</code>)</td>
+</tr>
+<tr>
+<td><code>run_file_name</code></td>
+<td>---</td>
+<td>---</td>
+<td>Raw data file name without path or extension</td>
+</tr>
+<tr>
+<td><code>samples</code></td>
+<td>---</td>
+<td>---</td>
+<td>Sample-channel mapping (FK to <code>sample.parquet</code>)</td>
+</tr>
+<tr>
+<td><code>fraction</code></td>
+<td>---</td>
+<td>---</td>
+<td>Fraction identifier</td>
+</tr>
+<tr>
+<td><code>instrument</code></td>
+<td>PSI-MS</td>
+<td><a href="https://www.ebi.ac.uk/ols4/ontologies/ms">MS</a></td>
+<td>Mass spectrometer (e.g., <code>Q Exactive HF</code> = MS:1002523)</td>
+</tr>
+<tr>
+<td><code>enzymes</code></td>
+<td>PSI-MS</td>
+<td><a href="https://www.ebi.ac.uk/ols4/ontologies/ms">MS</a></td>
+<td>Proteolytic enzymes (e.g., <code>Trypsin</code> = MS:1001251)</td>
+</tr>
+<tr>
+<td><code>dissociation_method</code></td>
+<td>PSI-MS</td>
+<td><a href="https://www.ebi.ac.uk/ols4/ontologies/ms">MS</a></td>
+<td>Fragmentation method (e.g., <code>HCD</code> = MS:1000422)</td>
+</tr>
+<tr>
+<td><code>modification_parameters</code></td>
+<td>UniMod</td>
+<td><a href="https://www.unimod.org/">UNIMOD</a></td>
+<td>Search modifications (e.g., <code>Phospho</code> = UNIMOD:21)</td>
+</tr>
+<tr>
+<td><code>additional_terms</code></td>
+<td>PSI-MS</td>
+<td><a href="https://www.ebi.ac.uk/ols4/ontologies/ms">MS</a></td>
+<td>Other ontology-backed terms (acquisition method, labeling, etc.)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="dataset">Dataset Metadata (<code>dataset.parquet</code>)<a class="headerlink" href="#dataset" title="Anchor link to this section">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Ontology</th>
+<th>Ontology Accession</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>project_accession</code></td>
+<td>---</td>
+<td>---</td>
+<td>ProteomeXchange accession or local project identifier</td>
+</tr>
+<tr>
+<td><code>project_title</code></td>
+<td>---</td>
+<td>---</td>
+<td>Title of the project</td>
+</tr>
+<tr>
+<td><code>project_description</code></td>
+<td>---</td>
+<td>---</td>
+<td>Description of the project</td>
+</tr>
+<tr>
+<td><code>pubmed_id</code></td>
+<td>---</td>
+<td>---</td>
+<td>PubMed ID of the associated publication</td>
+</tr>
+<tr>
+<td><code>qpx_version</code></td>
+<td>---</td>
+<td>---</td>
+<td>Version of the QPX format specification</td>
+</tr>
+<tr>
+<td><code>software_name</code></td>
+<td>---</td>
+<td>---</td>
+<td>Software that generated the data</td>
+</tr>
+<tr>
+<td><code>software_version</code></td>
+<td>---</td>
+<td>---</td>
+<td>Version of the software</td>
+</tr>
+<tr>
+<td><code>creation_date</code></td>
+<td>---</td>
+<td>---</td>
+<td>ISO 8601 creation date</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="psm">PSM View (<code>psm.parquet</code>)<a class="headerlink" href="#psm" title="Anchor link to this section">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Ontology Name</th>
+<th>Ontology Accession</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sequence</code></td>
+<td>AA sequence</td>
+<td><code>MS:1001344</code></td>
+<td>Amino acid sequence</td>
+</tr>
+<tr>
+<td><code>peptidoform</code></td>
+<td>peptidoform</td>
+<td><code>MS:1003049</code></td>
+<td>Peptide with modifications in ProForma notation</td>
+</tr>
+<tr>
+<td><code>modifications</code></td>
+<td>protein modifications</td>
+<td><code>MS:1000933</code></td>
+<td>Structured modification list with UNIMOD accessions</td>
+</tr>
+<tr>
+<td><code>charge</code></td>
+<td>charge state</td>
+<td><code>MS:1000041</code></td>
+<td>Charge state of the precursor ion</td>
+</tr>
+<tr>
+<td><code>posterior_error_probability</code></td>
+<td>posterior error probability</td>
+<td><code>MS:1001493</code></td>
+<td>PEP score: probability the PSM is incorrect (lower is better)</td>
+</tr>
+<tr>
+<td><code>is_decoy</code></td>
+<td>decoy peptide</td>
+<td><code>MS:1002217</code></td>
+<td>Whether the PSM is from a decoy sequence</td>
+</tr>
+<tr>
+<td><code>calculated_mz</code></td>
+<td>theoretical monoisotopic m/z</td>
+<td><code>MS:1003053</code></td>
+<td>Theoretical m/z from molecular composition</td>
+</tr>
+<tr>
+<td><code>observed_mz</code></td>
+<td>selected ion m/z</td>
+<td><code>MS:1002234</code></td>
+<td>Experimentally observed m/z</td>
+</tr>
+<tr>
+<td><code>rt</code></td>
+<td>retention time</td>
+<td><code>MS:1000894</code></td>
+<td>Retention time of the MS2 scan (seconds)</td>
+</tr>
+<tr>
+<td><code>predicted_rt</code></td>
+<td>predicted retention time</td>
+<td><code>MS:1000897</code></td>
+<td>Predicted retention time (seconds)</td>
+</tr>
+<tr>
+<td><code>run_file_name</code></td>
+<td>---</td>
+<td>---</td>
+<td>Spectrum file name without path or extension</td>
+</tr>
+<tr>
+<td><code>scan</code></td>
+<td>scan number</td>
+<td><code>MS:1003057</code></td>
+<td>Scan identifier as array of integer components</td>
+</tr>
+<tr>
+<td><code>protein_accessions</code></td>
+<td>---</td>
+<td>---</td>
+<td>Protein accessions the peptide maps to (optional column)</td>
+</tr>
+<tr>
+<td><code>ion_mobility</code></td>
+<td>ion mobility drift time</td>
+<td><code>MS:1002476</code></td>
+<td>Ion mobility value for the precursor</td>
+</tr>
+<tr>
+<td><code>mz_array</code></td>
+<td>m/z array</td>
+<td><code>MS:1000514</code></td>
+<td>Array of fragment m/z values</td>
+</tr>
+<tr>
+<td><code>intensity_array</code></td>
+<td>intensity array</td>
+<td><code>MS:1000515</code></td>
+<td>Array of fragment intensity values</td>
+</tr>
+<tr>
+<td><code>charge_array</code></td>
+<td>---</td>
+<td>---</td>
+<td>Array of fragment ion charge values</td>
+</tr>
+<tr>
+<td><code>ion_type_array</code></td>
+<td>---</td>
+<td>---</td>
+<td>Array of fragment ion type annotations (b, y, a, etc.)</td>
+</tr>
+<tr>
+<td><code>ion_mobility_array</code></td>
+<td>---</td>
+<td>---</td>
+<td>Array of fragment ion mobility values</td>
+</tr>
+<tr>
+<td><code>mass_error_ppm</code></td>
+<td>---</td>
+<td>---</td>
+<td>Mass error in ppm</td>
+</tr>
+<tr>
+<td><code>missed_cleavages</code></td>
+<td>missed cleavages</td>
+<td><code>MS:1003044</code></td>
+<td>Number of missed enzymatic cleavages</td>
+</tr>
+<tr>
+<td><code>additional_scores</code></td>
+<td>---</td>
+<td>---</td>
+<td>Score array with name, value, and direction (see <a href="../scores/">Scores</a>)</td>
+</tr>
+<tr>
+<td><code>cv_params</code></td>
+<td>---</td>
+<td>---</td>
+<td>Controlled vocabulary parameters</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="feature">Feature View (<code>feature.parquet</code>)<a class="headerlink" href="#feature" title="Anchor link to this section">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Ontology Name</th>
+<th>Ontology Accession</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sequence</code></td>
+<td>AA sequence</td>
+<td><code>MS:1001344</code></td>
+<td>Amino acid sequence</td>
+</tr>
+<tr>
+<td><code>peptidoform</code></td>
+<td>peptidoform</td>
+<td><code>MS:1003049</code></td>
+<td>Peptide with modifications in ProForma notation</td>
+</tr>
+<tr>
+<td><code>modifications</code></td>
+<td>protein modifications</td>
+<td><code>MS:1000933</code></td>
+<td>Structured modification list</td>
+</tr>
+<tr>
+<td><code>charge</code></td>
+<td>charge state</td>
+<td><code>MS:1000041</code></td>
+<td>Charge of the quantified analyte</td>
+</tr>
+<tr>
+<td><code>is_decoy</code></td>
+<td>decoy peptide</td>
+<td><code>MS:1002217</code></td>
+<td>Whether the peptide is from a decoy sequence</td>
+</tr>
+<tr>
+<td><code>calculated_mz</code></td>
+<td>theoretical monoisotopic m/z</td>
+<td><code>MS:1003053</code></td>
+<td>Theoretical m/z</td>
+</tr>
+<tr>
+<td><code>observed_mz</code></td>
+<td>selected ion m/z</td>
+<td><code>MS:1002234</code></td>
+<td>Experimentally observed m/z</td>
+</tr>
+<tr>
+<td><code>rt</code></td>
+<td>retention time</td>
+<td><code>MS:1000894</code></td>
+<td>Precursor retention time (seconds)</td>
+</tr>
+<tr>
+<td><code>rt_start</code></td>
+<td>---</td>
+<td>---</td>
+<td>Start of the retention time window</td>
+</tr>
+<tr>
+<td><code>rt_stop</code></td>
+<td>---</td>
+<td>---</td>
+<td>End of the retention time window</td>
+</tr>
+<tr>
+<td><code>predicted_rt</code></td>
+<td>predicted retention time</td>
+<td><code>MS:1000897</code></td>
+<td>Predicted retention time (seconds)</td>
+</tr>
+<tr>
+<td><code>ion_mobility</code></td>
+<td>ion mobility drift time</td>
+<td><code>MS:1002476</code></td>
+<td>Ion mobility value for the precursor</td>
+</tr>
+<tr>
+<td><code>ion_mobility_start</code></td>
+<td>---</td>
+<td>---</td>
+<td>Start ion mobility value</td>
+</tr>
+<tr>
+<td><code>ion_mobility_stop</code></td>
+<td>---</td>
+<td>---</td>
+<td>End ion mobility value</td>
+</tr>
+<tr>
+<td><code>run_file_name</code></td>
+<td>---</td>
+<td>---</td>
+<td>Run file containing the feature</td>
+</tr>
+<tr>
+<td><code>id_run_file_name</code></td>
+<td>---</td>
+<td>---</td>
+<td>Run file containing the best PSM for this feature</td>
+</tr>
+<tr>
+<td><code>scan</code></td>
+<td>scan number</td>
+<td><code>MS:1003057</code></td>
+<td>Scan identifier of the best PSM</td>
+</tr>
+<tr>
+<td><code>intensities</code></td>
+<td>---</td>
+<td>---</td>
+<td>Primary intensity across labels (see <a href="../intensities/">Intensities</a>)</td>
+</tr>
+<tr>
+<td><code>additional_intensities</code></td>
+<td>---</td>
+<td>---</td>
+<td>Tool-provided intensities (normalized, LFQ, iBAQ)</td>
+</tr>
+<tr>
+<td><code>pg_accessions</code></td>
+<td>---</td>
+<td>---</td>
+<td>Protein group accessions</td>
+</tr>
+<tr>
+<td><code>anchor_protein</code></td>
+<td>anchor protein</td>
+<td><code>MS:1001591</code></td>
+<td>Representative protein of the protein group</td>
+</tr>
+<tr>
+<td><code>pg_positions</code></td>
+<td>---</td>
+<td>---</td>
+<td>Peptide start/end positions in each protein</td>
+</tr>
+<tr>
+<td><code>pg_global_qvalue</code></td>
+<td>protein-level global FDR</td>
+<td><code>MS:1001214</code></td>
+<td>Global q-value of the protein group</td>
+</tr>
+<tr>
+<td><code>unique</code></td>
+<td>---</td>
+<td>---</td>
+<td>Unique peptide indicator</td>
+</tr>
+<tr>
+<td><code>gg_accessions</code></td>
+<td>---</td>
+<td>---</td>
+<td>Gene group identifiers</td>
+</tr>
+<tr>
+<td><code>gg_names</code></td>
+<td>---</td>
+<td>---</td>
+<td>Gene group names</td>
+</tr>
+<tr>
+<td><code>mass_error_ppm</code></td>
+<td>---</td>
+<td>---</td>
+<td>Mass error in ppm</td>
+</tr>
+<tr>
+<td><code>missed_cleavages</code></td>
+<td>missed cleavages</td>
+<td><code>MS:1003044</code></td>
+<td>Number of missed enzymatic cleavages</td>
+</tr>
+<tr>
+<td><code>posterior_error_probability</code></td>
+<td>posterior error probability</td>
+<td><code>MS:1001493</code></td>
+<td>PEP for the peptide match</td>
+</tr>
+<tr>
+<td><code>additional_scores</code></td>
+<td>---</td>
+<td>---</td>
+<td>Score array (see <a href="../scores/">Scores</a>)</td>
+</tr>
+<tr>
+<td><code>cv_params</code></td>
+<td>---</td>
+<td>---</td>
+<td>Controlled vocabulary parameters</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="pg">Protein Group View (<code>pg.parquet</code>)<a class="headerlink" href="#pg" title="Anchor link to this section">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Ontology Name</th>
+<th>Ontology Accession</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>pg_accessions</code></td>
+<td>---</td>
+<td>---</td>
+<td>Protein accessions within this group</td>
+</tr>
+<tr>
+<td><code>pg_names</code></td>
+<td>---</td>
+<td>---</td>
+<td>Descriptive names for the proteins</td>
+</tr>
+<tr>
+<td><code>gg_accessions</code></td>
+<td>---</td>
+<td>---</td>
+<td>Gene group accessions</td>
+</tr>
+<tr>
+<td><code>gg_names</code></td>
+<td>---</td>
+<td>---</td>
+<td>Gene names</td>
+</tr>
+<tr>
+<td><code>anchor_protein</code></td>
+<td>anchor protein</td>
+<td><code>MS:1001591</code></td>
+<td>Representative protein of the group</td>
+</tr>
+<tr>
+<td><code>run_file_name</code></td>
+<td>---</td>
+<td>---</td>
+<td>Raw file containing this protein group</td>
+</tr>
+<tr>
+<td><code>peptide_counts</code></td>
+<td>---</td>
+<td>---</td>
+<td>Peptide sequence counts (unique + total)</td>
+</tr>
+<tr>
+<td><code>feature_counts</code></td>
+<td>---</td>
+<td>---</td>
+<td>Feature counts (unique + total)</td>
+</tr>
+<tr>
+<td><code>global_qvalue</code></td>
+<td>protein-level global FDR</td>
+<td><code>MS:1001214</code></td>
+<td>Global q-value at the experiment level</td>
+</tr>
+<tr>
+<td><code>pg_qvalue</code></td>
+<td>---</td>
+<td>---</td>
+<td>Run-level protein group q-value</td>
+</tr>
+<tr>
+<td><code>is_decoy</code></td>
+<td>decoy peptide</td>
+<td><code>MS:1002217</code></td>
+<td>Whether the protein group is a decoy</td>
+</tr>
+<tr>
+<td><code>contaminant</code></td>
+<td>---</td>
+<td>---</td>
+<td>Contaminant indicator (1 = contaminant)</td>
+</tr>
+<tr>
+<td><code>sequence_coverage</code></td>
+<td>sequence coverage</td>
+<td><code>MS:1001093</code></td>
+<td>Percentage of protein sequence covered by peptides</td>
+</tr>
+<tr>
+<td><code>molecular_weight</code></td>
+<td>molecular mass</td>
+<td><code>MS:1000224</code></td>
+<td>Molecular weight of the protein (kDa)</td>
+</tr>
+<tr>
+<td><code>intensities</code></td>
+<td>---</td>
+<td>---</td>
+<td>Primary intensity across labels</td>
+</tr>
+<tr>
+<td><code>additional_intensities</code></td>
+<td>---</td>
+<td>---</td>
+<td>Tool-provided intensities</td>
+</tr>
+<tr>
+<td><code>peptides</code></td>
+<td>---</td>
+<td>---</td>
+<td>Peptide counts per individual protein in the group</td>
+</tr>
+<tr>
+<td><code>additional_scores</code></td>
+<td>---</td>
+<td>---</td>
+<td>Additional scores and metrics</td>
+</tr>
+<tr>
+<td><code>cv_params</code></td>
+<td>---</td>
+<td>---</td>
+<td>Controlled vocabulary parameters</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="mz">Mass Spectra View (<code>mz.parquet</code>)<a class="headerlink" href="#mz" title="Anchor link to this section">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Ontology Name</th>
+<th>Ontology Accession</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td>spectrum identifier nativeID format</td>
+<td><code>MS:1000767</code></td>
+<td>Unique identifier for the scan</td>
+</tr>
+<tr>
+<td><code>ms_level</code></td>
+<td>ms level</td>
+<td><code>MS:1000511</code></td>
+<td>MS level (1 = MS1, 2 = MS2, etc.)</td>
+</tr>
+<tr>
+<td><code>centroid</code></td>
+<td>centroid spectrum</td>
+<td><code>MS:1000127</code></td>
+<td>Whether data is centroided</td>
+</tr>
+<tr>
+<td><code>scan_start_time</code></td>
+<td>scan start time</td>
+<td><code>MS:1000016</code></td>
+<td>Start time of the scan (minutes)</td>
+</tr>
+<tr>
+<td><code>inverse_ion_mobility</code></td>
+<td>inverse reduced ion mobility</td>
+<td><code>MS:1002815</code></td>
+<td>Inverse ion mobility (1/K0) for TIMS data</td>
+</tr>
+<tr>
+<td><code>ion_injection_time</code></td>
+<td>ion injection time</td>
+<td><code>MS:1000927</code></td>
+<td>Ion injection time (milliseconds)</td>
+</tr>
+<tr>
+<td><code>total_ion_current</code></td>
+<td>total ion current</td>
+<td><code>MS:1000285</code></td>
+<td>Total ion current for the scan</td>
+</tr>
+<tr>
+<td><code>precursors</code></td>
+<td>precursor</td>
+<td><code>MS:1000456</code></td>
+<td>Precursor ions for this MS/MS scan</td>
+</tr>
+<tr>
+<td><code>mz</code></td>
+<td>m/z array</td>
+<td><code>MS:1000514</code></td>
+<td>Array of m/z values</td>
+</tr>
+<tr>
+<td><code>intensity</code></td>
+<td>intensity array</td>
+<td><code>MS:1000515</code></td>
+<td>Array of intensity values</td>
+</tr>
+<tr>
+<td><code>cv_params</code></td>
+<td>---</td>
+<td>---</td>
+<td>Additional CV parameters</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="scores">Score Fields<a class="headerlink" href="#scores" title="Anchor link to this section">&para;</a></h2>
+<p>Score names used in <code>additional_scores</code> that have PSI-MS ontology mappings. All QPX score names use <strong>snake_case</strong> -- the ontology name column shows the proper CV term.</p>
+<table>
+<thead>
+<tr>
+<th>QPX Name (snake_case)</th>
+<th>Ontology Name</th>
+<th>Ontology Accession</th>
+<th>Direction</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>posterior_error_probability</code></td>
+<td>posterior error probability</td>
+<td><code>MS:1001493</code></td>
+<td>lower is better</td>
+</tr>
+<tr>
+<td><code>global_qvalue</code></td>
+<td>PSM-level global FDR</td>
+<td><code>MS:1002350</code></td>
+<td>lower is better</td>
+</tr>
+<tr>
+<td><code>pg_global_qvalue</code></td>
+<td>protein-level global FDR</td>
+<td><code>MS:1001214</code></td>
+<td>lower is better</td>
+</tr>
+<tr>
+<td><code>andromeda_score</code></td>
+<td>Andromeda:score</td>
+<td><code>MS:1002338</code></td>
+<td>higher is better</td>
+</tr>
+<tr>
+<td><code>andromeda_delta_score</code></td>
+<td>Andromeda:delta score</td>
+<td><code>MS:1003433</code></td>
+<td>higher is better</td>
+</tr>
+<tr>
+<td><code>percolator_score</code></td>
+<td>percolator:score</td>
+<td><code>MS:1001492</code></td>
+<td>higher is better</td>
+</tr>
+<tr>
+<td><code>openms_score</code></td>
+<td>OpenMS:Best PSM Score</td>
+<td><code>MS:1003114</code></td>
+<td>higher is better</td>
+</tr>
+<tr>
+<td><code>msgf_raw_score</code></td>
+<td>MS-GF:RawScore</td>
+<td><code>MS:1002049</code></td>
+<td>higher is better</td>
+</tr>
+<tr>
+<td><code>comet_xcorr</code></td>
+<td>Comet:xcorr</td>
+<td><code>MS:1002252</code></td>
+<td>higher is better</td>
+</tr>
+<tr>
+<td><code>comet_deltacn</code></td>
+<td>Comet:deltacn</td>
+<td><code>MS:1002253</code></td>
+<td>higher is better</td>
+</tr>
+<tr>
+<td><code>comet_expect</code></td>
+<td>Comet:expectation value</td>
+<td><code>MS:1002257</code></td>
+<td>lower is better</td>
+</tr>
+<tr>
+<td><code>msgf_spec_evalue</code></td>
+<td>MS-GF:SpecEValue</td>
+<td><code>MS:1002052</code></td>
+<td>lower is better</td>
+</tr>
+<tr>
+<td><code>sage_hyperscore</code></td>
+<td>Sage:hyperscore</td>
+<td>---</td>
+<td>higher is better</td>
+</tr>
+<tr>
+<td><code>diann_qvalue</code></td>
+<td>---</td>
+<td>---</td>
+<td>lower is better</td>
+</tr>
+<tr>
+<td><code>diann_global_qvalue</code></td>
+<td>---</td>
+<td>---</td>
+<td>lower is better</td>
+</tr>
+<tr>
+<td><code>diann_cscore</code></td>
+<td>---</td>
+<td>---</td>
+<td>higher is better</td>
+</tr>
+<tr>
+<td><code>consensus_support</code></td>
+<td>---</td>
+<td>---</td>
+<td>higher is better</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="qpx-specific">QPX-specific Fields<a class="headerlink" href="#qpx-specific" title="Anchor link to this section">&para;</a></h2>
+<p>Fields defined by QPX without standardized ontology terms.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>View(s)</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>run_file_name</code></td>
+<td>PSM, Feature, PG</td>
+<td>Spectrum/run file name without path or extension</td>
+</tr>
+<tr>
+<td><code>pg_accessions</code></td>
+<td>Feature, PG</td>
+<td>Protein group accessions</td>
+</tr>
+<tr>
+<td><code>pg_names</code></td>
+<td>PG</td>
+<td>Descriptive protein names</td>
+</tr>
+<tr>
+<td><code>gg_accessions</code></td>
+<td>PG</td>
+<td>Gene group accessions</td>
+</tr>
+<tr>
+<td><code>gg_names</code></td>
+<td>PG</td>
+<td>Gene names</td>
+</tr>
+<tr>
+<td><code>rt_start</code> / <code>rt_stop</code></td>
+<td>Feature</td>
+<td>Retention time window boundaries</td>
+</tr>
+<tr>
+<td><code>ion_mobility_start</code> / <code>ion_mobility_stop</code></td>
+<td>Feature</td>
+<td>Ion mobility window boundaries</td>
+</tr>
+<tr>
+<td><code>intensities</code> / <code>additional_intensities</code></td>
+<td>Feature, PG</td>
+<td>Intensity structures (see <a href="../intensities/">Intensities</a>)</td>
+</tr>
+<tr>
+<td><code>peptide_counts</code> / <code>feature_counts</code></td>
+<td>PG</td>
+<td>Count structures for peptides and features</td>
+</tr>
+<tr>
+<td><code>contaminant</code></td>
+<td>PG</td>
+<td>Contaminant indicator</td>
+</tr>
+<tr>
+<td><code>pg_positions</code></td>
+<td>Feature</td>
+<td>Peptide positions within each protein</td>
+</tr>
+<tr>
+<td><code>id_run_file_name</code> / <code>id_scan</code></td>
+<td>Feature</td>
+<td>Reference to best PSM for the feature</td>
+</tr>
+<tr>
+<td><code>protein_accessions</code></td>
+<td>PSM</td>
+<td>Protein accessions (optional column)</td>
+</tr>
+<tr>
+<td><code>charge_array</code> / <code>ion_type_array</code> / <code>ion_mobility_array</code></td>
+<td>PSM</td>
+<td>Fragment ion annotation arrays</td>
+</tr>
+<tr>
+<td><code>parent_ion_fraction</code></td>
+<td>Score</td>
+<td>Fraction of target peak intensity in the isolation window</td>
+</tr>
+<tr>
+<td><code>precursor_quantification_score</code></td>
+<td>Score</td>
+<td>QuantUMS-derived quantification confidence: 1.0 / (1.0 + SD)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="compatibility">Compatibility with lamindb and AnnData<a class="headerlink" href="#compatibility" title="Anchor link to this section">&para;</a></h2>
+<h3 id="anndata">AnnData<a class="headerlink" href="#anndata" title="Anchor link to this section">&para;</a></h3>
+<p>The QPX expression views (<code>ae.h5ad</code>, <code>de.h5ad</code>) use AnnData natively. The ontology mapping provides semantic definitions for the <code>.obs</code> (sample) and <code>.var</code> (protein/gene) slots:</p>
+<table>
+<thead>
+<tr>
+<th>AnnData slot</th>
+<th>QPX source</th>
+<th>Ontology-backed fields</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>.obs</code></td>
+<td><code>sample.parquet</code></td>
+<td><code>organism</code> (NCBITaxon), <code>organism_part</code> (UBERON), <code>disease</code> (EFO/MONDO), <code>cell_type</code> (CL), <code>cell_line</code> (Cellosaurus), <code>sex</code> (PATO)</td>
+</tr>
+<tr>
+<td><code>.var</code></td>
+<td><code>pg.parquet</code></td>
+<td><code>protein</code> (UniProt), <code>gene_name</code> (HGNC/Ensembl)</td>
+</tr>
+<tr>
+<td><code>.uns</code></td>
+<td><code>dataset.parquet</code></td>
+<td><code>project_accession</code>, <code>qpx_version</code></td>
+</tr>
+</tbody>
+</table>
+<p>When building AnnData objects from QPX Parquet files, the <code>.obs</code> columns inherit the ontology definitions from <code>sample.parquet</code>. This means any AnnData created from QPX data carries structured, ontology-backed annotations that tools like scanpy and lamindb can validate.</p>
+<h3 id="lamindb-bionty">lamindb / bionty<a class="headerlink" href="#lamindb-bionty" title="Anchor link to this section">&para;</a></h3>
+<p><a href="https://lamin.ai/">lamindb</a> uses <a href="https://lamin.ai/docs/bionty">bionty</a> registries to validate biological entities. QPX's sample metadata fields map directly to bionty registries:</p>
+<table>
+<thead>
+<tr>
+<th>QPX field</th>
+<th>bionty registry</th>
+<th>Ontology source</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>organism</code></td>
+<td><code>bt.Organism</code></td>
+<td>NCBI Taxonomy</td>
+<td><code>Homo sapiens</code> → NCBITaxon:9606</td>
+</tr>
+<tr>
+<td><code>organism_part</code></td>
+<td><code>bt.Tissue</code></td>
+<td>UBERON</td>
+<td><code>heart</code> → UBERON:0000948</td>
+</tr>
+<tr>
+<td><code>disease</code></td>
+<td><code>bt.Disease</code></td>
+<td>MONDO</td>
+<td><code>breast cancer</code> → MONDO:0007254</td>
+</tr>
+<tr>
+<td><code>cell_type</code></td>
+<td><code>bt.CellType</code></td>
+<td>Cell Ontology</td>
+<td><code>T cell</code> → CL:0000084</td>
+</tr>
+<tr>
+<td><code>cell_line</code></td>
+<td><code>bt.CellLine</code></td>
+<td>Cellosaurus</td>
+<td><code>HeLa</code> → CVCL_0030</td>
+</tr>
+<tr>
+<td><code>sex</code></td>
+<td>---</td>
+<td>PATO</td>
+<td><code>female</code> → PATO:0000383</td>
+</tr>
+<tr>
+<td><code>developmental_stage</code></td>
+<td><code>bt.DevelopmentalStage</code></td>
+<td>HsapDv</td>
+<td>---</td>
+</tr>
+</tbody>
+</table>
+<p>This means QPX datasets can be registered in lamindb with validated, ontology-backed annotations:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">lamindb</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">ln</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">bionty</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">bt</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="kn">import</span><span class="w"> </span><span class="nn">anndata</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">ad</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="c1"># Read QPX AnnData</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="n">adata</span> <span class="o">=</span> <span class="n">ad</span><span class="o">.</span><span class="n">read_h5ad</span><span class="p">(</span><span class="s2">&quot;PXD014414.ae.h5ad&quot;</span><span class="p">)</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="c1"># Validate against bionty registries</span>
+</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="n">bt</span><span class="o">.</span><span class="n">Organism</span><span class="o">.</span><span class="n">from_source</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;Homo sapiens&quot;</span><span class="p">)</span>
+</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="n">bt</span><span class="o">.</span><span class="n">Tissue</span><span class="o">.</span><span class="n">from_source</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;heart&quot;</span><span class="p">)</span>
+</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="n">bt</span><span class="o">.</span><span class="n">Disease</span><span class="o">.</span><span class="n">from_source</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;breast cancer&quot;</span><span class="p">)</span>
+</span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>
+</span><span id="__span-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="c1"># Register as a lamindb artifact with validated metadata</span>
+</span><span id="__span-2-14"><a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="n">artifact</span> <span class="o">=</span> <span class="n">ln</span><span class="o">.</span><span class="n">Artifact</span><span class="o">.</span><span class="n">from_anndata</span><span class="p">(</span><span class="n">adata</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;PXD014414 absolute expression&quot;</span><span class="p">)</span>
+</span><span id="__span-2-15"><a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="n">artifact</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+</span></code></pre></div>
+<h3 id="parquet-views-and-lamindb">Parquet views and lamindb<a class="headerlink" href="#parquet-views-and-lamindb" title="Anchor link to this section">&para;</a></h3>
+<p>The Parquet data views (<code>psm</code>, <code>feature</code>, <code>pg</code>, <code>mz</code>) can also be registered as lamindb artifacts. The ontology mapping allows lamindb to understand what each field represents:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">lamindb</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">ln</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="c1"># Register Parquet files as artifacts</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="n">artifact</span> <span class="o">=</span> <span class="n">ln</span><span class="o">.</span><span class="n">Artifact</span><span class="p">(</span><span class="s2">&quot;PXD014414.feature.parquet&quot;</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;PXD014414 features&quot;</span><span class="p">)</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="n">artifact</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="c1"># Link to biological context via validated sample metadata</span>
+</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="n">artifact</span><span class="o">.</span><span class="n">organisms</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">bt</span><span class="o">.</span><span class="n">Organism</span><span class="o">.</span><span class="n">from_source</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;Homo sapiens&quot;</span><span class="p">))</span>
+</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="n">artifact</span><span class="o">.</span><span class="n">tissues</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">bt</span><span class="o">.</span><span class="n">Tissue</span><span class="o">.</span><span class="n">from_source</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;heart&quot;</span><span class="p">))</span>
+</span></code></pre></div>
+<p>The key benefit: because QPX defines clear ontology mappings for sample metadata, lamindb can automatically validate and link QPX datasets to the correct biological entities in its registry. No manual curation of field semantics is needed.</p>
+<hr />
+<h2 id="ontology-references">Ontology references<a class="headerlink" href="#ontology-references" title="Anchor link to this section">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Ontology</th>
+<th>Prefix</th>
+<th>URL</th>
+<th>Used for</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>PSI-MS</td>
+<td><code>MS:</code></td>
+<td><a href="https://www.ebi.ac.uk/ols4/ontologies/ms">OLS4</a></td>
+<td>MS instrument, acquisition, identification fields</td>
+</tr>
+<tr>
+<td>UniMod</td>
+<td><code>UNIMOD:</code></td>
+<td><a href="https://www.unimod.org/">UniMod</a></td>
+<td>Post-translational modifications</td>
+</tr>
+<tr>
+<td>NCBI Taxonomy</td>
+<td><code>NCBITaxon:</code></td>
+<td><a href="https://www.ebi.ac.uk/ols4/ontologies/ncbitaxon">OLS4</a></td>
+<td>Organism / species</td>
+</tr>
+<tr>
+<td>UBERON</td>
+<td><code>UBERON:</code></td>
+<td><a href="https://www.ebi.ac.uk/ols4/ontologies/uberon">OLS4</a></td>
+<td>Anatomical structures / tissues</td>
+</tr>
+<tr>
+<td>EFO</td>
+<td><code>EFO:</code></td>
+<td><a href="https://www.ebi.ac.uk/ols4/ontologies/efo">OLS4</a></td>
+<td>Experimental factors, diseases</td>
+</tr>
+<tr>
+<td>MONDO</td>
+<td><code>MONDO:</code></td>
+<td><a href="https://www.ebi.ac.uk/ols4/ontologies/mondo">OLS4</a></td>
+<td>Disease ontology</td>
+</tr>
+<tr>
+<td>Cell Ontology</td>
+<td><code>CL:</code></td>
+<td><a href="https://www.ebi.ac.uk/ols4/ontologies/cl">OLS4</a></td>
+<td>Cell types</td>
+</tr>
+<tr>
+<td>Cellosaurus</td>
+<td><code>CVCL_</code></td>
+<td><a href="https://www.cellosaurus.org/">Cellosaurus</a></td>
+<td>Cell lines</td>
+</tr>
+<tr>
+<td>PATO</td>
+<td><code>PATO:</code></td>
+<td><a href="https://www.ebi.ac.uk/ols4/ontologies/pato">OLS4</a></td>
+<td>Phenotypic qualities (sex, etc.)</td>
+</tr>
+<tr>
+<td>HANCESTRO</td>
+<td><code>HANCESTRO:</code></td>
+<td><a href="https://www.ebi.ac.uk/ols4/ontologies/hancestro">OLS4</a></td>
+<td>Human ancestry</td>
+</tr>
+<tr>
+<td>HsapDv</td>
+<td><code>HsapDv:</code></td>
+<td><a href="https://www.ebi.ac.uk/ols4/ontologies/hsapdv">OLS4</a></td>
+<td>Human developmental stages</td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+
+
+
+
+  
+
+
+
+  <form class="md-feedback" name="feedback" hidden>
+    <fieldset>
+      <legend class="md-feedback__title">
+        Was this page helpful?
+      </legend>
+      <div class="md-feedback__inner">
+        <div class="md-feedback__list">
+          
+            <button class="md-feedback__icon md-icon" type="submit" title="This page was helpful" data-md-value="1">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 0-8-8 8 8 0 0 0-8 8 8 8 0 0 0 8 8 8 8 0 0 0 8-8m2 0a10 10 0 0 1-10 10A10 10 0 0 1 2 12 10 10 0 0 1 12 2a10 10 0 0 1 10 10M10 9.5c0 .8-.7 1.5-1.5 1.5S7 10.3 7 9.5 7.7 8 8.5 8s1.5.7 1.5 1.5m7 0c0 .8-.7 1.5-1.5 1.5S14 10.3 14 9.5 14.7 8 15.5 8s1.5.7 1.5 1.5m-5 7.73c-1.75 0-3.29-.73-4.19-1.81L9.23 14c.45.72 1.52 1.23 2.77 1.23s2.32-.51 2.77-1.23l1.42 1.42c-.9 1.08-2.44 1.81-4.19 1.81"/></svg>
+            </button>
+          
+            <button class="md-feedback__icon md-icon" type="submit" title="This page could be improved" data-md-value="0">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 0-8-8 8 8 0 0 0-8 8 8 8 0 0 0 8 8 8 8 0 0 0 8-8m2 0a10 10 0 0 1-10 10A10 10 0 0 1 2 12 10 10 0 0 1 12 2a10 10 0 0 1 10 10m-6.5-4c.8 0 1.5.7 1.5 1.5s-.7 1.5-1.5 1.5-1.5-.7-1.5-1.5.7-1.5 1.5-1.5M10 9.5c0 .8-.7 1.5-1.5 1.5S7 10.3 7 9.5 7.7 8 8.5 8s1.5.7 1.5 1.5m2 4.5c1.75 0 3.29.72 4.19 1.81l-1.42 1.42C14.32 16.5 13.25 16 12 16s-2.32.5-2.77 1.23l-1.42-1.42C8.71 14.72 10.25 14 12 14"/></svg>
+            </button>
+          
+        </div>
+        <div class="md-feedback__note">
+          
+            <div data-md-value="1" hidden>
+              
+              
+                
+              
+              
+              
+                
+                
+              
+              Thanks for your feedback!
+            </div>
+          
+            <div data-md-value="0" hidden>
+              
+              
+                
+              
+              
+              
+                
+                
+              
+              Thanks for your feedback! Help us improve by <a href="https://github.com/bigbio/qpx/issues" target="_blank" rel="noopener">opening an issue</a>.
+            </div>
+          
+        </div>
+      </div>
+    </fieldset>
+  </form>
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../schemas/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Schemas">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Schemas
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../../troubleshooting/" class="md-footer__link md-footer__link--next" aria-label="Next: Troubleshooting">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Troubleshooting
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; 2024-2026 BigBio Team
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+    <a href="https://github.com/bigbio/qpx" target="_blank" rel="noopener" title="GitHub Repository" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+    
+    
+    
+    
+    <a href="https://pypi.org/project/qpx/" target="_blank" rel="noopener" title="PyPI Package" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.8 200.5c-7.7-30.9-22.3-54.2-53.4-54.2h-40.1v47.4c0 36.8-31.2 67.8-66.8 67.8H172.7c-29.2 0-53.4 25-53.4 54.3v101.8c0 29 25.2 46 53.4 54.3 33.8 9.9 66.3 11.7 106.8 0 26.9-7.8 53.4-23.5 53.4-54.3v-40.7H226.2v-13.6h160.2c31.1 0 42.6-21.7 53.4-54.2 11.2-33.5 10.7-65.7 0-108.6M286.2 444.7a20.4 20.4 0 1 1 0-40.7 20.4 20.4 0 1 1 0 40.7M167.8 248.1h106.8c29.7 0 53.4-24.5 53.4-54.3V91.9c0-29-24.4-50.7-53.4-55.6-35.8-5.9-74.7-5.6-106.8.1-45.2 8-53.4 24.7-53.4 55.6v40.7h106.9v13.6h-147c-31.1 0-58.3 18.7-66.8 54.2-9.8 40.7-10.2 66.1 0 108.6 7.6 31.6 25.7 54.2 56.8 54.2H101v-48.8c0-35.3 30.5-66.4 66.8-66.4m-6.6-183.4a20.4 20.4 0 1 1 0 40.8 20.4 20.4 0 1 1 0-40.8"/></svg>
+    </a>
+  
+    
+    
+    
+    
+    <a href="https://github.com/bigbio/qpx/issues" target="_blank" rel="noopener" title="Report Issues" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M192 96c0-53 43-96 96-96s96 43 96 96v3.6c0 15.7-12.7 28.4-28.4 28.4H220.5c-15.7 0-28.4-12.7-28.4-28.4V96zm345.6 12.8c10.6 14.1 7.7 34.2-6.4 44.8l-97.8 73.3c5.3 8.9 9.3 18.7 11.8 29.1H544c17.7 0 32 14.3 32 32s-14.3 32-32 32h-96v32c0 2.6-.1 5.3-.2 7.9l83.4 62.5c14.1 10.6 17 30.7 6.4 44.8s-30.7 17-44.8 6.4l-63.1-47.3c-23.2 44.2-66.5 76.2-117.7 83.9V280c0-13.3-10.7-24-24-24s-24 10.7-24 24v230.2c-51.2-7.7-94.5-39.7-117.7-83.9l-63.1 47.3c-14.1 10.6-34.2 7.7-44.8-6.4s-7.7-34.2 6.4-44.8l83.4-62.5c-.1-2.6-.2-5.2-.2-7.9v-32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32h98.8c2.5-10.4 6.5-20.2 11.8-29.1l-97.8-73.3c-14.1-10.6-17-30.7-6.4-44.8s30.7-17 44.8-6.4L192 184c12.3-5.1 25.8-8 40-8h112c14.2 0 27.7 2.8 40 8l108.8-81.6c14.1-10.6 34.2-7.7 44.8 6.4"/></svg>
+    </a>
+  
+    
+    
+    
+    
+    <a href="https://github.com/bigbio/qpx/blob/main/README.md" target="_blank" rel="noopener" title="Documentation" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M384 512H96c-53 0-96-43-96-96V96C0 43 43 0 96 0h304c26.5 0 48 21.5 48 48v288c0 20.9-13.4 38.7-32 45.3V448c17.7 0 32 14.3 32 32s-14.3 32-32 32zM96 384c-17.7 0-32 14.3-32 32s14.3 32 32 32h256v-64zm32-232c0 13.3 10.7 24 24 24h176c13.3 0 24-10.7 24-24s-10.7-24-24-24H152c-13.3 0-24 10.7-24 24m24 72c-13.3 0-24 10.7-24 24s10.7 24 24 24h176c13.3 0 24-10.7 24-24s-10.7-24-24-24z"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.tabs.sticky", "navigation.sections", "navigation.expand", "navigation.path", "navigation.top", "navigation.footer", "navigation.indexes", "navigation.instant", "navigation.tracking", "search.suggest", "search.highlight", "search.share", "toc.follow", "toc.integrate", "content.code.copy", "content.code.annotate", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="../../assets/_markdown_exec_pyodide.js"></script>
+      
+    
+  </body>
+</html>

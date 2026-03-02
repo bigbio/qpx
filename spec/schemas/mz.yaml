@@ -1,0 +1,56 @@
+name: mz
+file_type: mz_file
+primary_key: [id]
+doc: "Mass spectrometry spectral data (scan-level)"
+
+fields:
+  # Scan identification
+  id:
+    type: string
+    required: true
+    doc: "Unique scan/spectrum identifier"
+  ms_level:
+    type: int32
+    required: true
+    doc: "MS level (1=MS1, 2=MS2)"
+  centroid:
+    type: bool
+    required: true
+    doc: "Centroided (true) or profile (false)"
+
+  # Timing and mobility
+  scan_start_time:
+    type: float32
+    required: true
+    doc: "Scan start time (minutes)"
+  inverse_ion_mobility:
+    type: float32
+    doc: "Inverse ion mobility (TIMS)"
+  ion_injection_time:
+    type: float32
+    required: true
+    doc: "Ion injection time (ms)"
+  total_ion_current:
+    type: float32
+    required: true
+    doc: "Total ion current"
+
+  # Precursor info (MS2+ only)
+  precursors:
+    type: "list<precursor>"
+    doc: "Precursor ions"
+
+  # Spectral data
+  mz:
+    type: "list<float32>"
+    required: true
+    doc: "m/z values"
+  intensity:
+    type: "list<float32>"
+    required: true
+    doc: "Intensity values"
+
+  # Metadata
+  cv_params:
+    type: "list<cv_param>"
+    doc: "CV parameters"

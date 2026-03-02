@@ -1,0 +1,46 @@
+name: dataset
+file_type: dataset_file
+primary_key: [project_accession]
+doc: "Project-level metadata for a QPX dataset (single-row file)"
+
+fields:
+  project_accession:
+    type: string
+    required: true
+    doc: "Project accession (e.g., PXD014414)"
+  project_title:
+    type: string
+    doc: "Title of the project"
+  project_description:
+    type: string
+    doc: "Project description"
+  pubmed_id:
+    type: string
+    doc: "PubMed ID"
+  software_name:
+    type: string
+    doc: "Software that generated the data"
+  software_version:
+    type: string
+    doc: "Software version"
+  creation_date:
+    type: string
+    required: true
+    doc: "ISO 8601 date when dataset was created"
+
+  # Integrity / packaging
+  file_checksums:
+    type: "map<string, string>"
+    doc: "SHA-256 hex digests keyed by file name (relative to dataset root)"
+  file_row_counts:
+    type: "map<string, int64>"
+    doc: "Row counts keyed by file name"
+  file_sizes_bytes:
+    type: "map<string, int64>"
+    doc: "File sizes in bytes keyed by file name"
+  total_structures:
+    type: int32
+    doc: "Number of Parquet structures in this dataset"
+  packaged_at:
+    type: string
+    doc: "ISO 8601 timestamp when integrity was computed"

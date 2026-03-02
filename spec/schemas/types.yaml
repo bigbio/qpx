@@ -1,0 +1,121 @@
+# Shared struct types used across QPX schemas.
+# These are referenced by name in schema YAML files (e.g., type: list<intensity>).
+
+score:
+  fields:
+    score_name: {type: string}
+    score_value: {type: float64}
+    higher_better: {type: bool, nullable: true}
+
+cv_param:
+  fields:
+    cv_name: {type: string}
+    cv_value: {type: string}
+
+modification_position:
+  fields:
+    position: {type: int32}
+    amino_acid: {type: string, nullable: true}
+    scores: {type: "list<score>", nullable: true}
+
+modification:
+  fields:
+    name: {type: string}
+    accession: {type: string, nullable: true}
+    positions: {type: "list<modification_position>"}
+
+intensity:
+  fields:
+    label: {type: string}
+    intensity: {type: float32}
+
+intensity_pair:
+  fields:
+    intensity_name: {type: string}
+    intensity_value: {type: float32}
+
+additional_intensity:
+  fields:
+    label: {type: string}
+    intensities: {type: "list<intensity_pair>"}
+
+pg_protein:
+  fields:
+    accession: {type: string}
+    start: {type: int32, nullable: true}
+    end: {type: int32, nullable: true}
+    pre: {type: string, nullable: true}
+    post: {type: string, nullable: true}
+
+protein_position:
+  fields:
+    protein_accession: {type: string}
+    start: {type: int32}
+    end: {type: int32}
+
+ontology_property:
+  fields:
+    key: {type: string}
+    value: {type: string}
+
+ontology_term:
+  fields:
+    accession: {type: string}
+    name: {type: string, nullable: true}
+    properties: {type: "list<ontology_property>", nullable: true}
+
+sample_channel:
+  fields:
+    sample_accession: {type: string}
+    label: {type: string}
+    biological_replicate: {type: int32, nullable: true}
+    technical_replicate: {type: int32, nullable: true}
+
+modification_param:
+  fields:
+    accession: {type: string}
+    name: {type: string, nullable: true}
+    fixed: {type: bool, nullable: true}
+    position: {type: string, nullable: true}
+    target_amino_acid: {type: string, nullable: true}
+
+peptide_per_protein:
+  fields:
+    protein_name: {type: string}
+    peptide_count: {type: int32}
+
+peptide_counts:
+  fields:
+    unique_sequences: {type: int32}
+    total_sequences: {type: int32}
+
+feature_counts:
+  fields:
+    unique_features: {type: int32}
+    total_features: {type: int32}
+
+precursor:
+  fields:
+    selected_ion_mz: {type: float32}
+    selected_ion_charge: {type: int32, nullable: true}
+    selected_ion_intensity: {type: float32, nullable: true}
+    isolation_window_target: {type: float32, nullable: true}
+    isolation_window_lower: {type: float32, nullable: true}
+    isolation_window_upper: {type: float32, nullable: true}
+    spectrum_ref: {type: string, nullable: true}
+
+parameter:
+  fields:
+    key: {type: string}
+    value: {type: string}
+
+cross_link:
+  fields:
+    xl_type: {type: string}
+    partner_sequence: {type: string, nullable: true}
+    partner_peptidoform: {type: string, nullable: true}
+    donor_position: {type: int32}
+    acceptor_position: {type: int32, nullable: true}
+    linker_name: {type: string}
+    linker_accession: {type: string, nullable: true}
+    linker_mass: {type: float64}
