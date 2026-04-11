@@ -2,10 +2,8 @@
 
 A standardized format and toolkit for mass spectrometry proteomics data
 
-[![Python application](https://github.com/bigbio/qpx/actions/workflows/python-app.yml/badge.svg?branch=dev)](https://github.com/bigbio/qpx/actions/workflows/python-app.yml)
-[![Upload Python Package](https://github.com/bigbio/qpx/actions/workflows/python-publish.yml/badge.svg)](https://github.com/bigbio/qpx/actions/workflows/python-publish.yml)
 [![PyPI version](https://badge.fury.io/py/qpx.svg)](https://badge.fury.io/py/qpx)
-[![Codacy Badge](https://app.codacy.com/project/badge/Grade/e71a662e8d4f483094576c1d8f8888c3)](https://app.codacy.com/gh/bigbio/qpx/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
+[![Python application](https://github.com/bigbio/qpx/actions/workflows/python-app.yml/badge.svg?branch=dev)](https://github.com/bigbio/qpx/actions/workflows/python-app.yml)
 
 ---
 
@@ -24,11 +22,72 @@ QPX is a comprehensive ecosystem for proteomics data that provides:
 
 ![QPX Architecture](images/qpx-architecture.svg)
 
-QPX provides a comprehensive proteomics data processing architecture with core modules for data conversion, transformation, visualization, statistical analysis, and project management.
+---
 
-### Performance
+## Quick Start
 
-![QPX Benchmark](images/qpx-benchmark.svg)
+### Installation
+
+=== "pip (Recommended)"
+
+    ```bash
+    pip install qpx
+    ```
+
+=== "conda"
+
+    ```bash
+    conda create -n qpx python=3.10
+    conda activate qpx
+    pip install qpx
+    ```
+
+=== "From Source"
+
+    ```bash
+    git clone https://github.com/bigbio/qpx.git
+    cd qpx
+    pip install .
+    ```
+
+### Verify Installation
+
+```bash
+qpxc --version
+qpxc --help
+```
+
+### Your First Conversion
+
+```bash
+# Convert MaxQuant PSM data to QPX parquet
+qpxc convert maxquant \
+    --msms-file msms.txt \
+    --output-folder ./output \
+    --structures psm
+
+# Convert DIA-NN data
+qpxc convert diann \
+    --report-path report.tsv \
+    --sdrf-file data.sdrf.tsv \
+    --output-folder ./output
+
+# Query the output
+qpxc query sql \
+    --dataset-path ./output \
+    --sql "SELECT * FROM psm LIMIT 10"
+```
+
+### Inspect with Python
+
+```python
+import pyarrow.parquet as pq
+
+table = pq.read_table("output/psm.parquet")
+df = table.to_pandas()
+print(f"Total PSMs: {len(df)}")
+print(df.head())
+```
 
 ---
 
@@ -47,17 +106,13 @@ All conversions produce standardized Parquet and AnnData files following the [QP
 
 ---
 
-## Documentation
+## Ecosystem
 
-| Section                                             | Description                                     |
-| --------------------------------------------------- | ----------------------------------------------- |
-| **[Quick Start](quickstart.md)**                    | Installation and basic usage                    |
-| **[Format Specification](spec/index.md)**           | Data format schemas and specifications          |
-| **[User Guide](guide/index.md)**                    | CLI reference and command documentation         |
-| **[Examples & Tutorials](examples/index.md)**       | Usage examples and integrations                 |
-| **[Troubleshooting](troubleshooting.md)**           | Common issues and solutions                     |
-| **[Community & Support](community.md)**             | Get help, contribute, license & acknowledgments |
+QPX is part of the [quantms ecosystem](https://quantms.org):
 
----
-
-**Ready to get started?** Install qpx and [check out the examples](examples/index.md)!
+| Tool | Description |
+|------|-------------|
+| [quantms](https://github.com/bigbio/quantms) | DDA proteomics Nextflow pipeline |
+| [mokume](https://mokume.quantms.org) | Protein quantification library |
+| [pmultiqc](https://pmultiqc.quantms.org) | Interactive QC reporting |
+| [portal.quantms.org](https://portal.quantms.org) | Browse reanalyzed datasets |

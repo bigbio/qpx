@@ -27,8 +27,6 @@ theme:
         icon: material/brightness-4
         name: Switch to light mode
   features:
-    - navigation.tabs
-    - navigation.tabs.sticky
     - navigation.sections
     - navigation.expand
     - navigation.path
@@ -41,7 +39,6 @@ theme:
     - search.highlight
     - search.share
     - toc.follow
-    - toc.integrate
     - content.code.copy
     - content.code.annotate
     - content.tabs.link
@@ -109,7 +106,6 @@ plugins:
 nav:
   - Introduction:
       - Home: index.md
-      - Quick Start: quickstart.md
       - Examples:
           - Overview: examples/index.md
           - Quick Start: examples/quickstart.md

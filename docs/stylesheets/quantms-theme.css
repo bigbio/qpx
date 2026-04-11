@@ -43,8 +43,8 @@
 }
 
 .md-typeset {
-  font-size: 0.8rem;   /* ~12.8px, same as Furo's 100% on 16px base scaled down */
-  line-height: 1.65;
+  font-size: 0.875rem;   /* 14px — readable, matches GitHub docs sizing */
+  line-height: 1.7;
 }
 
 /* Headings — much smaller than Material defaults */
@@ -225,166 +225,93 @@
 }
 
 /* ===================================================================
-   6. CODE BLOCKS — language label header + better syntax colors
+   6. CODE BLOCKS — dark surface, subtle ghost label, brand top-border
+   Inspired by Vercel/Stripe/Lamin: #0f172a bg, JetBrains Mono,
+   tiny uppercase ghost label top-right, 2px brand accent top border.
    =================================================================== */
 
-/* Wrapper: the .highlight div that contains <pre><code> */
+/* Wrapper — GitHub-style: light bg, subtle border, clean */
 .md-typeset .highlight {
   position: relative;
+  background: #f6f8fa;
+  border: 1px solid #d1d9e0;
   border-radius: 6px;
-  overflow: hidden;
-  border: 1px solid var(--md-default-fg-color--lightest);
   margin: 1em 0;
+  overflow: hidden;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .highlight {
+  background: #161b22;
+  border-color: #30363d;
+}
+
+.md-typeset .highlight pre,
+.md-typeset .highlight code {
+  background: transparent !important;
+  color: #1f2328;
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  line-height: 1.65;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .highlight pre,
+[data-md-color-scheme="slate"] .md-typeset .highlight code {
+  color: #e6edf3;
 }
 
 .md-typeset .highlight pre {
   border: none;
   border-radius: 0;
   margin: 0;
-  font-size: 81.25%;
-  padding-top: 2.2rem;  /* space for language label */
+  padding: 16px;
+  overflow-x: auto;
 }
 
-.md-typeset code {
-  font-size: 81.25%;
-  border-radius: 2px;
+/* Copy button — subtle, top-right */
+.md-typeset .highlight .md-clipboard {
+  color: #656d76;
+  transition: color 0.15s;
+}
+.md-typeset .highlight .md-clipboard:hover {
+  color: #1f2328;
+}
+[data-md-color-scheme="slate"] .md-typeset .highlight .md-clipboard {
+  color: #484f58;
+}
+[data-md-color-scheme="slate"] .md-typeset .highlight .md-clipboard:hover {
+  color: #e6edf3;
 }
 
-/* Inline code — lighter bg */
+/* Line numbers — muted */
+.md-typeset .highlight .linenodiv pre,
+.md-typeset .highlighttable .linenodiv {
+  background: transparent;
+  color: #8b949e;
+  border-right: 1px solid #d1d9e0;
+  padding: 16px 12px;
+  font-size: 0.8rem;
+  user-select: none;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .highlight .linenodiv pre,
+[data-md-color-scheme="slate"] .md-typeset .highlighttable .linenodiv {
+  color: #484f58;
+  border-right-color: #30363d;
+}
+
+/* Inline code — GitHub-style subtle bg */
 .md-typeset :not(pre) > code {
-  padding: 0.1em 0.3em;
-  background-color: var(--md-code-bg-color);
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8em;
+  padding: 0.15em 0.4em;
+  border-radius: 6px;
+  background: rgba(175, 184, 193, 0.2);
+  color: inherit;
+  border: none;
 }
 
-/* --- Language label (top-right pill) --- */
-.md-typeset .highlight::before {
-  position: absolute;
-  top: 0;
-  right: 0;
-  padding: 0.2rem 0.6rem;
-  font-size: 0.65rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  border-bottom-left-radius: 4px;
-  z-index: 1;
-  font-family: var(--md-code-font);
-}
-
-/* Bash / Shell */
-.md-typeset .language-bash.highlight::before,
-.md-typeset .language-shell.highlight::before,
-.md-typeset .language-sh.highlight::before {
-  content: "bash";
-  background-color: #2d333b;
-  color: #7ee787;
-}
-
-/* Python */
-.md-typeset .language-python.highlight::before,
-.md-typeset .language-py.highlight::before {
-  content: "python";
-  background-color: #306998;
-  color: #ffd43b;
-}
-
-/* YAML */
-.md-typeset .language-yaml.highlight::before,
-.md-typeset .language-yml.highlight::before {
-  content: "yaml";
-  background-color: #cb171e;
-  color: #fff;
-}
-
-/* JSON */
-.md-typeset .language-json.highlight::before {
-  content: "json";
-  background-color: #292929;
-  color: #f5a623;
-}
-
-/* CSV / Text / Plain */
-.md-typeset .language-csv.highlight::before {
-  content: "csv";
-  background-color: #217346;
-  color: #fff;
-}
-.md-typeset .language-text.highlight::before {
-  content: "output";
-  background-color: #555;
-  color: #ddd;
-}
-
-/* Groovy / Nextflow */
-.md-typeset .language-groovy.highlight::before,
-.md-typeset .language-nextflow.highlight::before {
-  content: "nextflow";
-  background-color: #24b064;
-  color: #fff;
-}
-
-/* XML / HTML */
-.md-typeset .language-xml.highlight::before,
-.md-typeset .language-html.highlight::before {
-  content: "xml";
-  background-color: #e44d26;
-  color: #fff;
-}
-
-/* R */
-.md-typeset .language-r.highlight::before {
-  content: "R";
-  background-color: #276dc3;
-  color: #fff;
-}
-
-/* SQL */
-.md-typeset .language-sql.highlight::before {
-  content: "sql";
-  background-color: #336791;
-  color: #fff;
-}
-
-/* Dockerfile */
-.md-typeset .language-dockerfile.highlight::before,
-.md-typeset .language-docker.highlight::before {
-  content: "docker";
-  background-color: #0db7ed;
-  color: #fff;
-}
-
-/* --- Top border accent per language --- */
-.md-typeset .language-bash.highlight,
-.md-typeset .language-shell.highlight,
-.md-typeset .language-sh.highlight {
-  border-top: 2px solid #7ee787;
-}
-
-.md-typeset .language-python.highlight,
-.md-typeset .language-py.highlight {
-  border-top: 2px solid #ffd43b;
-}
-
-.md-typeset .language-yaml.highlight,
-.md-typeset .language-yml.highlight {
-  border-top: 2px solid #cb171e;
-}
-
-.md-typeset .language-json.highlight {
-  border-top: 2px solid #f5a623;
-}
-
-.md-typeset .language-csv.highlight {
-  border-top: 2px solid #217346;
-}
-
-.md-typeset .language-groovy.highlight,
-.md-typeset .language-nextflow.highlight {
-  border-top: 2px solid #24b064;
-}
-
-.md-typeset .language-text.highlight {
-  border-top: 2px solid #888;
+[data-md-color-scheme="slate"] .md-typeset :not(pre) > code {
+  background: rgba(110, 118, 129, 0.4);
 }
 
 /* ===================================================================
