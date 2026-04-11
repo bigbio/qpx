@@ -107,16 +107,17 @@ plugins:
   - markdown-exec
 
 nav:
-  - Home:
+  - Introduction:
       - Home: index.md
       - Quick Start: quickstart.md
-  - Examples:
-      - Overview: examples/index.md
-      - Quick Start Examples: examples/quickstart.md
-      - Workflow Examples: examples/workflows.md
-      - Integration Examples: examples/integration.md
-      - QC Examples: examples/qc.md
-  - Format Specification:
+      - Examples:
+          - Overview: examples/index.md
+          - Quick Start: examples/quickstart.md
+          - Workflows: examples/workflows.md
+          - Integration: examples/integration.md
+          - QC: examples/qc.md
+      - Community: community.md
+  - Specification:
       - Overview: spec/index.md
       - Common Concepts:
           - Peptidoform: spec/peptidoform.md
@@ -125,43 +126,42 @@ nav:
           - Scores & CV Terms: spec/scores.md
           - Scan Numbers: spec/scan.md
       - Data Views:
-          - PSM View: spec/psm.md
-          - Feature View: spec/feature.md
-          - Protein Group View: spec/pg.md
-          - Mass Spectra View: spec/mz.md
+          - PSM: spec/psm.md
+          - Feature: spec/feature.md
+          - Protein Group: spec/pg.md
+          - Mass Spectra: spec/mz.md
           - Peptide-Protein Map: spec/pepmap.md
           - API Views: spec/views.md
-      - Expression Views (AnnData):
+      - Expression Views:
           - AnnData Concepts: spec/anndata.md
           - Absolute Expression: spec/absolute.md
           - Differential Expression: spec/differential.md
       - Metadata:
-          - Dataset Metadata: spec/dataset.md
-          - Sample Metadata: spec/sample.md
-          - Run Metadata: spec/run.md
-          - Processing Provenance: spec/provenance.md
-          - SDRF Conversion: spec/sdrf-mapping.md
+          - Dataset: spec/dataset.md
+          - Sample: spec/sample.md
+          - Run: spec/run.md
+          - Provenance: spec/provenance.md
+          - SDRF Mapping: spec/sdrf-mapping.md
       - Technical:
           - Serialization & Parquet: spec/serialization.md
-          - File Extensions & Naming: spec/file-naming.md
+          - File Naming: spec/file-naming.md
           - Versioning: spec/versioning.md
-          - Tool Field Mappings: spec/tool-mappings.md
-  - User Guide:
-      - Overview: guide/index.md
-      - Convert Commands: guide/convert.md
-      - Transform Commands: guide/transform.md
-      - Query Commands: guide/query.md
-      - Info Commands: guide/info.md
-      - Validate Command: guide/validate.md
-      - Ontology Commands: guide/ontology.md
-      - Visualization Commands: guide/visualize.md
-      - Statistics Commands: guide/stats.md
+          - Tool Mappings: spec/tool-mappings.md
+          - Schemas: spec/schemas.md
+          - Ontology Mapping: spec/ontology.md
+  - API:
+      - CLI Overview: guide/index.md
+      - Query: guide/query.md
+      - Info: guide/info.md
+      - Validate: guide/validate.md
+      - Statistics: guide/stats.md
       - Project Management: guide/project.md
-  - Reference:
-      - Schemas: spec/schemas.md
-      - Ontology Mapping: spec/ontology.md
       - Troubleshooting: troubleshooting.md
-  - Community: community.md
+  - Tools:
+      - Converters: guide/convert.md
+      - Transforms: guide/transform.md
+      - Ontology: guide/ontology.md
+      - Visualization: guide/visualize.md
 
 extra:
   social:
