@@ -5,7 +5,7 @@ dynamic = ["version"]
 description = "Quantitative proteomics data toolkit — convert, transform, query, and validate QPX Parquet datasets"
 readme = "README.md"
 license = { text = "Apache-2.0" }
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.14"
 authors = [{ name = "BigBio Team", email = "ypriverol@gmail.com" }]
 keywords = ["python", "multiomics", "proteomics", "quantms", "reanalysis", "parquet", "proteomics-data", "standardized-format", "bioinformatics-data"]
 classifiers = [
@@ -18,7 +18,7 @@ dependencies = [
     "click>=8.1",
     "pandas>=2.1",
     "pyarrow>=14.0",
-    "pyopenms>=3.3.0,<3.5.0",
+    "pyopenms>=3.3.0,<4.0.0",
     "numpy>=1.24",
     "duckdb>=1.1.3",
     "pyyaml>=6.0",
