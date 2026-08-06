@@ -3,8 +3,10 @@
 Each ``PeptideIdentification`` (assigned to a consensus feature or unassigned) is
 one spectrum match. We emit one psm record per hit with PK
 ``[peptidoform, charge, run_file_name, scan]``. The run is resolved from the
-identification's ``map_index`` / ``id_merge_index`` (→ the map's file) or, for a
-single-run consensusXML, the sole run.
+identification's global ``map_index`` (→ the map's file), the parent consensus
+feature's element runs, or — for an unassigned ID in a merged multi-run
+consensusXML — its ``id_merge_index`` (→ the i-th merged MS run, see
+:func:`_merge_index_runs`); falling back to the sole run of a single-run file.
 """
 
 from __future__ import annotations
@@ -103,21 +105,48 @@ def _cf_element_runs(cf, map_info: dict[int, tuple[str, str]]) -> set[str]:
     return runs
 
 
+def _merge_index_runs(cm) -> list[str]:
+    """Run stems indexed by ``id_merge_index`` (the merged-run ordering).
+
+    When OpenMS merges several identification runs into one consensusXML, each
+    moved PeptideIdentification is tagged with ``id_merge_index`` = the position
+    of its ORIGINAL MS run in the merge order — NOT a map-column index. OpenMS
+    records that order as the merged ProteinIdentification's primary MS run paths
+    (the ``spectra_data`` StringList), so concatenating those paths across the
+    ProteinIdentifications, in document order, yields ``id_merge_index -> run``.
+
+    Returns an empty list when no primary MS run path is recorded (e.g. a bare
+    single-run file), in which case the resolver falls back to the sole run.
+    """
+    runs: list[str] = []
+    for prot in cm.getProteinIdentifications():
+        get_paths = getattr(prot, "getPrimaryMSRunPath", None)
+        if get_paths is None:
+            continue
+        paths: list = []
+        get_paths(paths)
+        for p in paths:
+            runs.append(_run_stem(p.decode() if isinstance(p, (bytes, bytearray)) else str(p)))
+    return runs
+
+
 def _run_resolver(cm):
     """Build a callable mapping a PeptideIdentification to its run_file_name.
 
     ``map_index`` is a global map-column index (label-free: one map per run, so it
-    is authoritative). ``id_merge_index``, however, is a LOCAL per-run channel index
-    in a multi-run isobaric (TMT/iTRAQ) consensusXML — each run's channels are
-    indexed ``0..k-1`` — so it cannot be resolved against the global map without
-    knowing the run. Callers with a consensus feature pass ``cf_runs`` (the runs
-    its positive-intensity elements map to); with exactly one such run it is
+    is authoritative). ``id_merge_index``, however, is a per-run MERGE index in a
+    multi-run consensusXML (isobaric TMT/iTRAQ, or any merged file) — it selects
+    the i-th original MS run, not the i-th map column — so it is resolved through
+    the merged-run ordering (:func:`_merge_index_runs`), never the map-column dict.
+    Callers with a consensus feature pass ``cf_runs`` (the runs its
+    positive-intensity elements map to); with exactly one such run it is
     authoritative for that feature's PIDs.
     """
     headers = cm.getColumnHeaders()
     map_run = {idx: _run_stem(headers[idx].filename) for idx in headers}
     distinct = sorted(set(map_run.values()))
     sole_run = distinct[0] if len(distinct) == 1 else None
+    merge_runs = _merge_index_runs(cm)
 
     def resolve(pid, cf_runs=None) -> str | None:
         # Global map index, when present, is always authoritative.
@@ -125,15 +154,16 @@ def _run_resolver(cm):
             run = map_run.get(int(pid.getMetaValue("map_index")))
             if run:
                 return run
-        # Multi-run isobaric: fall back to the consensus feature's element runs.
+        # Assigned PID: fall back to the consensus feature's single element run.
         if cf_runs and len(cf_runs) == 1:
             return next(iter(cf_runs))
-        # Unassigned PIDs (no feature) or a feature spanning several runs: keep the
-        # historical id_merge_index lookup (correct when one map == one run).
+        # Unassigned PID in a merged multi-run consensusXML: id_merge_index selects
+        # the i-th original MS run (merge order), resolved via the merged
+        # ProteinIdentification's primary MS run paths — NOT the map-column dict.
         if pid.metaValueExists("id_merge_index"):
-            run = map_run.get(int(pid.getMetaValue("id_merge_index")))
-            if run:
-                return run
+            idx = int(pid.getMetaValue("id_merge_index"))
+            if 0 <= idx < len(merge_runs):
+                return merge_runs[idx]
         return sole_run
 
     return resolve

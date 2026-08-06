@@ -101,7 +101,7 @@ def _protein_maps(cm) -> _ProteinMaps:
     m = _ProteinMaps()
     for cf in cm:  # assigned IDs: runs are the consensus feature's member maps
         accumulate_cf_maps(cf, map_run, m)
-    for pid in cm.getUnassignedPeptideIdentifications():  # run from map_index/id_merge_index
+    for pid in cm.getUnassignedPeptideIdentifications():  # run from map_index or id_merge_index (merge order)
         accumulate_unassigned_maps(pid, resolve_run, m)
     return m
 

@@ -168,16 +168,29 @@ def test_pg_peptide_counts_are_per_protein(monkeypatch):
 
 
 def test_pg_uses_id_merge_index_after_unmapped_map_index():
+    """An unassigned PID with an unmapped map_index resolves its run via
+    id_merge_index -> the i-th merged MS run (spectra_data order), not the
+    map-column dict."""
     from qpx.converters.openms_consensus.pg_adapter import _protein_maps
 
     class Header:
         def __init__(self, filename):
             self.filename = filename
 
+    class ProteinIdentification:
+        @staticmethod
+        def getPrimaryMSRunPath(output):
+            # Merge order: id_merge_index 0 -> run_01, 1 -> run_02.
+            output.extend([b"run_01.mzML", b"run_02.mzML"])
+
     class ConsensusMap:
         @staticmethod
         def getColumnHeaders():
             return {0: Header("run_01.mzML"), 1: Header("run_02.mzML")}
+
+        @staticmethod
+        def getProteinIdentifications():
+            return [ProteinIdentification()]
 
         @staticmethod
         def getUnassignedPeptideIdentifications():
@@ -257,6 +270,118 @@ def test_consensus_psms_use_parent_feature_run_context(tmp_path):
 
     assert len(records) == 1
     assert records[0]["run_file_name"] == "run_B"
+
+
+# A merged 2-plex isobaric consensusXML: two input MS runs (plexA, plexB), each
+# contributing two TMT channels (maps 0-1 = plexA, 2-3 = plexB). The merged
+# ProteinIdentification records the merge order as ``spectra_data`` = [plexA, plexB],
+# so an unassigned PID's ``id_merge_index`` selects the i-th run. The unassigned
+# PID below carries ``id_merge_index=1`` -> it belongs to plexB (the SECOND run),
+# NOT plexA — the regression for issue #243.
+_TWO_PLEX_ISOBARIC_CONSENSUSXML = """<?xml version="1.0" encoding="ISO-8859-1"?>
+<consensusXML version="1.7" experiment_type="label-free"
+  xsi:noNamespaceSchemaLocation="https://raw.githubusercontent.com/OpenMS/OpenMS/develop/share/OpenMS/SCHEMAS/ConsensusXML_1_7.xsd"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <IdentificationRun id="PI_0" date="0000-00-00T00:00:00" search_engine="" search_engine_version="">
+    <SearchParameters db="" db_version="" taxonomy="" mass_type="monoisotopic" charges=""
+      enzyme="unknown_enzyme" missed_cleavages="0" precursor_peak_tolerance="0"
+      precursor_peak_tolerance_ppm="false" peak_mass_tolerance="0"
+      peak_mass_tolerance_ppm="false">
+    </SearchParameters>
+    <ProteinIdentification score_type="" higher_score_better="true" significance_threshold="0">
+      <ProteinHit id="PH_0" accession="P12345" score="0" sequence=""></ProteinHit>
+      <UserParam type="stringList" name="spectra_data" value="[plexA.mzML,plexB.mzML]"/>
+    </ProteinIdentification>
+  </IdentificationRun>
+  <mapList count="4">
+    <map id="0" name="plexA.mzML" unique_id="1" label="tmt6plex_126" size="1"></map>
+    <map id="1" name="plexA.mzML" unique_id="2" label="tmt6plex_127" size="1"></map>
+    <map id="2" name="plexB.mzML" unique_id="3" label="tmt6plex_126" size="1"></map>
+    <map id="3" name="plexB.mzML" unique_id="4" label="tmt6plex_127" size="1"></map>
+  </mapList>
+  <consensusElementList>
+    <consensusElement id="e_0" quality="0.0" charge="2">
+      <centroid rt="100.0" mz="450.25" it="0.0"/>
+      <groupedElementList>
+        <element map="0" id="0" rt="100.0" mz="450.25" it="1000.0"/>
+        <element map="1" id="1" rt="100.0" mz="450.25" it="2000.0"/>
+      </groupedElementList>
+      <PeptideIdentification identification_run_ref="PI_0" score_type="" higher_score_better="true"
+        significance_threshold="0" MZ="450.26" RT="100"
+        spectrum_reference="controllerType=0 controllerNumber=1 scan=42">
+        <PeptideHit score="0" sequence="PEPTIDEK" charge="2" protein_refs="PH_0">
+          <UserParam type="string" name="target_decoy" value="target"/>
+        </PeptideHit>
+      </PeptideIdentification>
+    </consensusElement>
+  </consensusElementList>
+  <UnassignedPeptideIdentification identification_run_ref="PI_0" score_type="" higher_score_better="true"
+    significance_threshold="0" MZ="500.30" RT="200"
+    spectrum_reference="controllerType=0 controllerNumber=1 scan=77">
+    <PeptideHit score="0" sequence="ELVISLIVEK" charge="2" protein_refs="PH_0">
+      <UserParam type="string" name="target_decoy" value="target"/>
+    </PeptideHit>
+    <UserParam type="int" name="id_merge_index" value="1"/>
+  </UnassignedPeptideIdentification>
+</consensusXML>
+"""
+
+
+def test_unassigned_isobaric_psm_run_from_id_merge_index(tmp_path):
+    """An unassigned PSM in a merged multi-run isobaric consensusXML is attributed
+    to the run its id_merge_index selects (the SECOND run), not the first map's
+    run — the regression for issue #243."""
+    from qpx.converters.openms_consensus.psm_adapter import consensus_psms_to_records
+
+    path = tmp_path / "two_plex.consensusXML"
+    path.write_text(_TWO_PLEX_ISOBARIC_CONSENSUSXML)
+
+    records = consensus_psms_to_records(str(path))
+
+    unassigned = [r for r in records if r["peptidoform"] == "ELVISLIVEK"]
+    assert len(unassigned) == 1
+    # id_merge_index=1 -> spectra_data[1] = plexB. The bug attributed it to plexA.
+    assert unassigned[0]["run_file_name"] == "plexB"
+    assert list(unassigned[0]["scan"]) == [77]
+
+
+def test_unassigned_isobaric_pg_run_from_id_merge_index(tmp_path):
+    """The corrected run flows into the pg adapter's acc_to_runs for an unassigned
+    PID (via accumulate_unassigned_maps)."""
+    from qpx.converters.openms_consensus.feature_adapter import load_consensus_map
+    from qpx.converters.openms_consensus.pg_adapter import _protein_maps
+
+    path = tmp_path / "two_plex_pg.consensusXML"
+    path.write_text(_TWO_PLEX_ISOBARIC_CONSENSUSXML)
+
+    m = _protein_maps(load_consensus_map(str(path)))
+    # ELVISLIVEK (unassigned, id_merge_index=1) contributes plexB, not plexA.
+    assert "plexB" in m.acc_to_runs["P12345"]
+    assert "plexA" in m.acc_to_runs["P12345"]  # from the assigned PEPTIDEK feature
+
+
+def test_unassigned_isobaric_run_streaming_matches_pyopenms(tmp_path):
+    """The streaming reader resolves the unassigned run identically to pyopenms."""
+    import json
+
+    import pyarrow.parquet as pq
+
+    cx = tmp_path / "two_plex_stream.consensusXML"
+    cx.write_text(_TWO_PLEX_ISOBARIC_CONSENSUSXML)
+
+    def convert(streaming):
+        out = tmp_path / ("stream" if streaming else "pyopenms")
+        return OpenMSConsensusConverter().convert(
+            str(cx), str(out), output_prefix="d", structures=("feature", "psm", "pg"), streaming=streaming
+        )
+
+    wp, ws = convert(False), convert(True)
+
+    def canon(path):
+        return sorted(json.dumps(r, sort_keys=True, default=str) for r in pq.read_table(str(path)).to_pylist())
+
+    for view in ("feature", "psm", "pg"):
+        assert canon(wp[view]) == canon(ws[view]), f"{view} differs between pyopenms and streaming"
 
 
 def test_consensus_psm_multihit_keeps_lowest_pep_and_merges_scores(tmp_path):
