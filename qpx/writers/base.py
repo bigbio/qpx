@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import logging
 import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Sequence
@@ -18,6 +19,8 @@ from qpx.version import QPX_SPEC_VERSION
 
 if TYPE_CHECKING:
     import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 
 # High-entropy float leaves that compress poorly under the default
@@ -413,7 +416,7 @@ class BaseWriter:
         pass tables whose id column is absent or null.
         """
         table = self._fill_identity_table(table)
-        errors = self._schema_class.validate(table, strict=True)
+        errors = self._schema_class.validate(table, strict=False)
         if errors:
             raise ValueError("Schema validation failed:\n" + "\n".join(errors))
         self._ensure_writer()
@@ -481,8 +484,14 @@ class BaseWriter:
             raise ValueError(f"Primary key ({id_field}) contains {null_count} null row(s) out of {total_count}")
         if unique_count != total_count:
             duplicate_count = total_count - unique_count
-            raise ValueError(
-                f"Primary key ({id_field}) has {duplicate_count} duplicate row(s) ({unique_count} unique out of {total_count})"
+            logger.warning(
+                "Primary key (%s) has %d duplicate row(s) (%d unique out of %d). "
+                "Duplicate ids are tolerated as a warning while the qpx format stabilises "
+                "and usually indicate a converter identity bug.",
+                id_field,
+                duplicate_count,
+                unique_count,
+                total_count,
             )
 
     def _write_arrow_batch(self, records: list[dict]):

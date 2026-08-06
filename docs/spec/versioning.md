@@ -52,17 +52,28 @@ This version defines all core serialized views (PSM, Feature, PG, MZ), the deriv
 
 ### Changelog
 
-- **PG identity now keys on full group membership** (backward-incompatible for
-  `pg_id` values): the PG schema-default `identity_composite` changed from
-  `[anchor_protein, grouped_runs, label]` to `[pg_accessions, grouped_runs, label]`.
-  Keying on only the group **leader** (`anchor_protein`) gave two genuinely distinct
-  protein groups that share a leading protein the **same** `pg_id`, and split a
-  single group with inconsistent per-precursor annotations into duplicate-identity
-  rows. The identity now hashes the full `pg_accessions` membership
-  (order-independently, like `grouped_runs`), so distinct groups get distinct ids.
-  `anchor_protein` remains a descriptive field. This changes derived `pg_id`
-  values, so pg files must be regenerated. (Whether this ships as a spec-version
-  bump is deferred to the maintainer; `QPX_SPEC_VERSION` is unchanged here.)
+- **1.1.2** (on-disk spec version stays `1.1`): two related fixes to identity
+  handling.
+    - **PG identity now keys on full group membership** (backward-incompatible for
+      `pg_id` values): the PG schema-default `identity_composite` changed from
+      `[anchor_protein, grouped_runs, label]` to
+      `[pg_accessions, grouped_runs, label]`. Keying on only the group **leader**
+      (`anchor_protein`) gave two genuinely distinct protein groups that share a
+      leading protein the **same** `pg_id`, and split a single group with
+      inconsistent per-precursor annotations into duplicate-identity rows. The
+      identity now hashes the full `pg_accessions` membership (order-independently,
+      like `grouped_runs`), so distinct groups get distinct ids. `anchor_protein`
+      remains a descriptive field.
+    - **Duplicate primary keys on the write/convert path are now a warning, not a
+      hard error.** While the format stabilises, writers and converters persist
+      source data as-produced and log a warning on a duplicate identity id rather
+      than crashing (a duplicate usually signals a converter identity bug worth
+      investigating). A **NULL primary key remains a fatal error**, and
+      `qpxc validate --strict` (the audit/CI path) still reports a duplicate
+      primary key as an **error**.
+    - **No in-place migration.** These changes affect derived `pg_id` values and
+      identity handling; regenerate qpx files by **re-converting from the original
+      source files** — there is no on-disk migration.
 - **1.1** (backward-incompatible, pre-2.0 stabilisation): the PG view now keys on
   `grouped_runs` (`list<string>`) instead of the scalar `run_file_name`. A
   protein-group quantity applies to the set of raw files (fractions) aggregated

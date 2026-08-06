@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import pyarrow as pa
@@ -158,8 +159,8 @@ class TestOpenMSConverter:
         assert "grouped_runs" in pg_table.column_names
         assert "run_file_name" not in pg_table.column_names
 
-    def test_invalid_legacy_identity_does_not_replace_output(self, tmp_path):
-        """Strict validation happens before a rewritten core file is installed."""
+    def test_duplicate_identity_warns_and_replaces_output(self, tmp_path, caplog):
+        """A duplicate primary key is tolerated with a warning; the core file is rewritten."""
         qpx_dir = tmp_path / "openms_qpx"
         qpx_dir.mkdir()
         records = [
@@ -179,10 +180,14 @@ class TestOpenMSConverter:
         sentinel = b"pre-existing output"
         destination.write_bytes(sentinel)
 
-        with pytest.raises(ValueError, match="Primary key.*duplicate"):
+        with caplog.at_level(logging.WARNING):
             OpenMSConverter(qpx_dir=qpx_dir).convert(output_folder=output, output_prefix="openms")
 
-        assert destination.read_bytes() == sentinel
+        # The converter completed: the destination is replaced with the real parquet output.
+        assert destination.read_bytes() != sentinel
+        rewritten = pq.read_table(destination)
+        assert rewritten.num_rows == 2
+        assert "duplicate row" in caplog.text.lower()
         assert not list(output.glob(".openms.psm.parquet.*.tmp"))
 
     def test_convert_full_bundle(self, tmp_path):

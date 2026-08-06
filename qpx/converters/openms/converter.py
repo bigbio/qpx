@@ -153,11 +153,19 @@ def _collect_score_names(table_path: Path) -> set[str]:
 
 
 def _validate_core(discovered: dict[str, Path]) -> None:
-    """Validate each discovered parquet file against its QPX schema."""
+    """Validate each discovered parquet file against its QPX schema.
+
+    Uses ``strict=False`` so the convert path persists source data as-produced:
+    a duplicate primary key (and a null in a non-nullable column) is a warning,
+    not a blocking error, while the format stabilises. Missing columns and type
+    mismatches remain errors regardless of ``strict``. Null primary keys are
+    still fatal — the writer rejects them at close time before this runs. The
+    ``qpxc validate --strict`` audit/CI path stays strict and is unaffected.
+    """
     for view, path in discovered.items():
         schema = load_schema(_VIEW_SCHEMAS[view])
         table = pq.read_table(str(path))
-        result = schema.validate_full(table, strict=True)
+        result = schema.validate_full(table, strict=False)
         if not result.is_valid:
             errors = "; ".join(i.message for i in result.errors)
             raise ValueError(f"Validation failed for {path.name}: {errors}")
