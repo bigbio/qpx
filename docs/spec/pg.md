@@ -14,7 +14,7 @@ This view is analogous to outputs from tools such as MaxQuant (`proteinGroups.tx
 ## Schema
 
 `pg_id` is the non-null primary key. The schema-default `identity_composite` is
-`[anchor_protein, grouped_runs, label]`; `label` is null only for
+`[pg_accessions, grouped_runs, label]`; `label` is null only for
 identification-only protein groups that carry no quantity. Fields marked with
 **(nullable)** may have null values. See the full YAML schema in
 [`pg.yaml`](schemas/pg.yaml).
@@ -68,7 +68,7 @@ identification-only protein groups that carry no quantity. Fields marked with
 | `additional_intensities` | Pre-computed intensity values from the upstream tool (normalized, LFQ, iBAQ, etc.) for this row's label. See [Intensities](intensities.md) | `array[struct]` | No |
 | `additional_scores` | Additional scores and metrics (posterior error probability, confidence, etc.). See [Scores](scores.md) | `array[struct]` | No |
 
-Since QPX 1.1 the protein-group quantification is **flattened**: instead of an `intensities` list, each row carries a scalar `label` + `intensity`, so there is one row per `(anchor_protein, grouped_runs, label)`. Identification-only groups (no quantity) have null `label`/`intensity`.
+Since QPX 1.1 the protein-group quantification is **flattened**: instead of an `intensities` list, each row carries a scalar `label` + `intensity`, so there is one row per `(pg_accessions, grouped_runs, label)`. Identification-only groups (no quantity) have null `label`/`intensity`.
 
 Each entry in `additional_intensities` contains:
 

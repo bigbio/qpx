@@ -1,7 +1,7 @@
 name: pg
 file_type: pg_file
 primary_key: [pg_id]
-identity_composite: [anchor_protein, grouped_runs, label]
+identity_composite: [pg_accessions, grouped_runs, label]
 doc: "Protein groups with per-quantification-unit quantification (one row per label; label/intensity flattened from the old intensities list)"
 
 fields:
@@ -16,7 +16,7 @@ fields:
   pg_accessions:
     type: "list<string>"
     required: true
-    doc: "Protein accessions within this group"
+    doc: "Protein accessions within this group. Part of the default identity composite: the FULL group membership (not just the leader) keys the pg_id, so two distinct groups that happen to share a leading protein get distinct ids. Hashed order-independently (membership is a set)."
   pg_names:
     type: "list<string>"
     doc: "Protein group names"
@@ -33,7 +33,7 @@ fields:
   anchor_protein:
     type: string
     required: true
-    doc: "Anchor/leading protein of the group"
+    doc: "Anchor/leading protein of the group (the representative used for feature->pg joins). Descriptive only — NOT part of the pg_id identity, which keys on the full pg_accessions membership."
 
   # Quantification-unit context
   grouped_runs:

@@ -50,7 +50,7 @@ def test_schema_identity_metadata():
     assert tuple(PsmSchema._primary_key) == ("psm_id",)
     assert tuple(PsmSchema.identity_composite) == ("peptidoform", "charge", "run_file_name", "scan")
     assert tuple(PgSchema._primary_key) == ("pg_id",)
-    assert tuple(PgSchema.identity_composite) == ("anchor_protein", "grouped_runs", "label")
+    assert tuple(PgSchema.identity_composite) == ("pg_accessions", "grouped_runs", "label")
 
 
 def test_writer_rejects_unknown_identity_composite_field(tmp_path):
@@ -114,13 +114,13 @@ def test_pg_roundtrip_derives_id(tmp_path):
 
     table = pq.read_table(path)
     ids = table.column("pg_id").to_pylist()
-    anchors = table.column("anchor_protein").to_pylist()
+    pg_accessions = table.column("pg_accessions").to_pylist()
     grouped = table.column("grouped_runs").to_pylist()
     labels = table.column("label").to_pylist()
     assert None not in ids
     assert len(set(ids)) == len(ids)
     for i, got in enumerate(ids):
-        assert got == derive_id([anchors[i], grouped[i], labels[i]])
+        assert got == derive_id([pg_accessions[i], grouped[i], labels[i]], unordered_list_indices=(0, 1))
 
 
 def test_identified_feature_id_is_derived_by_default(tmp_path):

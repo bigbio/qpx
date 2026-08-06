@@ -311,6 +311,129 @@ def test_plexdia_pg_preserves_each_channel_quantity(tmp_path):
     }
 
 
+def test_diann_pg_inconsistent_annotations_do_not_split_group(tmp_path):
+    """One protein group with inconsistent per-precursor name/gene annotations
+    must produce a single unique pg record, not duplicate-identity rows.
+
+    Regression for bigbio/qpx#240: grouping on pg_names/gg_accessions split a
+    group whose precursor rows carried different Genes/Protein.Names into records
+    that shared the same (pg_accessions, grouped_runs, label) identity, colliding
+    on pg_id and tripping the close-time uniqueness validator.
+    """
+    from qpx.converters.diann.pg_adapter import DiannPgAdapter
+
+    shared = {
+        "Run": "run_A",
+        "Protein.Group": "P1;P2",
+        "Protein.Names": "N1;N2",
+        "PG.Quantity": 1000.0,
+        "PG.MaxLFQ": 900.0,
+        "Precursor.Charge": 2,
+        "Q.Value": 0.002,
+        "PG.Q.Value": 0.002,
+        "Global.PG.Q.Value": 0.003,
+        "GG.Q.Value": 0.004,
+        "Proteotypic": 1,
+        "Precursor.Quantity": 100.0,
+    }
+    report_path = tmp_path / "inconsistent_report.tsv"
+    pd.DataFrame(
+        [
+            {**shared, "Genes": "G1;G2", "Stripped.Sequence": "PEPTIDEK", "Precursor.Id": "PEPTIDEK2"},
+            {**shared, "Genes": "G1", "Stripped.Sequence": "PEPTIDER", "Precursor.Id": "PEPTIDER2"},
+        ]
+    ).to_csv(report_path, sep="\t", index=False)
+    matrix_path = tmp_path / "inconsistent_pg_matrix.tsv"
+    pd.DataFrame([{"Protein.Group": "P1;P2", "Protein.Names": "N1;N2", "Genes": "G1;G2", "run_A": 900.0}]).to_csv(
+        matrix_path, sep="\t", index=False
+    )
+
+    output_path = tmp_path / "inconsistent.pg.parquet"
+    # Without the fix, adapter.convert would raise at close time:
+    # "Primary key (pg_id) has 1 duplicate row(s)".
+    with DiannPgAdapter() as adapter:
+        adapter.convert(
+            diann_report=str(report_path),
+            pg_matrix_path=str(matrix_path),
+            output_path=str(output_path),
+        )
+
+    table = pq.read_table(output_path)
+    pg_ids = table.column("pg_id").to_pylist()
+    assert table.num_rows == 1, "the single protein group must yield exactly one record"
+    assert len(set(pg_ids)) == len(pg_ids), "pg_id must be unique"
+    row = table.to_pylist()[0]
+    assert row["pg_accessions"] == ["P1", "P2"]
+    assert row["anchor_protein"] == "P1"
+
+
+def test_diann_pg_distinct_groups_sharing_leader_get_distinct_ids(tmp_path):
+    """Two DIFFERENT protein groups that share a leading protein must get
+    DISTINCT pg_ids.
+
+    The pg identity keys on the full pg_accessions membership, not on the leader
+    alone, so ``P1;P2`` and ``P1;P3`` (same anchor ``P1``, same run, same label)
+    are distinct groups and must not collide on pg_id.
+    """
+    from qpx.converters.diann.pg_adapter import DiannPgAdapter
+
+    common = {
+        "Run": "run_A",
+        "PG.Quantity": 1000.0,
+        "PG.MaxLFQ": 900.0,
+        "Precursor.Charge": 2,
+        "Q.Value": 0.002,
+        "PG.Q.Value": 0.002,
+        "Global.PG.Q.Value": 0.003,
+        "GG.Q.Value": 0.004,
+        "Proteotypic": 1,
+        "Precursor.Quantity": 100.0,
+    }
+    report_path = tmp_path / "shared_leader_report.tsv"
+    pd.DataFrame(
+        [
+            {
+                **common,
+                "Protein.Group": "P1;P2",
+                "Protein.Names": "N1;N2",
+                "Genes": "G1;G2",
+                "Stripped.Sequence": "PEPTIDEK",
+                "Precursor.Id": "PEPTIDEK2",
+            },
+            {
+                **common,
+                "Protein.Group": "P1;P3",
+                "Protein.Names": "N1;N3",
+                "Genes": "G1;G3",
+                "Stripped.Sequence": "PEPTIDER",
+                "Precursor.Id": "PEPTIDER2",
+            },
+        ]
+    ).to_csv(report_path, sep="\t", index=False)
+    matrix_path = tmp_path / "shared_leader_pg_matrix.tsv"
+    pd.DataFrame(
+        [
+            {"Protein.Group": "P1;P2", "Protein.Names": "N1;N2", "Genes": "G1;G2", "run_A": 900.0},
+            {"Protein.Group": "P1;P3", "Protein.Names": "N1;N3", "Genes": "G1;G3", "run_A": 800.0},
+        ]
+    ).to_csv(matrix_path, sep="\t", index=False)
+
+    output_path = tmp_path / "shared_leader.pg.parquet"
+    with DiannPgAdapter() as adapter:
+        adapter.convert(
+            diann_report=str(report_path),
+            pg_matrix_path=str(matrix_path),
+            output_path=str(output_path),
+        )
+
+    table = pq.read_table(output_path)
+    rows = table.to_pylist()
+    assert table.num_rows == 2, "two distinct protein groups must yield two records"
+    assert all(row["anchor_protein"] == "P1" for row in rows)
+    pg_ids = table.column("pg_id").to_pylist()
+    assert len(set(pg_ids)) == 2, "distinct membership must derive distinct pg_ids"
+
+
 def test_diann_maxlfq_fallback_keeps_experimental_label(tmp_path):
     """MaxLFQ-only PG output remains joinable to an LFQ run sample."""
     from qpx.converters.diann.pg_adapter import DiannPgAdapter

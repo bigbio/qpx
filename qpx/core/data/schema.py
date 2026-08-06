@@ -148,13 +148,16 @@ def _pg_referential_issues(
     * **duplicate_grouped_run** — ``grouped_runs`` is a set of distinct raw files;
       it must contain no duplicate element.
     * **run_double_count** (run-disjointness) — within one
-      ``(anchor_protein, label)``, the ``grouped_runs`` sets across rows must be
+      ``(pg_accessions, label)`` — the protein-group *membership* that keys the
+      pg_id, not merely the leader — the ``grouped_runs`` sets across rows must be
       disjoint, so every raw file contributes to at most one row and no
-      measurement is counted twice. This is the join-free form of the
-      double-count check.
+      measurement is counted twice. Keying on the full membership (canonicalized
+      order-independently) matches the pg_id identity, so two genuinely distinct
+      groups that share a leading protein are not conflated into a false
+      double-count. This is the join-free form of the double-count check.
     """
     names = set(table.schema.names)
-    if not {"anchor_protein", "grouped_runs", "label"} <= names or len(table) == 0:
+    if not {"pg_accessions", "grouped_runs", "label"} <= names or len(table) == 0:
         return []
 
     import duckdb
@@ -183,13 +186,16 @@ def _pg_referential_issues(
                 -- Deduplicate each row's own grouped_runs first (a within-row
                 -- duplicate is already reported by duplicate_grouped_run); this
                 -- way run_double_count measures only cross-row disjointness.
-                SELECT anchor_protein, label, UNNEST(list_distinct(grouped_runs)) AS run
+                -- Key on the canonical (order-independent) group MEMBERSHIP, so
+                -- distinct groups sharing a leader are not conflated.
+                SELECT list_sort(list_distinct(pg_accessions)) AS members, label,
+                       UNNEST(list_distinct(grouped_runs)) AS run
                 FROM pg_validate
             ),
             repeated AS (
                 SELECT COUNT(*) AS c
                 FROM exploded
-                GROUP BY anchor_protein, label, run
+                GROUP BY members, label, run
                 HAVING COUNT(*) > 1
             )
             SELECT COALESCE(SUM(c - 1), 0) FROM repeated
@@ -204,7 +210,7 @@ def _pg_referential_issues(
                     column=None,
                     message=(
                         f"{double} run occurrence(s) repeat across pg rows sharing the same "
-                        "(anchor_protein, label): grouped_runs sets must be disjoint or protein "
+                        "(pg_accessions, label): grouped_runs sets must be disjoint or protein "
                         "intensity is double-counted"
                     ),
                 )

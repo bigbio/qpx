@@ -45,6 +45,19 @@ _PG_EXTRA_COLS = [
 _DECOY_PREFIXES = ("DECOY_", "decoy_", "rev_", "REV_")
 
 
+def _first_non_null(series: pd.Series):
+    """Return the first non-null, non-empty value in *series* (else None).
+
+    Used to collapse a protein group's per-precursor name/gene annotations to a
+    single representative value so inconsistent annotations do not split the
+    group into duplicate-identity records.
+    """
+    for value in series:
+        if pd.notna(value) and value != "":
+            return value
+    return None
+
+
 class DiannPgAdapter(DiaNNBaseAdapter):
     """Convert DIA-NN report + PG matrix to ``pg.parquet``.
 
@@ -233,17 +246,23 @@ class DiannPgAdapter(DiaNNBaseAdapter):
         report_df["run_file_name"] = report_df["run_file_name_clean"]
         report_df.drop(columns=["run_file_name_clean"], inplace=True)
 
-        # Aggregate per protein group per run — single groupby over the whole batch
+        # Aggregate per protein group per run — one record per (pg_accessions, run).
+        # Grouping additionally on pg_names/gg_accessions would split a single
+        # protein group into multiple records when DIA-NN emits inconsistent
+        # name/gene annotations across a group's precursor rows; those records
+        # share the same (pg_accessions, grouped_runs, label) identity and would
+        # collide on pg_id. Names/genes are instead derived within the group
+        # below (first non-null), so annotation noise no longer splits a group.
         pg_groups = report_df.groupby(
-            ["pg_accessions", "pg_names", "gg_accessions", "run_file_name"],
+            ["pg_accessions", "run_file_name"],
             dropna=False,
         )
 
-        for (pg_acc, pg_nm, gg_acc, ref), group in pg_groups:
+        for (pg_acc, ref), group in pg_groups:
             rec = self._build_pg_record(
                 pg_acc=str(pg_acc),
-                pg_names_raw=pg_nm,
-                gg_acc_raw=gg_acc,
+                pg_names_raw=_first_non_null(group["pg_names"]),
+                gg_acc_raw=_first_non_null(group["gg_accessions"]),
                 run_file_name=str(ref),
                 group=group,
                 pg_matrix_indexed=pg_matrix_indexed,

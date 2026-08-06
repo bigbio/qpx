@@ -302,7 +302,14 @@ class BaseWriter:
     ) -> list[int]:
         """Preserve or derive row IDs, recording overridden producer IDs."""
         ids: list[int] = []
-        unordered_list_indices = tuple(index for index, field in enumerate(composite) if field == "grouped_runs")
+        # Identity list fields whose element order is not meaningful: grouped_runs
+        # is a set of raw files, and pg_accessions is a set of group members (the
+        # anchor/leader is carried separately). Hashing them order-independently
+        # keeps the derived id stable across producers that emit the same
+        # membership in a different order.
+        unordered_list_indices = tuple(
+            index for index, field in enumerate(composite) if field in ("grouped_runs", "pg_accessions")
+        )
         for index, provided in enumerate(existing):
             if provided is not None and not self._should_override_provided_id(index, composite_values):
                 ids.append(provided)

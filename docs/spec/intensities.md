@@ -126,7 +126,7 @@ additional_intensities: array[struct{
     The `intensities: list<{label, intensity}>` struct on this page describes the
     **feature** view. Since QPX 1.1 the protein-group view is **flattened**: each
     row carries scalar `label` + `intensity` columns and there is one row per
-    `(anchor_protein, grouped_runs, label)`. `label`/`intensity` are null for
+    `(pg_accessions, grouped_runs, label)`. `label`/`intensity` are null for
     identification-only groups. See [Protein Group](pg.md) and the
     [Data Model](data-model.md).
 

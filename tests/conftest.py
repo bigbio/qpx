@@ -202,12 +202,21 @@ def make_pg_record(
     run_file_name="run_01",
     is_decoy=False,
     intensities=None,
+    pg_accessions=None,
 ):
-    """Create a minimal valid PG record dict."""
+    """Create a minimal valid PG record dict.
+
+    ``pg_accessions`` defaults to a group led by ``anchor_protein`` (the pg_id
+    identity keys on the full membership), so distinct anchors yield distinct
+    groups. The default preserves the historical ``["P12345", "P12346"]`` group
+    for the default anchor.
+    """
     if intensities is None:
         intensities = [{"label": "TMT126", "intensity": 5000.0}]
+    if pg_accessions is None:
+        pg_accessions = [anchor_protein, "P12346"]
     return {
-        "pg_accessions": ["P12345", "P12346"],
+        "pg_accessions": pg_accessions,
         "pg_names": None,
         "gg_accessions": None,
         "gg_names": ["GENE1"],

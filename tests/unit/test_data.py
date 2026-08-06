@@ -190,7 +190,7 @@ def test_pg_schema_grouped_runs_is_list_string():
     assert pa.types.is_list(field.type)
     assert pa.types.is_string(field.type.value_type)
     assert tuple(PgSchema._primary_key) == ("pg_id",)
-    assert tuple(PgSchema.identity_composite) == ("anchor_protein", "grouped_runs", "label")
+    assert tuple(PgSchema.identity_composite) == ("pg_accessions", "grouped_runs", "label")
 
 
 def test_pg_grouped_runs_roundtrip(pg_parquet):
@@ -562,7 +562,10 @@ def _write_feature_pg_dataset(ds_dir, feature_pg_ids):
         writer.write_batch([feature])
     with PgWriter(ds_dir / "exp.pg.parquet") as writer:
         writer.write_batch([pg])
-    pg_id = derive_id([pg["anchor_protein"], pg["grouped_runs"], pg["intensities"][0]["label"]])
+    pg_id = derive_id(
+        [pg["pg_accessions"], pg["grouped_runs"], pg["intensities"][0]["label"]],
+        unordered_list_indices=(0, 1),
+    )
     return ds_dir, pg_id
 
 

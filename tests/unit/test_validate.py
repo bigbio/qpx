@@ -19,22 +19,30 @@ from qpx.core.data.identity import derive_id
 from tests.conftest import _valid_arrays
 
 
-def _pg_table(anchor, grouped_runs, label=None):
+def _pg_table(anchor, grouped_runs, label=None, pg_accessions=None):
     """Build a minimal valid PG table, overriding only the identity columns.
 
     The primary key is the derived ``pg_id``; it is stamped here the same way
-    the writer would, from the (anchor_protein, grouped_runs, label) composite.
+    the writer would, from the ``(pg_accessions, grouped_runs, label)`` composite
+    (both list fields hashed order-independently). ``anchor_protein`` is the group
+    leader (descriptive); ``pg_accessions`` defaults to the single-member group
+    ``[anchor]`` but may be passed explicitly to model multi-protein groups (e.g.
+    two distinct groups that share a leading protein).
     """
     schema = PgSchema.get_arrow_schema()
     n = len(anchor)
     labels = label if label is not None else [None] * n
-    pg_ids = [derive_id([anchor[i], grouped_runs[i], labels[i]], unordered_list_indices=(1,)) for i in range(n)]
+    if pg_accessions is None:
+        pg_accessions = [None if a is None else [a] for a in anchor]
+    pg_ids = [derive_id([pg_accessions[i], grouped_runs[i], labels[i]], unordered_list_indices=(0, 1)) for i in range(n)]
     arrays = {}
     for f in schema:
         if f.name == "pg_id":
             arrays[f.name] = pa.array(pg_ids, type=f.type)
         elif f.name == "anchor_protein":
             arrays[f.name] = pa.array(anchor, type=f.type)
+        elif f.name == "pg_accessions":
+            arrays[f.name] = pa.array(pg_accessions, type=f.type)
         elif f.name == "grouped_runs":
             arrays[f.name] = pa.array(grouped_runs, type=f.type)
         elif f.name == "label":
@@ -109,6 +117,36 @@ def test_duplicate_run_within_one_group_is_not_reported_as_cross_row_double_coun
 
     assert any(issue.check == "duplicate_grouped_run" for issue in result.issues)
     assert not any(issue.check == "run_double_count" for issue in result.issues)
+
+
+def test_distinct_groups_sharing_leader_are_not_a_run_double_count():
+    """Two DIFFERENT groups that share a leading protein (same anchor) but have
+    different membership are distinct pg rows; overlapping grouped_runs must NOT
+    be flagged as a double-count — the check keys on full pg_accessions."""
+    table = _pg_table(
+        anchor=["P1", "P1"],
+        pg_accessions=[["P1", "P2"], ["P1", "P3"]],
+        grouped_runs=[["r1"], ["r1"]],
+        label=["LFQ", "LFQ"],
+    )
+    # Distinct membership -> distinct pg_id, so no duplicate PK either.
+    assert len(set(table.column("pg_id").to_pylist())) == 2
+    result = PgSchema.validate_full(table, strict=True)
+    assert not any(issue.check == "run_double_count" for issue in result.issues)
+    assert not any(issue.check == "duplicate_pk" for issue in result.issues)
+
+
+def test_same_group_overlapping_runs_is_a_run_double_count():
+    """The SAME group (same pg_accessions + label) measured over overlapping
+    run sets double-counts its intensity and must be flagged."""
+    table = _pg_table(
+        anchor=["P1", "P1"],
+        pg_accessions=[["P1", "P2"], ["P1", "P2"]],
+        grouped_runs=[["r1", "r2"], ["r2", "r3"]],
+        label=["LFQ", "LFQ"],
+    )
+    result = PgSchema.validate_full(table, strict=True)
+    assert any(issue.check == "run_double_count" for issue in result.issues)
 
 
 def test_validation_result_dataclass():

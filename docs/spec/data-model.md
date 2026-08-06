@@ -27,7 +27,7 @@ Define these once; the rest of the spec uses them consistently.
 | **label** | The **canonical name of a channel** (`LFQ`, `TMT126`, `iTRAQ114`, …). This is the string that ties a quantity to a sample. For LFQ there is exactly one label, `"LFQ"`. For TMT/iTRAQ/plexDIA each channel is a distinct label mapping to a distinct sample. | `run.samples[].label`, `feature.intensities[].label`, `pg.label` |
 | **fraction** | A fractionated portion of one sample. Fractions of one sample share the same (source, biological replicate, technical replicate) and differ **only** in `run.fraction`. Each fraction is a separate run/raw file. | `run.fraction` |
 | **grouped_runs** | The **set of raw files aggregated into one quantification unit** — the fractions of one sample+channel context, aggregated together. `list<string>` of `run_file_name`. Single-element for unfractionated or DIA data. | `pg.grouped_runs` |
-| **quantification unit** | The thing a protein quantity is measured *over*: one `grouped_runs` set. A protein abundance exists per quantification unit, **not** per single raw file, because a protein quantity only emerges after aggregating its peptides across the sample's fractions. | `pg` (one row per `(anchor_protein, grouped_runs, label)`) |
+| **quantification unit** | The thing a protein quantity is measured *over*: one `grouped_runs` set. A protein abundance exists per quantification unit, **not** per single raw file, because a protein quantity only emerges after aggregating its peptides across the sample's fractions. | `pg` (one row per `(pg_accessions, grouped_runs, label)`) |
 | **peptidoform** | Peptide sequence + modifications in ProForma notation. The identity thread linking PSM ↔ feature ↔ pepmap. | `psm`, `feature`, `pepmap` |
 | **entity ID** | Mandatory opaque primary key for a PSM, Feature, or protein-group row: `psm_id`, `feature_id`, or `pg_id`. It may be supplied by the producer or derived by QPX from the file's footer-declared `identity_composite`. | `psm`, `feature`, `pg` |
 | **anchor_protein** | The representative (leading) protein of a protein group. On `feature` it is an annotation used for semantic protein mapping; an explicit Feature-to-PG link uses `feature.pg_ids[]` → `pg.pg_id`. On `pg` it participates in the default identity composite. | `feature`, `pg` |
@@ -67,7 +67,7 @@ graph LR
   override for their producer's Feature entity. Covers DDA **and** DIA.
 - **pg** — a protein group quantified over one **quantification unit**
   (`grouped_runs`) for one **label**. PK `pg_id`; schema-default identity
-  composite `[anchor_protein, grouped_runs, label]`. There is **one row per
+  composite `[pg_accessions, grouped_runs, label]`. There is **one row per
   label** (flattened since QPX 1.1).
 
 !!! note "Granularity shifts at each step"
@@ -213,7 +213,7 @@ graph TD
 
 !!! note "Fractionated TMT combines both"
     Fractionated TMT has `grouped_runs` with several files **and** N labels: one
-    pg row per `(anchor_protein, grouped_runs, label)` — the fractions collapse
+    pg row per `(pg_accessions, grouped_runs, label)` — the fractions collapse
     into the set, the channels stay as separate rows.
 
 ## Label / channel → sample resolution
