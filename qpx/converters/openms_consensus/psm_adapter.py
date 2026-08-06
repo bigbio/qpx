@@ -9,7 +9,9 @@ single-run consensusXML, the sole run.
 
 from __future__ import annotations
 
+import hashlib
 import logging
+import math
 import re
 
 from qpx.converters.openms_consensus.feature_adapter import (
@@ -23,12 +25,65 @@ from qpx.converters.openms_consensus.feature_adapter import (
 
 _log = logging.getLogger(__name__)
 
+# Thermo/Bruker/single-peak-list nativeIDs expose the spectrum ordinal directly.
 _SCAN_RE = re.compile(r"(?:scan|index|spectrum)=(\d+)", re.IGNORECASE)
+# Sciex WIFF nativeIDs (``sample=.. period=.. cycle=.. experiment=..``) carry no
+# scan/index/spectrum token; the cycle is the acquisition ordinal (scan-equivalent).
+_CYCLE_RE = re.compile(r"cycle=(\d+)", re.IGNORECASE)
+# scan is a list<int32>; keep any surrogate within the signed 32-bit range.
+_INT32_MASK = 0x7FFFFFFF
+
+_PEP_META_KEYS = ("Posterior Error Probability_score", "PEP", "pep")
+
+
+def _surrogate_scan(spectrum_ref: str) -> int:
+    """Deterministic int32 surrogate ordinal for a nativeID with no scan token.
+
+    Derived only from the spectrum reference string, so the same spectrum maps to
+    the same value in both the pyopenms and streaming paths. Used as a last resort
+    (instead of dropping the PSM) for nativeID schemes that expose no recognizable
+    ordinal at all.
+    """
+    digest = hashlib.blake2s(str(spectrum_ref).encode("utf-8"), digest_size=4).digest()
+    return int.from_bytes(digest, "big") & _INT32_MASK
 
 
 def _scan_of(spectrum_ref: str) -> list[int]:
-    """Parse the scan number(s) from a spectrum reference into a list<int>."""
-    return [int(m) for m in _SCAN_RE.findall(str(spectrum_ref or ""))]
+    """Parse the scan number(s) from a spectrum reference into a list<int>.
+
+    Recognizes the common ``scan=``/``index=``/``spectrum=`` tokens (Thermo,
+    Bruker, single peak lists, Waters) and falls back to the Sciex ``cycle=``
+    ordinal so non-Thermo nativeIDs are not silently dropped.
+    """
+    ref = str(spectrum_ref or "")
+    scans = [int(m) for m in _SCAN_RE.findall(ref)]
+    if scans:
+        return scans
+    return [int(m) for m in _CYCLE_RE.findall(ref)]
+
+
+def _pep_of(hit) -> float | None:
+    """Posterior error probability for a PeptideHit, or ``None`` when absent."""
+    for mv in _PEP_META_KEYS:
+        if hit.metaValueExists(mv):
+            return float(hit.getMetaValue(mv))
+    return None
+
+
+def _append_unique_score(additional_scores: list[dict], name: str, value: float, higher_better: bool) -> None:
+    """Append a score, disambiguating the name if it already occurs.
+
+    Colliding hits from different search engines share the identification score
+    type, so a plain name would repeat; suffix ``_2``, ``_3``, ... keeps every
+    engine's score without overwriting.
+    """
+    existing = {s["score_name"] for s in additional_scores}
+    unique = name
+    n = 2
+    while unique in existing:
+        unique = f"{name}_{n}"
+        n += 1
+    additional_scores.append({"score_name": unique, "score_value": value, "higher_better": higher_better})
 
 
 def _cf_element_runs(cf, map_info: dict[int, tuple[str, str]]) -> set[str]:
@@ -118,49 +173,81 @@ def psm_records_for_pid(pid, resolve_run, seen: set[tuple], cf_runs=None) -> lis
         spectrum_ref = pid.getMetaValue("spectrum_reference")
     scan = _scan_of(spectrum_ref)
     if not scan:
-        # The PSM primary key is [peptidoform, charge, run_file_name, scan]; an
-        # identification whose spectrum_reference carries no scan token cannot be
-        # keyed uniquely. Skip it rather than write a scan=[] record that would
-        # collapse distinct spectra under the primary key.
-        _log.debug("Skipping consensusXML PSM with no scan token in spectrum_reference: %r", spectrum_ref)
-        return []
+        if not str(spectrum_ref or ""):
+            # No spectrum reference at all: nothing to key on, skip.
+            _log.debug("Skipping consensusXML PSM with empty spectrum_reference")
+            return []
+        # A recognized nativeID scheme exposes a scan/index/spectrum/cycle ordinal;
+        # an unrecognized one (e.g. an exotic instrument) exposes none. Rather than
+        # silently drop the PSM (which loses non-Thermo data), fall back to a
+        # deterministic surrogate ordinal derived from the reference so the PSM is
+        # keyed stably and identically across the pyopenms and streaming paths.
+        scan = [_surrogate_scan(spectrum_ref)]
+        _log.debug("consensusXML PSM nativeID has no scan ordinal; using surrogate for %r", spectrum_ref)
     obs_mz = float(pid.getMZ()) if pid.getMZ() else 0.0
     # When the identification score IS the q-value, the hit score is the peptide
     # q-value (OpenMS FDR output); otherwise it is a search score.
     score_type = str(pid.getScoreType() or "")
     score_is_qvalue = score_type.lower() in ("q-value", "qvalue", "fdr")
-    records: list[dict] = []
+    # Group hits by identity key. A PeptideIdentification usually holds one hit
+    # (quantms ships Percolator-merged single-hit PIDs), but comet+msgf merged
+    # spectra can carry several hits for the SAME peptidoform/charge/scan. Those
+    # collisions must resolve to one row (lowest PEP), keeping the other engines'
+    # search scores; genuinely different peptidoforms map to different keys and are
+    # all emitted as distinct PSMs.
+    groups: dict[tuple, list] = {}
+    order: list[tuple] = []
     for hit in pid.getHits():
-        seq_obj = hit.getSequence()
-        peptidoform = to_proforma(seq_obj)
+        peptidoform = to_proforma(hit.getSequence())
         charge = int(hit.getCharge() or 0)
-        calc_mz = float(seq_obj.getMZ(charge)) if charge else obs_mz
         key = (peptidoform, charge, run, tuple(scan))
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(hit)
+
+    records: list[dict] = []
+    higher_better = bool(pid.isHigherScoreBetter())
+    for key in order:
         if key in seen:
             continue
         seen.add(key)
-        is_decoy = hit.metaValueExists("target_decoy") and "decoy" in str(hit.getMetaValue("target_decoy")).lower()
-        pep = None
-        for mv in ("Posterior Error Probability_score", "PEP", "pep"):
-            if hit.metaValueExists(mv):
-                pep = float(hit.getMetaValue(mv))
-                break
-        score = float(hit.getScore()) if hit.getScore() is not None else None
+        hits = groups[key]
+        # Keep the lowest-PEP hit; hits without a PEP sort last (worst). ``min`` is
+        # stable, so ties (and the common single-hit case) keep the first hit,
+        # preserving existing output exactly.
+        primary = min(hits, key=lambda h: _pep_of(h) if _pep_of(h) is not None else math.inf)
+        seq_obj = primary.getSequence()
+        peptidoform = to_proforma(seq_obj)
+        charge = int(primary.getCharge() or 0)
+        calc_mz = float(seq_obj.getMZ(charge)) if charge else obs_mz
+        is_decoy = primary.metaValueExists("target_decoy") and "decoy" in str(primary.getMetaValue("target_decoy")).lower()
+        pep = _pep_of(primary)
+        score = float(primary.getScore()) if primary.getScore() is not None else None
         additional_scores = []
         if score is not None:
             # Route the identification score into additional_scores: the psm schema
             # has no dedicated q-value column.
             name = "q-value" if score_is_qvalue else (score_type or "search_score")
-            additional_scores.append({"score_name": name, "score_value": score, "higher_better": bool(pid.isHigherScoreBetter())})
-        if hit.metaValueExists("consensus_support"):
+            additional_scores.append({"score_name": name, "score_value": score, "higher_better": higher_better})
+        # Preserve the other colliding hits' (i.e. the other engines') search scores
+        # so a comet+msgf merged spectrum does not lose either engine's score.
+        for other in hits:
+            if other is primary:
+                continue
+            other_score = float(other.getScore()) if other.getScore() is not None else None
+            if other_score is not None:
+                base = "q-value" if score_is_qvalue else (score_type or "search_score")
+                _append_unique_score(additional_scores, base, other_score, higher_better)
+        if primary.metaValueExists("consensus_support"):
             additional_scores.append(
                 {
                     "score_name": "consensus_support",
-                    "score_value": float(hit.getMetaValue("consensus_support")),
+                    "score_value": float(primary.getMetaValue("consensus_support")),
                     "higher_better": True,
                 }
             )
-        loc_scores, site_scores = localization_scores(hit)
+        loc_scores, site_scores = localization_scores(primary)
         if loc_scores:
             additional_scores.extend(loc_scores)
         modifications = to_modifications(seq_obj, site_scores)

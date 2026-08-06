@@ -259,6 +259,98 @@ def test_consensus_psms_use_parent_feature_run_context(tmp_path):
     assert records[0]["run_file_name"] == "run_B"
 
 
+def test_consensus_psm_multihit_keeps_lowest_pep_and_merges_scores(tmp_path):
+    """A PID with two hits colliding on the identity key resolves to one PSM: the
+    lowest-PEP hit is kept and the other (engine's) search score is preserved."""
+    from qpx.converters.openms_consensus.psm_adapter import consensus_psms_to_records
+
+    # First hit: score 1.5, PEP 5.0e-02. Second hit (inserted): score 2.7, PEP
+    # 1.0e-03 -> the second must win (lower PEP) even though it is not first.
+    xml = _TMT_CONSENSUSXML.replace('score="0" sequence="PEPTIDEK"', 'score="1.5" sequence="PEPTIDEK"')
+    xml = xml.replace('value="1.0e-03"', 'value="5.0e-02"')
+    second_hit = (
+        '        <PeptideHit score="2.7" sequence="PEPTIDEK" charge="2" protein_refs="PH_0">\n'
+        '          <UserParam type="string" name="target_decoy" value="target"/>\n'
+        '          <UserParam type="float" name="Posterior Error Probability_score" value="1.0e-03"/>\n'
+        "        </PeptideHit>"
+    )
+    xml = xml.replace(
+        "        </PeptideHit>\n      </PeptideIdentification>",
+        f"        </PeptideHit>\n{second_hit}\n      </PeptideIdentification>",
+    )
+    assert second_hit in xml  # guard: the fixture edit actually applied
+    path = tmp_path / "multihit.consensusXML"
+    path.write_text(xml)
+
+    records = consensus_psms_to_records(str(path))
+
+    assert len(records) == 1  # collapsed to a single PSM, not two
+    rec = records[0]
+    assert rec["peptidoform"] == "PEPTIDEK"
+    assert rec["posterior_error_probability"] == pytest.approx(1.0e-03)  # lower PEP kept
+    score_values = [s["score_value"] for s in (rec["additional_scores"] or [])]
+    assert any(v == pytest.approx(2.7) for v in score_values)  # kept hit's own search score
+    assert any(v == pytest.approx(1.5) for v in score_values)  # the other engine's search score preserved
+
+
+def test_consensus_psm_distinct_peptidoforms_both_emitted(tmp_path):
+    """Two *different* peptidoforms in one PID are distinct PSMs and both survive."""
+    from qpx.converters.openms_consensus.psm_adapter import consensus_psms_to_records
+
+    second_hit = (
+        '        <PeptideHit score="0" sequence="PEPTIDER" charge="2" protein_refs="PH_0">\n'
+        '          <UserParam type="string" name="target_decoy" value="target"/>\n'
+        '          <UserParam type="float" name="Posterior Error Probability_score" value="2.0e-03"/>\n'
+        "        </PeptideHit>"
+    )
+    xml = _TMT_CONSENSUSXML.replace(
+        "        </PeptideHit>\n      </PeptideIdentification>",
+        f"        </PeptideHit>\n{second_hit}\n      </PeptideIdentification>",
+    )
+    path = tmp_path / "twopep.consensusXML"
+    path.write_text(xml)
+
+    records = consensus_psms_to_records(str(path))
+
+    assert {r["peptidoform"] for r in records} == {"PEPTIDEK", "PEPTIDER"}
+
+
+def test_consensus_psm_sciex_nativeid_not_dropped(tmp_path):
+    """A Sciex WIFF nativeID (no scan token, cycle-based) is kept, keyed by cycle."""
+    from qpx.converters.openms_consensus.psm_adapter import consensus_psms_to_records
+
+    xml = _TMT_CONSENSUSXML.replace(
+        'spectrum_reference="controllerType=0 controllerNumber=1 scan=42"',
+        'spectrum_reference="sample=1 period=1 cycle=123 experiment=2"',
+    )
+    path = tmp_path / "sciex.consensusXML"
+    path.write_text(xml)
+
+    records = consensus_psms_to_records(str(path))
+
+    assert len(records) == 1  # not silently dropped
+    assert list(records[0]["scan"]) == [123]  # cycle is the scan-equivalent ordinal
+
+
+def test_consensus_psm_unknown_nativeid_uses_surrogate_scan(tmp_path):
+    """A nativeID with no recognizable ordinal falls back to a deterministic
+    int32 surrogate rather than being dropped."""
+    from qpx.converters.openms_consensus.psm_adapter import consensus_psms_to_records
+
+    xml = _TMT_CONSENSUSXML.replace(
+        'spectrum_reference="controllerType=0 controllerNumber=1 scan=42"',
+        'spectrum_reference="sample=1 period=1 experiment=2"',
+    )
+    path = tmp_path / "exotic.consensusXML"
+    path.write_text(xml)
+
+    records = consensus_psms_to_records(str(path))
+
+    assert len(records) == 1  # not dropped
+    scan = list(records[0]["scan"])
+    assert len(scan) == 1 and 0 <= scan[0] <= 0x7FFFFFFF  # deterministic, int32-safe
+
+
 def _write_multi_reference_consensusxml(path):
     """Write one ConsensusFeature supported by two spectrum references."""
     second_pid = """
