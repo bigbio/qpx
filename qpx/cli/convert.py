@@ -84,8 +84,8 @@ def convert():
 )
 @click.option(
     "--qvalue-threshold",
-    help="Q-value threshold for filtering",
-    default=0.05,
+    help="Q-value threshold for filtering (default 1% FDR)",
+    default=0.01,
     type=float,
 )
 @click.option(
@@ -229,6 +229,7 @@ def convert_diann_cmd(
             output_prefix=output_prefix,
             batch_size=batch_size,
             standardized_intensities=standardized_intensities,
+            qvalue_threshold=qvalue_threshold,
         )
 
     converter.convert_sdrf(output_folder=output_folder, prefix=prefix)

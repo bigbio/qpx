@@ -44,7 +44,7 @@ class DiaNNConverter(BaseOrchestrator):
     def convert_features(
         self,
         mzml_info_folder=None,
-        qvalue_threshold=0.05,
+        qvalue_threshold=0.01,
         output_folder=".",
         output_prefix=None,
         protein_file=None,
@@ -77,6 +77,7 @@ class DiaNNConverter(BaseOrchestrator):
         output_prefix=None,
         batch_size=100,
         standardized_intensities=False,
+        qvalue_threshold=0.01,
     ):
         output_folder = Path(output_folder)
         prefix = output_prefix or "diann"
@@ -90,6 +91,7 @@ class DiaNNConverter(BaseOrchestrator):
                 pg_matrix_path=str(pg_matrix_path),
                 sdrf_path=self.sdrf_path,
                 output_path=str(output_folder / f"{prefix}.pg.parquet"),
+                qvalue_threshold=qvalue_threshold,
             )
             self._ontology_entries.extend(score_ontology_entries(adapter.get_discovered_scores(), view=PG))
             cols = adapter.get_table_columns("report")
