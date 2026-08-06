@@ -213,3 +213,51 @@ class TestSpectronautProvenance:
         table = pq.read_table(str(path))
         tool_names = table.column("tool_name").to_pylist()
         assert any("qpx" in str(t).lower() for t in tool_names if t), "Expected qpx in provenance tool_names"
+
+
+class TestRunNameNormalization:
+    """Regression for bigbio/qpx#252: the Spectronaut feature adapter stripped
+    only ``\\.(mzML|raw|d)$`` case-sensitively while the pg adapter stripped
+    ``(?i)\\.(mzML|raw|d|wiff|htrms)$``, so ``.wiff`` / ``.htrms`` / ``.RAW``
+    broke feature<->pg<->run joins. Both adapters must strip the same set,
+    case-insensitively, by DuckDB SQL."""
+
+    @staticmethod
+    def _run_expr(part: str) -> str:
+        # part looks like "regexp_replace(...) AS <alias>"; return the expression.
+        return part.rsplit(" AS ", 1)[0]
+
+    def test_feature_and_pg_use_same_extension_strip(self):
+        import duckdb
+
+        from qpx.converters.spectronaut.feature_adapter import SpectronautFeatureAdapter as FeatureAdapter
+        from qpx.converters.spectronaut.pg_adapter import SpectronautPgAdapter as PgAdapter
+
+        r = {
+            "sequence": "SEQ",
+            "charge": "CHG",
+            "run_file_name": "RUN",
+            "pg_accessions": "PG",
+            "intensity": "INT",
+        }
+        core = FeatureAdapter._build_core_select_parts(r, set())
+        meta = FeatureAdapter._build_meta_select_parts(r, set())
+        pg = PgAdapter._build_pg_select_parts(r, set())
+
+        feat_run = next(self._run_expr(p) for p in core if p.endswith("AS run_file_name"))
+        feat_id_run = next(self._run_expr(p) for p in meta if p.endswith("AS id_run_file_name"))
+        pg_run = next(self._run_expr(p) for p in pg if p.endswith("AS run_file_name"))
+
+        con = duckdb.connect()
+        try:
+            for name in ("sample.mzML", "sample.RAW", "sample.wiff", "sample.HTRMS", "sample.d"):
+                # Evaluate each adapter's expression against the same input value.
+                feat_val = con.execute(f'SELECT {feat_run} FROM (SELECT ? AS "RUN") r', [name]).fetchone()[0]
+                feat_id_val = con.execute(f'SELECT {feat_id_run} FROM (SELECT ? AS "RUN") r', [name]).fetchone()[0]
+                pg_val = con.execute(f'SELECT {pg_run} FROM (SELECT ? AS "RUN") r', [name]).fetchone()[0]
+                assert feat_val == "sample", f"feature did not strip {name}: {feat_val}"
+                assert feat_id_val == "sample", f"feature id_run did not strip {name}: {feat_id_val}"
+                assert pg_val == "sample", f"pg did not strip {name}: {pg_val}"
+                assert feat_val == pg_val == feat_id_val
+        finally:
+            con.close()

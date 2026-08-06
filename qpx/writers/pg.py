@@ -70,6 +70,21 @@ class PgWriter(BaseWriter):
         """Explode ``intensities`` into one row per label, then buffer/flush."""
         super().write_batch(_explode_pg_records(records))
 
+    def write_dataframe(self, df):
+        """Explode ``intensities`` before writing a flat pg DataFrame.
+
+        The base ``write_dataframe`` builds the table against the flat pg schema
+        (which has no ``intensities`` column), so a DataFrame that still carries
+        the natural ``intensities`` list would have its quant silently dropped
+        (bigbio/qpx#252). Route such frames through the same explode the
+        ``write_batch`` / ``write_table`` paths use; frames already flattened
+        (scalar ``label``/``intensity``) fall through unchanged.
+        """
+        if "intensities" in df.columns:
+            self.write_batch(df.to_dict("records"))
+            return
+        super().write_dataframe(df)
+
     def write_table(self, table: pa.Table):
         """Explode a pg table that still carries the ``intensities`` list column."""
         if "intensities" in table.schema.names:

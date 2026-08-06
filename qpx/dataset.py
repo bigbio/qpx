@@ -160,21 +160,19 @@ class Dataset:
         pattern = f"{self._file_prefix}{suffix}" if self._file_prefix else f"*{suffix}"
         matches = sorted(self.path.glob(pattern))
         if matches:
-            if len(matches) > 1:
-                _log.warning(
-                    "Multiple files match '%s': %s — using first: %s",
-                    pattern,
-                    [m.name for m in matches],
-                    matches[0].name,
-                )
-            file_path = matches[0]  # Take first match
+            # Read ALL matching shards unioned, matching the S3 path (which globs
+            # and reads every match). Previously only the first was taken, so a
+            # sharded structure returned different rows locally vs over S3
+            # (bigbio/qpx#252). The registered structure's file_path points at the
+            # first shard for provenance; the view unions them all.
             if name == "pg":
-                check_pg_file_compatible(file_path)
-            self._engine.register_parquet(name, file_path)
+                for match in matches:
+                    check_pg_file_compatible(match)
+            self._engine.register_parquet_files(name, matches)
             self._structures[name] = cls(
                 engine=self._engine,
                 table_name=name,
-                file_path=file_path,
+                file_path=matches[0],
             )
         elif self._file_prefix is None:
             # Check for Hive-partitioned directory

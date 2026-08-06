@@ -304,7 +304,9 @@ class SpectronautFeatureAdapter(SpectronautBaseAdapter):
             parts.append("NULL::FLOAT AS predicted_rt")
 
         run_col = r["run_file_name"]
-        parts.append(f"regexp_replace(FIRST(r.\"{run_col}\"), '\\.(mzML|raw|d)$', '') AS run_file_name")
+        # Match the pg adapter's case-insensitive, extended extension strip so
+        # feature / pg / run keys agree on .wiff / .htrms / .RAW (bigbio/qpx#252).
+        parts.append(f"regexp_replace(FIRST(r.\"{run_col}\"), '\\.(mzML|raw|d|wiff|htrms)$', '', 'i') AS run_file_name")
         parts.append("[]::INTEGER[] AS scan")
 
         rt_col = r.get("rt")
@@ -358,7 +360,7 @@ class SpectronautFeatureAdapter(SpectronautBaseAdapter):
 
         # id_run_file_name
         run_col = r["run_file_name"]
-        parts.append(f"regexp_replace(FIRST(r.\"{run_col}\"), '\\.(mzML|raw|d)$', '') AS id_run_file_name")
+        parts.append(f"regexp_replace(FIRST(r.\"{run_col}\"), '\\.(mzML|raw|d|wiff|htrms)$', '', 'i') AS id_run_file_name")
         return parts
 
     def _build_batch_sql(

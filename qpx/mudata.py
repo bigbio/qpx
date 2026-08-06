@@ -431,15 +431,30 @@ def _build_protein_adata(
 def _build_feature_mapping(engine: DuckDBEngine, mdata) -> sparse.csr_matrix:
     """Build boolean sparse adjacency linking precursor IDs to protein IDs.
 
-    Returns a symmetric CSR matrix of shape (N, N) where N is the total
-    number of var_names across all modalities in mdata.  Non-zero entries
+    Returns a symmetric CSR matrix of shape (N, N) where N is ``mdata.n_vars``
+    — the total number of var_names across **all** modalities present, in their
+    global-axis order — so the matrix is assignable to ``mdata.varp`` even when
+    expression / differential modalities are also built (bigbio/qpx#252). The
+    precursor and protein blocks are positioned by their per-modality offset on
+    the global var axis (not by a global name lookup), so a protein accession
+    that also appears as an expression var is never mislocated. Non-zero entries
     indicate a precursor-protein relationship.
     """
     if "precursors" not in mdata.mod or "proteins" not in mdata.mod:
         raise ValueError("Both 'precursors' and 'proteins' modalities are required for feature mapping.")
 
-    precursor_names = mdata.mod["precursors"].var_names
-    protein_names = mdata.mod["proteins"].var_names
+    # Per-modality offsets on the global var axis (modalities are concatenated in
+    # mdata.mod insertion order). Sizing/positioning against the full axis is what
+    # keeps the mapping valid — and present — with a 3rd/4th modality around.
+    offsets: dict[str, int] = {}
+    running = 0
+    for name, adata in mdata.mod.items():
+        offsets[name] = running
+        running += adata.n_vars
+    n = running  # == mdata.n_vars
+
+    precursor_names = pd.Index(mdata.mod["precursors"].var_names)
+    protein_names = pd.Index(mdata.mod["proteins"].var_names)
 
     # Query mapping from feature table
     sql = """
@@ -451,20 +466,15 @@ def _build_feature_mapping(engine: DuckDBEngine, mdata) -> sparse.csr_matrix:
     df = engine.execute(sql).fetchdf()
 
     if df.empty:
-        n = len(precursor_names) + len(protein_names)
         return sparse.csr_matrix((n, n), dtype=bool)
 
-    # Build combined index
-    all_names = pd.Index(list(precursor_names) + list(protein_names))
+    precursor_local = precursor_names.get_indexer(df["precursor_id"])
+    protein_local = protein_names.get_indexer(df["anchor_protein"])
 
-    precursor_pos = all_names.get_indexer(df["precursor_id"])
-    protein_pos = all_names.get_indexer(df["anchor_protein"])
+    mask = (precursor_local >= 0) & (protein_local >= 0)
+    precursor_pos = precursor_local[mask] + offsets["precursors"]
+    protein_pos = protein_local[mask] + offsets["proteins"]
 
-    mask = (precursor_pos >= 0) & (protein_pos >= 0)
-    precursor_pos = precursor_pos[mask]
-    protein_pos = protein_pos[mask]
-
-    n = len(all_names)
     data = np.ones(len(precursor_pos) * 2, dtype=bool)
     rows = np.concatenate([precursor_pos, protein_pos])
     cols = np.concatenate([protein_pos, precursor_pos])

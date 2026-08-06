@@ -146,3 +146,39 @@ class TestPartitionedWriting:
         BaseWriter.write_partitioned(table, out)  # No partition_cols arg
         dirs = sorted(d.name for d in out.iterdir() if d.is_dir())
         assert any("run_file_name=" in d for d in dirs)
+
+    def test_write_partitioned_via_subclass_derives_id_and_validates(self, tmp_path, caplog):
+        """bigbio/qpx#252: called on a concrete writer subclass, write_partitioned
+        must derive the identity id (when absent) and run schema validation,
+        instead of bypassing both. Called on the bare BaseWriter it stays a raw
+        dump (covered by the other tests)."""
+        import logging
+
+        import pyarrow.dataset as pds
+
+        from qpx.writers import FeatureWriter
+        from tests.conftest import make_feature_record
+
+        # Build a proper feature file, then strip the derived feature_id so the
+        # partitioned write has to re-derive it.
+        src = tmp_path / "src.feature.parquet"
+        with FeatureWriter(src) as w:
+            w.write_batch(
+                [
+                    make_feature_record(peptidoform="PEPTIDEK", run_file_name="run_01"),
+                    make_feature_record(peptidoform="ELVISK", run_file_name="run_02"),
+                ]
+            )
+        table = pq.read_table(src)
+        assert "feature_id" in table.schema.names
+        stripped = table.drop_columns(["feature_id"])
+
+        out = tmp_path / "feat_part"
+        with caplog.at_level(logging.WARNING, logger="qpx.writers.base"):
+            FeatureWriter.write_partitioned(stripped, out, ["run_file_name"])
+
+        back = pds.dataset(str(out), format="parquet", partitioning="hive").to_table()
+        assert "feature_id" in back.schema.names
+        ids = back.column("feature_id").to_pylist()
+        assert all(i is not None for i in ids), "feature_id must be derived, not left null"
+        assert len(set(ids)) == 2

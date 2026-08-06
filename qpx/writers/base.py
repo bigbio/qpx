@@ -457,6 +457,27 @@ class BaseWriter:
             self._writer = None
         if validate and wrote_file:
             self._validate_identity_uniqueness()
+            self._validate_referential()
+
+    def _validate_referential(self) -> None:
+        """Warn on pg referential / run-disjointness problems over the full file.
+
+        The streaming ``write_batch`` path validates each batch's schema but
+        cannot see cross-row invariants (run-disjointness and duplicate
+        ``grouped_runs`` span the whole table), so ``write_table``'s referential
+        checks were effectively off for every streamed pg converter
+        (bigbio/qpx#242). They are re-run here at ``close()`` over the complete
+        written file, so the record/batch and table paths converge. Per the
+        maintainer policy (1.1.2) these are **warnings** on the write/convert
+        path, never a raise; ``qpxc validate --strict`` stays the strict gate.
+        """
+        if getattr(self._schema_class, "_view_name", None) != "pg":
+            return
+        table = pq.read_table(str(self._path))
+        result = self._schema_class.validate_full(table, strict=False)
+        for issue in result.warnings:
+            if issue.check in ("run_double_count", "duplicate_grouped_run"):
+                logger.warning("pg referential check '%s': %s", issue.check, issue.message)
 
     def _validate_identity_uniqueness(self) -> None:
         """Reject duplicate or null identity ids across the complete output file."""
@@ -529,8 +550,9 @@ class BaseWriter:
         """
         return parquet_write_options(self.arrow_schema, self._compression)
 
-    @staticmethod
+    @classmethod
     def write_partitioned(
+        cls,
         table: pa.Table,
         output_dir: str | Path,
         partition_cols: list[str] | None = None,
@@ -538,6 +560,15 @@ class BaseWriter:
         file_metadata: dict | None = None,
     ) -> Path:
         """Write Arrow table as Hive-partitioned Parquet.
+
+        Called on a concrete writer subclass (e.g. ``FeatureWriter``) the table
+        is routed through the **same id-derivation and schema validation** as
+        the single-file writers before it is written, so a partitioned dump no
+        longer bypasses those checks (bigbio/qpx#252): the derived id is stamped
+        when absent, and referential / null / primary-key problems are emitted
+        as ``logger.warning`` (matching the write-path policy — not a raise).
+        Called on the un-bound ``BaseWriter`` (no schema is known) it stays a
+        raw partitioned dump, unchanged.
 
         Encoding parity with the single-file writers: the same
         :func:`parquet_write_options` path is used, so partitioned output gets
@@ -571,6 +602,25 @@ class BaseWriter:
 
         output_dir = Path(output_dir)
         cols = partition_cols or ["run_file_name"]
+
+        # When called on a concrete writer subclass, route through the same
+        # id-derivation + validation the single-file writers use so partitioned
+        # output is not a validation-bypass (bigbio/qpx#252). An instance is
+        # built only to reuse _fill_identity_table / the schema; no file is
+        # opened until write_dataset below. On the un-bound BaseWriter
+        # (_schema_class is None) this is skipped and the raw dump is unchanged.
+        schema_class = cls._schema_class
+        if schema_class is not None:
+            deriver = cls(output_dir, compression=compression)
+            table = deriver._fill_identity_table(table)
+            result = schema_class.validate_full(table, strict=False)
+            for issue in result.issues:
+                logger.warning(
+                    "%s partitioned-write validation '%s': %s",
+                    schema_class._view_name,
+                    issue.check,
+                    issue.message,
+                )
 
         # Validate the partition columns up front so the default path (or an
         # unsupported key) fails with an actionable message instead of a raw
