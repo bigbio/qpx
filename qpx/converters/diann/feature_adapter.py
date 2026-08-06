@@ -206,6 +206,11 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
         if info_files:
             run_names = [f.stem.replace("_ms_info", "") for f in info_files]
             self.logger.info(f"Found {len(run_names)} MS info files")
+            # The feature SQL filters `run IN (run_names)`, so any report Run
+            # without a matching *_ms_info.parquet is silently dropped from
+            # feature.parquet. Surface the discrepancy (bigbio/qpx#244) so the
+            # loss is visible; the drop behaviour itself is unchanged.
+            self._warn_on_dropped_runs(set(run_names))
         else:
             run_col = self._resolved["run_file_name"]
             qcol = validate_identifier(run_col)
@@ -227,6 +232,40 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
             self.logger.info(f"Discovered {len(run_names)} runs from report")
 
         return run_names
+
+    def _report_run_names(self) -> set[str]:
+        """Return the distinct extension-stripped Run values in the report."""
+        run_col = self._resolved["run_file_name"]
+        rows = self._conn.execute(
+            sql_build(
+                """
+                SELECT DISTINCT regexp_replace(
+                    CAST($col AS VARCHAR),
+                    '(?i)\\.(mzML|raw|d|wiff|htrms)$',
+                    ''
+                ) AS run_file_name
+                FROM report
+                """,
+                col=validate_identifier(run_col),
+            )
+        ).fetchall()
+        return {row[0] for row in rows}
+
+    def _warn_on_dropped_runs(self, kept_runs: set[str]) -> None:
+        """Warn about report runs with no matching ms_info file.
+
+        When runs are discovered from ``*_ms_info.parquet`` stems, the feature
+        SQL keeps only those runs. Any report ``Run`` absent from *kept_runs* is
+        dropped from ``feature.parquet`` without reconciliation; log the dropped
+        run names so the loss is visible (bigbio/qpx#244).
+        """
+        dropped = sorted(self._report_run_names() - kept_runs)
+        if dropped:
+            self.logger.warning(
+                "%d report run(s) have no matching *_ms_info.parquet and will be dropped from feature.parquet: %s",
+                len(dropped),
+                ", ".join(dropped),
+            )
 
     # ------------------------------------------------------------------
     # Precursor lookup (DuckDB temp table + Python modifications dict)
@@ -322,11 +361,16 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
 
         parts.append("COALESCE(CAST(lk.calculated_mz AS FLOAT), 0.0::FLOAT) AS calculated_mz")
 
+        # observed_mz: emit a truthful NULL when the report carries no Precursor.Mz
+        # (bigbio/qpx#244). A sentinel 0.0 looks like a real measurement and
+        # corrupts downstream mass-error / PPM math; NULL propagates as "unknown".
+        # The per-row _safe_float_sql already yields NULL for null/NaN cells, so no
+        # COALESCE-to-zero is applied even when the column is present.
         observed_mz_col = resolved.get("observed_mz")
         parts.append(
-            f"COALESCE({_safe_float_sql(observed_mz_col)}, 0.0::FLOAT) AS observed_mz"
+            f"{_safe_float_sql(observed_mz_col)} AS observed_mz"
             if observed_mz_col and has_column(observed_mz_col)
-            else "0.0::FLOAT AS observed_mz"
+            else "NULL::FLOAT AS observed_mz"
         )
 
         mass_error_col = resolved.get("mass_error_ppm")
