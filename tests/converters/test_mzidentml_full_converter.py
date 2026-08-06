@@ -267,27 +267,100 @@ class TestPXD054720WithSpectra:
 
 
 class TestIndexFallback:
-    """Test that spectra attachment falls back to index when scan doesn't match."""
+    """Spectra attachment must use the nativeID scheme to pick the right lookup."""
 
-    def test_fallback_to_index(self, tmp_path):
-        """When scan-based lookup fails, should try index-based lookup."""
-        # Create MGF where SCANS= doesn't match mzIdentML scan numbers
-        # but the 0-based index does
+    def test_index_scheme_uses_position_lookup(self, tmp_path):
+        """``index=`` records attach by 0-based file position, not by SCANS=."""
+        # MGF where SCANS= deliberately does NOT match the index values, so a
+        # scan-number lookup would either miss or (worse) match the wrong
+        # spectrum. Only a position-based lookup gives the correct peaks.
         mgf = tmp_path / "test.mgf"
         mgf.write_text(
             "BEGIN IONS\nTITLE=first\nSCANS=999\n100.0 500\nEND IONS\nBEGIN IONS\nTITLE=second\nSCANS=998\n200.0 600\nEND IONS\n"
         )
 
-        # PSM records with scan=[0] and scan=[1] -- don't match SCANS=999/998
-        # but DO match 0-based position
         records = [
-            {"scan": [0], "mz_array": None, "intensity_array": None, "rt": None},
-            {"scan": [1], "mz_array": None, "intensity_array": None, "rt": None},
+            {"scan": [0], "_spectrum_id_scheme": "index", "mz_array": None, "intensity_array": None, "rt": None},
+            {"scan": [1], "_spectrum_id_scheme": "index", "mz_array": None, "intensity_array": None, "rt": None},
         ]
 
         result = MzIdentMLConverter._attach_spectra(records, str(mgf))
-        assert result[0]["mz_array"] == [100.0]  # matched by index 0
-        assert result[1]["mz_array"] == [200.0]  # matched by index 1
+        assert result[0]["mz_array"] == [100.0]  # position 0
+        assert result[1]["mz_array"] == [200.0]  # position 1
+
+    def test_index_value_not_attached_by_scan(self, tmp_path):
+        """An ``index=`` value must never be attached via a colliding SCANS=.
+
+        Regression for bigbio/qpx#249: index 999 collides with SCANS=999 of an
+        UNRELATED spectrum; the old scan-first lookup attached those wrong peaks.
+        """
+        # Spectrum at position 0 carries SCANS=999; the correct spectrum for
+        # index=999 does not exist in this tiny MGF, so nothing must attach.
+        mgf = tmp_path / "collide.mgf"
+        mgf.write_text("BEGIN IONS\nTITLE=first\nSCANS=999\n100.0 500\nEND IONS\n")
+
+        records = [
+            {"scan": [999], "_spectrum_id_scheme": "index", "mz_array": None, "intensity_array": None, "rt": None},
+        ]
+
+        result = MzIdentMLConverter._attach_spectra(records, str(mgf))
+        # No spectrum at position 999 → nothing attached (NOT the SCANS=999 peaks).
+        assert result[0]["mz_array"] is None
+
+    def test_index_file_attaches_correct_spectrum_end_to_end(self, tmp_path):
+        """A PSM whose ``spectrumID`` is ``index=N`` attaches the peaks of the
+        Nth spectrum, even when an unrelated spectrum carries ``SCANS=N``.
+
+        End-to-end: the scheme is derived from the ``index=`` spectrumID by the
+        adapter, then honoured by ``_attach_spectra``. Regression for
+        bigbio/qpx#249 (the old scan-first lookup attached the SCANS-colliding
+        spectrum's peaks instead).
+        """
+        from qpx.converters.mzidentml.psm_adapter import MzIdentMLPsmAdapter
+
+        # Position 0 is a decoy whose SCANS collides with the target index (1);
+        # position 1 is the CORRECT spectrum for ``index=1``.
+        mgf = tmp_path / "e2e.mgf"
+        mgf.write_text(
+            "BEGIN IONS\nTITLE=decoy\nSCANS=1\n100.0 500\nEND IONS\nBEGIN IONS\nTITLE=target\nSCANS=42\n200.0 600\nEND IONS\n"
+        )
+
+        parsed = {
+            "spectra_data": {"SD1": "e2e.mgf"},
+            "db_sequences": {},
+            "peptides": {"Pep1": {"sequence": "PEPTIDE", "modifications": None, "xl_mods": {}}},
+            "peptide_evidence": {},
+            "linker_info": {},
+            "spectrum_results": [
+                {
+                    "spectrum_id": "index=1",  # the 2nd spectrum (position 1)
+                    "spectra_data_ref": "SD1",
+                    "rt": None,
+                    "siis": [
+                        {
+                            "id": "SII_1",
+                            "charge": 2,
+                            "exp_mz": 500.0,
+                            "calc_mz": 500.0,
+                            "rank": 1,
+                            "pass_threshold": True,
+                            "peptide_ref": "Pep1",
+                            "cv_params": [],
+                            "peptide_evidence_refs": [],
+                        }
+                    ],
+                }
+            ],
+        }
+
+        with MzIdentMLPsmAdapter() as adapter:
+            records = adapter._build_psm_records(parsed)
+        assert records[0]["_spectrum_id_scheme"] == "index"
+
+        result = MzIdentMLConverter._attach_spectra(records, str(mgf))
+        # Correct spectrum is position 1 (200.0), NOT the SCANS=1 collision (100.0).
+        assert result[0]["mz_array"] == [200.0]
+        assert result[0]["intensity_array"] == [600.0]
 
 
 # ---------------------------------------------------------------------------
