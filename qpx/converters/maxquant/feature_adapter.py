@@ -82,6 +82,10 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
             chunksize: Rows per batch.
             creator: Creator tag in Parquet metadata.
         """
+        # Track which dropped-TMT-channel warnings have already been emitted so
+        # the message is logged once, not once per batch.
+        self._warned_tmt_channels: set = set()
+
         # Step 1: Load evidence into DuckDB
         self._load_evidence(evidence_path)
 
@@ -122,24 +126,43 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         self.logger.info(f"MaxQuant feature conversion complete -> {output_path}")
 
     def _deduplicated_evidence_query(self, actual_cols: set[str]) -> str:
-        """Prefer identified evidence when MaxQuant repeats an MBR feature."""
-        identity_columns = [
+        """Collapse rows that share the feature identity, preferring identified evidence.
+
+        The partition key mirrors ``_FEATURE_IDENTITY_COMPOSITE`` -- the columns
+        ``feature_id`` is hashed from -- so rows resolving to the same
+        ``feature_id`` collapse to one. The previous key partitioned on
+        ``Calibrated retention time`` (which is *not* part of the identity), so
+        identity-equal rows differing only in calibrated RT survived as
+        duplicate primary keys. Only identity columns actually present are used;
+        a missing column narrows the partition rather than degrading to a
+        no-dedup ``SELECT * FROM evidence`` (which would let MBR duplicates
+        through).
+        """
+        # Map each identity-composite field to its resolved MaxQuant column.
+        # "Modified sequence" stands in for ``peptidoform`` (a deterministic
+        # function of it); the remaining fields match the composite directly.
+        identity_field_columns = [
             self._resolved.get("modified_sequence", "Modified sequence"),
             self._resolved.get("charge", "Charge"),
             self._resolved.get("run_file_name", "Raw file"),
-            self._resolved.get("rt", "Calibrated retention time"),
+            self._resolved.get("rt_start", "Calibrated retention time start"),
+            self._resolved.get("rt_stop", "Calibrated retention time finish"),
+            self._resolved.get("scan", "MS/MS scan number"),
         ]
-        if "Type" not in actual_cols or not all(column in actual_cols for column in identity_columns):
+        identity_columns = [column for column in identity_field_columns if column in actual_cols]
+        if not identity_columns:
             return "SELECT * FROM evidence"
 
         partition_by = ", ".join(validate_identifier(column) for column in identity_columns)
-        type_column = validate_identifier("Type")
-        order_by = [
-            sql_build(
-                "CASE WHEN UPPER(TRIM(CAST($type_column AS VARCHAR))) = 'MULTI-MATCH' THEN 1 ELSE 0 END",
-                type_column=type_column,
+        order_by = []
+        if "Type" in actual_cols:
+            type_column = validate_identifier("Type")
+            order_by.append(
+                sql_build(
+                    "CASE WHEN UPPER(TRIM(CAST($type_column AS VARCHAR))) = 'MULTI-MATCH' THEN 1 ELSE 0 END",
+                    type_column=type_column,
+                )
             )
-        ]
         pep_column = self._resolved.get("posterior_error_probability", "PEP")
         if pep_column in actual_cols:
             order_by.append(
@@ -155,6 +178,9 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
                     id_column=validate_identifier("id"),
                 )
             )
+        if not order_by:
+            # No preference columns present; keep an arbitrary-but-stable row.
+            order_by.append("1")
 
         return sql_build(
             """
@@ -187,12 +213,22 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
     # ------------------------------------------------------------------
 
     def _build_protein_group_maps(self, protein_groups_path: Optional[str]) -> dict:
-        """Build protein accession lookup maps from proteinGroups.txt.
+        """Build protein-group lookup maps from proteinGroups.txt.
 
-        Returns a dict with ``qvalue`` and ``genes`` sub-maps.
+        Returns a dict with two sub-maps:
+            ``by_group``: full protein-group membership (a ``frozenset`` of
+                normalised accessions) -> ``{"qvalue", "genes"}``. This is the
+                primary key, consistent with the pg identity fix which keys on
+                the whole ``pg_accessions`` membership rather than the leader.
+            ``by_accession``: single accession -> ``{"qvalue", "genes"}``, but
+                *only* for accessions that belong to exactly one protein group.
+                Ambiguous razor accessions (shared across groups) are excluded
+                so a feature cannot inherit another group's q-value/genes via
+                its leader.
         """
+        empty = {"by_group": {}, "by_accession": {}}
         if not protein_groups_path:
-            return {"qvalue": {}, "genes": {}}
+            return empty
         try:
             df = self._conn.execute(
                 "SELECT * FROM read_csv_auto($1, delim='\t', header=true, auto_detect=true, null_padding=true)",
@@ -200,18 +236,17 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
             ).df()
             acc_col, qval_col, gene_col = self._detect_pg_columns(df)
             if not acc_col:
-                return {"qvalue": {}, "genes": {}}
-            qvalue_map = self._extract_qvalue_map(df, acc_col, qval_col)
-            gene_map = self._extract_gene_map(df, acc_col, gene_col)
+                return empty
+            maps = self._build_pg_lookup(df, acc_col, qval_col, gene_col)
             self.logger.info(
-                "Built protein group maps: %d q-values, %d gene entries",
-                len(qvalue_map),
-                len(gene_map),
+                "Built protein group maps: %d group(s), %d unambiguous accession(s)",
+                len(maps["by_group"]),
+                len(maps["by_accession"]),
             )
-            return {"qvalue": qvalue_map, "genes": gene_map}
+            return maps
         except (FileNotFoundError, pd.errors.ParserError, KeyError, ValueError, duckdb.Error) as e:
             self.logger.warning("Could not build protein group maps: %s", e)
-        return {"qvalue": {}, "genes": {}}
+        return empty
 
     @staticmethod
     def _detect_pg_columns(df: pd.DataFrame) -> tuple:
@@ -225,43 +260,68 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         return acc_col, qval_col, gene_col
 
     @staticmethod
-    def _extract_qvalue_map(df: pd.DataFrame, acc_col: str, qval_col: Optional[str]) -> dict[str, float]:
-        """Build accession -> q-value map from proteinGroups DataFrame."""
-        if not qval_col:
-            return {}
-        sub = df[[acc_col, qval_col]].copy()
-        sub[qval_col] = pd.to_numeric(sub[qval_col], errors="coerce")
-        sub = sub.dropna(subset=[qval_col])
-        # Explode semicolon-separated protein groups into individual accessions
-        sub = sub.assign(**{acc_col: sub[acc_col].astype(str).str.split(";")}).explode(acc_col)
-        sub[acc_col] = sub[acc_col].str.strip().apply(strip_uniprot_prefix)
-        sub = sub[sub[acc_col].str.len() > 0].drop_duplicates(subset=[acc_col], keep="first")
-        return dict(zip(sub[acc_col], sub[qval_col]))
+    def _canonical_group_key(accessions) -> frozenset:
+        """Order-independent key for a protein-group membership."""
+        return frozenset(a.strip() for a in accessions if a and a.strip())
 
     @staticmethod
-    def _extract_gene_map(df: pd.DataFrame, acc_col: str, gene_col: Optional[str]) -> dict[str, list[str]]:
-        """Build accession -> gene name list map from proteinGroups DataFrame."""
-        gene_map: dict[str, list[str]] = {}
+    def _parse_genes(gene_raw, fasta_raw) -> Optional[list[str]]:
+        """Parse gene names from a proteinGroups row (Gene names, else Fasta headers)."""
+        genes: list[str] | None = None
+        if gene_raw is not None and pd.notna(gene_raw) and str(gene_raw).strip():
+            genes = [g.strip() for g in str(gene_raw).split(";") if g.strip()] or None
+        if not genes and fasta_raw is not None and pd.notna(fasta_raw) and str(fasta_raw).strip():
+            genes = []
+            for hdr in str(fasta_raw).split(";"):
+                m = re.search(r"GN=([^\s;]+)", hdr)
+                if m and m.group(1) not in genes:
+                    genes.append(m.group(1))
+            genes = genes or None
+        return genes
+
+    def _build_pg_lookup(self, df: pd.DataFrame, acc_col: str, qval_col: Optional[str], gene_col: Optional[str]) -> dict:
+        """Build the ``by_group``/``by_accession`` lookup maps (see caller)."""
+        by_group: dict[frozenset, dict] = {}
+        acc_to_groups: dict[str, set] = {}
+        acc_value: dict[str, dict] = {}
+
         acc_vals = df[acc_col].astype(str).tolist()
+        qval_vals = pd.to_numeric(df[qval_col], errors="coerce").tolist() if qval_col else [None] * len(df)
         gene_vals = df[gene_col].tolist() if (gene_col and gene_col in df.columns) else [None] * len(df)
         fasta_vals = df["Fasta headers"].tolist() if "Fasta headers" in df.columns else [None] * len(df)
-        for acc_raw, gene_raw, fasta_raw in zip(acc_vals, gene_vals, fasta_vals):
+
+        for acc_raw, qval, gene_raw, fasta_raw in zip(acc_vals, qval_vals, gene_vals, fasta_vals):
             accs = [strip_uniprot_prefix(a.strip()) for a in acc_raw.split(";") if a.strip()]
-            genes: list[str] | None = None
-            if gene_raw and pd.notna(gene_raw):
-                genes = [g.strip() for g in str(gene_raw).split(";") if g.strip()] or None
-            if not genes and fasta_raw and pd.notna(fasta_raw):
-                genes = []
-                for hdr in str(fasta_raw).split(";"):
-                    m = re.search(r"GN=([^\s;]+)", hdr)
-                    if m and m.group(1) not in genes:
-                        genes.append(m.group(1))
-                genes = genes or None
-            if genes:
-                for acc in accs:
-                    if acc not in gene_map:
-                        gene_map[acc] = genes
-        return gene_map
+            if not accs:
+                continue
+            qvalue = float(qval) if qval is not None and pd.notna(qval) else None
+            genes = self._parse_genes(gene_raw, fasta_raw)
+            value = {"qvalue": qvalue, "genes": genes}
+            key = self._canonical_group_key(accs)
+            by_group.setdefault(key, value)
+            for acc in accs:
+                acc_to_groups.setdefault(acc, set()).add(key)
+                acc_value.setdefault(acc, value)
+
+        # Keep only accessions that map to a single protein group for the
+        # leader fallback; ambiguous accessions would otherwise collide.
+        by_accession = {acc: acc_value[acc] for acc, keys in acc_to_groups.items() if len(keys) == 1}
+        return {"by_group": by_group, "by_accession": by_accession}
+
+    def _lookup_pg_metadata(self, pg_maps: Optional[dict], pg_acc_list: list[str], anchor_protein: str) -> tuple:
+        """Resolve ``(pg_global_qvalue, genes)`` for a feature's protein group.
+
+        Keyed on the full protein-group membership first; only falls back to the
+        leader accession when that leader is unambiguous (belongs to one group).
+        """
+        if not pg_maps:
+            return None, None
+        entry = pg_maps.get("by_group", {}).get(self._canonical_group_key(pg_acc_list))
+        if entry is None and anchor_protein:
+            entry = pg_maps.get("by_accession", {}).get(anchor_protein)
+        if entry is None:
+            return None, None
+        return entry.get("qvalue"), entry.get("genes")
 
     def _detect_ri_offset(self, columns) -> int:
         """Detect whether reporter intensity columns are 0-indexed or 1-indexed.
@@ -277,6 +337,39 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
             return 0
         return 1
 
+    def _warn_dropped_tmt_channels(self, columns, experiment_type: str, tmt_channels: list[str], ri_offset: int) -> None:
+        """Warn when the SDRF plex declares channels absent from evidence.txt.
+
+        A ``Reporter intensity N`` column missing for a declared channel means
+        that channel is silently dropped from every feature; surface it once.
+        """
+        if getattr(self, "_warned_tmt_channels", None) is None:  # pragma: no cover - defensive
+            self._warned_tmt_channels = set()
+        exp_type = re.sub(r"\d+", "", experiment_type or "").upper()
+        if exp_type not in ("TMT", "ITRAQ") or not tmt_channels:
+            return
+        col_set = set(columns)
+        dropped: list[tuple[str, str]] = []
+        for seq_idx, channel_name in enumerate(tmt_channels):
+            col_idx = TMT_LABEL_TO_MQ_COL.get(str(channel_name).strip().upper())
+            if col_idx is None:
+                col_idx = seq_idx
+            col_name = f"Reporter intensity {col_idx + ri_offset}"
+            if col_name not in col_set:
+                dropped.append((str(channel_name), col_name))
+        if not dropped:
+            return
+        key = tuple(sorted(ch for ch, _ in dropped))
+        if key in self._warned_tmt_channels:
+            return
+        self._warned_tmt_channels.add(key)
+        logger.warning(
+            "SDRF declares %d TMT/iTRAQ channel(s) with no matching reporter intensity "
+            "column in evidence.txt; these channels are dropped from all features: %s",
+            len(dropped),
+            ", ".join(f"{ch} (expected {col})" for ch, col in dropped),
+        )
+
     def _transform_batch(
         self,
         df: pd.DataFrame,
@@ -290,6 +383,8 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         records: list[dict] = []
         # Detect reporter intensity column indexing once per batch
         ri_offset = self._detect_ri_offset(df.columns)
+        # Warn (once) about SDRF channels with no reporter column in evidence.txt
+        self._warn_dropped_tmt_channels(df.columns, experiment_type, tmt_channels, ri_offset)
         # Pre-extract column arrays for faster per-row access than to_dict("records")
         col_arrays = {col: df[col].values for col in df.columns}
         n_rows = len(df)
@@ -386,11 +481,14 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         # Unique peptide indicator
         unique = len(pg_acc_list) <= 1
 
+        # Protein-group q-value and genes, keyed on the full membership.
+        pg_qvalue, pg_genes = self._lookup_pg_metadata(pg_maps, pg_acc_list, anchor_protein)
+
         # Gene names
         gg_raw = row.get(r.get("gg_names", "Gene names"))
         gg_names = str(gg_raw).split(";") if pd.notna(gg_raw) and gg_raw else None
-        if not gg_names and pg_maps and anchor_protein:
-            gg_names = pg_maps.get("genes", {}).get(anchor_protein)
+        if not gg_names:
+            gg_names = pg_genes
 
         # Mass error (ppm) — direct column from evidence.txt
         mass_error_ppm = safe_float(row.get(r.get("mass_error_ppm", "Mass error [ppm]")))
@@ -452,7 +550,7 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
             "pg_accessions": pg_accessions,
             "anchor_protein": anchor_protein,
             "unique": unique,
-            "pg_global_qvalue": (pg_maps.get("qvalue", {}).get(anchor_protein) if pg_maps else None),
+            "pg_global_qvalue": pg_qvalue,
             "ion_mobility_start": None,
             "ion_mobility_stop": None,
             "gg_accessions": gg_names,

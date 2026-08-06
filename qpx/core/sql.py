@@ -16,7 +16,10 @@ from __future__ import annotations
 import re
 from string import Template
 
-_SAFE_IDENTIFIER = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_\[\].: ]*$")
+# The result is always double-quoted, so the only character that could break out
+# of the quoted identifier is ``"`` itself (excluded). ``/`` is allowed because
+# MaxQuant column names legitimately contain it (e.g. "MS/MS scan number", "m/z").
+_SAFE_IDENTIFIER = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_\[\].:/ ]*$")
 _SAFE_TABLE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
 
