@@ -151,9 +151,11 @@ class CdapPsmAdapter(CdapBaseAdapter):
         scan: list[int] = [scan_val] if scan_val else []
 
         observed_mz = self._finite_float(row.get("observed_mz"))
+        # ``calculated_mz`` is a THEORETICAL mass. When the peptidoform carries
+        # an unparseable token (e.g. a CHEMMOD unknown-mass tag), keep it NULL
+        # rather than falling back to a measured precursor m/z, which would
+        # silently corrupt the theoretical-mass semantics (bigbio/qpx#250).
         calculated_mz = compute_precursor_mz(peptidoform, charge) if peptidoform and charge else None
-        if calculated_mz is None:
-            calculated_mz = self._finite_float(row.get("original_mz"))
 
         mass_error_ppm = self._optional_float(row.get("mass_error_ppm"))
         rt = self._optional_float(row.get("rt"))

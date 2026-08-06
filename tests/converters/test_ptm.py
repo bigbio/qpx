@@ -38,6 +38,27 @@ class TestBuildProforma:
     def test_empty_sequence(self):
         assert build_proforma("", []) == ""
 
+    def test_cterm_mod(self):
+        """A mod at ``len(seq)+1`` is the C-term ProForma slot (bigbio/qpx#251).
+
+        Previously this position was silently dropped from ``peptidoform``
+        while surviving in ``modifications`` -- an identity inconsistency.
+        """
+        assert build_proforma("PEPTIDEK", [(9, "UNIMOD:2")]) == "PEPTIDEK-[UNIMOD:2]"
+
+    def test_nterm_and_cterm(self):
+        assert build_proforma("PEPTIDEK", [(0, "UNIMOD:1"), (9, "UNIMOD:2")]) == "[UNIMOD:1]-PEPTIDEK-[UNIMOD:2]"
+
+    def test_two_mods_same_position(self):
+        """Two mods at the same position must not collapse (bigbio/qpx#251).
+
+        ``dict(mods)`` used to keep only the last tag; both must be emitted.
+        """
+        assert build_proforma("PEPTIDEK", [(0, "UNIMOD:1"), (0, "UNIMOD:737")]) == "[UNIMOD:1][UNIMOD:737]-PEPTIDEK"
+
+    def test_two_mods_same_residue(self):
+        assert build_proforma("PEPTMIDEK", [(5, "UNIMOD:35"), (5, "CHEMMOD:+1.0")]) == "PEPTM[UNIMOD:35][CHEMMOD:+1.0]IDEK"
+
 
 class TestFromProforma:
     def test_unimod_tag(self):

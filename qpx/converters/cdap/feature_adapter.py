@@ -136,25 +136,32 @@ class CdapFeatureAdapter(CdapBaseAdapter):
                 f"TRY_CAST(split_part(CAST({qcol} AS VARCHAR), '/', 1) AS DOUBLE) AS {self._safe_channel_alias(col)}"
             )
 
+        # Representative fields must all come from the SAME best PSM row --
+        # independent ``arg_min`` per column produced a "Frankenstein" record
+        # (scan/observed_mz/rt from different PSMs) on tied or NULL Evalue.
+        # Applying one deterministic ORDER BY to every ``first()`` guarantees a
+        # single source row. NULLS LAST so a real Evalue is preferred over a
+        # missing one; scan/mz/rt break ties reproducibly.
+        best_order = "evalue ASC NULLS LAST, scan_num ASC NULLS LAST, observed_mz ASC NULLS LAST, rt ASC NULLS LAST"
         agg_cols: list[str] = [
             "peptide_raw",
             "charge",
             "file_name",
-            "arg_min(scan_num, evalue) AS best_scan",
-            "arg_min(observed_mz, evalue) AS best_observed_mz",
-            "arg_min(original_mz, evalue) AS best_original_mz",
-            "arg_min(ppm, evalue) AS best_ppm",
-            "arg_min(rt, evalue) AS best_rt",
-            "arg_min(evalue, evalue) AS best_evalue",
-            "arg_min(msgf, evalue) AS best_msgf",
-            "arg_min(denovo, evalue) AS best_denovo",
-            "arg_min(qvalue, evalue) AS best_qvalue",
-            "arg_min(pep_qvalue, evalue) AS best_pep_qvalue",
+            f"first(scan_num ORDER BY {best_order}) AS best_scan",
+            f"first(observed_mz ORDER BY {best_order}) AS best_observed_mz",
+            f"first(original_mz ORDER BY {best_order}) AS best_original_mz",
+            f"first(ppm ORDER BY {best_order}) AS best_ppm",
+            f"first(rt ORDER BY {best_order}) AS best_rt",
+            f"first(evalue ORDER BY {best_order}) AS best_evalue",
+            f"first(msgf ORDER BY {best_order}) AS best_msgf",
+            f"first(denovo ORDER BY {best_order}) AS best_denovo",
+            f"first(qvalue ORDER BY {best_order}) AS best_qvalue",
+            f"first(pep_qvalue ORDER BY {best_order}) AS best_pep_qvalue",
             "list(protein_cell ORDER BY evalue) AS protein_cells",
             "count(*) AS psm_count",
         ]
         if has_precursor_area:
-            agg_cols.append("arg_min(precursor_area, evalue) AS best_precursor_area")
+            agg_cols.append(f"first(precursor_area ORDER BY {best_order}) AS best_precursor_area")
         # SUM pre-extracted intensities directly in SQL.
         for col in channel_cols:
             alias = self._safe_channel_alias(col)
@@ -230,9 +237,11 @@ class CdapFeatureAdapter(CdapBaseAdapter):
         scan: list[int] = [scan_val] if scan_val else []
 
         observed_mz = self._finite_float(row.get("best_observed_mz"))
+        # ``calculated_mz`` is a THEORETICAL mass. When the peptidoform carries
+        # an unparseable token (e.g. a CHEMMOD unknown-mass tag), keep it NULL
+        # rather than falling back to a measured precursor m/z, which would
+        # silently corrupt the theoretical-mass semantics (bigbio/qpx#250).
         calculated_mz = compute_precursor_mz(peptidoform, charge) if peptidoform and charge else None
-        if calculated_mz is None:
-            calculated_mz = self._finite_float(row.get("best_original_mz"))
 
         mass_error_ppm = self._optional_float(row.get("best_ppm"))
         rt = self._optional_float(row.get("best_rt"))

@@ -321,6 +321,152 @@ def test_cdap_lfq_precursor_area_uses_lfq_label(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+_MIN_PSM_HEADER = [
+    "FileName",
+    "ScanNum",
+    "QueryPrecursorMz",
+    "OriginalPrecursorMz",
+    "PrecursorError(ppm)",
+    "QueryCharge",
+    "OriginalCharge",
+    "PrecursorScanNum",
+    "PrecursorArea",
+    "PrecursorRelAb",
+    "RTAtPrecursorHalfElution",
+    "PeptideSequence",
+    "AmbiguousMatch",
+    "Protein",
+    "DeNovoScore",
+    "MSGFScore",
+    "Evalue",
+    "Qvalue",
+    "PepQvalue",
+    "PrecursorPurity",
+    "FractionDecomposition",
+]
+
+
+def _write_psm(psm_dir, name, rows):
+    """Write a minimal CDAP ``.psm`` file from a list of dict rows."""
+    psm_dir.mkdir(parents=True, exist_ok=True)
+    lines = ["\t".join(_MIN_PSM_HEADER)]
+    for row in rows:
+        lines.append("\t".join(str(row.get(col, "")) for col in _MIN_PSM_HEADER))
+    (psm_dir / name).write_text("\n".join(lines) + "\n")
+
+
+def _base_row(**overrides):
+    row = {
+        "FileName": "run_a.raw",
+        "ScanNum": "1000",
+        "QueryPrecursorMz": "500.25",
+        "OriginalPrecursorMz": "500.25",
+        "PrecursorError(ppm)": "1.0",
+        "QueryCharge": "2",
+        "OriginalCharge": "2",
+        "PrecursorScanNum": "999",
+        "PrecursorArea": "10000",
+        "PrecursorRelAb": "0.1",
+        "RTAtPrecursorHalfElution": "300.0",
+        "PeptideSequence": "PEPTIDEK",
+        "AmbiguousMatch": "0",
+        "Protein": "NP_000001.1(pre=K,post=A)",
+        "DeNovoScore": "50",
+        "MSGFScore": "40",
+        "Evalue": "0.001",
+        "Qvalue": "0.0",
+        "PepQvalue": "0.0",
+        "PrecursorPurity": "99.0,99.0",
+        "FractionDecomposition": "99.0,99.0",
+    }
+    row.update(overrides)
+    return row
+
+
+def test_cdap_feature_representative_from_single_psm(tmp_path):
+    """Representative scan/mz/rt must all come from ONE best PSM (#250).
+
+    Independent ``arg_min`` per column produced a Frankenstein record on
+    tied/NULL Evalue. Here three PSMs share (peptidoform, charge, run); the
+    winning (scan, observed_mz, rt) triple must equal exactly one input row.
+    """
+    from qpx.converters.cdap.feature_adapter import CdapFeatureAdapter
+
+    rows = [
+        _base_row(Evalue="", ScanNum="100", QueryPrecursorMz="400.0", RTAtPrecursorHalfElution="5.0"),
+        _base_row(Evalue="0.2", ScanNum="200", QueryPrecursorMz="500.0", RTAtPrecursorHalfElution="6.0"),
+        _base_row(Evalue="0.2", ScanNum="300", QueryPrecursorMz="600.0", RTAtPrecursorHalfElution="7.0"),
+    ]
+    _write_psm(tmp_path / "psm", "frank.psm", rows)
+
+    out = tmp_path / "frank.feature.parquet"
+    with CdapFeatureAdapter() as adapter:
+        adapter.convert(psm_dir=str(tmp_path / "psm"), output_path=str(out))
+
+    table = pq.read_table(str(out))
+    assert table.num_rows == 1
+    scan = table.column("scan").to_pylist()[0]
+    observed_mz = table.column("observed_mz").to_pylist()[0]
+    rt = table.column("rt").to_pylist()[0]
+    input_triples = {(100, 400.0, 5.0), (200, 500.0, 6.0), (300, 600.0, 7.0)}
+    got = (scan[0], observed_mz, rt)
+    assert got in input_triples, f"Frankenstein: {got} matches no input PSM"
+    # Deterministic best: Evalue 0.2 tie broken by lowest scan -> row 200.
+    assert got == (200, 500.0, 6.0)
+
+
+def test_cdap_feature_chemmod_calc_mz_is_null_not_observed(tmp_path):
+    """An unparseable CHEMMOD must leave calculated_mz NULL/0, not fall back
+    to the observed precursor m/z (#250)."""
+    from qpx.converters.cdap.feature_adapter import CdapFeatureAdapter
+
+    # +123.456 is not in the CDAP mass table -> CHEMMOD -> unparseable calc mass.
+    rows = [_base_row(PeptideSequence="PEP+123.456TIDEK", OriginalPrecursorMz="777.7", QueryPrecursorMz="777.7")]
+    _write_psm(tmp_path / "psm", "chemmod.psm", rows)
+
+    out = tmp_path / "chemmod.feature.parquet"
+    with CdapFeatureAdapter() as adapter:
+        adapter.convert(psm_dir=str(tmp_path / "psm"), output_path=str(out))
+
+    table = pq.read_table(str(out))
+    assert table.num_rows == 1
+    calc = table.column("calculated_mz").to_pylist()[0]
+    # NULL calc mass is stored as 0.0; it must NOT be the measured 777.7.
+    assert not calc, f"CHEMMOD calc_mz leaked observed m/z: {calc}"
+
+
+def test_cdap_pg_distinct_groups_sharing_leader(tmp_path):
+    """Two distinct protein groups sharing a leading protein must NOT collapse
+    into one pg (#250). ``P1;P2`` and ``P1;P3`` share leader ``P1``."""
+    from qpx.converters.cdap.feature_adapter import CdapFeatureAdapter
+    from qpx.converters.cdap.pg_adapter import CdapPgAdapter
+
+    rows = [
+        _base_row(PeptideSequence="PEPTIDEA", Protein="P1(pre=K,post=A);P2(pre=K,post=A)"),
+        _base_row(PeptideSequence="PEPTIDEB", Protein="P1(pre=K,post=A);P3(pre=K,post=A)"),
+    ]
+    _write_psm(tmp_path / "psm", "leader.psm", rows)
+
+    feat = tmp_path / "leader.feature.parquet"
+    with CdapFeatureAdapter() as adapter:
+        adapter.convert(psm_dir=str(tmp_path / "psm"), output_path=str(feat))
+
+    pg = tmp_path / "leader.pg.parquet"
+    with CdapPgAdapter() as adapter:
+        adapter.convert(feature_path=str(feat), output_path=str(pg))
+
+    table = pq.read_table(str(pg))
+    memberships = set()
+    for accs in table.column("pg_accessions").to_pylist():
+        names = frozenset(a["accession"] if isinstance(a, dict) else a for a in (accs or []))
+        memberships.add(names)
+    assert frozenset({"P1", "P2"}) in memberships
+    assert frozenset({"P1", "P3"}) in memberships
+    # Not collapsed to a single leader-keyed group.
+    assert frozenset({"P1", "P2"}) != frozenset({"P1", "P3"})
+    assert len(memberships) == 2
+
+
 class TestCdapPeptidoform:
     """Unit tests for the ProForma conversion logic."""
 

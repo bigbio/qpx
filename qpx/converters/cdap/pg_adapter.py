@@ -29,8 +29,10 @@ class CdapPgAdapter(CdapBaseAdapter):
         """Aggregate the given feature parquet into per-run protein groups."""
         self._load_parquet("features", feature_path)
         actual_cols = self.get_table_columns("features")
-        if "anchor_protein" not in actual_cols or "run_file_name" not in actual_cols:
-            raise ValueError("feature.parquet missing 'anchor_protein' / 'run_file_name' columns")
+        required = {"anchor_protein", "run_file_name", "pg_accessions"}
+        missing = required - set(actual_cols)
+        if missing:
+            raise ValueError(f"feature.parquet missing columns: {sorted(missing)}")
 
         sql = self._build_aggregation_sql()
         self.logger.info("Transforming CDAP protein groups ...")
@@ -45,10 +47,29 @@ class CdapPgAdapter(CdapBaseAdapter):
 
     @staticmethod
     def _build_aggregation_sql() -> str:
-        """Build a query that aggregates features per (anchor_protein, run)."""
+        """Build a query that aggregates features per (protein group, run).
+
+        The group key is the FULL protein-group membership (the sorted set of
+        ``pg_accessions`` accessions), not the leading ``anchor_protein``.
+        Keying on the leader alone collapsed two genuinely distinct groups that
+        share a leading protein (e.g. ``P1;P2`` and ``P1;P3``) into one, and
+        filed shared peptides under whichever accession happened to be listed
+        first. This mirrors the pg-identity fix (bigbio/qpx#240) that keys
+        ``pg_id`` on ``pg_accessions``; ``anchor_protein`` stays a descriptive
+        leader carried through with ``any_value``.
+        """
         return (
+            "WITH keyed AS (\n"
+            "    SELECT\n"
+            "        *,\n"
+            "        COALESCE(\n"
+            "            array_to_string(list_sort(list_transform(pg_accessions, x -> x.accession)), ';'),\n"
+            "            anchor_protein\n"
+            "        ) AS pg_membership_key\n"
+            "    FROM features\n"
+            ")\n"
             "SELECT\n"
-            "    anchor_protein,\n"
+            "    any_value(anchor_protein) AS anchor_protein,\n"
             "    run_file_name,\n"
             "    any_value(is_decoy) AS any_decoy,\n"
             "    bool_and(is_decoy) AS all_decoy,\n"
@@ -59,8 +80,8 @@ class CdapPgAdapter(CdapBaseAdapter):
             "    list(intensities) AS intensities_per_feature,\n"
             "    list(pg_accessions) AS pg_accessions_per_feature,\n"
             "    list(additional_scores) AS additional_scores_per_feature\n"
-            "FROM features\n"
-            "GROUP BY anchor_protein, run_file_name"
+            "FROM keyed\n"
+            "GROUP BY pg_membership_key, run_file_name"
         )
 
     # ------------------------------------------------------------------
