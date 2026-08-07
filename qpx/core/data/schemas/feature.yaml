@@ -47,7 +47,8 @@ fields:
   observed_mz:
     type: float32
     required: true
-    doc: "Experimental m/z"
+    nullable: true
+    doc: "Experimental m/z; null when the producer reports no measured precursor m/z (e.g. DIA-NN report without Precursor.Mz and no ms_info)"
   mass_error_ppm:
     type: float32
     doc: "Mass error in ppm: 1e6 * (observed_mz - calculated_mz) / calculated_mz"

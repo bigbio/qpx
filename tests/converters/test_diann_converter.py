@@ -486,6 +486,367 @@ def test_diann_maxlfq_fallback_keeps_experimental_label(tmp_path):
     assert row["additional_intensities"] is None
 
 
+def _pg_rows_single_run(
+    tmp_path: Path,
+    report_rows: list[dict],
+    *,
+    matrix_rows: list[dict] | None = None,
+    qvalue_threshold: float = 0.01,
+) -> list[dict]:
+    """Convert a synthetic single-run DIA-NN report+matrix and return pg rows."""
+    from qpx.converters.diann.pg_adapter import DiannPgAdapter
+
+    report_path = tmp_path / "report.tsv"
+    pd.DataFrame(report_rows).to_csv(report_path, sep="\t", index=False)
+    matrix_path = tmp_path / "pg_matrix.tsv"
+    pd.DataFrame(matrix_rows or [{"Protein.Group": "P1", "Protein.Names": "N1", "Genes": "G1", "run_A": 900.0}]).to_csv(
+        matrix_path, sep="\t", index=False
+    )
+    output_path = tmp_path / "out.pg.parquet"
+    with DiannPgAdapter() as adapter:
+        adapter.convert(
+            diann_report=str(report_path),
+            pg_matrix_path=str(matrix_path),
+            output_path=str(output_path),
+            qvalue_threshold=qvalue_threshold,
+        )
+    return pq.read_table(output_path).to_pylist()
+
+
+def test_diann_pg_qvalue_filter_excludes_subthreshold_groups(tmp_path):
+    """PG view must drop protein groups above the PG q-value threshold.
+
+    Regression for bigbio/qpx#241: the pg WHERE clause filtered nothing, so every
+    protein group was emitted regardless of PG-level FDR, inflating gene/protein
+    counts on loosely-filtered reports. The filter mirrors the feature view.
+    """
+    base = {
+        "Run": "run_A",
+        "Precursor.Charge": 2,
+        "Q.Value": 0.002,
+        "PG.Q.Value": 0.002,
+        "GG.Q.Value": 0.004,
+        "Proteotypic": 1,
+        "Precursor.Quantity": 100.0,
+        "PG.Quantity": 1000.0,
+        "PG.MaxLFQ": 900.0,
+    }
+    rows = [
+        # Confident group (Global.PG.Q.Value = 0.003 <= 0.01): kept
+        {
+            **base,
+            "Protein.Group": "P1",
+            "Protein.Names": "N1",
+            "Genes": "G1",
+            "Global.PG.Q.Value": 0.003,
+            "Stripped.Sequence": "PEPTIDEK",
+            "Precursor.Id": "PEPTIDEK2",
+        },
+        # Sub-threshold group (Global.PG.Q.Value = 0.50 > 0.01): dropped
+        {
+            **base,
+            "Protein.Group": "P2",
+            "Protein.Names": "N2",
+            "Genes": "G2",
+            "Global.PG.Q.Value": 0.50,
+            "Stripped.Sequence": "PEPTIDER",
+            "Precursor.Id": "PEPTIDER2",
+        },
+    ]
+    matrix = [
+        {"Protein.Group": "P1", "Protein.Names": "N1", "Genes": "G1", "run_A": 900.0},
+        {"Protein.Group": "P2", "Protein.Names": "N2", "Genes": "G2", "run_A": 800.0},
+    ]
+    out = _pg_rows_single_run(tmp_path, rows, matrix_rows=matrix, qvalue_threshold=0.01)
+    accessions = {tuple(row["pg_accessions"]) for row in out}
+    assert accessions == {("P1",)}, "sub-threshold protein group P2 must be filtered out"
+
+
+def test_diann_pg_qvalue_filter_skipped_without_qvalue_columns(tmp_path, caplog):
+    """No PG q-value column -> skip the filter with a warning, do not crash.
+
+    Older DIA-NN reports may omit Global.PG.Q.Value / PG.Q.Value entirely
+    (bigbio/qpx#241 guard).
+    """
+    import logging
+
+    rows = [
+        {
+            "Run": "run_A",
+            "Protein.Group": "P1",
+            "Protein.Names": "N1",
+            "Genes": "G1",
+            "Precursor.Charge": 2,
+            "Proteotypic": 1,
+            "Precursor.Quantity": 100.0,
+            "PG.Quantity": 1000.0,
+            "PG.MaxLFQ": 900.0,
+            "Stripped.Sequence": "PEPTIDEK",
+            "Precursor.Id": "PEPTIDEK2",
+        }
+    ]
+    with caplog.at_level(logging.WARNING):
+        out = _pg_rows_single_run(tmp_path, rows, qvalue_threshold=0.01)
+    assert len(out) == 1, "group must still be emitted when no PG q-value filter can be applied"
+    assert out[0]["pg_qvalue"] is None
+    assert any("skipping PG-level q-value filter" in rec.message for rec in caplog.records)
+
+
+def _feature_rows_single_run(
+    tmp_path: Path,
+    report_rows: list[dict],
+    *,
+    qvalue_threshold: float | None = None,
+) -> list[dict]:
+    """Convert a synthetic single-run DIA-NN report and return feature rows."""
+    from qpx.converters.diann.feature_adapter import DiannFeatureAdapter
+
+    report_path = tmp_path / "report.tsv"
+    pd.DataFrame(report_rows).to_csv(report_path, sep="\t", index=False)
+    output_path = tmp_path / "out.feature.parquet"
+    with DiannFeatureAdapter() as adapter:
+        adapter.convert(
+            diann_report=str(report_path),
+            output_path=str(output_path),
+            qvalue_threshold=qvalue_threshold,
+        )
+    return pq.read_table(output_path).to_pylist()
+
+
+def _two_precursor_report_rows() -> list[dict]:
+    """Two precursors in one run: one confident, one with a high Q.Value/PG.Q.Value."""
+    shared = {
+        "Run": "run_A",
+        "Precursor.Charge": 2,
+        "Proteotypic": 1,
+        "Precursor.Quantity": 100.0,
+        "PG.Quantity": 1000.0,
+        "PG.MaxLFQ": 900.0,
+    }
+    return [
+        {
+            **shared,
+            "Protein.Group": "P1",
+            "Protein.Names": "N1",
+            "Genes": "G1",
+            "Modified.Sequence": "PEPTIDEK",
+            "Stripped.Sequence": "PEPTIDEK",
+            "Precursor.Id": "PEPTIDEK2",
+            "Q.Value": 0.002,
+            "PG.Q.Value": 0.002,
+            "Global.PG.Q.Value": 0.003,
+            "GG.Q.Value": 0.004,
+        },
+        {
+            **shared,
+            "Protein.Group": "P2",
+            "Protein.Names": "N2",
+            "Genes": "G2",
+            "Modified.Sequence": "PEPTIDER",
+            "Stripped.Sequence": "PEPTIDER",
+            "Precursor.Id": "PEPTIDER2",
+            "Q.Value": 0.50,
+            "PG.Q.Value": 0.50,
+            "Global.PG.Q.Value": 0.50,
+            "GG.Q.Value": 0.50,
+        },
+    ]
+
+
+def test_diann_default_conversion_applies_no_qvalue_filter(tmp_path):
+    """Default conversion (no --qvalue-threshold) emits every row as reported.
+
+    bigbio/qpx#241: filtering is opt-in. DIA-NN already FDR-filters its main
+    report and all q-value columns are carried through, so with no threshold the
+    converter must keep even a deliberately high-Q.Value precursor and a
+    high-PG.Q.Value protein group. Both views are consistent — neither filters.
+    """
+    rows = _two_precursor_report_rows()
+    matrix = [
+        {"Protein.Group": "P1", "Protein.Names": "N1", "Genes": "G1", "run_A": 900.0},
+        {"Protein.Group": "P2", "Protein.Names": "N2", "Genes": "G2", "run_A": 800.0},
+    ]
+
+    # Feature view: both precursors kept, including the Q.Value=0.50 one.
+    feature_rows = _feature_rows_single_run(tmp_path, rows)
+    feature_seqs = {row["sequence"] for row in feature_rows}
+    assert feature_seqs == {"PEPTIDEK", "PEPTIDER"}, "no-filter default must keep the high-Q.Value precursor"
+
+    # PG view: both groups kept, including the Global.PG.Q.Value=0.50 one.
+    pg_rows = _pg_rows_single_run(tmp_path, rows, matrix_rows=matrix, qvalue_threshold=None)
+    pg_accessions = {tuple(row["pg_accessions"]) for row in pg_rows}
+    assert pg_accessions == {("P1",), ("P2",)}, "no-filter default must keep the high-PG.Q.Value group"
+
+
+def test_diann_threshold_filters_each_view_at_its_own_level(tmp_path):
+    """A supplied threshold filters the feature view on precursor Q.Value and the
+    pg view on PG-level q-value (Global.PG.Q.Value / PG.Q.Value).
+
+    bigbio/qpx#241: when --qvalue-threshold IS given, each view filters at its
+    own level, dropping the sub-threshold precursor / protein group.
+    """
+    rows = _two_precursor_report_rows()
+    matrix = [
+        {"Protein.Group": "P1", "Protein.Names": "N1", "Genes": "G1", "run_A": 900.0},
+        {"Protein.Group": "P2", "Protein.Names": "N2", "Genes": "G2", "run_A": 800.0},
+    ]
+
+    # Feature view filters on precursor Q.Value: the 0.50 precursor is dropped.
+    feature_rows = _feature_rows_single_run(tmp_path, rows, qvalue_threshold=0.01)
+    feature_seqs = {row["sequence"] for row in feature_rows}
+    assert feature_seqs == {"PEPTIDEK"}, "threshold must drop the high-Q.Value precursor from the feature view"
+
+    # PG view filters on PG-level q-value: the 0.50 group is dropped.
+    pg_rows = _pg_rows_single_run(tmp_path, rows, matrix_rows=matrix, qvalue_threshold=0.01)
+    pg_accessions = {tuple(row["pg_accessions"]) for row in pg_rows}
+    assert pg_accessions == {("P1",)}, "threshold must drop the high-PG.Q.Value group from the pg view"
+
+
+def test_diann_pg_conflicting_quantities_are_deterministic(tmp_path):
+    """Merged rows disagreeing on PG.Quantity must yield a deterministic value.
+
+    Regression for the Codex HIGH finding: the group's quantity was taken from
+    whichever row appeared first, and the source SQL has no ORDER BY, so the
+    emitted intensity was nondeterministic when annotation-inconsistent rows
+    carried different quantities. The adapter now takes the max of the finite
+    values, so row order cannot change the result.
+    """
+    base = {
+        "Run": "run_A",
+        "Protein.Group": "P1;P2",
+        "Protein.Names": "N1;N2",
+        "Precursor.Charge": 2,
+        "Q.Value": 0.002,
+        "PG.Q.Value": 0.002,
+        "Global.PG.Q.Value": 0.003,
+        "GG.Q.Value": 0.004,
+        "Proteotypic": 1,
+        "Precursor.Quantity": 100.0,
+    }
+    # Same protein group + run, inconsistent Genes annotation, DIFFERENT quantities.
+    rows = [
+        {
+            **base,
+            "Genes": "G1;G2",
+            "PG.Quantity": 1000.0,
+            "PG.MaxLFQ": 900.0,
+            "Stripped.Sequence": "PEPTIDEK",
+            "Precursor.Id": "PEPTIDEK2",
+        },
+        {
+            **base,
+            "Genes": "G1",
+            "PG.Quantity": 3000.0,
+            "PG.MaxLFQ": 2500.0,
+            "Stripped.Sequence": "PEPTIDER",
+            "Precursor.Id": "PEPTIDER2",
+        },
+    ]
+    matrix = [{"Protein.Group": "P1;P2", "Protein.Names": "N1;N2", "Genes": "G1;G2", "run_A": 900.0}]
+
+    out = _pg_rows_single_run(tmp_path, rows, matrix_rows=matrix)
+    # Reversed row order must give the identical result.
+    out_reversed = _pg_rows_single_run(tmp_path, list(reversed(rows)), matrix_rows=matrix)
+
+    assert len(out) == 1 and len(out_reversed) == 1
+    assert out[0]["intensity"] == 3000.0, "primary intensity must be the deterministic max of the finite values"
+    assert out[0]["intensity"] == out_reversed[0]["intensity"], "result must not depend on row order"
+    assert out[0]["additional_intensities"][0]["intensities"][0]["intensity_value"] == 2500.0
+
+
+def test_diann_feature_observed_mz_is_null_without_mz_source(tmp_path):
+    """observed_mz must be NULL (not 0.0) when the report lacks Precursor.Mz and
+    no mzml_info_folder is provided.
+
+    Regression for bigbio/qpx#244: a sentinel 0.0 looks like a real measurement
+    and corrupts downstream mass-error / PPM math; a truthful NULL propagates as
+    "unknown".
+    """
+    from qpx.converters.diann.feature_adapter import DiannFeatureAdapter
+
+    report_path = tmp_path / "no_mz_report.tsv"
+    pd.DataFrame(
+        [
+            {
+                "Run": "run_A",
+                "Protein.Group": "P1",
+                "Genes": "G1",
+                "Modified.Sequence": "PEPTIDEK",
+                "Stripped.Sequence": "PEPTIDEK",
+                "Precursor.Charge": 2,
+                "Q.Value": 0.002,
+                "Precursor.Quantity": 100.0,
+                "RT": 10.0,
+            }
+        ]
+    ).to_csv(report_path, sep="\t", index=False)
+
+    output_path = tmp_path / "no_mz.feature.parquet"
+    with DiannFeatureAdapter() as adapter:
+        adapter.convert(
+            diann_report=str(report_path),
+            output_path=str(output_path),
+            qvalue_threshold=0.01,
+        )
+
+    rows = pq.read_table(output_path).to_pylist()
+    assert len(rows) == 1
+    assert rows[0]["observed_mz"] is None, "absent observed_mz must be NULL, not a 0.0 sentinel"
+
+
+def test_diann_feature_warns_on_runs_missing_ms_info(tmp_path, caplog):
+    """A report Run without a matching *_ms_info.parquet must be warned about.
+
+    Regression for bigbio/qpx#244: such runs are silently dropped from
+    feature.parquet; the drop is unchanged but now visible in the logs.
+    """
+    import logging
+
+    from qpx.converters.diann.feature_adapter import DiannFeatureAdapter
+
+    shared = {
+        "Protein.Group": "P1",
+        "Genes": "G1",
+        "Modified.Sequence": "PEPTIDEK",
+        "Stripped.Sequence": "PEPTIDEK",
+        "Precursor.Charge": 2,
+        "Q.Value": 0.002,
+        "Precursor.Quantity": 100.0,
+        "RT": 10.0,
+    }
+    report_path = tmp_path / "two_run_report.tsv"
+    pd.DataFrame(
+        [
+            {**shared, "Run": "run_A"},
+            {**shared, "Run": "run_B"},  # no ms_info file for run_B
+        ]
+    ).to_csv(report_path, sep="\t", index=False)
+
+    # Provide an ms_info file for run_A only.
+    ms_info_dir = tmp_path / "ms_info"
+    ms_info_dir.mkdir()
+    pq.write_table(
+        pa.Table.from_pandas(pd.DataFrame({"rt": [10.0], "scan": [1], "precursor_mz": [500.0]})),
+        str(ms_info_dir / "run_A_ms_info.parquet"),
+    )
+
+    output_path = tmp_path / "two_run.feature.parquet"
+    with caplog.at_level(logging.WARNING):
+        with DiannFeatureAdapter() as adapter:
+            adapter.convert(
+                diann_report=str(report_path),
+                output_path=str(output_path),
+                mzml_info_folder=str(ms_info_dir),
+                qvalue_threshold=0.01,
+            )
+
+    run_names = set(pq.read_table(output_path).column("run_file_name").to_pylist())
+    assert run_names == {"run_A"}, "run_B has no ms_info and is dropped (unchanged behaviour)"
+    assert any("run_B" in rec.message and "dropped" in rec.message for rec in caplog.records), (
+        "dropped run must be reported in a warning"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Ontology conversion tests
 # ---------------------------------------------------------------------------
