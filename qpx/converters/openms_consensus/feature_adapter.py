@@ -231,11 +231,19 @@ def load_consensus_map(consensusxml_path: str):
 
 
 def _pid_scans(pid) -> list[int]:
-    """Scan numbers parsed from one identification's spectrum reference."""
+    """Scan numbers parsed from one identification's spectrum reference.
+
+    Uses the shared parser in :mod:`psm_adapter` (imported lazily to avoid a
+    circular import — psm_adapter imports this module) so feature.scan and
+    psm.scan are produced by the same logic, including Sciex ``cycle=`` ordinals
+    and the deterministic surrogate fallback.
+    """
     ref = pid.getSpectrumReference() if hasattr(pid, "getSpectrumReference") else ""
     if not ref and pid.metaValueExists("spectrum_reference"):
         ref = pid.getMetaValue("spectrum_reference")
-    return [int(m) for m in re.findall(r"(?:scan|index|spectrum)=(\d+)", str(ref or ""), re.IGNORECASE)]
+    from qpx.converters.openms_consensus.psm_adapter import _scan_of
+
+    return _scan_of(ref)
 
 
 def _scan_by_run(pids, map_info: dict[int, tuple[str, str]], cf_runs: Optional[set[str]] = None) -> dict[str, list[int]]:

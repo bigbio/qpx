@@ -52,14 +52,22 @@ def _scan_of(spectrum_ref: str) -> list[int]:
     """Parse the scan number(s) from a spectrum reference into a list<int>.
 
     Recognizes the common ``scan=``/``index=``/``spectrum=`` tokens (Thermo,
-    Bruker, single peak lists, Waters) and falls back to the Sciex ``cycle=``
-    ordinal so non-Thermo nativeIDs are not silently dropped.
+    Bruker, single peak lists, Waters), falls back to the Sciex ``cycle=``
+    ordinal, and finally to a deterministic surrogate for nativeID schemes with
+    no recognizable ordinal. A completely empty reference returns ``[]`` (the
+    caller skips those PSMs). Shared with the feature adapter so psm.scan and
+    feature.scan stay consistent.
     """
     ref = str(spectrum_ref or "")
+    if not ref:
+        return []
     scans = [int(m) for m in _SCAN_RE.findall(ref)]
     if scans:
         return scans
-    return [int(m) for m in _CYCLE_RE.findall(ref)]
+    cycles = [int(m) for m in _CYCLE_RE.findall(ref)]
+    if cycles:
+        return cycles
+    return [_surrogate_scan(ref)]
 
 
 def _pep_of(hit) -> float | None:
@@ -173,17 +181,9 @@ def psm_records_for_pid(pid, resolve_run, seen: set[tuple], cf_runs=None) -> lis
         spectrum_ref = pid.getMetaValue("spectrum_reference")
     scan = _scan_of(spectrum_ref)
     if not scan:
-        if not str(spectrum_ref or ""):
-            # No spectrum reference at all: nothing to key on, skip.
-            _log.debug("Skipping consensusXML PSM with empty spectrum_reference")
-            return []
-        # A recognized nativeID scheme exposes a scan/index/spectrum/cycle ordinal;
-        # an unrecognized one (e.g. an exotic instrument) exposes none. Rather than
-        # silently drop the PSM (which loses non-Thermo data), fall back to a
-        # deterministic surrogate ordinal derived from the reference so the PSM is
-        # keyed stably and identically across the pyopenms and streaming paths.
-        scan = [_surrogate_scan(spectrum_ref)]
-        _log.debug("consensusXML PSM nativeID has no scan ordinal; using surrogate for %r", spectrum_ref)
+        # No spectrum reference at all (or nothing keyable): nothing to key on, skip.
+        _log.debug("Skipping consensusXML PSM with empty spectrum_reference: %r", spectrum_ref)
+        return []
     obs_mz = float(pid.getMZ()) if pid.getMZ() else 0.0
     # When the identification score IS the q-value, the hit score is the peptide
     # q-value (OpenMS FDR output); otherwise it is a search score.
