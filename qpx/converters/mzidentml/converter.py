@@ -154,15 +154,22 @@ class MzIdentMLConverter(BaseOrchestrator):
             scans = rec.get("scan") or []
             if not scans:
                 continue
-            scan = scans[0]
-            spectrum = mgf_index.get_spectrum(scan)
-            if spectrum is None:
-                # Fallback: try 0-based index lookup
-                spectrum = mgf_index.get_spectrum_by_index(scan)
+            value = scans[0]
+            # Honour the nativeID scheme: an ``index=`` value is a 0-based file
+            # position, NOT a scan number. Looking it up by scan number would
+            # match an unrelated spectrum whose ``SCANS=`` equals the index and
+            # attach the wrong peaks/RT. A ``scan=`` value must never be treated
+            # as an index either — use the lookup that matches the scheme only.
+            scheme = rec.get("_spectrum_id_scheme")
+            if scheme == "index":
+                spectrum = mgf_index.get_spectrum_by_index(value)
                 if spectrum is not None:
                     matched_by_index += 1
             else:
-                matched_by_scan += 1
+                # "scan" (or a legacy record without a recorded scheme)
+                spectrum = mgf_index.get_spectrum(value)
+                if spectrum is not None:
+                    matched_by_scan += 1
 
             if spectrum is not None:
                 rec["mz_array"] = spectrum["mz_array"]

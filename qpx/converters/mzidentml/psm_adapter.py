@@ -8,6 +8,7 @@ crosslinking modifications (``crosslink donor``, ``crosslink acceptor``).
 
 from __future__ import annotations
 
+import copy
 import gzip
 import logging
 import re
@@ -329,7 +330,7 @@ class MzIdentMLPsmAdapter(BaseConverter):
 
         records = []
         for sir in spectrum_results:
-            scan = _parse_scan(sir["spectrum_id"])
+            scan, scan_scheme = _parse_native_id(sir["spectrum_id"])
             run_file = spectra_data.get(sir["spectra_data_ref"], "unknown")
             rt = sir.get("rt")
             siis = sir["siis"]
@@ -349,6 +350,10 @@ class MzIdentMLPsmAdapter(BaseConverter):
                     rt=rt,
                 )
                 if record is not None:
+                    # Transient hint (dropped by the writer) telling
+                    # ``_attach_spectra`` whether ``scan`` is an acquisition scan
+                    # number or a 0-based file index, so it fetches by the right key.
+                    record["_spectrum_id_scheme"] = scan_scheme
                     records.append(record)
 
         return records
@@ -409,9 +414,13 @@ class MzIdentMLPsmAdapter(BaseConverter):
         # Build peptidoform from sequence and parsed modifications
         peptidoform = _build_peptidoform(sequence, alpha_pep.get("modifications"))
 
-        # Enrich modifications with site localization scores from SII cvParams
+        # Enrich modifications with site localization scores from SII cvParams.
+        # ``alpha_pep["modifications"]`` is shared by every PSM that references
+        # this Peptide id, and site-localization scoring mutates positions in
+        # place — deep-copy first so PSMs sharing a peptide_ref do not accumulate
+        # each other's phosphoRS/Ascore values.
         modifications = _attach_site_localization_scores(
-            alpha_pep.get("modifications"),
+            copy.deepcopy(alpha_pep.get("modifications")),
             alpha_sii["cv_params"],
         )
 
@@ -654,20 +663,47 @@ def _source_sii_identity(run_file: str, alpha_sii: dict, beta_sii: dict | None) 
     return derive_id([run_file, source_ids]), cv_params
 
 
-def _parse_scan(spectrum_id: str) -> list[int]:
-    """Extract scan number(s) from mzIdentML spectrumID string.
+def _parse_native_id(spectrum_id: str) -> tuple[list[int], str | None]:
+    """Extract the numeric spectrum reference and its nativeID scheme.
 
-    Handles formats: ``scan=100``, ``index=7483``, ``spectrum=5``.
-    Falls back to 0 if no numeric value is found.
+    Returns ``(values, scheme)`` where ``scheme`` is one of:
+
+    * ``"scan"``  — the value is an acquisition scan number
+      (``scan=N``, ``spectrum=N``, or a bare integer);
+    * ``"index"`` — the value is a 0-based position in the spectrum file
+      (``index=N``). This is NOT a scan number: it must be looked up by
+      position, never by scan number, or peaks/RT from an unrelated spectrum
+      whose ``SCANS=`` happens to equal the index get attached;
+    * ``None``    — no numeric reference could be parsed.
+
+    The scheme is what lets spectra attachment fetch the CORRECT spectrum.
     """
-    m = re.search(r"(?:scan|index|spectrum)=(\d+)", spectrum_id)
+    m = re.search(r"scan=(\d+)", spectrum_id)
     if m:
-        return [int(m.group(1))]
-    # Try bare integer
+        return [int(m.group(1))], "scan"
+    m = re.search(r"index=(\d+)", spectrum_id)
+    if m:
+        return [int(m.group(1))], "index"
+    m = re.search(r"spectrum=(\d+)", spectrum_id)
+    if m:
+        return [int(m.group(1))], "scan"
+    # Bare integer spectrumID — historically treated as a scan number.
     m = re.match(r"^(\d+)$", spectrum_id.strip())
     if m:
-        return [int(m.group(1))]
-    return [0]
+        return [int(m.group(1))], "scan"
+    # Unparseable: return an empty marker (NOT ``[0]``) so a spectrum with no
+    # parseable id does not alias onto a real scan-0 spectrum, and two distinct
+    # unparseable spectra are not silently collapsed onto the same sentinel.
+    return [], None
+
+
+def _parse_scan(spectrum_id: str) -> list[int]:
+    """Return the scan/index value(s) from a spectrumID, without the scheme.
+
+    Prefer :func:`_parse_native_id` when the nativeID scheme matters (e.g. to
+    attach the correct spectrum). Returns an empty list when nothing parses.
+    """
+    return _parse_native_id(spectrum_id)[0]
 
 
 def _group_siis(siis: list[dict]) -> list[dict]:

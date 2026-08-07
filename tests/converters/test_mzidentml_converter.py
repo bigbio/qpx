@@ -11,6 +11,7 @@ import pyarrow.parquet as pq
 from qpx.converters.mzidentml.psm_adapter import (
     MzIdentMLPsmAdapter,
     _group_siis,
+    _parse_native_id,
     _parse_scan,
 )
 
@@ -51,7 +52,33 @@ class TestParseScan:
         assert _parse_scan("42") == [42]
 
     def test_unknown_format(self):
-        assert _parse_scan("something_else") == [0]
+        # Unparseable spectrumIDs must NOT collapse onto a ``[0]`` sentinel
+        # (which aliases distinct spectra and a real scan-0 spectrum).
+        assert _parse_scan("something_else") == []
+
+
+class TestParseNativeId:
+    """The nativeID scheme distinguishes scan numbers from file indices (#249)."""
+
+    def test_scan_is_scan_scheme(self):
+        assert _parse_native_id("scan=100") == ([100], "scan")
+
+    def test_index_is_index_scheme(self):
+        # The regression: ``index=`` is a file position, not a scan number.
+        assert _parse_native_id("index=1999") == ([1999], "index")
+
+    def test_spectrum_is_scan_scheme(self):
+        assert _parse_native_id("spectrum=5") == ([5], "scan")
+
+    def test_bare_integer_is_scan_scheme(self):
+        assert _parse_native_id("42") == ([42], "scan")
+
+    def test_mzml_nativeid_scan(self):
+        assert _parse_native_id("controllerType=0 controllerNumber=1 scan=7") == ([7], "scan")
+
+    def test_unparseable_is_empty_none(self):
+        # No ``[0]`` sentinel: distinct unparseable spectra must not alias.
+        assert _parse_native_id("something_else") == ([], None)
 
 
 class TestGroupSiis:
@@ -517,3 +544,105 @@ class TestMzIdentMLProvenanceParams:
         var_mods = [p for p in params if p["key"] == "variable_mod"]
         assert var_mods, f"No 'variable_mod' entries in parameters: {params}"
         assert any("Oxidation" in p["value"] for p in var_mods), f"Expected Oxidation in variable_mod entries: {var_mods}"
+
+
+# ---------------------------------------------------------------------------
+# Shared-modifications mutation (bigbio/qpx#249)
+# ---------------------------------------------------------------------------
+
+
+class TestSharedModificationsNoCrossContamination:
+    """PSMs that share a ``peptide_ref`` must not accumulate each other's
+    site-localization scores.
+
+    The Peptide's ``modifications`` list is shared by every SII that references
+    it, and site-localization scoring mutates modification positions in place.
+    Without a per-PSM copy, the second PSM inherits the first PSM's phosphoRS
+    score, corrupting localization data.
+    """
+
+    @staticmethod
+    def _phospho_mod():
+        return [
+            {
+                "name": "Phospho",
+                "accession": "UNIMOD:21",
+                "positions": [{"position": 4, "amino_acid": "T", "scores": None}],
+            }
+        ]
+
+    @staticmethod
+    def _sii(sii_id, site_prob):
+        # MS:1001969 == phosphoRS site probability (a site-localization cvParam).
+        return {
+            "id": sii_id,
+            "charge": 2,
+            "exp_mz": 500.0,
+            "calc_mz": 500.0,
+            "rank": 1,
+            "pass_threshold": True,
+            "peptide_ref": "SharedPep",
+            "cv_params": [
+                {
+                    "accession": "MS:1001969",
+                    "name": "phosphoRS site probability",
+                    "value": f"T4: {site_prob}",
+                }
+            ],
+            "peptide_evidence_refs": [],
+        }
+
+    def _parsed(self):
+        return {
+            "spectra_data": {"SD1": "run.mgf"},
+            "db_sequences": {},
+            "peptides": {
+                "SharedPep": {
+                    "sequence": "PEPTIDE",
+                    "modifications": self._phospho_mod(),
+                    "xl_mods": {},
+                }
+            },
+            "peptide_evidence": {},
+            "linker_info": {},
+            "spectrum_results": [
+                {
+                    "spectrum_id": "index=1",
+                    "spectra_data_ref": "SD1",
+                    "rt": None,
+                    "siis": [self._sii("SII_1", 99.0)],
+                },
+                {
+                    "spectrum_id": "index=2",
+                    "spectra_data_ref": "SD1",
+                    "rt": None,
+                    "siis": [self._sii("SII_2", 10.0)],
+                },
+            ],
+        }
+
+    def test_each_psm_keeps_only_its_own_score(self):
+        parsed = self._parsed()
+        with MzIdentMLPsmAdapter() as adapter:
+            records = adapter._build_psm_records(parsed)
+
+        assert len(records) == 2
+        scores_per_psm = [rec["modifications"][0]["positions"][0]["scores"] for rec in records]
+
+        # Each PSM carries exactly ONE site-localization score — its own.
+        for scores in scores_per_psm:
+            assert scores is not None
+            assert len(scores) == 1
+
+        values = sorted(scores[0]["score_value"] for scores in scores_per_psm)
+        assert values == [10.0, 99.0]
+
+    def test_shared_source_modifications_untouched(self):
+        parsed = self._parsed()
+        shared = parsed["peptides"]["SharedPep"]["modifications"]
+        with MzIdentMLPsmAdapter() as adapter:
+            adapter._build_psm_records(parsed)
+
+        # The Peptide's shared modification list must remain pristine — scoring
+        # happened on per-PSM copies, not on this source object.
+        assert shared[0]["positions"][0]["scores"] is None
