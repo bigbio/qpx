@@ -47,6 +47,22 @@ def _user_params(element) -> dict[str, str]:
     return params
 
 
+def _parse_spectra_data(prot_meta: dict[str, str]) -> list[str]:
+    """Parse the ProteinIdentification ``spectra_data`` StringList into a path list.
+
+    OpenMS serialises the merged run's primary MS run paths as a stringList
+    UserParam ``value="[runA.mzML,runB.mzML]"``. Returns them in order (the
+    ``id_merge_index`` ordering); empty when absent.
+    """
+    raw = prot_meta.get("spectra_data")
+    if not raw:
+        return []
+    inner = raw.strip()
+    if inner.startswith("[") and inner.endswith("]"):
+        inner = inner[1:-1]
+    return [p.strip() for p in inner.split(",") if p.strip()]
+
+
 # ---------------------------------------------------------------------------
 # Lightweight shims mimicking the pyopenms objects the adapters read
 # ---------------------------------------------------------------------------
@@ -212,12 +228,13 @@ class _Group:
 
 
 class _ProteinIdentification:
-    __slots__ = ("_hits", "_groups", "_score_type")
+    __slots__ = ("_hits", "_groups", "_score_type", "_run_paths")
 
-    def __init__(self, hits, groups, score_type):
+    def __init__(self, hits, groups, score_type, run_paths=None):
         self._hits = hits
         self._groups = groups
         self._score_type = score_type
+        self._run_paths = run_paths or []
 
     def getHits(self):
         return self._hits
@@ -227,6 +244,11 @@ class _ProteinIdentification:
 
     def getScoreType(self):
         return self._score_type
+
+    def getPrimaryMSRunPath(self, output):
+        # Mirror pyopenms: append the merged run's spectra_data (as bytes) so the
+        # id_merge_index -> run mapping matches between both read paths.
+        output.extend(p.encode() if isinstance(p, str) else p for p in self._run_paths)
 
 
 # ---------------------------------------------------------------------------
@@ -327,7 +349,9 @@ class StreamingConsensusMap:
                 # UserParams: name "indistinguishable_proteins_N", value
                 # "score,PH_a,PH_b,...". Collect them before the element clears.
                 ph_meta = _user_params(el)
-                self._prot = _ProteinIdentification(ph_hits, self._build_groups(ph_meta), prot_score_type)
+                self._prot = _ProteinIdentification(
+                    ph_hits, self._build_groups(ph_meta), prot_score_type, _parse_spectra_data(ph_meta)
+                )
                 el.clear()
                 # do NOT stop: the <mapList> comes after the IdentificationRun.
             elif event == "start" and tag == "consensusElementList":
@@ -335,7 +359,9 @@ class StreamingConsensusMap:
             if event == "end" and tag in ("consensusElement", "UnassignedPeptideIdentification"):
                 el.clear()  # never accumulate the bulk while scanning the header
         if self._prot is None:
-            self._prot = _ProteinIdentification(ph_hits, self._build_groups(ph_meta), prot_score_type)
+            self._prot = _ProteinIdentification(
+                ph_hits, self._build_groups(ph_meta), prot_score_type, _parse_spectra_data(ph_meta)
+            )
 
     def _build_groups(self, prot_meta: dict[str, str]) -> list[_Group]:
         groups: list[_Group] = []
