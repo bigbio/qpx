@@ -9,6 +9,27 @@ from typing import Optional
 from qpx.converters.ptm import build_proforma, from_proforma, mass_to_unimod
 
 # ---------------------------------------------------------------------------
+# Decoy detection
+# ---------------------------------------------------------------------------
+# FragPipe/Philosopher tag decoy accessions with one of these prefixes. Keep the
+# set identical across the psm/feature/pg adapters so a decoy is labelled the
+# same everywhere. Detection must run on the RAW accession, before any
+# ``sp|ACC|NAME`` parsing strips the prefix.
+DECOY_PREFIXES = ("rev_", "REV_", "DECOY_", "decoy_")
+
+
+def is_decoy_accession(protein_field: str) -> bool:
+    """True if any accession in a (possibly comma-joined) protein field is a decoy.
+
+    Operates on the raw string so ``rev_sp|P123|NAME`` is still recognised as a
+    decoy (``parse_uniprot_id`` would otherwise drop the ``rev_`` prefix).
+    """
+    if not protein_field:
+        return False
+    return any(part.strip().startswith(DECOY_PREFIXES) for part in str(protein_field).split(","))
+
+
+# ---------------------------------------------------------------------------
 # PTM parsing: FragPipe "Assigned Modifications" -> ProForma
 # ---------------------------------------------------------------------------
 

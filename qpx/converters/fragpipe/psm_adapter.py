@@ -18,7 +18,7 @@ from typing import Optional, Tuple
 import pandas as pd
 
 from qpx.converters.base import BaseConverter, resolve_columns
-from qpx.converters.fragpipe.constants import to_modifications, to_proforma
+from qpx.converters.fragpipe.constants import is_decoy_accession, to_modifications, to_proforma
 from qpx.converters.mappings import get_field_mappings
 from qpx.converters.utils import safe_float
 from qpx.core.scores import normalize_score_name
@@ -187,8 +187,9 @@ class FragPipePsmAdapter(BaseConverter):
         protein_id = str(row.get(r.get("pg_accessions", "Protein"), ""))
         protein_accessions = [protein_id] if protein_id else []
 
-        # Is decoy (bool) -- FragPipe marks decoys with "rev_" prefix
-        is_decoy = protein_id.startswith("rev_")
+        # Is decoy (bool) -- decoy prefix on any accession in the RAW protein field
+        # (rev_/REV_/DECOY_/decoy_), kept consistent with the feature/pg adapters.
+        is_decoy = is_decoy_accession(protein_id)
 
         # Peptidoform -- build ProForma from sequence + Assigned Modifications
         assigned_mods_raw = row.get("Assigned Modifications")

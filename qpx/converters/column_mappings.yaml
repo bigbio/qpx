@@ -28,7 +28,10 @@ fragpipe:
       pg_accessions: ["Protein", "Protein ID"]
       gg_accessions: ["Gene", "Gene Names"]
       pg_names: ["Description", "Protein Description"]
-      pg_qvalue: ["Protein Probability", "Protein FDR", "Protein Q-Value", "Combined Protein FDR"]
+      # Real FDR/Q-Value columns first (low = best); "Protein Probability" is a
+      # confidence score (~1.0 = best) and must only be a last-resort fallback,
+      # converted as 1 - probability by the adapter — never used raw as a q-value.
+      pg_qvalue: ["Protein FDR", "Protein Q-Value", "Combined Protein FDR", "Protein Probability"]
       peptide_count_total: ["Combined Total Peptides", "Total Peptides"]
       peptide_count_unique: ["Combined Unique Peptides", "Unique Peptides"]
       spectral_count: ["Combined Spectral Count", "Spectral Count"]

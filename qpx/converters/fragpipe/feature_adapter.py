@@ -12,7 +12,7 @@ from typing import Optional
 import pandas as pd
 
 from qpx.converters.base import BaseConverter, resolve_columns
-from qpx.converters.fragpipe.constants import to_modifications, to_proforma
+from qpx.converters.fragpipe.constants import is_decoy_accession, to_modifications, to_proforma
 from qpx.converters.mappings import get_field_mappings
 from qpx.converters.utils import parse_uniprot_id, safe_float
 from qpx.core.sql import escape_path, sql_build
@@ -186,11 +186,20 @@ class FragPipeFeatureAdapter(BaseConverter):
     # ------------------------------------------------------------------
 
     def _build_psm_lookup(self, psm_path: str) -> dict[tuple, dict]:
-        """Build a lookup from (run_file_name, peptidoform, charge) -> PSM info.
+        """Build a lookup for feature-level PSM enrichment.
 
-        Loads FragPipe ``psm.tsv`` into a temporary DuckDB table and extracts
-        the first-occurrence PSM per key, providing mass error, PEP, scan,
-        and decoy flag for feature-level enrichment.
+        Loads FragPipe ``psm.tsv`` into a temporary DuckDB table and extracts the
+        first-occurrence PSM providing mass error, PEP, scan, and decoy flag.
+
+        Each PSM is registered under two keys so that the feature side (which is
+        keyed by *experiment*, not raw file) can always resolve a match:
+
+        * ``(source_file, peptidoform, charge)`` — exact, used when the FragPipe
+          experiment name equals the raw-file stem (non-fractionated case);
+        * ``(peptidoform, charge)`` — fallback, used when experiment != raw file
+          (fractionated runs), where the 3-tuple would otherwise always miss.
+
+        The 2- and 3-element tuples never collide, so a single dict holds both.
         """
         lookup: dict[tuple, dict] = {}
 
@@ -285,19 +294,16 @@ class FragPipeFeatureAdapter(BaseConverter):
                 charge_str = str(charge) if charge is not None else "0"
 
                 key = (source_file, peptidoform, charge_str)
+                fallback_key = (peptidoform, charge_str)
                 if key not in lookup:
                     # PEP = 1 - PeptideProphet Probability
                     pep = None
                     if pp_prob is not None:
                         pep = 1.0 - pp_prob if pp_prob <= 1.0 else pp_prob
 
-                    is_decoy = (
-                        any(acc.strip().startswith(("rev_", "DECOY_", "decoy_", "REV_")) for acc in str(protein).split(","))
-                        if protein
-                        else False
-                    )
+                    is_decoy = is_decoy_accession(protein)
 
-                    lookup[key] = {
+                    info = {
                         "observed_mz": float(obs_mz) if obs_mz is not None else None,
                         "calculated_mz": (float(calc_mz) if calc_mz is not None else None),
                         "pep": pep,
@@ -306,6 +312,11 @@ class FragPipeFeatureAdapter(BaseConverter):
                         "ion_mobility": (float(ion_mobility) if ion_mobility is not None else None),
                         "missed_cleavages": (int(missed_cleavages_val) if missed_cleavages_val is not None else None),
                     }
+                    lookup[key] = info
+                    # Register the run-agnostic fallback (first occurrence wins) so
+                    # the experiment-keyed feature query still resolves when the
+                    # experiment name differs from the raw-file stem.
+                    lookup.setdefault(fallback_key, info)
 
             # Clean up temporary table
             self._conn.execute("DROP TABLE IF EXISTS _fp_psm_lookup")
@@ -404,22 +415,22 @@ class FragPipeFeatureAdapter(BaseConverter):
 
             intensities = [{"label": "LFQ", "intensity": float(intensity_val)}]
 
-            # PSM lookup: enrich with mass error, PEP, scan, decoy flag
+            # PSM lookup: enrich with mass error, PEP, scan, decoy flag. Try the
+            # exact (experiment==raw-file) key first, then the run-agnostic
+            # (peptidoform, charge) fallback so fractionated experiments still hit.
             psm_info = {}
             if psm_lookup:
-                psm_key = (experiment, peptidoform, str(charge))
-                psm_info = psm_lookup.get(psm_key, {})
+                psm_info = psm_lookup.get((experiment, peptidoform, str(charge)))
+                if not psm_info:
+                    psm_info = psm_lookup.get((peptidoform, str(charge)), {})
 
             _calc = psm_info.get("calculated_mz")
             _obs = psm_info.get("observed_mz")
             mass_error_ppm = 1e6 * (_obs - _calc) / _calc if _calc and _obs else None
 
-            # Is decoy: prefer PSM lookup; fall back to protein prefix
-            _is_decoy_fallback = (
-                any(p["accession"].startswith(("rev_", "DECOY_", "decoy_", "REV_")) for p in pg_accessions)
-                if pg_accessions
-                else False
-            )
+            # Is decoy: prefer PSM lookup; fall back to the decoy prefix on the RAW
+            # protein field (before parse_uniprot_id strips e.g. the "rev_" prefix).
+            _is_decoy_fallback = is_decoy_accession(protein_raw)
 
             rec = {
                 "sequence": sequence,
