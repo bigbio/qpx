@@ -50,6 +50,8 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
         super().__init__(**kwargs)
         self._experiment_to_runs: dict[str, list[str]] = {}
         self._sdrf_experiment_to_runs: dict[str, list[str]] | None = None
+        # Dropped-TMT-channel warnings already emitted (once per experiment).
+        self._warned_tmt_channels: set = set()
 
     def convert(
         self,
@@ -287,6 +289,26 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
             records.extend(recs)
         return records
 
+    def _warn_dropped_tmt_channels(self, experiment: str, dropped_channels: list[str]) -> None:
+        """Warn once per experiment about declared channels absent from proteinGroups.txt.
+
+        A channel with no matching ``Reporter intensity N <experiment>`` column
+        is silently dropped from the protein-group intensities; surface it.
+        """
+        if not dropped_channels:
+            return
+        key = (experiment, tuple(sorted(dropped_channels)))
+        if key in self._warned_tmt_channels:
+            return
+        self._warned_tmt_channels.add(key)
+        logger.warning(
+            "SDRF declares %d TMT/iTRAQ channel(s) with no matching reporter intensity "
+            "column for experiment %r in proteinGroups.txt; dropped: %s",
+            len(dropped_channels),
+            experiment,
+            ", ".join(dropped_channels),
+        )
+
     @staticmethod
     def _extract_gene_names(fasta_headers: str) -> list[str] | None:
         """Extract gene names from Fasta header lines using ``GN=`` tag."""
@@ -421,6 +443,7 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
                 intensities: list[dict] = []
                 additional_intensities: list[dict] = []
                 channels = tmt_channels or []
+                dropped_channels: list[str] = []
                 for seq_idx, channel_name in enumerate(channels):
                     col_idx = TMT_LABEL_TO_MQ_COL.get(str(channel_name).strip().upper())
                     if col_idx is None:
@@ -428,6 +451,7 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
                     mq_col_num = col_idx + ri_offset
                     col_name = ch_cols.get(mq_col_num)
                     if not col_name:
+                        dropped_channels.append(str(channel_name))
                         continue
                     val = safe_float(row.get(col_name))
                     if val and val > 0:
@@ -443,6 +467,7 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
                                     ],
                                 }
                             )
+                self._warn_dropped_tmt_channels(exp, dropped_channels)
                 if intensities:
                     records.append(_make_rec(self._runs_for(exp), intensities, additional_intensities))
         else:

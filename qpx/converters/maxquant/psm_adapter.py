@@ -149,6 +149,10 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
         if pd.notna(phospho_raw) and phospho_raw:
             site_scores = parse_phospho_probabilities(str(phospho_raw))
 
+        # Mirror the feature adapter: an empty/missing "Modified sequence"
+        # yields no peptidoform, and the tuple-unpack must degrade to
+        # (None, None) rather than a bare None (which raises TypeError and
+        # aborts the whole PSM view).
         peptidoform, modifications = (
             from_proforma(
                 peptidoform,
@@ -156,8 +160,13 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
                 site_scores=site_scores,
             )
             if peptidoform
-            else None
+            else (None, None)
         )
+        if peptidoform is None:
+            # PsmSchema requires a peptidoform; a row with an empty/missing
+            # "Modified sequence" is skipped rather than aborting the whole view.
+            self.logger.debug("Skipping PSM row with empty modified sequence (sequence=%r)", sequence)
+            return None
         charge_raw = row.get(r.get("charge", "Charge"), 0)
         charge = int(charge_raw) if pd.notna(charge_raw) else 0
 

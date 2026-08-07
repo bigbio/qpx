@@ -49,17 +49,32 @@ def test_pg_rejects_unassignable_total_intensity(tmp_path):
     assert not output.exists()
 
 
-def test_feature_deduplication_prefers_identified_evidence(tmp_path):
-    """An identified row must win over its duplicate MBR evidence row."""
+_EVIDENCE_HEADER = (
+    "Sequence\tModified sequence\tCharge\tRaw file\tType\tMS/MS scan number\tm/z\t"
+    "Calibrated retention time\tCalibrated retention time start\tCalibrated retention time finish\t"
+    "PEP\tLeading razor protein\tLeading proteins\tIntensity\tMass\tid\n"
+)
+
+
+def test_feature_dedup_collapses_identity_equal_rows(tmp_path):
+    """Bug #248 (H): rows sharing the feature identity composite must collapse.
+
+    The two ``run1`` rows share (peptidoform, charge, run, rt_start, rt_stop, scan)
+    — i.e. the same ``feature_id`` — and differ only in ``Calibrated retention
+    time``. The old dedup partitioned on calibrated RT (not part of the identity),
+    so both survived as duplicate primary keys. They must now collapse to one,
+    keeping the identified (MULTI-MSMS, lower PEP) row over the MBR one.
+    """
     from qpx.converters.maxquant.feature_adapter import MaxQuantFeatureAdapter
 
     evidence = tmp_path / "evidence.txt"
     evidence.write_text(
-        "Sequence\tModified sequence\tCharge\tRaw file\tType\tMS/MS scan number\tm/z\t"
-        "Calibrated retention time\tPEP\tLeading razor protein\tLeading proteins\tIntensity\tMass\tid\n"
-        "PEPTIDEK\t_PEPTIDEK_\t2\trun1\tMULTI-MSMS\t100\t450.25\t30.0\t0.01\tP1\tP1\t1000\t898.5\t1\n"
-        "PEPTIDEK\t_PEPTIDEK_\t2\trun1\tMULTI-MATCH\t\t450.25\t30.0\t\tP1\tP1\t1000\t898.5\t2\n"
-        "PEPTIDEK\t_PEPTIDEK_\t2\trun1\tMULTI-MSMS\t101\t450.25\t31.0\t0.02\tP1\tP1\t2000\t898.5\t3\n"
+        _EVIDENCE_HEADER
+        # Identified row and its MBR twin: same scan/rt-window, differ in calibrated RT.
+        + "PEPTIDEK\t_PEPTIDEK_\t2\trun1\tMULTI-MSMS\t100\t450.25\t30.0\t29.5\t30.5\t0.01\tP1\tP1\t1000\t898.5\t1\n"
+        + "PEPTIDEK\t_PEPTIDEK_\t2\trun1\tMULTI-MATCH\t100\t450.25\t30.4\t29.5\t30.5\t0.90\tP1\tP1\t1000\t898.5\t2\n"
+        # A genuinely distinct feature (different charge/scan) must survive.
+        + "PEPTIDEK\t_PEPTIDEK_\t3\trun1\tMULTI-MSMS\t200\t300.50\t40.0\t39.5\t40.5\t0.02\tP1\tP1\t2000\t898.5\t3\n"
     )
     output = tmp_path / "feature.parquet"
 
@@ -67,11 +82,152 @@ def test_feature_deduplication_prefers_identified_evidence(tmp_path):
         adapter.convert(str(evidence), str(output), chunksize=1)
 
     rows = pq.read_table(output).to_pylist()
-    by_rt = {row["rt"]: row for row in rows}
-    assert set(by_rt) == {1800.0, 1860.0}
-    assert by_rt[1800.0]["scan"] == [100]
-    assert by_rt[1800.0]["posterior_error_probability"] == pytest.approx(0.01)
-    assert by_rt[1800.0]["id_run_file_name"] == "run1"
+    assert len(rows) == 2, f"identity-equal rows must collapse, got {len(rows)}"
+    # feature_id must be unique (no duplicate PK).
+    assert len({row["feature_id"] for row in rows}) == 2
+    kept = next(r for r in rows if r["charge"] == 2)
+    assert kept["scan"] == [100]
+    assert kept["posterior_error_probability"] == pytest.approx(0.01)
+    assert kept["rt"] == pytest.approx(1800.0)
+    assert kept["id_run_file_name"] == "run1"
+
+
+def test_feature_dedup_does_not_degrade_without_type_column(tmp_path):
+    """Bug #248 (H-b): a missing column must not degrade dedup to ``SELECT *``.
+
+    With no ``Type`` column, the old guard fell back to ``SELECT * FROM evidence``,
+    letting identity duplicates through. Dedup must still collapse identity-equal
+    rows using the identity columns that are present.
+    """
+    from qpx.converters.maxquant.feature_adapter import MaxQuantFeatureAdapter
+
+    header = (
+        "Sequence\tModified sequence\tCharge\tRaw file\tMS/MS scan number\tm/z\t"
+        "Calibrated retention time\tCalibrated retention time start\t"
+        "Calibrated retention time finish\tPEP\tLeading razor protein\tLeading proteins\tIntensity\tMass\tid\n"
+    )
+    evidence = tmp_path / "evidence.txt"
+    evidence.write_text(
+        header
+        + "PEPTIDEK\t_PEPTIDEK_\t2\trun1\t100\t450.25\t30.0\t29.5\t30.5\t0.01\tP1\tP1\t1000\t898.5\t1\n"
+        + "PEPTIDEK\t_PEPTIDEK_\t2\trun1\t100\t450.25\t30.4\t29.5\t30.5\t0.05\tP1\tP1\t1000\t898.5\t2\n"
+    )
+    output = tmp_path / "feature.parquet"
+
+    with MaxQuantFeatureAdapter() as adapter:
+        adapter.convert(str(evidence), str(output), chunksize=100)
+
+    rows = pq.read_table(output).to_pylist()
+    assert len(rows) == 1, f"identity duplicates must collapse even without Type, got {len(rows)}"
+
+
+def test_psm_handles_empty_modified_sequence(tmp_path):
+    """Bug #248 (H): an empty ``Modified sequence`` must not abort the PSM view.
+
+    The ``else None`` tuple-unpack raised ``TypeError`` for any row whose
+    modified sequence was empty. The adapter must now skip that single row
+    (peptidoform is a required schema field) instead of crashing the whole
+    conversion, so the remaining PSMs still convert.
+    """
+    from qpx.converters.maxquant.psm_adapter import MaxQuantPsmAdapter
+
+    msms = tmp_path / "msms.txt"
+    msms.write_text(
+        "Sequence\tModified sequence\tCharge\tRaw file\tScan number\tm/z\tMass\tPEP\tReverse\tScore\tProteins\n"
+        "PEPTIDEK\t_PEPTIDEK_\t2\trun1\t100\t450.25\t898.5\t0.01\t\t100\tP1\n"
+        # Empty modified sequence (renders to an empty peptidoform via to_proforma).
+        "PEPTIDER\t_\t2\trun1\t101\t500.25\t998.5\t0.02\t\t90\tP2\n"
+    )
+    output = tmp_path / "psm.parquet"
+
+    with MaxQuantPsmAdapter() as adapter:
+        adapter.convert(str(msms), str(output))
+
+    rows = pq.read_table(output).to_pylist()
+    # The empty-modseq row is skipped; the valid PSM must still convert.
+    assert len(rows) == 1, "valid PSM must survive; empty modseq row skipped, not crashing"
+    assert rows[0]["sequence"] == "PEPTIDEK"
+    assert rows[0]["peptidoform"]
+
+
+def test_feature_pg_qvalue_and_genes_keyed_on_full_membership(tmp_path):
+    """Bug #248 (M): a shared razor accession must not bind to another group's metadata.
+
+    Both features share leading razor protein P1, but belong to different protein
+    groups (P1;P2 vs P1;P3). The old leader-keyed map bound P1 to the first group
+    by file order, so both features inherited that group's q-value/genes. The map
+    must be keyed on the full protein-group membership.
+    """
+    from qpx.converters.maxquant.feature_adapter import MaxQuantFeatureAdapter
+
+    evidence = tmp_path / "evidence.txt"
+    evidence.write_text(
+        "Sequence\tModified sequence\tCharge\tRaw file\tType\tMS/MS scan number\tm/z\t"
+        "Calibrated retention time\tCalibrated retention time start\tCalibrated retention time finish\t"
+        "PEP\tLeading razor protein\tLeading proteins\tGene names\tIntensity\tMass\tid\n"
+        "PEPTIDEA\t_PEPTIDEA_\t2\trun1\tMULTI-MSMS\t100\t450.25\t30.0\t29.5\t30.5\t0.01\tP1\tP1;P2\t\t1000\t500\t1\n"
+        "PEPTIDEB\t_PEPTIDEB_\t2\trun1\tMULTI-MSMS\t200\t460.25\t31.0\t30.5\t31.5\t0.02\tP1\tP1;P3\t\t2000\t520\t2\n"
+    )
+    protein_groups = tmp_path / "proteinGroups.txt"
+    protein_groups.write_text(
+        "Protein IDs\tMajority protein IDs\tQ-value\tGene names\nP1;P2\tP1;P2\t0.001\tGENEA\nP1;P3\tP1;P3\t0.5\tGENEB\n"
+    )
+    output = tmp_path / "feature.parquet"
+
+    with MaxQuantFeatureAdapter() as adapter:
+        adapter.convert(str(evidence), str(output), protein_groups_path=str(protein_groups))
+
+    rows = pq.read_table(output).to_pylist()
+    by_seq = {r["sequence"]: r for r in rows}
+    assert by_seq["PEPTIDEA"]["pg_global_qvalue"] == pytest.approx(0.001)
+    assert by_seq["PEPTIDEA"]["gg_names"] == ["GENEA"]
+    assert by_seq["PEPTIDEB"]["pg_global_qvalue"] == pytest.approx(0.5)
+    assert by_seq["PEPTIDEB"]["gg_names"] == ["GENEB"]
+
+
+def test_feature_warns_on_dropped_tmt_channels(caplog):
+    """Bug #248 (M): channels with no reporter column must warn, not vanish silently."""
+    from qpx.converters.maxquant.feature_adapter import MaxQuantFeatureAdapter
+
+    # evidence has only Reporter intensity 0-7; a 10-plex SDRF adds TMT130C (col 8)
+    # and TMT131 (col 9), which have no column and would otherwise be dropped.
+    columns = [f"Reporter intensity {i}" for i in range(8)]
+    channels = [
+        "TMT126",
+        "TMT127N",
+        "TMT127C",
+        "TMT128N",
+        "TMT128C",
+        "TMT129N",
+        "TMT129C",
+        "TMT130N",
+        "TMT130C",
+        "TMT131",
+    ]
+    with MaxQuantFeatureAdapter() as adapter:
+        with caplog.at_level("WARNING"):
+            adapter._warn_dropped_tmt_channels(columns, "TMT10", channels, ri_offset=0)
+            # Second call with the same dropped set must not re-warn.
+            adapter._warn_dropped_tmt_channels(columns, "TMT10", channels, ri_offset=0)
+
+    warnings = [r for r in caplog.records if r.levelname == "WARNING" and "dropped" in r.message.lower()]
+    assert len(warnings) == 1, "dropped-channel warning must be emitted exactly once"
+    assert "TMT130C" in caplog.text
+    assert "TMT131" in caplog.text
+
+
+def test_pg_warns_on_dropped_tmt_channels(caplog):
+    """Bug #248 (M): the pg adapter must also warn about dropped channels."""
+    from qpx.converters.maxquant.pg_adapter import MaxQuantPgAdapter
+
+    with MaxQuantPgAdapter() as adapter:
+        with caplog.at_level("WARNING"):
+            adapter._warn_dropped_tmt_channels("exp1", ["TMT130C", "TMT131"])
+            adapter._warn_dropped_tmt_channels("exp1", ["TMT130C", "TMT131"])
+
+    warnings = [r for r in caplog.records if r.levelname == "WARNING" and "dropped" in r.message.lower()]
+    assert len(warnings) == 1
+    assert "TMT130C" in caplog.text and "TMT131" in caplog.text
 
 
 # ---------------------------------------------------------------------------

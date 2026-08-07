@@ -3,7 +3,7 @@
 Tests cover:
 - BaseConverter._escape_path (SQL path injection prevention)
 - MaxQuantPgAdapter._extract_protein_names / _extract_gene_names
-- MaxQuantFeatureAdapter._detect_pg_columns / _extract_qvalue_map / _extract_gene_map
+- MaxQuantFeatureAdapter._detect_pg_columns / _build_pg_lookup / _lookup_pg_metadata
 """
 
 import pandas as pd
@@ -139,69 +139,108 @@ class TestDetectPgColumns:
 
 
 # ---------------------------------------------------------------------------
-# MaxQuantFeatureAdapter._extract_qvalue_map
+# MaxQuantFeatureAdapter._build_pg_lookup / _lookup_pg_metadata
 # ---------------------------------------------------------------------------
 
 
-class TestExtractQvalueMap:
-    """Validate q-value map extraction."""
+class TestBuildPgLookup:
+    """Validate membership-keyed protein-group q-value/gene maps."""
 
-    def test_basic_qvalue_map(self):
-        df = pd.DataFrame({"Protein IDs": ["P1;P2", "P3"], "Q-value": [0.01, 0.05]})
-        result = MaxQuantFeatureAdapter._extract_qvalue_map(df, "Protein IDs", "Q-value")
-        if result["P1"] != 0.01:
-            raise AssertionError(f"Expected 0.01 for P1, got {result['P1']!r}")
-        if result["P2"] != 0.01:
-            raise AssertionError(f"Expected 0.01 for P2, got {result['P2']!r}")
-        if result["P3"] != 0.05:
-            raise AssertionError(f"Expected 0.05 for P3, got {result['P3']!r}")
+    def _build(self, df, qval_col="Q-value", gene_col="Gene names"):
+        with MaxQuantFeatureAdapter() as adapter:
+            return adapter._build_pg_lookup(df, "Protein IDs", qval_col, gene_col)
 
-    def test_first_occurrence_wins(self):
-        df = pd.DataFrame({"Protein IDs": ["P1", "P1"], "Q-value": [0.01, 0.99]})
-        result = MaxQuantFeatureAdapter._extract_qvalue_map(df, "Protein IDs", "Q-value")
-        if result["P1"] != 0.01:
-            raise AssertionError(f"Expected 0.01 for P1, got {result['P1']!r}")
+    def test_group_keyed_qvalue(self):
+        df = pd.DataFrame({"Protein IDs": ["P1;P2", "P3"], "Q-value": [0.01, 0.05], "Gene names": [None, None]})
+        maps = self._build(df)
+        by_group = maps["by_group"]
+        if by_group[frozenset({"P1", "P2"})]["qvalue"] != 0.01:
+            raise AssertionError(f"Unexpected group qvalue: {by_group[frozenset({'P1', 'P2'})]!r}")
+        if by_group[frozenset({"P3"})]["qvalue"] != 0.05:
+            raise AssertionError(f"Unexpected group qvalue: {by_group[frozenset({'P3'})]!r}")
+
+    def test_ambiguous_accession_excluded_from_leader_fallback(self):
+        # P1 appears in two distinct groups → must NOT be in by_accession.
+        df = pd.DataFrame(
+            {
+                "Protein IDs": ["P1;P2", "P1;P3"],
+                "Q-value": [0.01, 0.20],
+                "Gene names": ["GENEA", "GENEB"],
+            }
+        )
+        maps = self._build(df)
+        if "P1" in maps["by_accession"]:
+            raise AssertionError("Ambiguous accession P1 must be excluded from the leader fallback")
+        # P2 and P3 are unique to one group each.
+        if maps["by_accession"]["P2"]["qvalue"] != 0.01:
+            raise AssertionError(f"Unexpected P2 qvalue: {maps['by_accession']['P2']!r}")
+        if maps["by_accession"]["P3"]["qvalue"] != 0.20:
+            raise AssertionError(f"Unexpected P3 qvalue: {maps['by_accession']['P3']!r}")
 
     def test_no_qval_col(self):
-        df = pd.DataFrame({"Protein IDs": ["P1"]})
-        result = MaxQuantFeatureAdapter._extract_qvalue_map(df, "Protein IDs", None)
-        if result != {}:
-            raise AssertionError(f"Expected empty dict, got {result!r}")
+        df = pd.DataFrame({"Protein IDs": ["P1"], "Gene names": [None]})
+        maps = self._build(df, qval_col=None)
+        if maps["by_group"][frozenset({"P1"})]["qvalue"] is not None:
+            raise AssertionError("Expected None qvalue when no q-value column present")
 
+    def test_genes_from_gene_column(self):
+        df = pd.DataFrame({"Protein IDs": ["P1;P2"], "Q-value": [0.01], "Gene names": ["TP53;BRCA1"]})
+        maps = self._build(df)
+        genes = maps["by_group"][frozenset({"P1", "P2"})]["genes"]
+        if genes != ["TP53", "BRCA1"]:
+            raise AssertionError(f"Unexpected genes: {genes!r}")
 
-# ---------------------------------------------------------------------------
-# MaxQuantFeatureAdapter._extract_gene_map
-# ---------------------------------------------------------------------------
-
-
-class TestExtractGeneMap:
-    """Validate gene map extraction with Fasta header fallback."""
-
-    def test_from_gene_column(self):
-        df = pd.DataFrame({"Protein IDs": ["P1;P2"], "Gene names": ["TP53;BRCA1"]})
-        result = MaxQuantFeatureAdapter._extract_gene_map(df, "Protein IDs", "Gene names")
-        if result["P1"] != ["TP53", "BRCA1"]:
-            raise AssertionError(f"Unexpected P1: {result['P1']!r}")
-        if result["P2"] != ["TP53", "BRCA1"]:
-            raise AssertionError(f"Unexpected P2: {result['P2']!r}")
-
-    def test_fasta_fallback(self):
+    def test_genes_fasta_fallback(self):
         df = pd.DataFrame(
             {
                 "Protein IDs": ["P1"],
+                "Q-value": [0.01],
                 "Gene names": [None],
                 "Fasta headers": ["sp|P1|X GN=TP53 PE=1"],
             }
         )
-        result = MaxQuantFeatureAdapter._extract_gene_map(df, "Protein IDs", "Gene names")
-        if result["P1"] != ["TP53"]:
-            raise AssertionError(f"Unexpected P1: {result['P1']!r}")
+        maps = self._build(df)
+        genes = maps["by_group"][frozenset({"P1"})]["genes"]
+        if genes != ["TP53"]:
+            raise AssertionError(f"Unexpected genes: {genes!r}")
 
-    def test_no_gene_info(self):
-        df = pd.DataFrame({"Protein IDs": ["P1"], "Gene names": [None]})
-        result = MaxQuantFeatureAdapter._extract_gene_map(df, "Protein IDs", "Gene names")
-        if result != {}:
-            raise AssertionError(f"Expected empty dict, got {result!r}")
+
+class TestLookupPgMetadata:
+    """Validate feature-side lookup keyed on full membership, leader as fallback."""
+
+    def test_full_membership_wins_over_leader(self):
+        # Razor accession P1 is shared by two groups with different q-values.
+        # A feature whose membership is {P1,P3} must get the {P1,P3} group's
+        # q-value/genes, not the first group's, even though P1 is the leader.
+        df = pd.DataFrame(
+            {
+                "Protein IDs": ["P1;P2", "P1;P3"],
+                "Q-value": [0.01, 0.20],
+                "Gene names": ["GENEA", "GENEB"],
+            }
+        )
+        with MaxQuantFeatureAdapter() as adapter:
+            maps = adapter._build_pg_lookup(df, "Protein IDs", "Q-value", "Gene names")
+            qvalue, genes = adapter._lookup_pg_metadata(maps, ["P1", "P3"], "P1")
+        if qvalue != 0.20:
+            raise AssertionError(f"Expected 0.20 for the {{P1,P3}} membership, got {qvalue!r}")
+        if genes != ["GENEB"]:
+            raise AssertionError(f"Expected ['GENEB'] for the {{P1,P3}} membership, got {genes!r}")
+
+    def test_leader_fallback_only_when_unambiguous(self):
+        df = pd.DataFrame(
+            {
+                "Protein IDs": ["P1;P2", "P3;P4"],
+                "Q-value": [0.01, 0.05],
+                "Gene names": ["GENEA", "GENEB"],
+            }
+        )
+        with MaxQuantFeatureAdapter() as adapter:
+            maps = adapter._build_pg_lookup(df, "Protein IDs", "Q-value", "Gene names")
+            # Membership doesn't match any group, but leader P3 is unambiguous.
+            qvalue, genes = adapter._lookup_pg_metadata(maps, ["P3"], "P3")
+        if qvalue != 0.05 or genes != ["GENEB"]:
+            raise AssertionError(f"Expected unambiguous leader fallback, got {(qvalue, genes)!r}")
 
 
 # ---------------------------------------------------------------------------
