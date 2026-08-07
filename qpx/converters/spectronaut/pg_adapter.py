@@ -93,7 +93,7 @@ class SpectronautPgAdapter(SpectronautBaseAdapter):
 
         parts = [
             f'FIRST(r."{pg_col}") AS pg_accessions',
-            f"regexp_replace(FIRST(r.\"{run_col}\"), '\\.(mzML|raw|d|wiff|htrms)$', '') AS run_file_name",
+            f"regexp_replace(FIRST(r.\"{run_col}\"), '\\.(mzML|raw|d|wiff|htrms)$', '', 'i') AS run_file_name",
             f'FIRST(CAST(r."{int_col}" AS DOUBLE)) AS pg_quantity',
         ]
 

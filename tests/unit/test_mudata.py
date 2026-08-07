@@ -525,3 +525,53 @@ def test_detect_label_field_uses_label_for_current_schema(tmp_path):
         assert mdata.mod["precursors"].X.nnz > 0
     finally:
         dataset.close()
+
+
+def test_build_mudata_feature_mapping_survives_third_modality(tmp_path):
+    """bigbio/qpx#252: ``varp['feature_mapping']`` was sized against only
+    precursors+proteins, so with a 3rd modality present the assignment raised
+    'incorrect shape' and was silently swallowed. The mapping must be built
+    against the full global var axis and be present + correct."""
+    import scipy.sparse as _sp
+
+    _write_quant_bundle(
+        tmp_path,
+        "m3",
+        [{"label": "LFQ", "intensity": 100.0}],
+        [{"label": "LFQ", "intensity": 1000.0}],
+    )
+    # 3rd modality: an absolute-expression AnnData (<prefix>.pe.h5ad) with its
+    # own var axis, disjoint names from the protein accessions.
+    expr = anndata.AnnData(
+        X=np.array([[1.0, 2.0, 3.0, 4.0]], dtype=float),
+        var=pd.DataFrame(index=["G1", "G2", "G3", "G4"]),
+    )
+    expr.write_h5ad(tmp_path / "m3.pe.h5ad")
+
+    dataset = Dataset(tmp_path, file_prefix="m3")
+    try:
+        mdata = build_mudata(dataset, modalities=["precursors", "proteins", "expression"])
+    finally:
+        dataset.close()
+
+    assert "expression" in mdata.mod, "3rd modality must be built for this regression"
+    # The axis is genuinely larger than precursors+proteins alone.
+    assert mdata.n_vars > mdata.mod["precursors"].n_vars + mdata.mod["proteins"].n_vars
+
+    assert "feature_mapping" in mdata.varp, "feature_mapping must NOT be silently dropped"
+    mapping = mdata.varp["feature_mapping"]
+    assert mapping.shape == (mdata.n_vars, mdata.n_vars)
+
+    # The PEPTIDEK|2 <-> P12345 precursor/protein link is set at the correct
+    # global positions (per-modality offsets on the global axis).
+    offsets = {}
+    running = 0
+    for name, adata in mdata.mod.items():
+        offsets[name] = running
+        running += adata.n_vars
+    prec_pos = offsets["precursors"] + list(mdata.mod["precursors"].var_names).index("PEPTIDEK|2")
+    prot_pos = offsets["proteins"] + list(mdata.mod["proteins"].var_names).index("P12345")
+    csr = _sp.csr_matrix(mapping)
+    assert csr[prec_pos, prot_pos]
+    assert csr[prot_pos, prec_pos]
+    assert csr.nnz == 2

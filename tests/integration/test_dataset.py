@@ -758,3 +758,27 @@ class TestMokumeWorkflow:
             df = result.to_df()
             assert len(df) > 0
             assert "log2fc" in df.columns
+
+
+class TestMultiShardLocalRead:
+    """bigbio/qpx#252: a local structure split across several shards must read
+    ALL of them (unioned), matching the S3 path — previously only the first
+    matching file was used, so local and S3 returned different rows."""
+
+    def test_local_reads_all_shards(self, tmp_path):
+        # Two feature shards with no file_prefix, so the '*.feature.parquet'
+        # glob matches both.
+        with FeatureWriter(tmp_path / "a.feature.parquet") as w:
+            w.write_batch([make_feature_record(peptidoform="PEPTIDEK", run_file_name="run_01")])
+        with FeatureWriter(tmp_path / "b.feature.parquet") as w:
+            w.write_batch(
+                [
+                    make_feature_record(peptidoform="ELVISK", run_file_name="run_02"),
+                    make_feature_record(peptidoform="SAMPLERK", run_file_name="run_03"),
+                ]
+            )
+
+        with Dataset(tmp_path) as ds:
+            assert ds.feature is not None
+            # All three rows across both shards, not just the first shard's one.
+            assert ds.feature.count() == 3

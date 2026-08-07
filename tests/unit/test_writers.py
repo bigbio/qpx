@@ -190,3 +190,61 @@ def test_writer_compression(tmp_path):
     with FeatureWriter(path2, compression="snappy") as w:
         w.write_batch([make_feature_record()])
     assert read_parquet_metadata(path2)["compression_format"] == "snappy"
+
+
+def test_pg_write_batch_warns_on_run_double_count(tmp_path, caplog):
+    """bigbio/qpx#242: the streaming write_batch path must run the pg
+    run-disjointness / referential check at close() (as a warning), not skip it.
+
+    Two pg rows sharing the same (pg_accessions, label) with an overlapping
+    grouped_runs double-count that run's intensity.
+    """
+    import logging
+
+    path = tmp_path / "dup.pg.parquet"
+    rec_a = make_pg_record(run_file_name="run_01")
+    rec_b = make_pg_record(run_file_name="run_01")  # same members + label + run
+    with caplog.at_level(logging.WARNING, logger="qpx.writers.base"):
+        with PgWriter(path) as w:
+            w.write_batch([rec_a, rec_b])
+    assert path.exists()
+    assert any("run_double_count" in rec.message for rec in caplog.records), (
+        "streaming write_batch should warn on cross-row run double-count at close"
+    )
+
+
+def test_pg_write_batch_clean_has_no_referential_warning(tmp_path, caplog):
+    """Disjoint grouped_runs across rows must NOT trigger the referential warning."""
+    import logging
+
+    path = tmp_path / "ok.pg.parquet"
+    rec_a = make_pg_record(run_file_name="run_01")
+    rec_b = make_pg_record(run_file_name="run_02")  # disjoint runs
+    with caplog.at_level(logging.WARNING, logger="qpx.writers.base"):
+        with PgWriter(path) as w:
+            w.write_batch([rec_a, rec_b])
+    assert not any("run_double_count" in rec.message for rec in caplog.records)
+
+
+def test_pg_write_dataframe_explodes_intensities(tmp_path):
+    """bigbio/qpx#252: PgWriter.write_dataframe must explode the natural
+    ``intensities`` list into flat label/intensity rows instead of silently
+    dropping quant (the base write_dataframe builds against the flat schema,
+    which has no ``intensities`` column)."""
+    import pandas as pd
+
+    rec = make_pg_record(
+        intensities=[
+            {"label": "TMT126", "intensity": 5000.0},
+            {"label": "TMT127N", "intensity": 6000.0},
+        ]
+    )
+    df = pd.DataFrame([rec])
+    path = tmp_path / "df.pg.parquet"
+    with PgWriter(path) as w:
+        w.write_dataframe(df)
+
+    table = pq.read_table(path)
+    assert table.num_rows == 2, "intensities list should explode into one row per label"
+    assert set(table.column("label").to_pylist()) == {"TMT126", "TMT127N"}
+    assert set(table.column("intensity").to_pylist()) == {5000.0, 6000.0}

@@ -104,6 +104,26 @@ class DuckDBEngine:
             )
         )
 
+    def register_parquet_files(self, name: str, file_paths) -> None:
+        """Register several Parquet shards as one unioned DuckDB view.
+
+        DuckDB reads the list of files positionally-unioned, matching the S3
+        glob path's behaviour so a multi-shard structure yields the same rows
+        locally and over S3 (bigbio/qpx#252).
+        """
+        paths = list(file_paths)
+        if len(paths) == 1:
+            self.register_parquet(name, paths[0])
+            return
+        path_list = ", ".join(f"'{escape_path(str(p))}'" for p in paths)
+        self._conn.execute(
+            sql_build(
+                "CREATE OR REPLACE VIEW $view AS SELECT * FROM read_parquet([$paths])",
+                view=validate_table(name),
+                paths=path_list,
+            )
+        )
+
     def register_partitioned_parquet(self, name: str, directory: str | Path) -> None:
         """Register a Hive-partitioned Parquet directory as a DuckDB view."""
         glob_pattern = str(Path(directory) / "**" / "*.parquet")
