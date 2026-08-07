@@ -92,7 +92,7 @@ class DiannPgAdapter(DiaNNBaseAdapter):
         sdrf_path: Optional[str] = None,
         file_num: int = 20,
         creator: str = "diann",
-        qvalue_threshold: float = 0.01,
+        qvalue_threshold: Optional[float] = None,
     ) -> None:
         """Run the DIA-NN report+matrix -> pg.parquet conversion.
 
@@ -103,10 +103,15 @@ class DiannPgAdapter(DiaNNBaseAdapter):
             sdrf_path: Optional SDRF file for sample mapping.
             file_num: Number of runs to process per batch.
             creator: Creator tag in Parquet metadata.
-            qvalue_threshold: PG-level q-value cutoff. Protein groups whose PG
-                q-value exceeds this are excluded, mirroring the precursor
-                ``Q.Value`` filter in the feature view (bigbio/qpx#241). If the
-                report carries no PG q-value column the filter is skipped with a
+            qvalue_threshold: Optional PG-level q-value cutoff. Filtering is
+                opt-in (bigbio/qpx#241): with the default ``None`` every protein
+                group in the report is emitted (DIA-NN already FDR-filters its
+                report and all PG q-value columns are carried through for
+                downstream filtering). When a threshold is provided, protein
+                groups whose PG q-value exceeds it are excluded — preferring the
+                experiment-wide ``Global.PG.Q.Value`` and falling back to the
+                run-wise ``PG.Q.Value``. If a threshold is given but the report
+                carries no PG q-value column, the filter is skipped with a
                 warning.
         """
         # Step 1: Load report into DuckDB
@@ -195,7 +200,7 @@ class DiannPgAdapter(DiaNNBaseAdapter):
         pg_matrix_indexed: pd.DataFrame,
         actual_report_cols: set[str] | None = None,
         channel_col: str | None = None,
-        qvalue_threshold: float = 0.01,
+        qvalue_threshold: Optional[float] = None,
     ) -> list[dict]:
         """Process a batch of runs for PG quantification."""
         records: list[dict] = []
@@ -232,26 +237,28 @@ class DiannPgAdapter(DiaNNBaseAdapter):
         # Use resolved column names for filtering
         pg_col = r["pg_accessions"]
 
-        # PG-level q-value filter (bigbio/qpx#241). The feature view filters on
-        # precursor Q.Value; the pg view must apply the analogous PG-level FDR or
-        # it emits every group regardless of confidence, inflating gene/protein
-        # counts on any loosely-filtered / re-exported report. Prefer the
-        # experiment-wide Global.PG.Q.Value; fall back to the run-wise PG.Q.Value.
-        # If neither column is present (older DIA-NN reports), skip the filter
-        # with a warning rather than crash.
+        # PG-level q-value filter is opt-in (bigbio/qpx#241). With no threshold
+        # the pg view is emitted as reported (DIA-NN already FDR-filters its
+        # report and every PG q-value column is carried through for downstream
+        # filtering), mirroring the feature view's as-reported default. When a
+        # threshold IS given, apply the analogous PG-level FDR: prefer the
+        # experiment-wide Global.PG.Q.Value; fall back to the run-wise
+        # PG.Q.Value. If neither column is present (older DIA-NN reports), skip
+        # the filter with a warning rather than crash.
         qvalue_filter = ""
-        pg_qvalue_col = r.get("global_qvalue") or r.get("qvalue")
-        if pg_qvalue_col and pg_qvalue_col in actual_report_cols:
-            qvalue_filter = sql_build(
-                "AND CAST(report.$qv_col AS DOUBLE) <= $threshold",
-                qv_col=validate_identifier(pg_qvalue_col),
-                threshold=str(float(qvalue_threshold)),
-            )
-        else:
-            self.logger.warning(
-                "DIA-NN report has no PG q-value column (Global.PG.Q.Value / PG.Q.Value); "
-                "skipping PG-level q-value filter — protein groups are NOT FDR-filtered."
-            )
+        if qvalue_threshold is not None:
+            pg_qvalue_col = r.get("global_qvalue") or r.get("qvalue")
+            if pg_qvalue_col and pg_qvalue_col in actual_report_cols:
+                qvalue_filter = sql_build(
+                    "AND CAST(report.$qv_col AS DOUBLE) <= $threshold",
+                    qv_col=validate_identifier(pg_qvalue_col),
+                    threshold=str(float(qvalue_threshold)),
+                )
+            else:
+                self.logger.warning(
+                    "DIA-NN report has no PG q-value column (Global.PG.Q.Value / PG.Q.Value); "
+                    "skipping PG-level q-value filter — protein groups are NOT FDR-filtered."
+                )
 
         placeholders = ", ".join(["?" for _ in runs])
         channel_join = ""

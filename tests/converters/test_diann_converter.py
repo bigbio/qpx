@@ -592,6 +592,116 @@ def test_diann_pg_qvalue_filter_skipped_without_qvalue_columns(tmp_path, caplog)
     assert any("skipping PG-level q-value filter" in rec.message for rec in caplog.records)
 
 
+def _feature_rows_single_run(
+    tmp_path: Path,
+    report_rows: list[dict],
+    *,
+    qvalue_threshold: float | None = None,
+) -> list[dict]:
+    """Convert a synthetic single-run DIA-NN report and return feature rows."""
+    from qpx.converters.diann.feature_adapter import DiannFeatureAdapter
+
+    report_path = tmp_path / "report.tsv"
+    pd.DataFrame(report_rows).to_csv(report_path, sep="\t", index=False)
+    output_path = tmp_path / "out.feature.parquet"
+    with DiannFeatureAdapter() as adapter:
+        adapter.convert(
+            diann_report=str(report_path),
+            output_path=str(output_path),
+            qvalue_threshold=qvalue_threshold,
+        )
+    return pq.read_table(output_path).to_pylist()
+
+
+def _two_precursor_report_rows() -> list[dict]:
+    """Two precursors in one run: one confident, one with a high Q.Value/PG.Q.Value."""
+    shared = {
+        "Run": "run_A",
+        "Precursor.Charge": 2,
+        "Proteotypic": 1,
+        "Precursor.Quantity": 100.0,
+        "PG.Quantity": 1000.0,
+        "PG.MaxLFQ": 900.0,
+    }
+    return [
+        {
+            **shared,
+            "Protein.Group": "P1",
+            "Protein.Names": "N1",
+            "Genes": "G1",
+            "Modified.Sequence": "PEPTIDEK",
+            "Stripped.Sequence": "PEPTIDEK",
+            "Precursor.Id": "PEPTIDEK2",
+            "Q.Value": 0.002,
+            "PG.Q.Value": 0.002,
+            "Global.PG.Q.Value": 0.003,
+            "GG.Q.Value": 0.004,
+        },
+        {
+            **shared,
+            "Protein.Group": "P2",
+            "Protein.Names": "N2",
+            "Genes": "G2",
+            "Modified.Sequence": "PEPTIDER",
+            "Stripped.Sequence": "PEPTIDER",
+            "Precursor.Id": "PEPTIDER2",
+            "Q.Value": 0.50,
+            "PG.Q.Value": 0.50,
+            "Global.PG.Q.Value": 0.50,
+            "GG.Q.Value": 0.50,
+        },
+    ]
+
+
+def test_diann_default_conversion_applies_no_qvalue_filter(tmp_path):
+    """Default conversion (no --qvalue-threshold) emits every row as reported.
+
+    bigbio/qpx#241: filtering is opt-in. DIA-NN already FDR-filters its main
+    report and all q-value columns are carried through, so with no threshold the
+    converter must keep even a deliberately high-Q.Value precursor and a
+    high-PG.Q.Value protein group. Both views are consistent — neither filters.
+    """
+    rows = _two_precursor_report_rows()
+    matrix = [
+        {"Protein.Group": "P1", "Protein.Names": "N1", "Genes": "G1", "run_A": 900.0},
+        {"Protein.Group": "P2", "Protein.Names": "N2", "Genes": "G2", "run_A": 800.0},
+    ]
+
+    # Feature view: both precursors kept, including the Q.Value=0.50 one.
+    feature_rows = _feature_rows_single_run(tmp_path, rows)
+    feature_seqs = {row["sequence"] for row in feature_rows}
+    assert feature_seqs == {"PEPTIDEK", "PEPTIDER"}, "no-filter default must keep the high-Q.Value precursor"
+
+    # PG view: both groups kept, including the Global.PG.Q.Value=0.50 one.
+    pg_rows = _pg_rows_single_run(tmp_path, rows, matrix_rows=matrix, qvalue_threshold=None)
+    pg_accessions = {tuple(row["pg_accessions"]) for row in pg_rows}
+    assert pg_accessions == {("P1",), ("P2",)}, "no-filter default must keep the high-PG.Q.Value group"
+
+
+def test_diann_threshold_filters_each_view_at_its_own_level(tmp_path):
+    """A supplied threshold filters the feature view on precursor Q.Value and the
+    pg view on PG-level q-value (Global.PG.Q.Value / PG.Q.Value).
+
+    bigbio/qpx#241: when --qvalue-threshold IS given, each view filters at its
+    own level, dropping the sub-threshold precursor / protein group.
+    """
+    rows = _two_precursor_report_rows()
+    matrix = [
+        {"Protein.Group": "P1", "Protein.Names": "N1", "Genes": "G1", "run_A": 900.0},
+        {"Protein.Group": "P2", "Protein.Names": "N2", "Genes": "G2", "run_A": 800.0},
+    ]
+
+    # Feature view filters on precursor Q.Value: the 0.50 precursor is dropped.
+    feature_rows = _feature_rows_single_run(tmp_path, rows, qvalue_threshold=0.01)
+    feature_seqs = {row["sequence"] for row in feature_rows}
+    assert feature_seqs == {"PEPTIDEK"}, "threshold must drop the high-Q.Value precursor from the feature view"
+
+    # PG view filters on PG-level q-value: the 0.50 group is dropped.
+    pg_rows = _pg_rows_single_run(tmp_path, rows, matrix_rows=matrix, qvalue_threshold=0.01)
+    pg_accessions = {tuple(row["pg_accessions"]) for row in pg_rows}
+    assert pg_accessions == {("P1",)}, "threshold must drop the high-PG.Q.Value group from the pg view"
+
+
 def test_diann_pg_conflicting_quantities_are_deterministic(tmp_path):
     """Merged rows disagreeing on PG.Quantity must yield a deterministic value.
 

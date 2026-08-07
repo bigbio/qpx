@@ -97,11 +97,16 @@ class SpectronautFeatureAdapter(SpectronautBaseAdapter):
         spectronaut_report: str,
         output_path: str,
         sdrf_path: Optional[str] = None,
-        qvalue_threshold: float = 0.01,
+        qvalue_threshold: Optional[float] = None,
         file_num: int = 100,
         creator: str = "spectronaut",
     ) -> None:
-        """Run the Spectronaut report -> feature.parquet conversion."""
+        """Run the Spectronaut report -> feature.parquet conversion.
+
+        Filtering is opt-in: with the default ``qvalue_threshold=None`` the
+        report is converted as reported (no q-value filter). When a threshold is
+        provided, precursors above it are dropped.
+        """
         # 1. Create VIEW over report (lazy — no data loaded into memory)
         self._load_spectronaut_report(spectronaut_report)
 
@@ -364,7 +369,7 @@ class SpectronautFeatureAdapter(SpectronautBaseAdapter):
     def _build_batch_sql(
         self,
         report_cols: set[str],
-        qvalue_threshold: float,
+        qvalue_threshold: Optional[float],
     ) -> str:
         """Build the SQL query template for batch processing.
 
@@ -402,9 +407,9 @@ class SpectronautFeatureAdapter(SpectronautBaseAdapter):
 
         qv_col = r.get("qvalue")
         having_clause = "1=1"
-        if qv_col and qv_col in report_cols:
+        if qvalue_threshold is not None and qv_col and qv_col in report_cols:
             qv_id = validate_identifier(qv_col)
-            having_clause = f"1=1 AND CAST(FIRST(r.{qv_id}) AS DOUBLE) < {qvalue_threshold}"
+            having_clause = f"1=1 AND CAST(FIRST(r.{qv_id}) AS DOUBLE) < {float(qvalue_threshold)}"
 
         sql = sql_build(
             "SELECT $select FROM report r"

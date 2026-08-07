@@ -44,7 +44,7 @@ class DiaNNConverter(BaseOrchestrator):
     def convert_features(
         self,
         mzml_info_folder=None,
-        qvalue_threshold=0.01,
+        qvalue_threshold=None,
         output_folder=".",
         output_prefix=None,
         protein_file=None,
@@ -77,7 +77,7 @@ class DiaNNConverter(BaseOrchestrator):
         output_prefix=None,
         batch_size=100,
         standardized_intensities=False,
-        qvalue_threshold=0.01,
+        qvalue_threshold=None,
     ):
         output_folder = Path(output_folder)
         prefix = output_prefix or "diann"

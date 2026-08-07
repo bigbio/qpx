@@ -103,11 +103,19 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
         output_path: str,
         mzml_info_folder: Optional[str] = None,
         sdrf_path: Optional[str] = None,
-        qvalue_threshold: float = 0.01,
+        qvalue_threshold: Optional[float] = None,
         file_num: int = 100,  # VIEW-based lazy IO reduces per-batch memory
         creator: str = "diann",
     ) -> None:
-        """Run the DIA-NN report -> feature.parquet conversion."""
+        """Run the DIA-NN report -> feature.parquet conversion.
+
+        Filtering is opt-in (bigbio/qpx#241). ``qvalue_threshold`` defaults to
+        ``None``, which emits every feature the report contains — DIA-NN already
+        FDR-filters its main report and all per-row q-value columns (``qvalue``,
+        ``global_qvalue``, ``diann_lib_qvalue``, ``diann_translated_qvalue`` …)
+        are carried through unconditionally for downstream filtering. When a
+        threshold is provided, the precursor ``Q.Value`` filter is applied.
+        """
         # 1. Create VIEW over report (lazy — no data loaded into memory)
         self._load_diann_report(diann_report)
 
@@ -475,7 +483,7 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
         self,
         report_cols: set[str],
         has_decoy_col: bool,
-        qvalue_threshold: float,
+        qvalue_threshold: Optional[float],
         channel_col: str | None,
         target_schema: pa.Schema,
     ) -> str:
@@ -516,6 +524,17 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
         # --- Build full query ---
         select_clause = ",\n        ".join(parts)
 
+        # Precursor Q.Value filter is opt-in (bigbio/qpx#241). With no threshold
+        # the report is converted as reported (DIA-NN already FDR-filters it);
+        # only apply the cutoff when a threshold is explicitly provided.
+        qvalue_filter = ""
+        if qvalue_threshold is not None:
+            qvalue_filter = sql_build(
+                "AND r.$qv_col < $qv_threshold",
+                qv_col=validate_identifier(qv_col),
+                qv_threshold=str(float(qvalue_threshold)),
+            )
+
         row_sql = sql_build(
             """
         SELECT
@@ -531,7 +550,7 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
                   '(?i)\\.(mzML|raw|d|wiff|htrms)$',
                   ''
               ) IN ({run_placeholders})
-          AND r.$qv_col < $qv_threshold
+          $qvalue_filter
           AND r.$pg_col IS NOT NULL
         """,
             select_clause=select_clause,
@@ -540,8 +559,7 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
             chg_col=validate_identifier(chg_col),
             channel_join=channel_join,
             run_col=validate_identifier(run_col),
-            qv_col=validate_identifier(qv_col),
-            qv_threshold=str(qvalue_threshold),
+            qvalue_filter=qvalue_filter,
             pg_col=validate_identifier(pg_col),
         )
 

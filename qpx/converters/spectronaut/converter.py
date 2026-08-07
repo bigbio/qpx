@@ -39,7 +39,7 @@ class SpectronautConverter(BaseOrchestrator):
 
     def convert_features(
         self,
-        qvalue_threshold=0.05,
+        qvalue_threshold=None,
         output_folder=".",
         output_prefix=None,
     ):
