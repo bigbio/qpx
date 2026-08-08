@@ -99,7 +99,7 @@ diann:
       global_qvalue: ["Global.PG.Q.Value"]
       gg_qvalue: ["GG.Q.Value"]
       lfq: ["PG.MaxLFQ"]
-      qvalue: ["PG.Q.Value"]
+      pg_qvalue: ["PG.Q.Value"]
       run_file_name: ["Run"]
 
 maxquant:

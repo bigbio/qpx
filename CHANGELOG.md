@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **MuData stack is core**: `mudata`, `anndata`, and `scipy` are required dependencies (no longer an optional extra). Use bare `pip install qpx`.
+- **`quantify` extra**: now `mokume[directlfq]>=0.1.0` (DirectLFQ via mokume's optional extra).
+
+### Removed
+
+- **`[mudata]` optional extra** — MuData export is included in the default install.
+
+### Fixed
+
+- **Ontology PK uniqueness**: ontology writes collapse to one row per `(field_name, view)` (first-wins) when a field is both a discovered score and a mapped field.
+- **DIA-NN blank `anchor_protein`**: empty/whitespace first accession from `Protein.Group` is written as NULL; validators treat blank anchors as unset.
+
 ### Added
 
 - **Spectronaut converter**: `qpxc convert spectronaut` — full support for Spectronaut report TSV files, producing feature.parquet and pg.parquet with DuckDB-accelerated batch processing

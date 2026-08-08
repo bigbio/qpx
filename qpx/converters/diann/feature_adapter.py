@@ -422,7 +422,8 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
         parts.extend(
             [
                 "CAST(lk.missed_cleavages AS SMALLINT) AS missed_cleavages",
-                f"SPLIT_PART(r.\"{pg_col}\", ';', 1) AS anchor_protein",
+                # Blank/whitespace Protein.Group → NULL (e.g. DIA-NN unmapped rows).
+                f"NULLIF(TRIM(SPLIT_PART(r.\"{pg_col}\", ';', 1)), '') AS anchor_protein",
             ]
         )
         return parts

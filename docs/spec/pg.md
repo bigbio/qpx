@@ -50,7 +50,7 @@ A `pg` row is an **analyte**: the quantified unit is the protein group *as a who
   - `feature.run_file_name ∈ pg.grouped_runs`; **AND**
   - a label in `feature.intensities` `IS NOT DISTINCT FROM pg.label`, so a feature links **only** to pg rows for the channels/labels it actually carries (LFQ: one `LFQ` row; TMT/plexDIA: one row per channel the feature has, never the missing ones).
   `pg_id` is read straight from the matched pg row (never re-derived); never join on `anchor_protein` alone. **No match = identified but not quantified** in that channel/fraction — the feature simply produces no link (not an error). `feature.pg_ids` remains an **optional producer hardlink** (a slot a producer MAY populate); qpx's own converters do **not** materialize it, and when it is absent consumers use the computed softlink above.
-- **Integrity check:** a row with a non-null `anchor_protein` MUST also carry `pg_accessions` (its full group membership). Since the group is the analyte and the join key, a protein-mapped feature that lacked membership would be an orphan. QPX validates this (a warning on the write/convert path, an error under `qpxc validate --strict`).
+- **Integrity check:** a row with a non-null `anchor_protein` MUST also carry `pg_accessions` (its full group membership). Since the group is the analyte and the join key, a protein-mapped feature that lacked membership would be an orphan. QPX validates this (a warning on the write/convert path, an error under `qpxc validate --strict`). Blank/whitespace `anchor_protein` is treated as unset (not a membership violation).
 
 ### Counts
 
@@ -263,7 +263,7 @@ DIA-NN's main report is precursor-level. PG-level columns (`PG.*`, `Genes.*`) ar
 
     | DIA-NN column | QPX field | Notes |
     |---|---|---|
-    | `Protein.Group` | `pg_accessions` | Semicolon-separated → array; also `anchor_protein` (first accession) |
+    | `Protein.Group` | `pg_accessions` | Semicolon-separated → array; `anchor_protein` = first accession. Blank/whitespace groups (e.g. DIA-NN unmapped rows) → `anchor_protein` NULL, not `""`. |
     | `Protein.Names` | `pg_names` | |
     | `Genes` | `gg_names` / `gg_accessions` | |
     | `Run` | `grouped_runs` | Raw file name without path, wrapped as a single-element list |

@@ -352,10 +352,32 @@ def test_anchor_with_pg_accessions_ok():
     assert issues == []
 
 
+def test_blank_anchor_without_membership_not_flagged():
+    """Blank/whitespace anchors are ignored; nonblank anchors without membership are not.
+
+    DIA-NN 2.2.0 emits an empty-string ``anchor_protein`` (not null) for features it
+    leaves protein-group-blank. A blank/whitespace anchor is not a leading protein,
+    so those rows must not be violations — while a real accession without membership
+    still is.
+    """
+    table = _feature_anchor_table([("", None), ("   ", None), ("P1", ["P1"]), ("P2", None)])
+    strict = FeatureSchema.validate_full(table, strict=True)
+    errs = [i for i in strict.issues if i.check == "anchor_without_membership"]
+    assert len(errs) == 1
+    assert errs[0].severity == "error"
+
+
 def test_anchor_membership_skips_non_list_pg_accessions():
-    # A malformed pg_accessions (string, not list) is a type mismatch reported elsewhere;
-    # the membership check must skip it gracefully rather than raise on list_value_length.
+    """Malformed non-list ``pg_accessions`` must not raise in the membership check."""
     from qpx.core.data.schema import _anchor_membership_issues
 
     table = pa.table({"anchor_protein": pa.array(["P1"]), "pg_accessions": pa.array(["P1;P2"])})
-    assert _anchor_membership_issues(table, "feature", "warning") == []
+    assert not _anchor_membership_issues(table, "feature", "warning")
+
+
+def test_anchor_membership_skips_non_string_anchor():
+    """Malformed non-string ``anchor_protein`` must not raise in the membership check."""
+    from qpx.core.data.schema import _anchor_membership_issues
+
+    table = pa.table({"anchor_protein": pa.array([1, 2]), "pg_accessions": pa.array([[], []], type=pa.list_(pa.string()))})
+    assert not _anchor_membership_issues(table, "feature", "warning")

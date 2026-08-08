@@ -350,9 +350,9 @@ def _validate_quantify_inputs(method_lower: str, fasta: Optional[Path]) -> None:
     try:
         from mokume.quantification import is_directlfq_available
     except ImportError:
-        raise click.UsageError("mokume is not installed. Install with: pip install mokume")
+        raise click.UsageError('mokume is not installed. Install with: pip install "qpx[quantify]"')
     if method_lower == "directlfq" and not is_directlfq_available():
-        raise click.UsageError("DirectLFQ is not installed. Install with: pip install mokume[directlfq]")
+        raise click.UsageError('DirectLFQ is not installed. Install with: pip install "qpx[quantify]"')
 
 
 def _run_ibaq(peptide_df, fasta, enzyme, normalize, min_aa, max_aa, ploidy, cpc, organism, output, verbose) -> None:

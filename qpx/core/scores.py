@@ -486,6 +486,13 @@ _FIELD_CV_MAP: dict[str, dict] = {
     },
 }
 
+# A shared QPX field name can represent a different level in each view. Resolve
+# those cases through the corresponding score definition rather than attaching
+# precursor-level semantics to a protein-group field.
+_VIEW_FIELD_SCORE_ALIASES: dict[tuple[str, str], str] = {
+    ("pg", "global_qvalue"): "pg_global_qvalue",
+}
+
 
 # ---------------------------------------------------------------------------
 # Ontology entry generation
@@ -528,8 +535,8 @@ def field_ontology_entries(
         for field_name, source_column in sorted(resolved_mappings.items()):
             cv_info = _FIELD_CV_MAP.get(field_name)
             if cv_info is None:
-                # Try OBO lookup
-                cv_info = _lookup_from_obo(field_name)
+                score_name = _VIEW_FIELD_SCORE_ALIASES.get((view, field_name))
+                cv_info = lookup_score(score_name) if score_name else _lookup_from_obo(field_name)
             entries.append(
                 {
                     "field_name": field_name,

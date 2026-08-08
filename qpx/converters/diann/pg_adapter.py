@@ -273,7 +273,7 @@ class DiannPgAdapter(DiaNNBaseAdapter):
         # the filter with a warning rather than crash.
         qvalue_filter = ""
         if qvalue_threshold is not None:
-            pg_qvalue_col = r.get("global_qvalue") or r.get("qvalue")
+            pg_qvalue_col = r.get("global_qvalue") or r.get("pg_qvalue")
             if pg_qvalue_col and pg_qvalue_col in actual_report_cols:
                 qvalue_filter = sql_build(
                     "AND CAST(report.$qv_col AS DOUBLE) <= $threshold",
@@ -463,11 +463,11 @@ class DiannPgAdapter(DiaNNBaseAdapter):
         peptides = [{"protein_name": acc, "peptide_count": peptide_count} for acc in pg_accessions]
 
         # Additional scores — track inline
-        qvalue_val = safe_float(_col_first(group, "qvalue"))
+        pg_qvalue = safe_float(_col_first(group, "pg_qvalue"))
         additional_scores = []
-        if qvalue_val is not None:
-            additional_scores.append({"score_name": "qvalue", "score_value": qvalue_val, "higher_better": False})
-            self._discovered_scores.add("qvalue")
+        if pg_qvalue is not None:
+            additional_scores.append({"score_name": "pg_qvalue", "score_value": pg_qvalue, "higher_better": False})
+            self._discovered_scores.add("pg_qvalue")
 
         return {
             "pg_accessions": pg_accessions,
@@ -478,7 +478,7 @@ class DiannPgAdapter(DiaNNBaseAdapter):
             "anchor_protein": anchor_protein,
             "grouped_runs": [run_file_name],
             "global_qvalue": global_qvalue,
-            "pg_qvalue": qvalue_val,
+            "pg_qvalue": pg_qvalue,
             "intensities": intensities or None,
             "additional_intensities": additional_intensities or None,
             "is_decoy": is_decoy,

@@ -217,8 +217,10 @@ class BaseConverter(ABC):
         if not entries:
             return None
 
+        from qpx.converters.ontology_util import dedupe_ontology_entries
         from qpx.writers.ontology import OntologyWriter
 
+        entries = dedupe_ontology_entries(entries)
         output_path = Path(output_path)
         with OntologyWriter(output_path, creator="qpx", compression=self._compression) as writer:
             writer.write_batch(entries)
@@ -271,8 +273,10 @@ class BaseConverter(ABC):
         if not entries:
             return None
 
+        from qpx.converters.ontology_util import dedupe_ontology_entries
         from qpx.writers.ontology import OntologyWriter
 
+        entries = dedupe_ontology_entries(entries)
         output_path = Path(output_path)
         with OntologyWriter(output_path, creator="qpx", compression=self._compression) as writer:
             writer.write_batch(entries)

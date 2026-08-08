@@ -12,8 +12,11 @@ dependencies:
   - pyopenms>=3.3.0,<3.5.0
   - duckdb>=1.1.3,<=1.3.0
   - pyyaml>=6.0
-  # Dev / test dependencies (needed for full test suite)
+  # Core MuData stack (also declared in pyproject.toml)
   - anndata
+  - mudata>=0.3.1
+  - scipy
+  # Dev / test
   - scikit-learn
   # Optional (uncomment as needed)
   # - biopython     # transforms: gene mapping

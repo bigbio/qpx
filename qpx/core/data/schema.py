@@ -268,11 +268,16 @@ def _anchor_membership_issues(table: pa.Table, structure: str, severity: str) ->
     # above; skip here rather than let list_value_length raise on malformed input.
     if not (pa.types.is_list(pg.type) or pa.types.is_large_list(pg.type)):
         return []
+    # Non-string anchor_protein is a type mismatch reported elsewhere.
+    if not (pa.types.is_string(anchor.type) or pa.types.is_large_string(anchor.type)):
+        return []
     # list_value_length is null where pg_accessions is null; fill_null(0) folds a
     # null membership into "empty" so the boolean logic never propagates nulls.
     pg_len = pc.fill_null(pc.list_value_length(pg), 0)
     pg_missing = pc.equal(pg_len, 0)
-    violation = pc.and_(pc.is_valid(anchor), pg_missing)
+    # Blank/whitespace anchors are unset (not a membership violation).
+    anchor_set = pc.greater(pc.utf8_length(pc.utf8_trim_whitespace(pc.fill_null(anchor, ""))), 0)
+    violation = pc.and_(anchor_set, pg_missing)
     bad = pc.sum(pc.cast(violation, pa.int64())).as_py() or 0
     if not bad:
         return []

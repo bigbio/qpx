@@ -26,22 +26,23 @@ dependencies = [
     # Canonical channel-label vocabulary (TMT/iTRAQ/SILAC/mTRAQ + synonyms) —
     # single source of truth shared with the OpenMS/DIA-NN SDRF converters.
     "sdrf-pipelines>=0.1.6",
+    # Floor at 0.3.1: mudata 0.3.0 breaks against anndata>=0.10.9 (private API).
+    "mudata>=0.3.1",
+    "anndata>=0.9.0",
+    "scipy>=1.10",
 ]
 [project.optional-dependencies]
 mzidentml = ["lxml>=4.9.0"]
 pdc = ["pridepy>=0.0.15"]
-transforms = ["biopython", "mygene>=1.0.0", "anndata>=0.9.0"]
+transforms = ["biopython", "mygene>=1.0.0"]
 plotting = ["plotly>=5.0.0", "scikit-learn>=1.5.0"]
-quantify = ["mokume>=0.1.0", "directlfq"]
-mudata = ["mudata>=0.2.4", "anndata>=0.9.0"]
-all = ["lxml>=4.9.0", "biopython", "mygene>=1.0.0", "anndata>=0.9.0", "plotly>=5.0.0", "scikit-learn>=1.5.0", "mokume>=0.1.0", "directlfq", "mudata>=0.2.4"]
+quantify = ["mokume[directlfq]>=0.1.0"]
+all = ["lxml>=4.9.0", "biopython", "mygene>=1.0.0", "plotly>=5.0.0", "scikit-learn>=1.5.0", "mokume[directlfq]>=0.1.0"]
 dev = [
     "pytest",
     "pytest-timeout",
     "hypothesis",
     "lxml>=4.9.0",
-    "anndata",
-    "mudata>=0.2.4",
     "scikit-learn",
     "plotly>=5.0.0",
     "pre-commit",

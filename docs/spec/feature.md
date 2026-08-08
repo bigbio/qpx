@@ -82,7 +82,7 @@ These fields are shared with the PSM view and describe the peptide identificatio
 | Field | Description | Type | Required |
 |-------|-------------|------|----------|
 | `pg_accessions` | Protein group accessions of all proteins that the peptide maps to | array[string], null | no |
-| `anchor_protein` | One protein accession that represents the protein group; null when no protein mapping was performed | string, null | yes |
+| `anchor_protein` | One protein accession that represents the protein group; null when no protein mapping was performed (converters normalize blank/whitespace to null) | string, null | yes |
 | `unique` | Whether the peptide maps uniquely to a single protein group | bool, null | no |
 | `pg_positions` | Peptide start and end positions within each protein in the protein group | array[struct], null | no |
 | `pg_global_qvalue` | Global q-value of the protein group at the experiment level | float64, null | optional |

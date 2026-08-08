@@ -70,12 +70,17 @@ class BaseOrchestrator:
         """Write combined ontology.parquet. Returns path if written, else None."""
         if not ontology_entries:
             return None
+        from qpx.converters.ontology_util import dedupe_ontology_entries
         from qpx.writers.ontology import OntologyWriter
 
+        entries = dedupe_ontology_entries(ontology_entries)
+        dropped = len(ontology_entries) - len(entries)
         onto_path = output_folder / f"{prefix}.ontology.parquet"
         with OntologyWriter(onto_path, creator="qpx", compression=self._compression) as writer:
-            writer.write_batch(ontology_entries)
-        logger.info("Wrote %d ontology entries to %s", len(ontology_entries), onto_path)
+            writer.write_batch(entries)
+        if dropped:
+            logger.info("Collapsed %d duplicate (field_name, view) ontology entries", dropped)
+        logger.info("Wrote %d ontology entries to %s", len(entries), onto_path)
         return onto_path
 
     def _write_provenance(

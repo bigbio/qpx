@@ -50,12 +50,12 @@ pip install qpx
 
 ### Missing dependencies
 
-**Problem**: Import errors for packages like `venn`, `pyopenms`, or `anndata`.
+**Problem**: Import errors for packages like `venn` or `pyopenms`.
 
-**Solution**: Install the missing package:
+**Solution**: Install the missing package (`anndata` / `mudata` / `scipy` ship with core `qpx`):
 
 ```bash
-pip install venn pyopenms anndata
+pip install venn pyopenms
 ```
 
 ## Conversion Issues

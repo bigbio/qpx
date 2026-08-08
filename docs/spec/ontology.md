@@ -20,6 +20,11 @@ Each QPX dataset includes an `ontology.parquet` file that stores the field-to-on
 
 See the full YAML schema in [`ontology.yaml`](schemas/ontology.yaml).
 
+!!! note "Primary key"
+    Rows are unique on `(field_name, view)`. Converters collapse duplicates
+    (first-wins) when the same field is accumulated both as a discovered score
+    and as a mapped field, so validation does not report duplicate ontology PKs.
+
 ### Schema
 
 ```python

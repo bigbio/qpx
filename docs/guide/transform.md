@@ -246,12 +246,12 @@ print(generate_params_table(transform_quantify_cmd))
 
 | Method | Description | Extra Requirements |
 |--------|-------------|-------------------|
-| `directlfq` | DirectLFQ intensity traces (default) | `pip install mokume[directlfq]` |
-| `maxlfq` | MaxLFQ delayed normalization | -- |
-| `topn` | Average of N most intense peptides | `--topn-n` to set N |
-| `top3` | Average of 3 most intense peptides | -- |
-| `ibaq` | Intensity-Based Absolute Quantification | `--fasta` required |
-| `sum` | Sum of all peptide intensities | -- |
+| `directlfq` | DirectLFQ intensity traces (default) | `pip install "qpx[quantify]"` |
+| `maxlfq` | MaxLFQ delayed normalization | `pip install "qpx[quantify]"` |
+| `topn` | Average of N most intense peptides | `pip install "qpx[quantify]"` |
+| `top3` | Average of 3 most intense peptides | `pip install "qpx[quantify]"` |
+| `ibaq` | Intensity-Based Absolute Quantification | `pip install "qpx[quantify]"` + `--fasta` |
+| `sum` | Sum of all peptide intensities | `pip install "qpx[quantify]"` |
 
 ### Usage Examples {#quantify-examples}
 
@@ -299,13 +299,9 @@ qpxc transform quantify \
 
 ### Common Issues {#quantify-issues}
 
-**Issue**: `mokume is not installed`
+**Issue**: `mokume is not installed` / `DirectLFQ is not installed`
 
-- **Solution**: Install with `pip install mokume`
-
-**Issue**: `DirectLFQ is not installed`
-
-- **Solution**: Install with `pip install mokume[directlfq]`
+- **Solution**: Install with `pip install "qpx[quantify]"` (pulls `mokume[directlfq]>=0.1.0`)
 
 **Issue**: `--fasta option is required for the ibaq method`
 
