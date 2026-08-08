@@ -37,7 +37,7 @@ mdata.write("PXD000000.h5mu")  # serialize to HDF5
 Use `build_mudata(ds, all_intensity_labels=True)` to represent every TMT/iTRAQ
 channel as a separate `run|label` observation.
 
-> Requires the optional `mudata` dependency: `pip install "qpx[mudata]"`
+> MuData support is included in the default QPX installation.
 
 ### Performance
 

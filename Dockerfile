@@ -2,8 +2,8 @@
 #
 # QPX container image
 # -------------------
-# Provides the ``qpxc`` CLI built from this repository's source, with the
-# optional ``[mudata]`` extras pre-installed for MuData export.
+# Provides the ``qpxc`` CLI built from this repository's source, including
+# MuData export support.
 #
 # Build:
 #   docker build -t ghcr.io/bigbio/qpx:dev .
@@ -30,7 +30,7 @@ COPY pyproject.toml README.md LICENSE ./
 COPY qpx ./qpx
 
 RUN pip install --no-cache-dir --upgrade pip==24.0 \
- && pip install --no-cache-dir ".[mudata]" \
+ && pip install --no-cache-dir . \
  && rm -rf /src
 
 LABEL org.opencontainers.image.source="https://github.com/bigbio/qpx"
