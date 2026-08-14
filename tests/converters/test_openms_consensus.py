@@ -383,6 +383,8 @@ def test_unassigned_isobaric_run_streaming_matches_pyopenms(tmp_path):
 
     for view in ("feature", "psm", "pg"):
         assert canon(wp[view]) == canon(ws[view]), f"{view} differs between pyopenms and streaming"
+    psm_accessions = pq.read_table(str(wp["psm"]), columns=["protein_accessions"]).column(0).to_pylist()
+    assert psm_accessions and all(accessions == ["P12345"] for accessions in psm_accessions)
 
 
 def test_consensus_psm_multihit_keeps_lowest_pep_and_merges_scores(tmp_path):
@@ -394,8 +396,12 @@ def test_consensus_psm_multihit_keeps_lowest_pep_and_merges_scores(tmp_path):
     # 1.0e-03 -> the second must win (lower PEP) even though it is not first.
     xml = _TMT_CONSENSUSXML.replace('score="0" sequence="PEPTIDEK"', 'score="1.5" sequence="PEPTIDEK"')
     xml = xml.replace('value="1.0e-03"', 'value="5.0e-02"')
+    xml = xml.replace(
+        "    </ProteinIdentification>",
+        '      <ProteinHit id="PH_1" accession="P67890" score="0" sequence=""></ProteinHit>\n    </ProteinIdentification>',
+    )
     second_hit = (
-        '        <PeptideHit score="2.7" sequence="PEPTIDEK" charge="2" protein_refs="PH_0">\n'
+        '        <PeptideHit score="2.7" sequence="PEPTIDEK" charge="2" protein_refs="PH_1">\n'
         '          <UserParam type="string" name="target_decoy" value="target"/>\n'
         '          <UserParam type="float" name="Posterior Error Probability_score" value="1.0e-03"/>\n'
         "        </PeptideHit>"
@@ -417,6 +423,7 @@ def test_consensus_psm_multihit_keeps_lowest_pep_and_merges_scores(tmp_path):
     score_values = [s["score_value"] for s in (rec["additional_scores"] or [])]
     assert any(v == pytest.approx(2.7) for v in score_values)  # kept hit's own search score
     assert any(v == pytest.approx(1.5) for v in score_values)  # the other engine's search score preserved
+    assert rec["protein_accessions"] == ["P12345", "P67890"]
 
 
 def test_consensus_psm_distinct_peptidoforms_both_emitted(tmp_path):

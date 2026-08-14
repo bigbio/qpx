@@ -345,14 +345,21 @@ _SUPPORTED_SUFFIXES = {".parquet", ".tsv", ".csv"}
 
 def _validate_quantify_inputs(method_lower: str, fasta: Optional[Path]) -> None:
     """Validate CLI inputs before running quantification."""
+    import importlib
+
     if method_lower == "ibaq" and not fasta:
         raise click.UsageError("The --fasta option is required for the ibaq method")
     try:
-        from mokume.quantification import is_directlfq_available
-    except ImportError:
-        raise click.UsageError('mokume is not installed. Install with: pip install "qpx[quantify]"')
-    if method_lower == "directlfq" and not is_directlfq_available():
-        raise click.UsageError('DirectLFQ is not installed. Install with: pip install "qpx[quantify]"')
+        importlib.import_module("mokume.quantification")
+    except ImportError as exc:
+        raise click.UsageError('mokume is not installed. Install with: pip install "qpx[quantify]"') from exc
+    if method_lower == "directlfq":
+        try:
+            from mokume.quantification import is_directlfq_available
+        except ImportError as exc:
+            raise click.UsageError('DirectLFQ is not installed. Install with: pip install "qpx[quantify]"') from exc
+        if not is_directlfq_available():
+            raise click.UsageError('DirectLFQ is not installed. Install with: pip install "qpx[quantify]"')
 
 
 def _run_ibaq(peptide_df, fasta, enzyme, normalize, min_aa, max_aa, ploidy, cpc, organism, output, verbose) -> None:
@@ -427,19 +434,62 @@ def _save_result(result_df, output: Path) -> None:
         result_df.to_csv(str(output), index=False)
 
 
-def _qpx_feature_to_peptide_df(feature_path: Path):
+def _quantify_sdrf_mapping(sdrf_path: Path):
+    """Build an unambiguous QPX run/channel to sample/condition mapping."""
+    import pandas as pd
+
+    from qpx.converters.channel_labels import normalize_label
+    from qpx.core.files import run_file_stem
+    from qpx.core.sdrf import validate_sdrf_data_files
+
+    sdrf = pd.read_csv(sdrf_path, sep="\t", header=0)
+    sdrf.columns = sdrf.columns.str.lower()
+    validate_sdrf_data_files(sdrf)
+
+    source_col = "source name"
+    label_col = "comment[label]"
+    missing = [column for column in (source_col, label_col) if column not in sdrf.columns]
+    if missing:
+        raise click.UsageError(f"SDRF is missing required column(s): {', '.join(missing)}")
+
+    sample_ids = sdrf[source_col].astype("string").str.strip()
+    if sample_ids.isna().any() or sample_ids.eq("").any():
+        raise click.UsageError("SDRF column 'source name' contains missing or blank values")
+
+    factor_columns = [column for column in sdrf.columns if column.startswith("factor value[")]
+    conditions = sdrf[factor_columns[0]].astype("string").str.strip() if factor_columns else sample_ids
+    conditions = conditions.mask(conditions.isna() | conditions.eq(""), sample_ids)
+
+    mapping = pd.DataFrame(
+        {
+            "_run_key": sdrf["comment[data file]"].map(run_file_stem),
+            "_label_key": sdrf[label_col].map(normalize_label),
+            "SampleID": sample_ids,
+            "Condition": conditions,
+        }
+    )
+    duplicate = mapping.duplicated(["_run_key", "_label_key"], keep=False)
+    if duplicate.any():
+        pairs = mapping.loc[duplicate, ["_run_key", "_label_key"]].drop_duplicates()
+        rendered = ", ".join(f"{run_key}::{label_key}" for run_key, label_key in pairs.itertuples(index=False, name=None))
+        raise click.UsageError(f"SDRF contains duplicate run/label mappings: {rendered}")
+    return mapping
+
+
+def _qpx_feature_to_peptide_df(feature_path: Path, sdrf_path: Optional[Path] = None):
     """Read QPX feature.parquet and flatten to mokume peptide DataFrame.
 
     Mokume expects columns: ``ProteinName``, ``PeptideCanonical``,
-    ``NormIntensity``, ``SampleID``.
+    ``NormIntensity``, ``SampleID`` and, for normalized iBAQ, ``Condition``.
 
     QPX stores intensities as a list of ``{label, intensity}`` structs.
     For label-free data each feature typically has a single intensity entry;
     for TMT/iTRAQ data the list contains one entry per channel.  This
     function explodes **all** intensity entries into separate rows so that
-    multiplexed channels are preserved.  ``SampleID`` is set to
-    ``<run_file_name>::<label>`` when multiple labels exist, or just
-    ``<run_file_name>`` for single-label (LFQ) data.
+    multiplexed channels are preserved.  When an SDRF is provided,
+    ``(run_file_name, label)`` is mapped to its real sample and condition.
+    Without one, the existing ``run::label`` sample key is retained and
+    condition is explicitly marked ``not available``.
     """
     import pandas as pd
 
@@ -460,20 +510,38 @@ def _qpx_feature_to_peptide_df(feature_path: Path):
     # Drop rows without intensities, then explode vectorised
     df = df[df["intensities"].apply(lambda x: x is not None and len(x) > 0)]
     if df.empty:
-        return pd.DataFrame(columns=["ProteinName", "PeptideCanonical", "NormIntensity", "SampleID"])
+        return pd.DataFrame(columns=["ProteinName", "PeptideCanonical", "NormIntensity", "SampleID", "Condition"])
 
     exploded = df[["ProteinName", "PeptideCanonical", "run_file_name", "intensities"]].explode("intensities")
     # Extract struct fields
     exploded["NormIntensity"] = exploded["intensities"].apply(lambda e: e.get("intensity", 0.0) if isinstance(e, dict) else 0.0)
     exploded["_label"] = exploded["intensities"].apply(lambda e: e.get("label", "") if isinstance(e, dict) else "")
-    # Build SampleID: run::label when label present, else run
-    has_label = exploded["_label"].astype(bool)
-    exploded["SampleID"] = exploded["run_file_name"]
-    exploded.loc[has_label, "SampleID"] = exploded.loc[has_label, "run_file_name"] + "::" + exploded.loc[has_label, "_label"]
+    if sdrf_path is not None:
+        from qpx.converters.channel_labels import normalize_label
+        from qpx.core.files import run_file_stem
+
+        exploded["_run_key"] = exploded["run_file_name"].map(run_file_stem)
+        exploded["_label_key"] = exploded["_label"].map(normalize_label)
+        exploded = exploded.merge(
+            _quantify_sdrf_mapping(sdrf_path),
+            on=["_run_key", "_label_key"],
+            how="left",
+            validate="many_to_one",
+        )
+        unmapped = exploded["SampleID"].isna()
+        if unmapped.any():
+            pairs = exploded.loc[unmapped, ["_run_key", "_label_key"]].drop_duplicates()
+            rendered = ", ".join(f"{run_key}::{label_key}" for run_key, label_key in pairs.itertuples(index=False, name=None))
+            raise click.UsageError(f"QPX intensities have no matching SDRF run/label row: {rendered}")
+    else:
+        has_label = exploded["_label"].astype(bool)
+        exploded["SampleID"] = exploded["run_file_name"]
+        exploded.loc[has_label, "SampleID"] = exploded.loc[has_label, "run_file_name"] + "::" + exploded.loc[has_label, "_label"]
+        exploded["Condition"] = "not available"
     # Filter invalid intensities
     result = exploded.loc[
         exploded["NormIntensity"].notna() & (exploded["NormIntensity"] > 0),
-        ["ProteinName", "PeptideCanonical", "NormIntensity", "SampleID"],
+        ["ProteinName", "PeptideCanonical", "NormIntensity", "SampleID", "Condition"],
     ].copy()
     result = result[result["ProteinName"] != ""]
 
@@ -502,6 +570,12 @@ def _qpx_feature_to_peptide_df(feature_path: Path):
 @click.option(
     "--fasta",
     help="FASTA database (required for ibaq method)",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+)
+@click.option(
+    "--sdrf",
+    help="SDRF used to map QPX run/channel intensities to samples and conditions",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
     default=None,
 )
@@ -540,6 +614,7 @@ def transform_quantify_cmd(
     feature_path: Path,
     method: str,
     fasta: Optional[Path],
+    sdrf: Optional[Path],
     enzyme: str,
     topn_n: int,
     threads: int,
@@ -577,7 +652,7 @@ def transform_quantify_cmd(
         # iBAQ (requires FASTA)
         qpxc transform quantify \\
             --feature-path ./qpx_output/feature.parquet \\
-            --method ibaq --fasta proteome.fasta \\
+            --method ibaq --fasta proteome.fasta --sdrf experiment.sdrf.tsv \\
             -o proteins_ibaq.tsv
 
         # MaxLFQ with 8 threads
@@ -594,7 +669,7 @@ def transform_quantify_cmd(
 
     # Step 1: Read QPX feature and flatten to mokume format
     click.echo(f"Reading QPX feature data from {feature_path}")
-    peptide_df = _qpx_feature_to_peptide_df(feature_path)
+    peptide_df = _qpx_feature_to_peptide_df(feature_path, sdrf)
     if peptide_df.empty:
         raise click.UsageError("No valid peptide intensities found in the feature file")
 

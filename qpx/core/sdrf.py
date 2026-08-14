@@ -19,6 +19,19 @@ from qpx.core.files import run_file_stem
 logger = logging.getLogger(__name__)
 
 
+def validate_sdrf_data_files(sdrf_table: DataFrame) -> None:
+    """Require a non-empty ``comment[data file]`` value in every SDRF row."""
+    column = "comment[data file]"
+    if column not in sdrf_table.columns:
+        raise ValueError(f"SDRF is missing required column '{column}'")
+
+    values = sdrf_table[column]
+    invalid = values.isna() | values.astype("string").str.strip().eq("").fillna(True)
+    if invalid.any():
+        rows = [str(position + 2) for position, is_invalid in enumerate(invalid) if is_invalid]
+        raise ValueError(f"SDRF column '{column}' contains missing or blank value(s) at input row(s): {', '.join(rows)}")
+
+
 def get_unique_from_column_substr(sdrf_table: DataFrame, substr: str) -> list:
     """
     Get in a pandas dataframe the columns that contain a given substring
@@ -143,6 +156,7 @@ class SDRFHandler:
             raise ValueError("The SDRF file provided does not contain any supported comment[label] value")
 
     def get_sample_map_run(self):
+        validate_sdrf_data_files(self.sdrf_table)
         sdrf = self.sdrf_table[["source name", "comment[data file]", "comment[label]"]].copy()
         sdrf["comment[data file]"] = sdrf["comment[data file]"].map(run_file_stem)
         if self.get_experiment_type_from_sdrf() != "LFQ":

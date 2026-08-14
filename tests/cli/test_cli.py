@@ -95,7 +95,84 @@ class TestTransformQuantifyCLI:
     def test_quantify_help_shows_ibaq_options(self):
         runner = CliRunner()
         result = runner.invoke(qpx_main, ["transform", "quantify", "--help"])
-        _assert_help(result, "--organism", "--ploidy", "--min-aa")
+        _assert_help(result, "--organism", "--ploidy", "--min-aa", "--sdrf")
+
+    def test_ibaq_validation_does_not_require_directlfq_helper(self, monkeypatch, tmp_path):
+        """iBAQ availability must not depend on a DirectLFQ-only helper."""
+        import sys
+        from types import ModuleType
+
+        from qpx.cli.transform import _validate_quantify_inputs
+
+        mokume = ModuleType("mokume")
+        mokume.__path__ = []
+        quantification = ModuleType("mokume.quantification")
+        monkeypatch.setitem(sys.modules, "mokume", mokume)
+        monkeypatch.setitem(sys.modules, "mokume.quantification", quantification)
+
+        _validate_quantify_inputs("ibaq", tmp_path / "database.fasta")
+
+    def test_quantify_maps_tmt_channels_to_sdrf_samples(self, tmp_path):
+        """SDRF run/channel pairs restore biological samples and conditions."""
+        import pandas as pd
+
+        from qpx.cli.transform import _qpx_feature_to_peptide_df
+
+        feature_path = tmp_path / "feature.parquet"
+        pd.DataFrame(
+            {
+                "sequence": ["PEPTIDEK"],
+                "anchor_protein": ["P1"],
+                "run_file_name": ["fraction1"],
+                "is_decoy": [False],
+                "intensities": [
+                    [
+                        {"label": "TMT126", "intensity": 100.0},
+                        {"label": "TMT127N", "intensity": 200.0},
+                    ]
+                ],
+            }
+        ).to_parquet(feature_path, index=False)
+        sdrf_path = tmp_path / "experiment.sdrf.tsv"
+        pd.DataFrame(
+            {
+                "source name": ["sample-a", "sample-b"],
+                "comment[data file]": ["fraction1.raw", "fraction1.raw"],
+                "comment[label]": ["TMT126", "TMT127N"],
+                "factor value[disease]": ["control", "case"],
+            }
+        ).to_csv(sdrf_path, sep="\t", index=False)
+
+        result = _qpx_feature_to_peptide_df(feature_path, sdrf_path)
+
+        observed = result[["SampleID", "Condition", "NormIntensity"]].to_dict("records")
+        expected = [
+            {"SampleID": "sample-a", "Condition": "control", "NormIntensity": 100.0},
+            {"SampleID": "sample-b", "Condition": "case", "NormIntensity": 200.0},
+        ]
+        if observed != expected:
+            raise AssertionError(f"Unexpected SDRF mapping: {observed!r}")
+
+    def test_quantify_marks_condition_unavailable_without_sdrf(self, tmp_path):
+        """Standalone Feature input supplies an explicit missing condition."""
+        import pandas as pd
+
+        from qpx.cli.transform import _qpx_feature_to_peptide_df
+
+        feature_path = tmp_path / "feature.parquet"
+        pd.DataFrame(
+            {
+                "sequence": ["PEPTIDEK"],
+                "anchor_protein": ["P1"],
+                "run_file_name": ["run1"],
+                "intensities": [[{"label": "TMT126", "intensity": 100.0}]],
+            }
+        ).to_parquet(feature_path, index=False)
+
+        result = _qpx_feature_to_peptide_df(feature_path)
+
+        if result.loc[0, "Condition"] != "not available":
+            raise AssertionError("Missing SDRF condition was not marked unavailable")
 
 
 class TestTransformNormalizeAccessionsCLI:

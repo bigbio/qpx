@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **QuantMS MSstats converter**: `qpxc convert quantms-msstats` converts a QuantMS-generated `*_msstats_in.csv` plus its authoritative SDRF into QPX Feature, Sample, Run, Dataset, Ontology, and Provenance views. LFQ/TMT/iTRAQ labels are canonicalized, channel rows are collapsed per measured Feature, and unsupported PSM/PG views are not fabricated.
 - **Spectronaut converter**: `qpxc convert spectronaut` — full support for Spectronaut report TSV files, producing feature.parquet and pg.parquet with DuckDB-accelerated batch processing
 - **CPTAC CDAP converter**: `qpxc convert cdap` — convert CPTAC CDAP `.psm` study directories to QPX psm/feature/pg/dataset/ontology/provenance views
 - **Full-spectra mz converter**: `qpxc convert mz` — convert a directory of mzML / `.mzML.gz` files to a single `mz.parquet`; each spectrum carries `run_file_name` + `scan` for linking back to PSM/feature

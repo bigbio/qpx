@@ -26,6 +26,8 @@ from qpx.converters.maxquant.psm_adapter import MaxQuantPsmAdapter
 from qpx.converters.mzidentml.psm_adapter import MzIdentMLPsmAdapter
 from qpx.converters.openms.converter import OpenMSConverter
 from qpx.converters.orchestrator import BaseOrchestrator, build_dataset_record
+from qpx.converters.quantms_msstats.converter import QuantmsMsstatsConverter
+from qpx.converters.quantms_msstats.feature_adapter import QuantmsMsstatsFeatureAdapter
 from qpx.converters.sdrf import SdrfConverter
 from qpx.converters.spectronaut.converter import SpectronautConverter
 from qpx.converters.spectronaut.feature_adapter import SpectronautFeatureAdapter
@@ -61,6 +63,9 @@ __all__ = [
     "MzIdentMLPsmAdapter",
     # OpenMS
     "OpenMSConverter",
+    # QuantMS MSstats
+    "QuantmsMsstatsFeatureAdapter",
+    "QuantmsMsstatsConverter",
     # Spectronaut
     "SpectronautFeatureAdapter",
     "SpectronautPgAdapter",

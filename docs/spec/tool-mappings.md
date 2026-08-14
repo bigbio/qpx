@@ -32,23 +32,23 @@ The PSM (Peptide Spectrum Match) view captures spectrum-level identification res
 
 The Feature view captures quantified peptide features with intensity data. Features aggregate information across scans and are the primary view for DIA and label-free quantification workflows.
 
-| QPX Field | MaxQuant | DIA-NN | FragPipe |
-|---|---|---|---|
-| `sequence` | Sequence | Stripped.Sequence | Peptide |
-| `peptidoform` | Modified sequence | Modified.Sequence | Modified Peptide |
-| `charge` | Charge | Precursor.Charge | --- |
-| `is_decoy` | Reverse | --- | --- |
-| `calculated_mz` | --- | --- | Calculated M/Z |
-| `observed_mz` | m/z | --- | --- |
-| `rt` | Retention time | RT | --- |
-| `rt_start` | --- | RT.Start | --- |
-| `rt_stop` | --- | RT.Stop | --- |
-| `predicted_rt` | --- | Predicted.RT | --- |
-| `intensities` | Intensity | Precursor.Quantity | Intensity |
-| `pg_accessions` | Proteins | Protein.Group | --- |
-| `anchor_protein` | --- | --- | --- |
-| `pg_positions` | --- | --- | --- |
-| `run_file_name` | Raw file | Run | --- |
+| QPX Field | MaxQuant | DIA-NN | FragPipe | QuantMS MSstats |
+|---|---|---|---|---|
+| `sequence` | Sequence | Stripped.Sequence | Peptide | PeptideSequence (unmodified) |
+| `peptidoform` | Modified sequence | Modified.Sequence | Modified Peptide | PeptideSequence (ProForma-normalized) |
+| `charge` | Charge | Precursor.Charge | --- | Charge / PrecursorCharge |
+| `is_decoy` | Reverse | --- | --- | ProteinName prefix |
+| `calculated_mz` | --- | --- | Calculated M/Z | --- |
+| `observed_mz` | m/z | --- | --- | --- |
+| `rt` | Retention time | RT | --- | RetentionTime |
+| `rt_start` | --- | RT.Start | --- | --- |
+| `rt_stop` | --- | RT.Stop | --- | --- |
+| `predicted_rt` | --- | Predicted.RT | --- | --- |
+| `intensities` | Intensity | Precursor.Quantity | Intensity | Intensity + Channel |
+| `pg_accessions` | Proteins | Protein.Group | --- | ProteinName |
+| `anchor_protein` | --- | --- | --- | First ProteinName accession |
+| `pg_positions` | --- | --- | --- | --- |
+| `run_file_name` | Raw file | Run | --- | Reference / Run resolved through SDRF |
 
 ## Protein Group Field Mappings
 

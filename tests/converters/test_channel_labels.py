@@ -90,6 +90,26 @@ def test_multi_dot_run_names_match_sdrf_conversion(tmp_path):
     assert pq.read_table(run_output).column("run_file_name").to_pylist() == grouped
 
 
+@pytest.mark.parametrize("data_file", ["", "   "], ids=["missing", "blank"])
+def test_sdrf_run_paths_reject_missing_data_files(tmp_path, data_file):
+    """Missing run filenames must fail before producing mappings or output."""
+    from qpx.converters.sdrf import SdrfConverter
+    from qpx.core.sdrf import SDRFHandler
+
+    sdrf = tmp_path / "missing_data_file.sdrf.tsv"
+    sdrf.write_text(f"source name\tcomment[data file]\tcomment[label]\nS1\t{data_file}\tlabel free sample\n")
+    error = r"comment\[data file\].*input row\(s\): 2"
+
+    with pytest.raises(ValueError, match=error):
+        SDRFHandler(sdrf).get_sample_map_run()
+
+    run_output = tmp_path / "run.parquet"
+    with SdrfConverter(duckdb_threads=24) as converter:
+        with pytest.raises(ValueError, match=error):
+            converter.convert(str(sdrf), run_output=str(run_output))
+    assert not run_output.exists()
+
+
 from qpx.core.parquet_io import read_parquet_metadata
 from qpx.dataset import Dataset
 from qpx.writers.feature import FeatureWriter

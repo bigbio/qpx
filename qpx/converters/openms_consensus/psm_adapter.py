@@ -80,6 +80,20 @@ def _pep_of(hit) -> float | None:
     return None
 
 
+def _protein_accessions(hits) -> list[str] | None:
+    """Return the distinct protein evidence carried by all collapsed hits."""
+    accessions: list[str] = []
+    seen: set[str] = set()
+    for hit in hits:
+        for evidence in hit.getPeptideEvidences():
+            raw = evidence.getProteinAccession()
+            accession = raw.decode() if isinstance(raw, (bytes, bytearray)) else str(raw or "")
+            if accession and accession not in seen:
+                seen.add(accession)
+                accessions.append(accession)
+    return accessions or None
+
+
 def _append_unique_score(additional_scores: list[dict], name: str, value: float, higher_better: bool) -> None:
     """Append a score, disambiguating the name if it already occurs.
 
@@ -295,6 +309,7 @@ def psm_records_for_pid(pid, resolve_run, seen: set[tuple], cf_runs=None) -> lis
                 "posterior_error_probability": pep,
                 "additional_scores": additional_scores or None,
                 "is_decoy": is_decoy,
+                "protein_accessions": _protein_accessions(hits),
             }
         )
     return records

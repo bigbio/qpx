@@ -12,6 +12,7 @@ Subcommands:
     qpxc convert spectronaut — Spectronaut report to QPX
     qpxc convert cdap       — CPTAC CDAP .psm files to QPX
     qpxc convert sdrf       — SDRF to sample.parquet + run.parquet
+    qpxc convert quantms-msstats — QuantMS MSstats + SDRF to QPX
 """
 
 from __future__ import annotations
@@ -984,6 +985,110 @@ def convert_sdrf_cmd(
         )
 
     click.echo(f"SDRF conversion complete. Output: {output_folder}")
+
+
+# ---------------------------------------------------------------------------
+# QuantMS MSstats
+# ---------------------------------------------------------------------------
+
+
+@convert.command("quantms-msstats")
+@click.option(
+    "--msstats-file",
+    help="QuantMS-generated *_msstats_in.csv file path",
+    required=True,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
+@click.option(
+    "--sdrf-file",
+    help="SDRF metadata file path",
+    required=True,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
+@click.option(
+    "--output-folder",
+    help="Output directory for generated QPX files",
+    required=True,
+    type=click.Path(file_okay=False, path_type=Path),
+)
+@click.option("--output-prefix", help="Prefix for output file names")
+@click.option(
+    "--project-accession",
+    help="PRIDE / ProteomeXchange accession (e.g. PXD007683)",
+)
+@click.option(
+    "--max-memory",
+    help="Maximum DuckDB memory limit",
+    default="16GB",
+    show_default=True,
+)
+@click.option(
+    "--max-cpus",
+    help="Maximum number of DuckDB threads",
+    default=4,
+    show_default=True,
+    type=int,
+)
+@click.option(
+    "--batch-size",
+    help="Number of Feature records written per batch",
+    default=50_000,
+    show_default=True,
+    type=click.IntRange(min=1),
+)
+@click.option(
+    "--compression",
+    type=click.Choice(["zstd", "snappy", "gzip", "none"], case_sensitive=False),
+    default="zstd",
+    show_default=True,
+    help="Parquet compression codec.",
+)
+@click.option("--verbose", help="Enable verbose logging", is_flag=True)
+def convert_quantms_msstats_cmd(
+    msstats_file: Path,
+    sdrf_file: Path,
+    output_folder: Path,
+    output_prefix: Optional[str],
+    project_accession: Optional[str],
+    max_memory: str,
+    max_cpus: int,
+    batch_size: int,
+    compression: str,
+    verbose: bool,
+):
+    """Convert QuantMS MSstats and SDRF inputs to QPX.
+
+    Produces Feature, Sample, Run, Dataset, Provenance, and Ontology Parquet
+    files. MSstats does not contain the evidence required to produce PSM or
+    protein-group views, so those views are intentionally not generated.
+
+    \b
+    Example:
+        qpxc convert quantms-msstats \
+            --msstats-file PXD007683.sdrf_openms_design_msstats_in.csv \
+            --sdrf-file PXD007683.sdrf.tsv \
+            --output-folder ./qpx_output
+    """
+    if verbose:
+        logging.getLogger().setLevel(logging.DEBUG)
+
+    from qpx.converters.quantms_msstats import QuantmsMsstatsConverter
+
+    converter = QuantmsMsstatsConverter(
+        max_memory=max_memory,
+        max_cpus=max_cpus,
+        compression=compression,
+    )
+    prefix = converter.convert(
+        msstats_file=msstats_file,
+        sdrf_file=sdrf_file,
+        output_folder=output_folder,
+        output_prefix=output_prefix,
+        project_accession=project_accession,
+        batch_size=batch_size,
+    )
+    _log_summary(output_folder)
+    click.echo(f"QuantMS MSstats conversion complete. Output prefix: {prefix}")
 
 
 # ---------------------------------------------------------------------------

@@ -15,6 +15,7 @@ import pandas as pd
 from qpx.converters.base import BaseConverter
 from qpx.converters.channel_labels import normalize_label
 from qpx.core.files import run_file_stem
+from qpx.core.sdrf import validate_sdrf_data_files
 from qpx.writers.run import RunWriter
 from qpx.writers.sample import SampleWriter
 
@@ -159,6 +160,8 @@ class SdrfConverter(BaseConverter):
         if sample_output is None and run_output is None:
             raise ValueError("At least one of sample_output or run_output is required")
         sdrf_df = self._read_sdrf(sdrf_path)
+        if run_output is not None:
+            validate_sdrf_data_files(sdrf_df)
         if sample_output is not None:
             self._write_samples(sdrf_df, sample_output, creator)
         if run_output is not None:
@@ -291,9 +294,6 @@ class SdrfConverter(BaseConverter):
         """Build one row per run and write ``run.parquet``."""
 
         # Strip file extension from data file column
-        if _COL_DATA_FILE not in sdrf_df.columns:
-            raise ValueError(f"SDRF is missing required column '{_COL_DATA_FILE}'")
-
         sdrf_df = sdrf_df.copy()
         sdrf_df["_run_file"] = sdrf_df[_COL_DATA_FILE].map(run_file_stem)
         sdrf_df["_file_name"] = sdrf_df[_COL_DATA_FILE].astype(str).str.strip()

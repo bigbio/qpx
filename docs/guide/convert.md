@@ -112,6 +112,7 @@ The `convert` command group provides converters for multiple proteomics software
 - [cdap](#cdap) - Convert CPTAC CDAP `.psm` files to QPX format
 - [mz](#mz) - Convert an mzML spectra directory to QPX `mz.parquet` (full spectra)
 - [sdrf](#sdrf) - Convert SDRF to sample and run parquet files
+- [quantms-msstats](#quantms-msstats) - Convert QuantMS `*_msstats_in.csv` plus SDRF to QPX
 
 ---
 
@@ -716,6 +717,50 @@ print(generate_example(convert_sdrf_cmd, "Convert SDRF metadata with default set
 - Ensure SDRF file follows the PRIDE SDRF specifications
 - Use verbose mode to diagnose parsing issues
 - The converter automatically maps SDRF characteristics to QPX ontology terms
+
+---
+
+## quantms-msstats
+
+Convert a QuantMS-generated `*_msstats_in.csv` table and its SDRF metadata to
+QPX. The SDRF is required and is authoritative for run, sample, and label
+mapping.
+
+### Description {#quantms-msstats-description}
+
+```python exec="1" html="1" session="doc_utils"
+from qpx.cli.convert import convert_quantms_msstats_cmd
+
+print(generate_description(convert_quantms_msstats_cmd))
+```
+
+### Parameters {#quantms-msstats-parameters}
+
+```python exec="1" html="1" session="doc_utils"
+from qpx.cli.convert import convert_quantms_msstats_cmd
+
+print(generate_params_table(convert_quantms_msstats_cmd))
+```
+
+### Usage Example {#quantms-msstats-example}
+
+```bash
+qpxc convert quantms-msstats \
+    --msstats-file PXD007683.sdrf_openms_design_msstats_in.csv \
+    --sdrf-file PXD007683.sdrf.tsv \
+    --output-folder ./qpx_output \
+    --project-accession PXD007683
+```
+
+### Output and validation {#quantms-msstats-output}
+
+- Produces `feature`, `sample`, `run`, `dataset`, `ontology`, and `provenance` Parquet files.
+- Does not produce `psm.parquet` because MSstats does not contain complete spectrum-identification evidence.
+- Does not produce `pg.parquet`; protein aggregation remains a downstream analysis step.
+- Supports QuantMS `ProteinName`, `PeptideSequence`, `Charge`/`PrecursorCharge`, `Intensity`, `Run`/`Reference`, optional `RetentionTime`, and optional `Channel` columns.
+- Resolves `Run` and `Reference` through SDRF aliases and rejects missing, ambiguous, or conflicting mappings.
+- Collapses TMT/iTRAQ channel rows into one Feature while retaining RT and scan location when present.
+- Rejects conflicting intensity values for the same Feature and channel instead of selecting or summing them.
 
 ---
 

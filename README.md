@@ -248,7 +248,7 @@ qpx/
 ├── cli/                    # Click CLI (entry point: qpx.cli.main:main)
 │   ├── main.py             # Top-level CLI group
 │   ├── pdc2qpx.py          # pdc2qpx command (PDC download + convert)
-│   └── convert.py          # convert subcommands (openms, openms-consensus, maxquant, diann, spectronaut, fragpipe, mzidentml, cdap, mz, sdrf)
+│   └── convert.py          # convert subcommands (openms, openms-consensus, quantms-msstats, maxquant, diann, spectronaut, fragpipe, mzidentml, cdap, mz, sdrf)
 ├── pipeline/               # High-level orchestration (pdc2qpx: download + CDAP + mz)
 ├── converters/             # Tool-specific converters
 │   ├── openms/             # OpenMS native QPX enrichment
@@ -259,6 +259,7 @@ qpx/
 │   ├── spectronaut/        # Spectronaut converter
 │   ├── fragpipe/           # FragPipe converter
 │   ├── mzidentml/          # mzIdentML converter
+│   ├── quantms_msstats/    # QuantMS *_msstats_in.csv + SDRF converter
 │   └── sdrf.py             # Shared SDRF converter
 ├── core/                   # Core logic & formats
 │   ├── data/               # Schema definitions (YAML + Python)
