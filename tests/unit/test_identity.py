@@ -353,3 +353,67 @@ def test_write_table_warns_on_duplicate_pk(tmp_path, caplog):
             w.write_table(table)
     assert path.exists()
     assert "duplicate row" in caplog.text.lower()
+
+
+class TestDeriveIdsMatchesDeriveId:
+    """derive_ids must be byte-identical to per-row derive_id, always.
+
+    It exists only to avoid re-encoding the same value once per row. If it ever
+    disagrees, every feature_id and pg_id in every existing dataset changes and
+    the loaders break — so equivalence is the whole contract, not a nicety.
+    """
+
+    @staticmethod
+    def _assert_same(columns, **kwargs):
+        from qpx.core.data.identity import derive_id, derive_ids
+
+        n = len(columns[0])
+        expected = [derive_id([col[i] for col in columns], **kwargs) for i in range(n)]
+        assert derive_ids(columns, **kwargs) == expected
+
+    def test_scalars(self):
+        self._assert_same([["PEPTIDEK", "PEPTIDER", "PEPTIDEK"], [2, 3, 2], ["run_a", "run_a", "run_b"]])
+
+    def test_nulls_in_every_position(self):
+        self._assert_same([[None, "x", None], [None, 2, 3], ["run", None, None]])
+
+    def test_mixed_types_including_floats_and_bools(self):
+        self._assert_same([[1, 1.0, True, False], [0.1, None, "1", 2], ["a", "b", "c", "d"]])
+
+    def test_non_ascii_and_json_metacharacters(self):
+        """ensure_ascii and escaping must survive the split-and-join."""
+        self._assert_same(
+            [
+                ["péptide", 'quote"inside', "comma,inside", "bracket]inside", "back\\slash"],
+                [2, 2, 2, 2, 2],
+                ["ünïcode_run", "run,with,commas", "run]bracket", "run\\slash", "run"],
+            ]
+        )
+
+    def test_ordered_list_field(self):
+        """A list whose order is meaningful (e.g. scan) keeps it."""
+        self._assert_same([[[1, 2], [2, 1], [1, 2, 2]], ["a", "a", "a"]])
+
+    def test_unordered_list_field_is_order_independent(self):
+        """grouped_runs / pg_accessions hash independently of element order."""
+        columns = [[["r2", "r1"], ["r1", "r2"], ["r1", "r1", "r2"]], ["L", "L", "L"]]
+        self._assert_same(columns, unordered_list_indices=(0,))
+
+        from qpx.core.data.identity import derive_ids
+
+        ids = derive_ids(columns, unordered_list_indices=(0,))
+        assert ids[0] == ids[1], "reordered membership must hash the same"
+        assert ids[0] == ids[2], "duplicate members collapse, as canonical() does"
+
+    def test_unhashable_values_still_work(self):
+        """A dict element has no cache key; it must fall through, not crash."""
+        self._assert_same([[{"b": 1, "a": 2}, {"a": 2, "b": 1}], ["x", "y"]])
+
+    def test_empty_and_mismatched_inputs(self):
+        import pytest
+
+        from qpx.core.data.identity import derive_ids
+
+        assert derive_ids([]) == []
+        with pytest.raises(ValueError):
+            derive_ids([["a", "b"], ["c"]])

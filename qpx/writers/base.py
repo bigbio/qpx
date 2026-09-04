@@ -13,7 +13,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from qpx._version import __version__
-from qpx.core.data.identity import derive_id
+from qpx.core.data.identity import derive_ids
 from qpx.core.data.schema import pg_referential_issues_from_parquet
 from qpx.core.sql import sql_build, validate_identifier
 from qpx.version import QPX_SPEC_VERSION
@@ -328,6 +328,11 @@ class BaseWriter:
         unordered_list_indices = tuple(
             index for index, field in enumerate(composite) if field in ("grouped_runs", "pg_accessions")
         )
+        # Rows that keep a producer id need no hashing; collect the rest and
+        # derive them in one column-wise pass. Encoding each distinct value once
+        # instead of once per row is what makes large conversions tractable —
+        # this was 48% of a 231M-row feature conversion (bigbio/qpx#291).
+        needs_derivation: list[int] = []
         for index, provided in enumerate(existing):
             if provided is not None and not self._should_override_provided_id(index, composite_values):
                 ids.append(provided)
@@ -338,12 +343,14 @@ class BaseWriter:
                     params.append({"cv_name": f"provided_{id_field}", "cv_value": str(provided)})
                     cv_lists[index] = params
                 self.overridden_id_count += 1
-            ids.append(
-                derive_id(
-                    [composite_values[field][index] for field in composite],
-                    unordered_list_indices=unordered_list_indices,
-                )
-            )
+            needs_derivation.append(index)
+            ids.append(None)  # placeholder, filled below
+
+        if needs_derivation:
+            selected = [[composite_values[field][index] for index in needs_derivation] for field in composite]
+            derived = derive_ids(selected, unordered_list_indices=unordered_list_indices)
+            for index, value in zip(needs_derivation, derived):
+                ids[index] = value
         return ids
 
     def _should_override_provided_id(self, _index: int, _composite_values: dict[str, list]) -> bool:
