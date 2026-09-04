@@ -66,11 +66,11 @@ def _explode_pg_records(records: list[dict]) -> list[dict]:
 class PgWriter(BaseWriter):
     _schema_class = PgSchema
 
-    def write_batch(self, records: list[dict]):
+    def _write_batch(self, records: list[dict]):
         """Explode ``intensities`` into one row per label, then buffer/flush."""
-        super().write_batch(_explode_pg_records(records))
+        super()._write_batch(_explode_pg_records(records))
 
-    def write_dataframe(self, df):
+    def _write_dataframe(self, df):
         """Explode ``intensities`` before writing a flat pg DataFrame.
 
         The base ``write_dataframe`` builds the table against the flat pg schema
@@ -81,17 +81,17 @@ class PgWriter(BaseWriter):
         (scalar ``label``/``intensity``) fall through unchanged.
         """
         if "intensities" in df.columns:
-            self.write_batch(df.to_dict("records"))
+            self._write_batch(df.to_dict("records"))
             return
-        super().write_dataframe(df)
+        super()._write_dataframe(df)
 
-    def write_table(self, table: pa.Table):
+    def _write_table(self, table: pa.Table):
         """Explode a pg table that still carries the ``intensities`` list column."""
         if "intensities" in table.schema.names:
             exploded = _explode_pg_records(table.to_pylist())
-            # Build with a nullable id; super().write_table derives pg_id.
+            # Build with a nullable id; the base implementation derives pg_id.
             relaxed = self._relaxed_id_schema()
             batch = pa.RecordBatch.from_pylist(exploded, schema=relaxed)
-            super().write_table(pa.Table.from_batches([batch], schema=relaxed))
+            super()._write_table(pa.Table.from_batches([batch], schema=relaxed))
             return
-        super().write_table(table)
+        super()._write_table(table)

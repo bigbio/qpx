@@ -143,3 +143,73 @@ class TestPhysicalMerge:
         ds1.close()
         ds2.close()
         merged_ds.close()
+
+
+class TestShardedCollection:
+    """A collection must see every shard the dataset itself sees.
+
+    ``Dataset`` unions all matching shards into its view but keeps ``_file_path``
+    pointing at the first one. Registering a collection from that single path
+    returned a subset of the rows, with no error (bigbio/qpx#286) — the worst
+    failure mode for this data, since the answer is plausible rather than absent.
+    """
+
+    @staticmethod
+    def _shard(dataset_dir, tmp_path, name):
+        """Copy a dataset and split its feature file into two shards."""
+        import pyarrow.parquet as pq
+
+        out = tmp_path / name
+        shutil.copytree(dataset_dir, out)
+        original = next(out.glob("*.feature.parquet"))
+        table = pq.read_table(original)
+        assert table.num_rows >= 2, "fixture needs at least two feature rows to shard"
+        half = table.num_rows // 2
+        stem = original.name[: -len(".feature.parquet")]
+        pq.write_table(table.slice(0, half), out / f"{stem}.part0.feature.parquet")
+        pq.write_table(table.slice(half), out / f"{stem}.part1.feature.parquet")
+        original.unlink()
+        return out, table.num_rows
+
+    def test_collection_reads_every_shard(self, dataset_dir, tmp_path):
+        """A collection reads every feature shard registered by its dataset."""
+        import qpx
+
+        ds_dir, total = self._shard(dataset_dir, tmp_path, "sharded")
+        ds = qpx.open_dataset(str(ds_dir))
+        dataset_rows = ds.sql("SELECT COUNT(*) AS c FROM feature").fetchone()[0]
+        assert dataset_rows == total, "dataset itself should already union the shards"
+
+        coll = qpx.DatasetCollection([ds])
+        collection_rows = coll.sql("SELECT COUNT(*) AS c FROM feature_0").fetchone()[0]
+        coll.close()
+        ds.close()
+
+        assert collection_rows == dataset_rows, (
+            f"collection saw {collection_rows} of {dataset_rows} rows — it is reading only one shard"
+        )
+
+    def test_query_clone_keeps_the_shard_list(self, dataset_dir, tmp_path):
+        """A lazily-derived structure must not lose its backing files."""
+        import qpx
+
+        ds_dir, _ = self._shard(dataset_dir, tmp_path, "sharded_clone")
+        ds = qpx.open_dataset(str(ds_dir))
+        clone = ds.feature.limit(1)
+        assert clone.file_paths == ds.feature.file_paths
+        ds.close()
+
+    def test_s3_locator_is_not_mangled_by_path(self):
+        """An s3:// URI must survive as a URI, not become 's3:/...'."""
+        from qpx.core.data.base import BaseStructure
+
+        struct = BaseStructure.__new__(BaseStructure)
+        BaseStructure.__init__(
+            struct,
+            engine=None,
+            table_name="feature",
+            file_path="s3://bucket/ds/feature",
+            file_paths=["s3://bucket/ds/*.feature.parquet"],
+        )
+        assert struct.file_paths == ["s3://bucket/ds/*.feature.parquet"]
+        assert str(struct.file_paths[0]).startswith("s3://")

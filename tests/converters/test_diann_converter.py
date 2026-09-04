@@ -134,8 +134,8 @@ def _write_plexdia_inputs(tmp_path: Path) -> tuple[Path, Path, Path]:
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture(scope="module")
-def converted_output(tmp_path_factory):
+@pytest.fixture(scope="module", name="converted_output")
+def _converted_output(tmp_path_factory):
     """Run DIA-NN conversion once for all tests in this module.
 
     Returns the output directory containing the generated Parquet files.
@@ -175,8 +175,8 @@ def converted_output(tmp_path_factory):
     return output
 
 
-@pytest.fixture(scope="module")
-def feature_table(converted_output):
+@pytest.fixture(scope="module", name="feature_table")
+def _feature_table(converted_output):
     """Read the feature.parquet produced by the converter."""
     path = converted_output / "diann_test.feature.parquet"
     if not path.exists():
@@ -238,6 +238,40 @@ class TestDiaNNFeatureConversion:
         errors = FeatureSchema.validate(feature_table)
         assert not errors, f"Schema validation errors: {errors}"
 
+    def test_mass_error_ppm_is_null_without_a_measured_mz(self, feature_table):
+        """Null only when there is nothing to measure (bigbio/qpx#298).
+
+        DIA-NN emits no mass-error column, so the value must be derived from the
+        two m/z. This fixture carries no Precursor.Mz, so observed_mz is null and
+        the ppm must be null too - never a fabricated 0.0.
+        """
+        assert "mass_error_ppm" in feature_table.schema.names
+        observed = feature_table.column("observed_mz").to_pylist()
+        errors = feature_table.column("mass_error_ppm").to_pylist()
+        for obs, err in zip(observed, errors):
+            if obs is None:
+                assert err is None, "mass error reported without a measured m/z"
+
+    def test_mass_error_ppm_matches_the_spec_formula(self, feature_table):
+        """Whenever both m/z are positive the value is 1e6*(obs-calc)/calc."""
+        calc = feature_table.column("calculated_mz").to_pylist()
+        obs = feature_table.column("observed_mz").to_pylist()
+        err = feature_table.column("mass_error_ppm").to_pylist()
+        for c, o, e in zip(calc, obs, err):
+            if c and o and c > 0 and o > 0:
+                assert e is not None, "both m/z present but no mass error emitted"
+                assert abs(e - (o - c) / c * 1e6) < 0.5, f"{e} does not match the spec formula"
+
+    def test_precursor_qvalue_stays_in_additional_scores(self, feature_table):
+        """DIA-NN Q.Value is not mislabeled as a peptide-level q-value."""
+        assert all(value is None for value in feature_table.column("peptide_qvalue").to_pylist())
+
+        for scores in feature_table.column("additional_scores").to_pylist():
+            by_name = {score["score_name"]: score["score_value"] for score in scores}
+            assert "qvalue" not in by_name
+            value = by_name["precursor_qvalue"]
+            assert 0.0 <= value <= 1.0, f"q-value out of range: {value}"
+
 
 def test_plexdia_feature_collapses_channels_into_one_row(tmp_path):
     """Channel rows for one precursor become one feature with two intensities."""
@@ -257,6 +291,9 @@ def test_plexdia_feature_collapses_channels_into_one_row(tmp_path):
     assert len(rows) == 1
     assert rows[0]["run_file_name"] == "run_A"
     assert {entry["label"]: entry["intensity"] for entry in rows[0]["intensities"]} == {"L": 100.0, "H": 200.0}
+    assert rows[0]["peptide_qvalue"] is None
+    scores = {entry["score_name"]: entry["score_value"] for entry in rows[0]["additional_scores"]}
+    assert scores["precursor_qvalue"] == pytest.approx(0.002)
 
 
 # ---------------------------------------------------------------------------
@@ -754,6 +791,28 @@ def test_diann_default_conversion_applies_no_qvalue_filter(tmp_path):
     assert pg_accessions == {("P1",), ("P2",)}, "no-filter default must keep the high-PG.Q.Value group"
 
 
+def test_diann_feature_without_qvalue_converts_when_unfiltered(tmp_path):
+    """Q.Value is optional when no precursor q-value filter is requested."""
+    rows = [{**row, "Channel": str(index)} for index, row in enumerate(_two_precursor_report_rows())]
+    for row in rows:
+        row.pop("Q.Value")
+
+    feature_rows = _feature_rows_single_run(tmp_path, rows)
+
+    assert len(feature_rows) == 2
+    assert all(all(score["score_name"] != "precursor_qvalue" for score in row["additional_scores"]) for row in feature_rows)
+
+
+def test_diann_feature_threshold_requires_qvalue(tmp_path):
+    """Filtering without DIA-NN Q.Value fails with an explicit error."""
+    rows = _two_precursor_report_rows()
+    for row in rows:
+        row.pop("Q.Value")
+
+    with pytest.raises(ValueError, match=r"Q\.Value"):
+        _feature_rows_single_run(tmp_path, rows, qvalue_threshold=0.01)
+
+
 def test_diann_threshold_filters_each_view_at_its_own_level(tmp_path):
     """A supplied threshold filters the feature view on precursor Q.Value and the
     pg view on PG-level q-value (Global.PG.Q.Value / PG.Q.Value).
@@ -954,6 +1013,13 @@ class TestDiaNNOntologyConversion:
         expected = {"field_name", "view"}
         missing = expected - column_names
         assert not missing, f"Missing ontology columns: {missing}"
+
+        entries = [row for row in table.to_pylist() if row["field_name"] == "precursor_qvalue" and row["view"] == "feature"]
+        assert len(entries) == 1
+        assert entries[0]["ontology_name"] == "DIA-NN:Q.Value"
+        assert entries[0]["ontology_accession"] is None
+        assert entries[0]["source_column_name"] == "Q.Value"
+        assert entries[0]["source_tool"] == "DIA-NN"
 
     def test_schema_validation(self, converted_output):
         from qpx.core.data import OntologySchema

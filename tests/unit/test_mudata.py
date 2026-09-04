@@ -575,3 +575,110 @@ def test_build_mudata_feature_mapping_survives_third_modality(tmp_path):
     assert csr[prec_pos, prot_pos]
     assert csr[prot_pos, prec_pos]
     assert csr.nnz == 2
+
+
+class TestArrowPivotEquivalence:
+    """The Arrow pivot path must produce exactly what the pandas path produced.
+
+    The Arrow path exists only for speed: on a large experiment the pandas path
+    hashed one Python string per row (hundreds of millions of them) and copied the
+    whole frame to build observation_id. Dictionary-encoding does the same work
+    once per distinct value, so these must stay bit-identical.
+    """
+
+    @staticmethod
+    def _frame():
+        return pd.DataFrame(
+            {
+                "observation_id": ["r2|L", "r1|L", "r1|L", "r3|L", "r2|L"],
+                "precursor_id": ["PEP|2", "PEP|2", "PEP|3", "OTHER|2", "OTHER|2"],
+                "intensity": [10.0, 20.0, 30.0, 40.0, 50.0],
+            }
+        )
+
+    def test_matches_pandas_pivot(self):
+        """The Arrow pivot produces the same sparse matrix as pandas."""
+        import pyarrow as pa
+
+        from qpx.mudata import _pivot_arrow_to_sparse, _pivot_to_sparse
+
+        df = self._frame()
+        rows = pd.Index(sorted(df["observation_id"].unique()), name="observation_id")
+        cols = pd.Index(sorted(df["precursor_id"].unique()), name="precursor_id")
+
+        expected = _pivot_to_sparse(df, "observation_id", "precursor_id", "intensity", rows, cols)
+        actual = _pivot_arrow_to_sparse(pa.Table.from_pandas(df), "observation_id", "precursor_id", "intensity", rows, cols)
+
+        assert actual.shape == expected.shape
+        assert (actual != expected).nnz == 0
+
+    def test_unmatched_keys_are_dropped_not_misplaced(self):
+        """A value absent from the index must be dropped, exactly as get_indexer does."""
+        import pyarrow as pa
+
+        from qpx.mudata import _pivot_arrow_to_sparse, _pivot_to_sparse
+
+        df = self._frame()
+        rows = pd.Index(["r1|L", "r2|L"], name="observation_id")  # r3|L deliberately absent
+        cols = pd.Index(sorted(df["precursor_id"].unique()), name="precursor_id")
+
+        expected = _pivot_to_sparse(df, "observation_id", "precursor_id", "intensity", rows, cols)
+        actual = _pivot_arrow_to_sparse(pa.Table.from_pandas(df), "observation_id", "precursor_id", "intensity", rows, cols)
+
+        assert (actual != expected).nnz == 0
+        assert actual.sum() == pytest.approx(110.0)  # 40.0 from the dropped r3 row is gone
+
+    def test_null_keys_are_dropped_before_dictionary_lookup(self):
+        """A null Arrow dictionary code is unmatched, not a NumPy index."""
+        import pyarrow as pa
+
+        from qpx.mudata import _pivot_arrow_to_sparse, _pivot_to_sparse
+
+        df = pd.DataFrame(
+            {
+                "observation_id": ["r1|L", None],
+                "precursor_id": ["PEP|2", "PEP|2"],
+                "intensity": [10.0, 20.0],
+            }
+        )
+        rows = pd.Index(["r1|L"], name="observation_id")
+        cols = pd.Index(["PEP|2"], name="precursor_id")
+
+        expected = _pivot_to_sparse(df, "observation_id", "precursor_id", "intensity", rows, cols)
+        actual = _pivot_arrow_to_sparse(pa.Table.from_pandas(df), "observation_id", "precursor_id", "intensity", rows, cols)
+
+        assert (actual != expected).nnz == 0
+        assert actual.sum() == pytest.approx(10.0)
+
+    def test_sorted_unique_matches_pandas(self):
+        """Arrow unique values match pandas sorting and ordering."""
+        import pyarrow as pa
+
+        from qpx.mudata import _sorted_unique
+
+        df = self._frame()
+        table = pa.Table.from_pandas(df)
+        expected = pd.Index(sorted(df["precursor_id"].unique()), name="precursor_id")
+        assert list(_sorted_unique(table, "precursor_id")) == list(expected)
+
+    def test_prepare_observations_arrow_matches_pandas(self):
+        """Arrow observation preparation matches the pandas implementation."""
+        import pyarrow as pa
+
+        from qpx.mudata import _prepare_observations, _prepare_observations_arrow
+
+        df = pd.DataFrame(
+            {
+                "run_file_name": ["r2", "r1", "r1"],
+                "intensity_label": ["L", "L", "M"],
+                "precursor_id": ["PEP|2", "PEP|2", "PEP|3"],
+                "intensity": [1.0, 2.0, 3.0],
+            }
+        )
+        _, pandas_col, pandas_index, pandas_keys = _prepare_observations(df, None)
+        _, arrow_col, arrow_index, arrow_keys = _prepare_observations_arrow(pa.Table.from_pandas(df), None)
+
+        assert arrow_col == pandas_col
+        assert list(arrow_index) == list(pandas_index)
+        assert list(arrow_keys["run_file_name"]) == list(pandas_keys["run_file_name"])
+        assert list(arrow_keys["intensity_label"]) == list(pandas_keys["intensity_label"])

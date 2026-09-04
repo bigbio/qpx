@@ -262,6 +262,7 @@ Score names used in `additional_scores` that have PSI-MS ontology mappings. All 
 | `posterior_error_probability` | posterior error probability | `MS:1001493` | lower is better |
 | `global_qvalue` | PSM-level global FDR | `MS:1002350` | lower is better |
 | `pg_global_qvalue` | protein-level global FDR | `MS:1001214` | lower is better |
+| `precursor_qvalue` | DIA-NN:Q.Value | --- | lower is better |
 | `andromeda_score` | Andromeda:score | `MS:1002338` | higher is better |
 | `andromeda_delta_score` | Andromeda:delta score | `MS:1003433` | higher is better |
 | `percolator_score` | percolator:score | `MS:1001492` | higher is better |

@@ -319,6 +319,7 @@ class StreamingConsensusMap:
         self._path = str(path)
         self._headers: dict[int, _ColHeader] = {}
         self._prots: list[_ProteinIdentification] = []
+        self._enzyme: str = ""
         self._ph_to_acc: dict[str, str] = {}
         self._parse_header()
 
@@ -332,6 +333,13 @@ class StreamingConsensusMap:
             tag = _localname(el.tag)
             if event == "end" and tag == "map":
                 self._headers[int(el.attrib["id"])] = _ColHeader(el.attrib.get("name", ""), el.attrib.get("label", ""))
+                el.clear()
+            elif event == "end" and tag == "SearchParameters":
+                # The enzyme used for the search; needed to count missed cleavages.
+                # Kept here because the streaming reader never revisits the header.
+                enzyme = el.attrib.get("enzyme", "")
+                if enzyme and not self._enzyme:
+                    self._enzyme = enzyme
                 el.clear()
             elif event == "start" and tag == "ProteinIdentification":
                 ph_hits = []

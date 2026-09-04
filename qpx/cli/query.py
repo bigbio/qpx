@@ -17,6 +17,8 @@ from typing import Optional
 
 import click
 
+from qpx.dataset import Dataset
+
 logger = logging.getLogger("qpx.cli.query")
 
 # Shared option for the dataset path
@@ -28,17 +30,9 @@ _dataset_path_option = click.option(
 )
 
 # Valid QPX data structure names
-_VALID_STRUCTURES = [
-    "psm",
-    "feature",
-    "pg",
-    "mz",
-    "sample",
-    "run",
-    "dataset",
-    "ontology",
-    "provenance",
-]
+# Derived from the canonical registry so a new structure cannot be supported
+# by the library while the CLI silently rejects it (bigbio/qpx#289).
+_VALID_STRUCTURES = Dataset.structure_names()
 
 
 # ---------------------------------------------------------------------------
@@ -239,7 +233,8 @@ def query_filter_cmd(
     import qpx
 
     with qpx.open_dataset(dataset_path, structures=[structure]) as ds:
-        struct = getattr(ds, structure, None)
+        structure_attr = "dataset_meta" if structure == "dataset" else structure
+        struct = getattr(ds, structure_attr, None)
         if struct is None:
             raise click.ClickException(
                 f"Structure '{structure}' not found in dataset at {dataset_path}. Available: {ds.available_structures}"
@@ -329,7 +324,8 @@ def query_head_cmd(
     import qpx
 
     with qpx.open_dataset(dataset_path, structures=[structure]) as ds:
-        struct = getattr(ds, structure, None)
+        structure_attr = "dataset_meta" if structure == "dataset" else structure
+        struct = getattr(ds, structure_attr, None)
         if struct is None:
             raise click.ClickException(
                 f"Structure '{structure}' not found in dataset at {dataset_path}. Available: {ds.available_structures}"

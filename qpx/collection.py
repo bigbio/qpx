@@ -47,11 +47,24 @@ class DatasetCollection:
                 struct = ds._structures[name]
                 indexed_name = f"{name}_{i}"
                 if hasattr(struct, "_file_path") and struct._file_path:
-                    file_path = struct._file_path
-                    if Path(file_path).is_dir():
-                        self._engine.register_partitioned_parquet(indexed_name, file_path)
+                    # Register EVERY file backing the structure, not just
+                    # ``_file_path``. That attribute names only the first shard;
+                    # a sharded structure registered from it returns a subset of
+                    # the rows the dataset itself returns, silently
+                    # (bigbio/qpx#286). ``_file_paths`` falls back to the single
+                    # file for non-sharded structures.
+                    file_paths = struct.file_paths
+                    first = str(file_paths[0])
+                    if first.startswith("s3://"):
+                        # S3 locators are globs, not filesystem paths: hand them
+                        # to the S3 registration so the collection reads what the
+                        # dataset reads.
+                        self._engine.register_s3_parquet(indexed_name, first)
+                    elif Path(first).is_dir():
+                        # Hive-partitioned structures are a single directory.
+                        self._engine.register_partitioned_parquet(indexed_name, file_paths[0])
                     else:
-                        self._engine.register_parquet(indexed_name, file_path)
+                        self._engine.register_parquet_files(indexed_name, file_paths)
 
     def sql(self, query: str) -> QueryResult:
         """Execute SQL across all registered datasets."""

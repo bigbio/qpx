@@ -66,6 +66,17 @@ class Dataset:
         "pepmap": (PepMap, ".pepmap.parquet"),
     }
 
+    @classmethod
+    def structure_names(cls) -> list[str]:
+        """Every structure name QPX knows about, in registry order.
+
+        The single source of truth for anything that needs to enumerate
+        structures — CLI choices in particular. Hand-maintained copies drifted:
+        ``pepmap`` was registered here and exposed on the API while both CLIs
+        rejected it (bigbio/qpx#289).
+        """
+        return list(cls._STRUCTURE_REGISTRY)
+
     def __init__(
         self,
         path: str | Path,
@@ -117,6 +128,9 @@ class Dataset:
                     engine=self._engine,
                     table_name=name,
                     file_path=f"{self.path}/{name}",
+                    # The glob is what was actually registered; a consumer
+                    # re-registering from the display path would read nothing.
+                    file_paths=[s3_glob],
                 )
             except QpxVersionError as exc:
                 # One incompatible/old structure file must not abort the whole
@@ -173,6 +187,7 @@ class Dataset:
                 engine=self._engine,
                 table_name=name,
                 file_path=matches[0],
+                file_paths=matches,
             )
         elif self._file_prefix is None:
             # Check for Hive-partitioned directory
@@ -1083,9 +1098,12 @@ class Dataset:
         path = Path(self.path)
         checksums, row_counts, sizes = {}, {}, {}
 
-        # Parquet files
-        for f in sorted(path.glob("*.parquet")):
-            name = f.name
+        # Parquet files. rglob, not glob: Hive-partitioned structures live in
+        # subdirectories (feature/run_file_name=.../part-0.parquet) and a
+        # non-recursive scan silently left them unchecksummed, so the integrity
+        # record claimed to cover data it had never read (bigbio/qpx#287).
+        for f in sorted(path.rglob("*.parquet")):
+            name = f.relative_to(path).as_posix()
             sizes[name] = f.stat().st_size
             sha = hashlib.sha256()
             with open(f, "rb") as fh:
@@ -1098,8 +1116,8 @@ class Dataset:
                 row_counts[name] = -1
 
         # H5AD files (AnnData from downstream tools)
-        for f in sorted(path.glob("*.h5ad")):
-            name = f.name
+        for f in sorted(path.rglob("*.h5ad")):
+            name = f.relative_to(path).as_posix()
             sizes[name] = f.stat().st_size
             sha = hashlib.sha256()
             with open(f, "rb") as fh:
@@ -1152,13 +1170,22 @@ class Dataset:
             warnings.append("file_checksums is null")
             return {"errors": errors, "warnings": warnings}
 
-        # Skip dataset.parquet itself — writing integrity changes its own checksum
-        dataset_suffix = self._STRUCTURE_REGISTRY["dataset"][1]
-        path = Path(self.path)
+        # Skip only the metadata file carrying this integrity record: nested
+        # *.dataset.parquet files are ordinary recorded inputs and must verify.
+        path = Path(self.path).resolve()
+        dataset_meta_path = Path(self.dataset_meta.file_paths[0]).resolve()
         for name, expected_sha in stored_checksums.items():
-            if name.endswith(dataset_suffix):
+            # Keys are dataset-root-relative POSIX paths. Resolve and confirm the
+            # result stays inside the dataset before reading it, so a crafted or
+            # corrupted key cannot walk outside the directory being verified.
+            fpath = (path / name).resolve()
+            try:
+                fpath.relative_to(path)
+            except ValueError:
+                errors.append(f"Integrity entry escapes the dataset directory: {name}")
                 continue
-            fpath = path / name
+            if fpath == dataset_meta_path:
+                continue
             if not fpath.exists():
                 errors.append(f"Missing file: {name}")
                 continue

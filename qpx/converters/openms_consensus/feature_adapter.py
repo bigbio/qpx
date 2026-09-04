@@ -11,14 +11,140 @@ the QPX feature schema. Protein-level quantity is not produced here.
 from __future__ import annotations
 
 import ast
+import logging
 import re
 from typing import Optional
 
 from qpx.converters.channel_labels import normalize_label
+from qpx.core.cleavage import count_missed_cleavages
 from qpx.core.files import run_file_stem as _run_stem
 
 # OpenMS isobaric channel labels look like ``tmt6plex_126`` / ``itraq4plex_114``.
+_log = logging.getLogger(__name__)
+
+# OpenMS isobaric channel labels look like ``tmt6plex_126`` / ``itraq4plex_114``.
 _CHANNEL_RE = re.compile(r"(tmt|itraq)\d*plex?_(\d+[NC]?)", re.IGNORECASE)
+
+# Meta values OpenMS uses for the posterior error probability, best first.
+_PEP_META_KEYS = ("Posterior Error Probability_score", "PEP", "pep")
+
+# Score types that mean the PeptideIdentification's primary score IS a q-value.
+_QVALUE_SCORE_TYPES = ("q-value", "qvalue", "fdr")
+
+
+def mass_error_ppm(calculated_mz, observed_mz) -> float | None:
+    """Relative precursor mass error in ppm, or ``None`` when it is not measurable.
+
+    ``None`` is reserved for values that are absent or not measurable. Both m/z
+    values must be positive: ``feature_records_for_cf`` substitutes 0.0 when the
+    ConsensusFeature carries no m/z, and treating that as a measurement would
+    report roughly -1e6 ppm instead of "not measured".
+
+    An exact match returns ``0.0``, not ``None``. The OpenMS adapters are this
+    helper's only callers and their ``observed_mz`` is a real measurement, so a
+    zero error is a genuine result and must not be suppressed. (A producer that
+    echoed the theoretical m/z back would report a constant 0.0 ppm — but no such
+    producer reaches this function, and the guard cost real measurements.)
+    """
+    if calculated_mz is None or observed_mz is None:
+        return None
+    if calculated_mz <= 0 or observed_mz <= 0:
+        return None
+    return float((observed_mz - calculated_mz) / calculated_mz * 1e6)
+
+
+def sdrf_enzyme(sdrf_path) -> str | None:
+    """First enzyme declared in the SDRF's ``comment[cleavage agent details]``.
+
+    The SDRF is the experiment's declared ground truth and is what the DIA-NN and
+    Spectronaut adapters already use, so preferring it here keeps missed-cleavage
+    counts consistent across converters rather than depending on which producer
+    wrote the file.
+    """
+    if not sdrf_path:
+        return None
+    try:
+        from qpx.core.sdrf import SDRFHandler
+
+        enzymes = SDRFHandler(str(sdrf_path)).get_enzymes()
+        if enzymes:
+            return str(enzymes[0])
+    except (OSError, KeyError, TypeError, ValueError):
+        _log.debug("Could not load enzyme from SDRF %s", sdrf_path)
+    return None
+
+
+def resolve_enzyme(cm, sdrf_path=None) -> str | None:
+    """Enzyme to count missed cleavages against: SDRF first, consensusXML second.
+
+    The SDRF wins because it is the declared experimental design and the other
+    converters already key on it. The consensusXML ``SearchParameters`` is the
+    fallback for a conversion run without an SDRF. A disagreement between the two
+    is a metadata inconsistency worth surfacing — the same treatment
+    :func:`check_channels_vs_sdrf` gives channel mismatches — but it is not fatal.
+    """
+    from_sdrf = sdrf_enzyme(sdrf_path)
+    from_xml = consensus_enzyme(cm)
+    if from_sdrf and from_xml and from_sdrf.strip().lower() != from_xml.strip().lower():
+        _log.warning(
+            "enzyme mismatch: SDRF declares %r, consensusXML SearchParameters says %r; using the SDRF for missed-cleavage counts",
+            from_sdrf,
+            from_xml,
+        )
+    return from_sdrf or from_xml
+
+
+def consensus_enzyme(cm) -> str | None:
+    """Digestion enzyme used for the search, or ``None`` when it is not recorded.
+
+    Read from the consensusXML ``<SearchParameters enzyme="...">``. Needed to count
+    missed cleavages, which the OpenMS path otherwise leaves null while the DIA-NN
+    path populates it (bigbio/qpx#300).
+
+    Works for both readers: the streaming map captures the attribute while parsing
+    its header, and a pyopenms ConsensusMap exposes it through the protein
+    identification's search parameters. ``unknown_enzyme`` counts as absent.
+    """
+    enzyme = getattr(cm, "_enzyme", None)
+    if not enzyme:
+        try:
+            prots = cm.getProteinIdentifications()
+            if prots:
+                params = prots[0].getSearchParameters()
+                digestion = getattr(params, "digestion_enzyme", None)
+                if digestion is not None:
+                    enzyme = digestion.getName()
+        except (AttributeError, IndexError, RuntimeError):
+            return None
+    if not enzyme:
+        return None
+    enzyme = str(enzyme).strip()
+    if not enzyme or enzyme.lower() in ("unknown_enzyme", "unknown", "no enzyme"):
+        return None
+    return enzyme
+
+
+def pep_of(hit) -> float | None:
+    """Posterior error probability for a PeptideHit, or ``None`` when absent."""
+    for mv in _PEP_META_KEYS:
+        if hit.metaValueExists(mv):
+            return float(hit.getMetaValue(mv))
+    return None
+
+
+def qvalue_of(hit, score_type: str) -> float | None:
+    """Peptide-level q-value for a PeptideHit, or ``None`` when unavailable.
+
+    quantms runs FDR before export, so the PeptideIdentification's primary score
+    is usually the q-value itself — but only when ``score_type`` says so. A raw
+    search-engine score must never be written to ``peptide_qvalue``: a consumer
+    cannot tell the two apart once it is in the column, and a Percolator SVM
+    score silently read as an FDR is worse than a null.
+    """
+    if str(score_type or "").lower() not in _QVALUE_SCORE_TYPES:
+        return None
+    score = hit.getScore()
+    return float(score) if score is not None else None
 
 
 def _canonical_channel(label: Optional[str]) -> str:
@@ -249,6 +375,20 @@ def _pid_scans(pid) -> list[int]:
     return _scan_of(ref)
 
 
+def _pid_run(pid, map_info: dict[int, tuple[str, str]], cf_runs: Optional[set[str]] = None) -> str | None:
+    """Resolve one identification to the run that produced it."""
+    pid_run = None
+    if pid.metaValueExists("map_index"):
+        pid_run = map_info.get(int(pid.getMetaValue("map_index")), (None, None))[0]
+    if pid_run is None and cf_runs and len(cf_runs) == 1:
+        pid_run = next(iter(cf_runs))
+    if pid_run is None:
+        runs_in_map = {info[0] for info in map_info.values()}
+        if len(runs_in_map) == 1:
+            pid_run = next(iter(runs_in_map))
+    return pid_run
+
+
 def _scan_by_run(pids, map_info: dict[int, tuple[str, str]], cf_runs: Optional[set[str]] = None) -> dict[str, list[int]]:
     """Attribute each identification's scan(s) to its own run.
 
@@ -260,23 +400,34 @@ def _scan_by_run(pids, map_info: dict[int, tuple[str, str]], cf_runs: Optional[s
     caller's ``cf_runs`` (the feature's positive-intensity element runs) then
     attributes the scan — each such feature lives in a single run.
     """
-    runs_in_map = {info[0] for info in map_info.values()}
-    sole_run = next(iter(runs_in_map)) if len(runs_in_map) == 1 else None
     scan_by_run: dict[str, list[int]] = {}
     for pid in pids:
         scans = _pid_scans(pid)
         if not scans:
             continue
-        pid_run = None
-        if pid.metaValueExists("map_index"):
-            pid_run = map_info.get(int(pid.getMetaValue("map_index")), (None, None))[0]
-        if pid_run is None and cf_runs and len(cf_runs) == 1:
-            pid_run = next(iter(cf_runs))
-        pid_run = pid_run or sole_run
+        pid_run = _pid_run(pid, map_info, cf_runs)
         if pid_run is not None:
             run_scans = scan_by_run.setdefault(pid_run, [])
             run_scans.extend(scan for scan in scans if scan not in run_scans)
     return scan_by_run
+
+
+def _confidence_by_run(
+    pids,
+    map_info: dict[int, tuple[str, str]],
+    cf_runs: Optional[set[str]] = None,
+) -> dict[str, tuple[float | None, float | None]]:
+    """Return the first identification's PEP and q-value for each run."""
+    confidence_by_run: dict[str, tuple[float | None, float | None]] = {}
+    for pid in pids:
+        hits = pid.getHits()
+        pid_run = _pid_run(pid, map_info, cf_runs)
+        if not hits or pid_run is None or pid_run in confidence_by_run:
+            continue
+        hit = hits[0]
+        score_type = str(pid.getScoreType() or "")
+        confidence_by_run[pid_run] = (pep_of(hit), qvalue_of(hit, score_type))
+    return confidence_by_run
 
 
 def _group_subfeatures_by_run(cf, map_info: dict[int, tuple[str, str]]) -> dict[str, dict]:
@@ -299,10 +450,14 @@ def _group_subfeatures_by_run(cf, map_info: dict[int, tuple[str, str]]) -> dict[
     return by_run
 
 
-def consensus_features_to_records(consensusxml_path: str | None = None, cm=None, group_map=None) -> list[dict]:
+def consensus_features_to_records(consensusxml_path: str | None = None, cm=None, group_map=None, sdrf_path=None) -> list[dict]:
     """Return QPX feature record dicts extracted from a consensusXML.
 
     Pass either ``consensusxml_path`` (loaded here) or an already-loaded ``cm``.
+    ``sdrf_path`` is optional and only supplies the digestion enzyme for
+    ``missed_cleavages``; without it the enzyme falls back to the consensusXML
+    ``SearchParameters``.
+
     ``group_map`` (accession -> full protein-group membership, from
     ``pg_adapter.accession_to_group``) makes each feature stamp BOTH the same
     group leader the pg view uses as ``anchor_protein`` AND the full
@@ -312,9 +467,13 @@ def consensus_features_to_records(consensusxml_path: str | None = None, cm=None,
     """
     cm = cm if cm is not None else load_consensus_map(consensusxml_path)
     map_info = feature_map_info(cm)
+    # Resolve the enzyme once, as the converter does, so this public entry point
+    # reports missed_cleavages too. Without it a caller of the library API got a
+    # null column while the same data through the CLI got a value.
+    enzyme = resolve_enzyme(cm, sdrf_path)
     records: list[dict] = []
     for cf in cm:
-        records.extend(feature_records_for_cf(cf, map_info, group_map))
+        records.extend(feature_records_for_cf(cf, map_info, group_map, enzyme=enzyme))
     return records
 
 
@@ -328,7 +487,7 @@ def feature_map_info(cm) -> dict[int, tuple[str, str]]:
     return {idx: (_run_stem(headers[idx].filename), _map_label(headers[idx].label)) for idx in headers}
 
 
-def feature_records_for_cf(cf, map_info: dict[int, tuple[str, str]], group_map=None) -> list[dict]:
+def feature_records_for_cf(cf, map_info: dict[int, tuple[str, str]], group_map=None, enzyme=None) -> list[dict]:
     """Feature records for one consensus feature (one per run, channels as intensities).
 
     ``pg_accessions`` carries the full protein-group membership; the feature->pg
@@ -341,6 +500,7 @@ def feature_records_for_cf(cf, map_info: dict[int, tuple[str, str]], group_map=N
     by_run = _group_subfeatures_by_run(cf, map_info)
     cf_runs = set(by_run)
     scan_by_run = _scan_by_run(pids, map_info, cf_runs=cf_runs)
+    confidence_by_run = _confidence_by_run(pids, map_info, cf_runs=cf_runs)
     hit = pids[0].getHits()[0]
     seq_obj = hit.getSequence()
     peptidoform = to_proforma(seq_obj)
@@ -367,10 +527,19 @@ def feature_records_for_cf(cf, map_info: dict[int, tuple[str, str]], group_map=N
     group = group_map.get(orig) if (group_map and orig is not None) else None
     anchor_protein = group[0] if group else orig
     pg_accessions = [{"accession": a, "start": None, "end": None, "pre": None, "post": None} for a in group] if group else None
+    # A peptide is unique when its resolved group holds exactly one protein.
+    # With no resolved group the answer is unknown: a lone peptide evidence is
+    # not proof of uniqueness, and claiming True there would invent information.
+    unique = (len(group) == 1) if group else None
+    error_ppm = mass_error_ppm(calculated_mz, observed_mz) if charge > 0 else None
+    # Missed cleavages are a property of the peptide and the search enzyme, both
+    # of which are in hand; the DIA-NN path already reports them (bigbio/qpx#300).
+    missed = count_missed_cleavages(sequence, enzyme) if enzyme else None
 
     records: list[dict] = []
-    for run, entry in _group_subfeatures_by_run(cf, map_info).items():
+    for run, entry in by_run.items():
         intensities = [{"label": label, "intensity": inten} for label, inten in entry["labels"].items()]
+        posterior_error_probability, peptide_qvalue = confidence_by_run.get(run, (None, None))
         records.append(
             {
                 "sequence": sequence,
@@ -381,9 +550,14 @@ def feature_records_for_cf(cf, map_info: dict[int, tuple[str, str]], group_map=N
                 "scan": scan_by_run.get(run, []),
                 "rt": entry["rt"],
                 "intensities": intensities,
+                "posterior_error_probability": posterior_error_probability,
+                "peptide_qvalue": peptide_qvalue,
                 "is_decoy": is_decoy,
                 "calculated_mz": calculated_mz,
                 "observed_mz": observed_mz,
+                "mass_error_ppm": error_ppm,
+                "missed_cleavages": missed,
+                "unique": unique,
                 "consensus_rt": consensus_rt,
                 "anchor_protein": anchor_protein,
                 "pg_accessions": pg_accessions,

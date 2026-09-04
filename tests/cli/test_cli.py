@@ -227,12 +227,54 @@ class TestQueryFilterCLI:
         result = runner.invoke(qpx_main, ["query", "filter", "--help"])
         _assert_help(result, "--dataset-path", "--structure", "--condition")
 
+    def test_filter_reads_dataset_metadata(self, dataset_dir):
+        """The canonical dataset name resolves to the dataset_meta accessor."""
+        runner = CliRunner()
+        result = runner.invoke(
+            qpx_main,
+            [
+                "query",
+                "filter",
+                "--dataset-path",
+                str(dataset_dir),
+                "--structure",
+                "dataset",
+                "--condition",
+                "project_accession IS NOT NULL",
+                "--output-format",
+                "json",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "project_accession" in result.output
+
 
 class TestQueryHeadCLI:
     def test_head_help_renders(self):
         runner = CliRunner()
         result = runner.invoke(qpx_main, ["query", "head", "--help"])
         _assert_help(result, "--dataset-path", "--structure")
+
+    def test_head_reads_dataset_metadata(self, dataset_dir):
+        """Query head accepts the canonical dataset structure name."""
+        runner = CliRunner()
+        result = runner.invoke(
+            qpx_main,
+            [
+                "query",
+                "head",
+                "--dataset-path",
+                str(dataset_dir),
+                "--structure",
+                "dataset",
+                "--output-format",
+                "csv",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "project_accession" in result.output
 
 
 # ---------------------------------------------------------------------------
@@ -294,3 +336,32 @@ class TestOntologyCLI:
         runner = CliRunner()
         result = runner.invoke(qpx_main, ["ontology", "build", "--help"])
         _assert_help(result, "--source", "--all-sources")
+
+
+class TestStructureChoicesMatchTheRegistry:
+    """CLI structure choices must be derived, not hand-maintained.
+
+    pepmap was registered in Dataset._STRUCTURE_REGISTRY and exposed on the
+    public API while both CLIs rejected it, because each kept its own literal
+    list (bigbio/qpx#289).
+    """
+
+    def test_validate_offers_every_registered_structure(self):
+        from qpx.cli.validate import _VALID_STRUCTURES
+        from qpx.dataset import Dataset
+
+        assert set(_VALID_STRUCTURES) == set(Dataset._STRUCTURE_REGISTRY)
+
+    def test_query_offers_every_registered_structure(self):
+        from qpx.cli.query import _VALID_STRUCTURES
+        from qpx.dataset import Dataset
+
+        assert set(_VALID_STRUCTURES) == set(Dataset._STRUCTURE_REGISTRY)
+
+    def test_pepmap_is_accepted(self):
+        """The structure that exposed the drift."""
+        from qpx.cli.query import _VALID_STRUCTURES as query_structures
+        from qpx.cli.validate import _VALID_STRUCTURES as validate_structures
+
+        assert "pepmap" in validate_structures
+        assert "pepmap" in query_structures

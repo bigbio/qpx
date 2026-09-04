@@ -531,6 +531,38 @@ def _write_multi_reference_consensusxml(path):
     path.write_text(_TMT_CONSENSUSXML.replace("\n    </consensusElement>", f"{second_pid}\n    </consensusElement>"))
 
 
+def _write_multirun_confidence_consensusxml(path):
+    """Write one ConsensusFeature with a different confidence in each run."""
+    xml = _TMT_CONSENSUSXML.replace(
+        'name="run_01.mzML" unique_id="2" label="tmt6plex_127"',
+        'name="run_02.mzML" unique_id="2" label="label-free"',
+    ).replace('label="tmt6plex_126"', 'label="label-free"')
+    xml = xml.replace(
+        'PeptideIdentification identification_run_ref="PI_0" score_type=""',
+        'PeptideIdentification identification_run_ref="PI_0" score_type="q-value"',
+        1,
+    ).replace(
+        '<PeptideHit score="0" sequence="PEPTIDEK"',
+        '<PeptideHit score="1.0e-03" sequence="PEPTIDEK"',
+        1,
+    )
+    first_pid_end = """        </PeptideHit>
+      </PeptideIdentification>"""
+    pids = """        </PeptideHit>
+        <UserParam type="int" name="map_index" value="0"/>
+      </PeptideIdentification>
+      <PeptideIdentification identification_run_ref="PI_0" score_type="q-value"
+        higher_score_better="false" significance_threshold="0" MZ="450.26" RT="100"
+        spectrum_reference="controllerType=0 controllerNumber=1 scan=43">
+        <PeptideHit score="2.0e-02" sequence="PEPTIDEK" charge="2" protein_refs="PH_0">
+          <UserParam type="string" name="target_decoy" value="target"/>
+          <UserParam type="float" name="Posterior Error Probability_score" value="2.0e-02"/>
+        </PeptideHit>
+        <UserParam type="int" name="map_index" value="1"/>
+      </PeptideIdentification>"""
+    path.write_text(xml.replace(first_pid_end, pids, 1))
+
+
 def test_streaming_matches_pyopenms(tmp_path):
     """The low-memory streaming reader produces the same parquet as pyopenms."""
     import json

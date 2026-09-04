@@ -74,6 +74,13 @@ _BUILTIN_SCORES: dict[str, dict] = {
         "description": "DIA-NN run-level q-value (lower is better)",
         "higher_better": False,
     },
+    "precursor_qvalue": {
+        "ontology_name": "DIA-NN:Q.Value",
+        "ontology_accession": None,
+        "ontology_source": None,
+        "description": "DIA-NN run-level precursor q-value (lower is better)",
+        "higher_better": False,
+    },
     "diann_global_qvalue": {
         "ontology_name": "DIA-NN:Global.Q.Value",
         "ontology_accession": None,

@@ -57,7 +57,7 @@ diann:
       modified_sequence: ["Modified.Sequence"]
       gg_names: ["Genes"]
       run_file_name: ["Run"]
-      qvalue: ["Q.Value"]
+      precursor_qvalue: ["Q.Value"]
       pg_qvalue: ["PG.Q.Value"]
       global_qvalue: ["Global.Q.Value"]
       pg_global_qvalue: ["Global.PG.Q.Value"]

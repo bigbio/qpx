@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 # Score mappings: (DIA-NN column, output score name, higher_better)
 _SCORE_MAPPINGS = [
-    ("Q.Value", "qvalue", False),
+    ("Q.Value", "precursor_qvalue", False),
     ("PG.Q.Value", "pg_qvalue", False),
     ("Global.Q.Value", "global_qvalue", False),
     ("CScore", "diann_cscore", True),
@@ -111,7 +111,7 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
 
         Filtering is opt-in (bigbio/qpx#241). ``qvalue_threshold`` defaults to
         ``None``, which emits every feature the report contains — DIA-NN already
-        FDR-filters its main report and all per-row q-value columns (``qvalue``,
+        FDR-filters its main report and all per-row q-value columns (``precursor_qvalue``,
         ``global_qvalue``, ``diann_lib_qvalue``, ``diann_translated_qvalue`` …)
         are carried through unconditionally for downstream filtering. When a
         threshold is provided, the precursor ``Q.Value`` filter is applied.
@@ -358,6 +358,10 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
             else "NULL::DOUBLE AS posterior_error_probability"
         )
 
+        # DIA-NN Q.Value is precursor-level and remains in additional_scores;
+        # DIA-NN does not report a peptide-level q-value.
+        parts.append("NULL::DOUBLE AS peptide_qvalue")
+
         pg_col = resolved["pg_accessions"]
         if has_decoy_col:
             parts.append(f'CAST(r."{resolved["decoy"]}" AS BOOLEAN) AS is_decoy')
@@ -381,12 +385,27 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
             else "NULL::FLOAT AS observed_mz"
         )
 
+        # mass_error_ppm: prefer a reported column, otherwise DERIVE it. DIA-NN
+        # emits no mass-error column, so this was always null even though both
+        # inputs are present — on PXD030304 22% of rows carry an observed m/z that
+        # genuinely differs from the theoretical one, and that error was discarded
+        # (bigbio/qpx#298). Guarded on both values being positive: calculated_mz is
+        # COALESCEd to 0.0 above, and observed_mz is null when the report has no
+        # Precursor.Mz, so an unmeasured row stays null rather than dividing by zero
+        # or reporting a fabricated error. The formula matches docs/spec/feature.md.
         mass_error_col = resolved.get("mass_error_ppm")
-        parts.append(
-            f"{_safe_float_sql(mass_error_col)} AS mass_error_ppm"
-            if mass_error_col and has_column(mass_error_col)
-            else "NULL::FLOAT AS mass_error_ppm"
-        )
+        if mass_error_col and has_column(mass_error_col):
+            parts.append(f"{_safe_float_sql(mass_error_col)} AS mass_error_ppm")
+        elif observed_mz_col and has_column(observed_mz_col):
+            observed_expr = _safe_float_sql(observed_mz_col)
+            parts.append(
+                "CASE WHEN lk.calculated_mz > 0 AND "
+                f"({observed_expr}) > 0 "
+                f"THEN CAST((({observed_expr}) - lk.calculated_mz) / lk.calculated_mz * 1e6 AS FLOAT) "
+                "END AS mass_error_ppm"
+            )
+        else:
+            parts.append("NULL::FLOAT AS mass_error_ppm")
 
         predicted_rt_col = resolved.get("predicted_rt")
         parts.append(
@@ -495,7 +514,9 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
         """
         r = self._resolved
         run_col = r["run_file_name"]
-        qv_col = r["qvalue"]
+        qv_col = r.get("precursor_qvalue")
+        if qvalue_threshold is not None and qv_col is None:
+            raise ValueError("qvalue_threshold requires the DIA-NN report column Q.Value")
         pg_col = r["pg_accessions"]
 
         has_column = report_cols.__contains__
@@ -569,12 +590,12 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
         return row_sql
 
     @staticmethod
-    def _build_channel_sql_parts(channel_col: str | None, qvalue_col: str) -> tuple[str, list[str], str]:
+    def _build_channel_sql_parts(channel_col: str | None, qvalue_col: str | None) -> tuple[str, list[str], str]:
         """Return the label, helper columns, and join used for channel-aware rows."""
         if channel_col is None:
             return "'LFQ'", [], ""
 
-        qvalue_expr = f"{_safe_double_sql(qvalue_col)} AS _qvalue"
+        qvalue_expr = f"{_safe_double_sql(qvalue_col)} AS _qvalue" if qvalue_col else "NULL::DOUBLE AS _qvalue"
         channel_join = sql_build(
             """
             JOIN diann_channel_labels cl
@@ -590,7 +611,6 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
         group_fields = {"sequence", "charge", "run_file_name"}
         python_fields = {
             "modifications",
-            "peptide_qvalue",
             "pg_accessions",
             "pg_positions",
             # Derived identity + optional cross-refs are not produced by the
@@ -832,6 +852,19 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
             merged_parts.append(group_df)
 
         merged_df = pd.concat(merged_parts, ignore_index=True)
+
+        # Recompute the mass error for rows whose observed_mz was only just
+        # backfilled from the mzML. The SQL derives it before this merge runs, so
+        # without this those rows keep a null error while carrying both m/z
+        # (bigbio/qpx#298). Only null errors are filled; a reported value wins.
+        if {"calculated_mz", "observed_mz", "mass_error_ppm"} <= set(merged_df.columns):
+            calc = pd.to_numeric(merged_df["calculated_mz"], errors="coerce")
+            obs = pd.to_numeric(merged_df["observed_mz"], errors="coerce")
+            derivable = merged_df["mass_error_ppm"].isna() & (calc > 0) & (obs > 0)
+            if derivable.any():
+                merged_df.loc[derivable, "mass_error_ppm"] = ((obs[derivable] - calc[derivable]) / calc[derivable] * 1e6).astype(
+                    "float32"
+                )
         # Rebuild Arrow table preserving the original schema for non-scan columns
         return pa.Table.from_pandas(merged_df, schema=table.schema, preserve_index=False)
 

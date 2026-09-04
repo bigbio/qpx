@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime
 import logging
+import os
 import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Sequence
@@ -192,10 +193,24 @@ class BaseWriter:
         identity_composite: Optional[Sequence[str]] = None,
     ):
         self._path = Path(path)
+        # A per-instance nonce, not just the pid: two writers in the SAME process
+        # targeting one destination would otherwise share a staging file and
+        # corrupt each other.
+        # Bytes go to a sibling temp file and are moved onto _path only after a
+        # clean close. Opening the destination directly meant a converter that
+        # failed mid-run replaced an existing valid file with a truncated one and
+        # there was no way back (bigbio/qpx#288). A sibling keeps the rename on
+        # the same filesystem, so os.replace is atomic.
+        self._staging_path = self._path.with_name(f".{self._path.name}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp")
         self._compression = compression
         self._batch_size = batch_size
         self._buffer: list[dict] = []
         self._writer: pq.ParquetWriter | None = None
+        # Set when a write raises. __exit__ sees the exception and discards, but a
+        # converter that catches its own write error and then calls close()
+        # normally would otherwise promote the partial file — publishing exactly
+        # the truncated output the staging was added to prevent (bigbio/qpx#288).
+        self._write_failed = False
         self._extra_columns = extra_columns or []
         # Override mode (e.g. consensusXML): re-derive the id even when the
         # producer supplied one, stashing the original as a cv_param so it is
@@ -415,8 +430,19 @@ class BaseWriter:
             base = self._schema_class.get_arrow_schema()
         return base.with_metadata(self._file_metadata)
 
+    def _guard(self, fn, *args, **kwargs):
+        """Run a write, latching failure so close() can never promote the result."""
+        try:
+            return fn(*args, **kwargs)
+        except BaseException:
+            self._write_failed = True
+            raise
+
     def write_batch(self, records: list[dict]):
         """Accumulate records and flush when batch_size is reached."""
+        return self._guard(self._write_batch, records)
+
+    def _write_batch(self, records: list[dict]):
         self._buffer.extend(records)
         while len(self._buffer) >= self._batch_size:
             batch = self._buffer[: self._batch_size]
@@ -430,6 +456,9 @@ class BaseWriter:
         (derived from the identity_composite) before validation, so callers may
         pass tables whose id column is absent or null.
         """
+        return self._guard(self._write_table, table)
+
+    def _write_table(self, table: pa.Table):
         table = self._fill_identity_table(table)
         errors = self._schema_class.validate(table, strict=False)
         if errors:
@@ -447,6 +476,9 @@ class BaseWriter:
         omits them; a genuinely missing *required* column is left absent so
         ``from_pandas`` surfaces it as a clear error.
         """
+        return self._guard(self._write_dataframe, df)
+
+    def _write_dataframe(self, df: "pd.DataFrame"):
         id_field = self._id_field
         relaxed = self._relaxed_id_schema()
         missing = [f.name for f in relaxed if f.name not in df.columns and (f.nullable or f.name == id_field)]
@@ -458,21 +490,61 @@ class BaseWriter:
         self.write_table(table)
 
     def close(self):
-        """Flush buffered rows, close the file, and validate its identity PK."""
-        self._close(validate=True)
+        """Flush buffered rows, close the file, and validate its identity PK.
+
+        A write that already failed is never promoted, however close() is reached.
+        """
+        self._close(validate=not self._write_failed)
 
     def _close(self, *, validate: bool) -> None:
         """Close the writer, discarding buffered rows after a body error."""
-        if validate and self._buffer:
-            self._write_arrow_batch(self._buffer)
-        self._buffer = []
-        wrote_file = self._writer is not None
-        if self._writer:
-            self._writer.close()
+        completed = False
+        writer = None
+        try:
+            if validate and self._buffer:
+                self._write_arrow_batch(self._buffer)
+            self._buffer = []
+            wrote_file = self._writer is not None
+            writer = self._writer
             self._writer = None
-        if validate and wrote_file:
-            self._validate_identity_uniqueness()
-            self._validate_referential()
+            if writer:
+                writer.close()
+                writer = None
+            if not wrote_file or not validate:
+                # The body raised: leave the destination untouched and discard
+                # any partial staging file.
+                self._discard_staged()
+            else:
+                # Validate before the atomic publish so invalid output never
+                # reaches the destination.
+                self._validate_identity_uniqueness()
+                self._validate_referential()
+                self._promote_staged()
+            completed = True
+        finally:
+            if not completed:
+                self._buffer = []
+                self._writer = None
+                writer = None
+                self._discard_staged()
+
+    @property
+    def _validation_path(self) -> Path:
+        """Where the bytes currently live: the staging file until it is promoted."""
+        return self._staging_path if self._staging_path.exists() else self._path
+
+    def _promote_staged(self) -> None:
+        """Atomically move the staged file onto the destination."""
+        if not self._staging_path.exists():
+            return
+        os.replace(self._staging_path, self._path)
+
+    def _discard_staged(self) -> None:
+        """Remove the staged file, leaving any existing destination intact."""
+        try:
+            self._staging_path.unlink(missing_ok=True)
+        except OSError as exc:  # pragma: no cover - best effort cleanup
+            logger.warning("Could not remove staging file %s: %s", self._staging_path, exc)
 
     def _validate_referential(self) -> None:
         """Warn on pg referential / run-disjointness problems over the full file.
@@ -488,7 +560,7 @@ class BaseWriter:
         """
         if getattr(self._schema_class, "view_name", None) != "pg":
             return
-        issues = pg_referential_issues_from_parquet(str(self._path), self._schema_class.view_name, "warning")
+        issues = pg_referential_issues_from_parquet(str(self._validation_path), self._schema_class.view_name, "warning")
         for issue in issues:
             logger.warning("pg referential check '%s': %s", issue.check, issue.message)
 
@@ -510,7 +582,7 @@ class BaseWriter:
         )
         connection = duckdb.connect()
         try:
-            total_count, unique_count, null_count = connection.execute(query, [str(self._path)]).fetchone()
+            total_count, unique_count, null_count = connection.execute(query, [str(self._validation_path)]).fetchone()
         finally:
             connection.close()
 
@@ -545,8 +617,9 @@ class BaseWriter:
 
     def _ensure_writer(self):
         if self._writer is None:
+            self._staging_path.parent.mkdir(parents=True, exist_ok=True)
             self._writer = pq.ParquetWriter(
-                str(self._path),
+                str(self._staging_path),
                 schema=self.arrow_schema,
                 **self._parquet_write_options(),
             )
@@ -681,4 +754,4 @@ class BaseWriter:
     def __exit__(self, exc_type, _exc_value, _traceback):
         # Preserve an exception raised inside the context instead of masking it
         # with validation of a partial output file.
-        self._close(validate=exc_type is None)
+        self._close(validate=exc_type is None and not self._write_failed)

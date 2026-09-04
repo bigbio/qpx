@@ -24,6 +24,13 @@ from qpx.converters.openms_consensus.feature_adapter import (
     to_modifications,
     to_proforma,
 )
+from qpx.converters.openms_consensus.feature_adapter import (
+    mass_error_ppm as _mass_error_ppm,
+)
+from qpx.converters.openms_consensus.feature_adapter import (
+    pep_of as _pep_of,
+)
+from qpx.core.cleavage import count_missed_cleavages
 
 _log = logging.getLogger(__name__)
 
@@ -34,8 +41,6 @@ _SCAN_RE = re.compile(r"(?:scan|index|spectrum)=(\d+)", re.IGNORECASE)
 _CYCLE_RE = re.compile(r"cycle=(\d+)", re.IGNORECASE)
 # scan is a list<int32>; keep any surrogate within the signed 32-bit range.
 _INT32_MASK = 0x7FFFFFFF
-
-_PEP_META_KEYS = ("Posterior Error Probability_score", "PEP", "pep")
 
 
 def _surrogate_scan(spectrum_ref: str) -> int:
@@ -70,14 +75,6 @@ def _scan_of(spectrum_ref: str) -> list[int]:
     if cycles:
         return cycles
     return [_surrogate_scan(ref)]
-
-
-def _pep_of(hit) -> float | None:
-    """Posterior error probability for a PeptideHit, or ``None`` when absent."""
-    for mv in _PEP_META_KEYS:
-        if hit.metaValueExists(mv):
-            return float(hit.getMetaValue(mv))
-    return None
 
 
 def _protein_accessions(hits) -> list[str] | None:
@@ -210,7 +207,46 @@ def consensus_psms_to_records(consensusxml_path: str | None = None, cm=None) -> 
     return records
 
 
-def psm_records_for_pid(pid, resolve_run, seen: set[tuple], cf_runs=None) -> list[dict]:
+def _psm_additional_scores(primary, hits, score, score_type, score_is_qvalue, higher_better):
+    """Assemble one PSM's ``additional_scores`` and its localisation site scores.
+
+    Extracted from :func:`psm_records_for_pid` to keep that function within the
+    project's complexity limits; the behaviour is unchanged.
+
+    Returns ``(additional_scores, site_scores)`` — the latter feeds
+    :func:`to_modifications` so per-site localisation scores land on the
+    modification they belong to.
+    """
+    additional_scores = []
+    if score is not None:
+        # Route the identification score into additional_scores: the psm schema
+        # has no dedicated q-value column.
+        name = "q-value" if score_is_qvalue else (score_type or "search_score")
+        additional_scores.append({"score_name": name, "score_value": score, "higher_better": higher_better})
+    # Preserve the other colliding hits' (i.e. the other engines') search scores
+    # so a comet+msgf merged spectrum does not lose either engine's score.
+    for other in hits:
+        if other is primary:
+            continue
+        other_score = float(other.getScore()) if other.getScore() is not None else None
+        if other_score is not None:
+            base = "q-value" if score_is_qvalue else (score_type or "search_score")
+            _append_unique_score(additional_scores, base, other_score, higher_better)
+    if primary.metaValueExists("consensus_support"):
+        additional_scores.append(
+            {
+                "score_name": "consensus_support",
+                "score_value": float(primary.getMetaValue("consensus_support")),
+                "higher_better": True,
+            }
+        )
+    loc_scores, site_scores = localization_scores(primary)
+    if loc_scores:
+        additional_scores.extend(loc_scores)
+    return additional_scores, site_scores
+
+
+def psm_records_for_pid(pid, resolve_run, seen: set[tuple], cf_runs=None, enzyme=None) -> list[dict]:
     """PSM records for one PeptideIdentification (deduped via the shared ``seen`` set).
 
     ``cf_runs`` is the consensus feature's element-run set (passed for assigned
@@ -264,36 +300,11 @@ def psm_records_for_pid(pid, resolve_run, seen: set[tuple], cf_runs=None) -> lis
         seq_obj = primary.getSequence()
         peptidoform = to_proforma(seq_obj)
         charge = int(primary.getCharge() or 0)
-        calc_mz = float(seq_obj.getMZ(charge)) if charge else obs_mz
+        calc_mz = float(seq_obj.getMZ(charge)) if charge > 0 else None
         is_decoy = primary.metaValueExists("target_decoy") and "decoy" in str(primary.getMetaValue("target_decoy")).lower()
         pep = _pep_of(primary)
         score = float(primary.getScore()) if primary.getScore() is not None else None
-        additional_scores = []
-        if score is not None:
-            # Route the identification score into additional_scores: the psm schema
-            # has no dedicated q-value column.
-            name = "q-value" if score_is_qvalue else (score_type or "search_score")
-            additional_scores.append({"score_name": name, "score_value": score, "higher_better": higher_better})
-        # Preserve the other colliding hits' (i.e. the other engines') search scores
-        # so a comet+msgf merged spectrum does not lose either engine's score.
-        for other in hits:
-            if other is primary:
-                continue
-            other_score = float(other.getScore()) if other.getScore() is not None else None
-            if other_score is not None:
-                base = "q-value" if score_is_qvalue else (score_type or "search_score")
-                _append_unique_score(additional_scores, base, other_score, higher_better)
-        if primary.metaValueExists("consensus_support"):
-            additional_scores.append(
-                {
-                    "score_name": "consensus_support",
-                    "score_value": float(primary.getMetaValue("consensus_support")),
-                    "higher_better": True,
-                }
-            )
-        loc_scores, site_scores = localization_scores(primary)
-        if loc_scores:
-            additional_scores.extend(loc_scores)
+        additional_scores, site_scores = _psm_additional_scores(primary, hits, score, score_type, score_is_qvalue, higher_better)
         modifications = to_modifications(seq_obj, site_scores)
         records.append(
             {
@@ -306,6 +317,8 @@ def psm_records_for_pid(pid, resolve_run, seen: set[tuple], cf_runs=None) -> lis
                 "rt": float(pid.getRT()) if pid.getRT() else None,
                 "calculated_mz": calc_mz,
                 "observed_mz": obs_mz,
+                "mass_error_ppm": _mass_error_ppm(calc_mz, obs_mz),
+                "missed_cleavages": (count_missed_cleavages(seq_obj.toUnmodifiedString(), enzyme) if enzyme else None),
                 "posterior_error_probability": pep,
                 "additional_scores": additional_scores or None,
                 "is_decoy": is_decoy,

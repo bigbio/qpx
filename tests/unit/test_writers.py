@@ -248,3 +248,184 @@ def test_pg_write_dataframe_explodes_intensities(tmp_path):
     assert table.num_rows == 2, "intensities list should explode into one row per label"
     assert set(table.column("label").to_pylist()) == {"TMT126", "TMT127N"}
     assert set(table.column("intensity").to_pylist()) == {5000.0, 6000.0}
+
+
+class TestAtomicWrites:
+    """A failed conversion must not destroy an existing valid file.
+
+    The writer used to open the destination directly, so a converter that died
+    mid-run left a truncated file where a good one had been (bigbio/qpx#288).
+    This is not hypothetical: a 5,798-run DIA conversion was killed three times
+    mid-write, twice by a full filesystem.
+    """
+
+    # batch_size defaults to 1,000,000, so a single buffered record never reaches
+    # disk and nothing is at risk. Flush on every record so the writer really has
+    # an open file when the failure lands — that is the situation being tested.
+    BATCH = 1
+
+    @classmethod
+    def _write_one(cls, path):
+        with FeatureWriter(str(path), batch_size=cls.BATCH) as w:
+            w.write_batch([make_feature_record()])
+
+    def test_existing_file_survives_a_failed_write(self, tmp_path):
+        """A failed replacement leaves the existing destination unchanged."""
+        path = tmp_path / "x.feature.parquet"
+        self._write_one(path)
+        good_bytes = path.read_bytes()
+
+        with pytest.raises(RuntimeError):
+            with FeatureWriter(str(path), batch_size=self.BATCH) as w:
+                w.write_batch([make_feature_record()])
+                raise RuntimeError("converter blew up mid-run")
+
+        assert path.read_bytes() == good_bytes, "the previous valid file was modified"
+        assert parquet_row_count(str(path)) == 1
+
+    def test_no_staging_files_are_left_behind(self, tmp_path):
+        """A failed write removes its temporary staging file."""
+        path = tmp_path / "y.feature.parquet"
+        self._write_one(path)
+        with pytest.raises(RuntimeError):
+            with FeatureWriter(str(path), batch_size=self.BATCH) as w:
+                w.write_batch([make_feature_record()])
+                raise RuntimeError("boom")
+
+        leftovers = [p.name for p in tmp_path.iterdir() if p.name != path.name]
+        assert leftovers == [], f"staging files left behind: {leftovers}"
+
+    def test_successful_write_publishes_to_the_destination(self, tmp_path):
+        """A successful close publishes only the requested destination."""
+        path = tmp_path / "z.feature.parquet"
+        self._write_one(path)
+        assert path.exists()
+        assert parquet_row_count(str(path)) == 1
+        assert [p.name for p in tmp_path.iterdir()] == [path.name]
+
+    def test_failed_write_leaves_no_file_when_there_was_none(self, tmp_path):
+        """A failed first write does not publish a partial destination."""
+        path = tmp_path / "fresh.feature.parquet"
+        with pytest.raises(RuntimeError):
+            with FeatureWriter(str(path), batch_size=self.BATCH) as w:
+                w.write_batch([make_feature_record()])
+                raise RuntimeError("boom")
+        assert not path.exists(), "a partial file was published for a failed run"
+
+    def test_close_after_a_caught_write_error_does_not_publish(self, tmp_path):
+        """A converter that swallows its own write error must not publish.
+
+        __exit__ discards when it sees an exception, but a caller that catches the
+        error itself and then calls close() normally reached the promote path —
+        publishing the truncated file the staging exists to prevent.
+        """
+        path = tmp_path / "caught.feature.parquet"
+        self._write_one(path)
+        good_bytes = path.read_bytes()
+
+        writer = FeatureWriter(str(path), batch_size=self.BATCH)
+        writer.write_batch([make_feature_record()])
+        with pytest.raises(ValueError):
+            writer.write_batch([{"not": "a valid record"}])
+        writer.close()
+
+        assert path.read_bytes() == good_bytes, "a partial file was published after a caught error"
+        assert [p.name for p in tmp_path.iterdir()] == [path.name]
+
+    def test_context_after_a_caught_write_error_does_not_publish(self, tmp_path):
+        """A caught write error must still prevent context-manager promotion."""
+        path = tmp_path / "caught-context.feature.parquet"
+        self._write_one(path)
+        good_bytes = path.read_bytes()
+
+        with FeatureWriter(str(path), batch_size=self.BATCH) as writer:
+            writer.write_batch([make_feature_record(sequence="PARTIAL", peptidoform="PARTIAL")])
+            with pytest.raises(ValueError):
+                writer.write_batch([{"not": "a valid record"}])
+
+        assert path.read_bytes() == good_bytes, "context exit published a partial file after a caught error"
+        assert [p.name for p in tmp_path.iterdir()] == [path.name]
+
+    def test_dataframe_conversion_error_latches_failure(self, tmp_path):
+        """A caught DataFrame conversion error must preserve the destination."""
+        import pandas as pd
+
+        path = tmp_path / "caught-dataframe.feature.parquet"
+        self._write_one(path)
+        good_bytes = path.read_bytes()
+
+        writer = FeatureWriter(str(path), batch_size=self.BATCH)
+        writer.write_batch([make_feature_record(sequence="PARTIAL", peptidoform="PARTIAL")])
+        with pytest.raises(KeyError):
+            writer.write_dataframe(pd.DataFrame([{"not": "a valid record"}]))
+        writer.close()
+
+        assert path.read_bytes() == good_bytes, "DataFrame failure allowed a partial file to be published"
+        assert [p.name for p in tmp_path.iterdir()] == [path.name]
+
+    def test_pg_preprocessing_error_latches_failure(self, tmp_path):
+        """PgWriter preprocessing runs inside the same atomic-write guard."""
+        path = tmp_path / "caught-preprocess.pg.parquet"
+        with PgWriter(str(path), batch_size=self.BATCH) as writer:
+            writer.write_batch([make_pg_record()])
+        good_bytes = path.read_bytes()
+
+        bad_record = make_pg_record()
+        bad_record["additional_intensities"] = 1
+        with PgWriter(str(path), batch_size=self.BATCH) as writer:
+            writer.write_batch([make_pg_record(anchor_protein="PARTIAL")])
+            with pytest.raises(TypeError):
+                writer.write_batch([bad_record])
+
+        assert path.read_bytes() == good_bytes, "PgWriter preprocessing failure published a partial file"
+        assert [p.name for p in tmp_path.iterdir()] == [path.name]
+
+    def test_final_buffer_failure_discards_staging(self, tmp_path):
+        """A failure while flushing the final buffer leaves no partial file."""
+        path = tmp_path / "final-buffer.feature.parquet"
+        self._write_one(path)
+        good_bytes = path.read_bytes()
+
+        writer = FeatureWriter(str(path), batch_size=2)
+        writer.write_batch(
+            [
+                make_feature_record(sequence="FIRST", peptidoform="FIRST"),
+                make_feature_record(sequence="SECOND", peptidoform="SECOND"),
+            ]
+        )
+        writer.write_batch([{"not": "a valid record"}])
+
+        with pytest.raises(ValueError):
+            writer.close()
+
+        assert path.read_bytes() == good_bytes
+        assert [p.name for p in tmp_path.iterdir()] == [path.name]
+
+    @pytest.mark.parametrize("failure_target", ["_validate_identity_uniqueness", "_promote_staged"])
+    def test_finalization_failure_discards_staging(self, tmp_path, monkeypatch, failure_target):
+        """Validation and promotion failures both clean up staged output."""
+        path = tmp_path / "finalization.feature.parquet"
+        self._write_one(path)
+        good_bytes = path.read_bytes()
+        writer = FeatureWriter(str(path), batch_size=self.BATCH)
+        writer.write_batch([make_feature_record(sequence="PARTIAL", peptidoform="PARTIAL")])
+
+        def fail_finalization():
+            """Simulate a failure after the staged Parquet file is closed."""
+            raise RuntimeError("finalization failed")
+
+        monkeypatch.setattr(writer, failure_target, fail_finalization)
+        with pytest.raises(RuntimeError, match="finalization failed"):
+            writer.close()
+
+        assert path.read_bytes() == good_bytes
+        assert [p.name for p in tmp_path.iterdir()] == [path.name]
+
+    def test_two_writers_in_one_process_do_not_share_a_staging_file(self, tmp_path):
+        """The staging name must be unique per writer, not per process."""
+        path = tmp_path / "shared.feature.parquet"
+        with FeatureWriter(str(path), batch_size=self.BATCH) as first, FeatureWriter(str(path), batch_size=self.BATCH) as second:
+            first.write_batch([make_feature_record(sequence="FIRST", peptidoform="FIRST")])
+            second.write_batch([make_feature_record(sequence="SECOND", peptidoform="SECOND")])
+            staging_files = list(tmp_path.glob(f".{path.name}.*.tmp"))
+            assert len(staging_files) == 2, "two writers share a staging file"

@@ -74,6 +74,66 @@ def _pivot_to_sparse(
     return mat.tocsr()
 
 
+def _dictionary_positions(column, index: pd.Index) -> np.ndarray:
+    """Map an Arrow string column onto positions in *index*, via its dictionary.
+
+    ``pd.Index.get_indexer`` hashes every element, so on a long table it hashes
+    one Python string per row. Dictionary-encoding first means the hashing runs
+    once per *distinct* value — for a feature table with hundreds of millions of
+    rows over tens of thousands of precursors that is a different order of
+    magnitude of work, and it never materialises the row-wise Python strings.
+
+    Unmatched values keep ``get_indexer``'s -1, so callers filter exactly as before.
+    """
+    import pyarrow.compute as pc
+
+    encoded = pc.dictionary_encode(column.combine_chunks())
+    dictionary_positions = index.get_indexer(encoded.dictionary.to_pylist())
+    codes = encoded.indices.to_numpy(zero_copy_only=False)
+    if not encoded.indices.null_count:
+        return dictionary_positions[codes]
+
+    valid = ~pd.isna(codes)
+    safe_codes = np.where(valid, codes, 0).astype(np.intp, copy=False)
+    positions = np.full(len(codes), -1, dtype=np.intp)
+    positions[valid] = dictionary_positions[safe_codes[valid]]
+    return positions
+
+
+def _pivot_arrow_to_sparse(
+    table,
+    row_col: str,
+    col_col: str,
+    value_col: str,
+    row_index: pd.Index,
+    col_index: pd.Index,
+) -> sparse.csr_matrix:
+    """Arrow-native equivalent of :func:`_pivot_to_sparse`.
+
+    Same result, without converting the long table to pandas object columns first.
+    """
+    row_pos = _dictionary_positions(table.column(row_col), row_index)
+    col_pos = _dictionary_positions(table.column(col_col), col_index)
+
+    mask = (row_pos >= 0) & (col_pos >= 0)
+    values = table.column(value_col).to_numpy(zero_copy_only=False)
+    data = values[mask].astype(np.float32)
+
+    mat = sparse.coo_matrix(
+        (data, (row_pos[mask], col_pos[mask])),
+        shape=(len(row_index), len(col_index)),
+    )
+    return mat.tocsr()
+
+
+def _sorted_unique(table, column: str) -> pd.Index:
+    """Sorted distinct values of an Arrow column, named after the column."""
+    import pyarrow.compute as pc
+
+    values = pc.dictionary_encode(table.column(column).combine_chunks()).dictionary.to_pylist()
+    return pd.Index(sorted(v for v in values if v is not None), name=column)
+
+
 # pg is flattened since 1.1 (scalar ``label``), so its label queries read the
 # column directly; feature keeps the intensities list<struct>.
 _LABEL_FIELD_QUERIES: dict[tuple[str, str], str] = {
@@ -242,6 +302,57 @@ def _prepare_observations(
     return df, "run_file_name", obs_index, keys
 
 
+def _prepare_observations_arrow(
+    table,
+    intensity_label: str | None,
+):
+    """Arrow-native :func:`_prepare_observations`.
+
+    Returns ``(table, row_col, obs_index, observation_keys)``. When every label is
+    requested the ``observation_id`` column is appended to the Arrow table rather
+    than built row-by-row in pandas: the old path copied the whole frame and then
+    concatenated two object columns for every row, which on a large experiment is
+    hundreds of millions of throwaway Python strings.
+    """
+    import pyarrow as pa
+    import pyarrow.compute as pc
+
+    if intensity_label is None:
+        runs = table.column("run_file_name").combine_chunks()
+        labels = table.column("intensity_label").combine_chunks()
+        observation_id = pc.binary_join_element_wise(
+            pc.cast(runs, pa.string()),
+            pc.cast(labels, pa.string()),
+            "|",
+        )
+        table = table.append_column("observation_id", observation_id)
+        obs_index = _sorted_unique(table, "observation_id")
+        # Reduce to one row per observation in Arrow *before* touching pandas -
+        # the distinct set is the number of run/label pairs, not the row count.
+        distinct = (
+            table.select(["observation_id", "run_file_name", "intensity_label"])
+            .group_by(["observation_id", "run_file_name", "intensity_label"])
+            .aggregate([])
+        )
+        pairs = (
+            distinct.to_pandas()
+            .drop_duplicates(subset="observation_id", keep="first")
+            .set_index("observation_id")
+            .reindex(obs_index)
+        )
+        return table, "observation_id", obs_index, pairs
+
+    obs_index = _sorted_unique(table, "run_file_name")
+    keys = pd.DataFrame(
+        {
+            "run_file_name": obs_index,
+            "intensity_label": str(intensity_label),
+        },
+        index=obs_index,
+    )
+    return table, "run_file_name", obs_index, keys
+
+
 def _load_run_obs(
     engine: DuckDBEngine,
     observation_keys: pd.DataFrame,
@@ -367,17 +478,17 @@ def _build_precursor_adata(
     import anndata as ad
 
     if intensity_label is None:
-        df = engine.execute(_PRECURSOR_ALL_QUERIES[label_field]).fetchdf()
+        table = engine.execute(_PRECURSOR_ALL_QUERIES[label_field]).fetch_arrow_table()
     else:
-        df = engine.execute(_PRECURSOR_QUERIES[label_field], [intensity_label]).fetchdf()
+        table = engine.execute(_PRECURSOR_QUERIES[label_field], [intensity_label]).fetch_arrow_table()
 
-    if df.empty:
+    if table.num_rows == 0:
         return ad.AnnData()
 
-    df, row_col, observations, observation_keys = _prepare_observations(df, intensity_label)
-    precursors = pd.Index(sorted(df["precursor_id"].unique()), name="precursor_id")
+    table, row_col, observations, observation_keys = _prepare_observations_arrow(table, intensity_label)
+    precursors = _sorted_unique(table, "precursor_id")
 
-    intensity_matrix = _pivot_to_sparse(df, row_col, "precursor_id", "intensity", observations, precursors)
+    intensity_matrix = _pivot_arrow_to_sparse(table, row_col, "precursor_id", "intensity", observations, precursors)
 
     obs = _load_run_obs(engine, observation_keys, all_labels=intensity_label is None)
     var = pd.DataFrame(index=precursors)
@@ -399,17 +510,17 @@ def _build_protein_adata(
     import anndata as ad
 
     if intensity_label is None:
-        df = engine.execute(_PROTEIN_ALL_QUERIES[label_field]).fetchdf()
+        table = engine.execute(_PROTEIN_ALL_QUERIES[label_field]).fetch_arrow_table()
     else:
-        df = engine.execute(_PROTEIN_QUERIES[label_field], [intensity_label]).fetchdf()
+        table = engine.execute(_PROTEIN_QUERIES[label_field], [intensity_label]).fetch_arrow_table()
 
-    if df.empty:
+    if table.num_rows == 0:
         return ad.AnnData()
 
-    df, row_col, observations, observation_keys = _prepare_observations(df, intensity_label)
-    proteins = pd.Index(sorted(df["anchor_protein"].unique()), name="anchor_protein")
+    table, row_col, observations, observation_keys = _prepare_observations_arrow(table, intensity_label)
+    proteins = _sorted_unique(table, "anchor_protein")
 
-    intensity_matrix = _pivot_to_sparse(df, row_col, "anchor_protein", "intensity", observations, proteins)
+    intensity_matrix = _pivot_arrow_to_sparse(table, row_col, "anchor_protein", "intensity", observations, proteins)
 
     obs = _load_run_obs(engine, observation_keys, all_labels=intensity_label is None)
 

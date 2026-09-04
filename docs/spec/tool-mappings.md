@@ -38,6 +38,7 @@ The Feature view captures quantified peptide features with intensity data. Featu
 | `peptidoform` | Modified sequence | Modified.Sequence | Modified Peptide | PeptideSequence (ProForma-normalized) |
 | `charge` | Charge | Precursor.Charge | --- | Charge / PrecursorCharge |
 | `is_decoy` | Reverse | --- | --- | ProteinName prefix |
+| `peptide_qvalue` | --- | --- | --- | --- |
 | `calculated_mz` | --- | --- | Calculated M/Z | --- |
 | `observed_mz` | m/z | --- | --- | --- |
 | `rt` | Retention time | RT | --- | RetentionTime |
@@ -49,6 +50,8 @@ The Feature view captures quantified peptide features with intensity data. Featu
 | `anchor_protein` | --- | --- | --- | First ProteinName accession |
 | `pg_positions` | --- | --- | --- | --- |
 | `run_file_name` | Raw file | Run | --- | Reference / Run resolved through SDRF |
+
+DIA-NN `Q.Value` is precursor-level and is stored in `additional_scores` as `precursor_qvalue`; it is not mapped to the peptide-level `peptide_qvalue` field.
 
 ## Protein Group Field Mappings
 

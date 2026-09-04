@@ -17,19 +17,13 @@ from typing import Optional
 
 import click
 
+from qpx.dataset import Dataset
+
 logger = logging.getLogger("qpx.cli.validate")
 
-_VALID_STRUCTURES = [
-    "psm",
-    "feature",
-    "pg",
-    "mz",
-    "sample",
-    "run",
-    "dataset",
-    "ontology",
-    "provenance",
-]
+# Derived from the canonical registry so a new structure cannot be supported
+# by the library while the CLI silently rejects it (bigbio/qpx#289).
+_VALID_STRUCTURES = Dataset.structure_names()
 
 
 @click.command("validate")
