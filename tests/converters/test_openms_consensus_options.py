@@ -15,12 +15,7 @@ from tests.converters.test_openms_consensus import _TMT_CONSENSUSXML  # noqa: E4
 
 
 class TestSkipUnassignedPsms:
-    """`include_unassigned_psms=False` drops PSMs that link to no feature.
-
-    Unassigned identifications carry no quantification and their feature_id is
-    null, so a psm->feature join silently drops them anyway — 41% of rows on a
-    real label-free dataset (bigbio/qpx#299). The option makes that explicit.
-    """
+    """`include_unassigned_psms=False` excludes source unassigned identifications."""
 
     _XML_WITH_UNASSIGNED = _TMT_CONSENSUSXML.replace(
         "</consensusElementList>",
@@ -56,8 +51,8 @@ class TestSkipUnassignedPsms:
         return pq.read_table(str(out / "X.psm.parquet")).to_pylist()
 
     @pytest.mark.parametrize("stream", [False, True], ids=["memory", "streaming"])
-    def test_default_drops_unassigned(self, tmp_path, stream):
-        """The default PSM view is quantified-only."""
+    def test_default_keeps_unassigned_psms(self, tmp_path, stream):
+        """Unassigned identifications are retained without a feature link."""
         import pyarrow.parquet as pq
 
         from qpx.converters.openms_consensus import converter as conv
@@ -74,23 +69,41 @@ class TestSkipUnassignedPsms:
             project_accession="X",
         )
         rows = pq.read_table(str(out / "X.psm.parquet")).to_pylist()
-        assert "UNASSIGNEDK" not in {r["sequence"] for r in rows}
-        assert all(r["feature_id"] is not None for r in rows)
+        unassigned = [r for r in rows if r["sequence"] == "UNASSIGNEDK"]
+        assert unassigned, "an unassigned PSM must be kept by default"
+        assert all(r["feature_id"] is None for r in unassigned)
+        assert all(r["sequence"] and r["posterior_error_probability"] is not None for r in unassigned), (
+            "they are identifications, so they carry a sequence and a score"
+        )
+        assert all(r["feature_id"] is not None for r in rows if r["sequence"] != "UNASSIGNEDK")
 
     @pytest.mark.parametrize("stream", [False, True], ids=["memory", "streaming"])
-    def test_opt_in_keeps_unassigned(self, tmp_path, stream):
-        rows = self._convert(tmp_path, f"keep_{stream}", include=True, stream=stream)
-        seqs = {r["sequence"] for r in rows}
-        assert "UNASSIGNEDK" in seqs, "opt-in must restore them"
-        assert any(r["feature_id"] is None for r in rows)
-
-    @pytest.mark.parametrize("stream", [False, True], ids=["memory", "streaming"])
-    def test_option_drops_unassigned_on_both_paths(self, tmp_path, stream):
+    def test_opt_out_drops_unassigned(self, tmp_path, stream):
+        """The opt-out excludes source unassigned identifications."""
         rows = self._convert(tmp_path, f"drop_{stream}", include=False, stream=stream)
-        seqs = {r["sequence"] for r in rows}
-        assert "UNASSIGNEDK" not in seqs, "unassigned PSM was still written"
-        assert rows, "assigned PSMs must survive"
-        assert all(r["feature_id"] is not None for r in rows), "every remaining PSM links to a feature"
+        assert "UNASSIGNEDK" not in {r["sequence"] for r in rows}
+        assert rows and all(r["feature_id"] is not None for r in rows)
+
+    @pytest.mark.parametrize("stream", [False, True], ids=["memory", "streaming"])
+    def test_psm_only_keeps_assigned_psms_without_feature_links(self, tmp_path, stream):
+        """An assigned source PSM can have no feature link in the exported view."""
+        from qpx.core.data import PSM
+        from qpx.core.engine import DuckDBEngine
+
+        path = tmp_path / "psm-only.consensusXML"
+        path.write_text(self._XML_WITH_UNASSIGNED)
+        written = OpenMSConsensusConverter().convert(
+            str(path),
+            str(tmp_path / "out"),
+            structures=("psm",),
+            streaming=stream,
+            include_unassigned_psms=False,
+        )
+        with DuckDBEngine(threads=24) as engine:
+            engine.register_parquet("psm", written["psm"])
+            psm = PSM(engine=engine, table_name="psm", file_path=written["psm"])
+            assert psm.with_feature().count() == 0
+            assert psm.without_feature().to_df()["sequence"].tolist() == ["PEPTIDEK"]
 
     def test_protein_inference_is_unaffected(self, tmp_path):
         """Dropping PSM rows must not change the protein groups."""

@@ -146,7 +146,7 @@ def _stream_feature_psm(
     map_run,
     seen,
     batch,
-    include_unassigned_psms=False,
+    include_unassigned_psms=True,
     enzyme=None,
 ):
     """One ordered element/unassigned pass: write feature/psm in batches and
@@ -207,7 +207,7 @@ def _convert_streaming(
     creator,
     pg_top,
     compression="zstd",
-    include_unassigned_psms=False,
+    include_unassigned_psms=True,
 ) -> dict:
     """Single-pass, low-memory feature/psm/pg from a streamed consensusXML.
 
@@ -384,18 +384,23 @@ class OpenMSConsensusConverter(BaseOrchestrator):  # pylint: disable=too-few-pub
         streaming: Optional[bool] = None,
         project_accession: Optional[str] = None,
         compression: str = "zstd",
-        include_unassigned_psms: bool = False,
+        include_unassigned_psms: bool = True,
     ) -> dict[str, Path]:
         """Write the requested QPX views and return ``{structure: parquet path}``.
 
-        ``include_unassigned_psms`` (default ``False``) controls whether
-        identifications that are not linked to any consensus feature reach
-        ``psm.parquet``. They are identified spectra, but they carry no
-        quantification and their ``feature_id`` is null, so a ``psm -> feature``
-        join drops them anyway — 41% of rows on a real label-free dataset. The
-        default therefore emits a quantified-only PSM view; pass ``True`` to keep
-        them. Protein inference is unaffected either way: it always sees every
-        identification, because dropping evidence would change the protein groups.
+        ``include_unassigned_psms`` (default ``True``) controls whether
+        unassigned PeptideIdentifications from the source reach ``psm.parquet``.
+        They are retained to preserve identification evidence; pass ``False``
+        to exclude them.
+
+        ``feature_id`` records a link in the exported dataset, not quantification
+        status. It is only populated when both feature and PSM views are emitted;
+        PSM-only output leaves it null even for assigned identifications.
+        ``PSM.with_feature()`` and ``PSM.without_feature()`` filter these links.
+
+        The feature view always omits consensus features without peptide hits.
+        Protein inference always uses every identification, regardless of this
+        option.
 
         ``structures`` selects which of feature/psm/pg/run/sample to emit. pg
         carries an interim unnormalized unique-peptide-sum intensity; ``pg_top``
@@ -551,7 +556,7 @@ class OpenMSConsensusConverter(BaseOrchestrator):  # pylint: disable=too-few-pub
         creator,
         pg_top,
         compression="zstd",
-        include_unassigned_psms=False,
+        include_unassigned_psms=True,
     ) -> dict:
         """feature/psm/pg via the in-memory pyopenms map (loaded once, iterated cheaply)."""
         from qpx.converters.openms_consensus.feature_adapter import feature_map_info, resolve_enzyme

@@ -111,6 +111,31 @@ Several fields in the PSM view use structures shared across other QPX views:
 - For details on `additional_scores` and score semantics, see [Scores](scores.md).
 - For details on `cv_params` usage and recommended terms, see [Scores & CV Terms](scores.md).
 
+!!! note "A null `feature_id` means no linked feature"
+    `feature_id` records a PSM's feature link in the exported dataset. A null
+    value means no link is recorded; it does not establish identification
+    quality or whether the precursor was quantified.
+
+    OpenMS unassigned PeptideIdentifications are retained by default to preserve
+    identification evidence. Some repeat evidence for a precursor linked through
+    another spectrum, while others have no detected or mapped feature. Also,
+    when only the PSM view is exported, **all `feature_id` values are null**, even
+    for identifications assigned to a consensus feature in the source.
+
+    The API filters the recorded links:
+
+    ```python
+    psm.with_feature()     # feature_id IS NOT NULL
+    psm.without_feature()  # feature_id IS NULL
+    ```
+
+    **A `psm` -> `feature` join is expected to be partial.** When both views are
+    present, join from `psm.with_feature()` on `feature_id`. The conversion option
+    `--no-include-unassigned-psms` excludes source unassigned identifications;
+    it does not populate feature links when the feature view is not exported.
+
+    The OpenMS consensus converter omits features without peptide hits.
+
 ## Example
 
 ### Basic PSM Record

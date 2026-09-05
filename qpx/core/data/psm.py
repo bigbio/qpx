@@ -23,3 +23,15 @@ class PSM(BaseStructure):
     def targets_only(self) -> "PSM":
         """Filter to target PSMs only (exclude decoys)."""
         return self.filter("is_decoy = false")
+
+    def with_feature(self) -> "PSM":
+        """Filter to PSMs with a populated ``feature_id``."""
+        return self.filter("feature_id IS NOT NULL")
+
+    def without_feature(self) -> "PSM":
+        """Filter to PSMs without a populated ``feature_id``.
+
+        A missing link does not establish whether the precursor was quantified.
+        OpenMS PSM-only exports also leave assigned PSMs' feature links null.
+        """
+        return self.filter("feature_id IS NULL")

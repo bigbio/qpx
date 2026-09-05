@@ -875,15 +875,15 @@ def convert_openms_cmd(**kwargs):
     help="PRIDE / ProteomeXchange accession (e.g. PXD001819)",
 )
 @click.option(
-    "--include-unassigned-psms",
-    is_flag=True,
-    default=False,
+    "--include-unassigned-psms/--no-include-unassigned-psms",
+    default=True,
+    show_default=True,
     help=(
-        "Also write identifications that are not linked to any consensus feature. "
-        "They are identified spectra but carry no quantification and their "
-        "feature_id is null, so a psm->feature join drops them anyway (41% of rows "
-        "on a real label-free dataset); they are omitted by default. Protein "
-        "inference always uses every identification either way."
+        "Keep unassigned peptide identifications by default to preserve identification "
+        "evidence. Use --no-include-unassigned-psms to exclude them. Feature links "
+        "are only written when both feature and PSM views are exported; a null "
+        "feature_id means no recorded link. Protein inference uses every "
+        "identification either way."
     ),
 )
 @click.option(
