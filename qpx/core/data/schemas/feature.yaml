@@ -107,15 +107,15 @@ fields:
   # Protein mapping
   pg_accessions:
     type: "list<pg_protein>"
-    doc: "Protein group accessions with optional peptide positions (start, end)"
+    doc: "Full membership of the peptide's protein group, with optional peptide positions (start, end). Null under the same conditions as anchor_protein."
   anchor_protein:
     type: string
     required: true
     nullable: true
-    doc: "Representative protein; null when no protein mapping was performed"
+    doc: "Representative protein of the peptide's protein group. Null when no protein mapping was performed, or when the peptide's protein evidence spans more than one inferred protein group (a shared peptide the producer did not assign); the feature's intensities are kept either way."
   unique:
     type: bool
-    doc: "Unique peptide indicator"
+    doc: "True when the peptide resolves to a protein group of exactly one protein, False when that group has several members. Null when the group is unresolved, including a shared peptide whose evidence spans more than one inferred group."
   pg_global_qvalue:
     type: float64
     optional: true

@@ -186,3 +186,104 @@ class TestPartitionedIntegrity:
 
         key = nested.relative_to(out).as_posix()
         assert f"Checksum mismatch: {key}" in result["errors"]
+
+
+def _data_file(ds, field: str) -> str:
+    """A recorded file that is not the dataset.parquet carrying the record.
+
+    verify_integrity deliberately skips that one, so keying a test on it
+    asserts nothing.
+    """
+    return next(k for k in ds.compute_integrity()[field] if k.endswith(".parquet") and ".dataset." not in k)
+
+
+def _seal(ds, mutate=None):
+    """Store a fresh integrity record in dataset.parquet and reopen it."""
+    integrity = ds.compute_integrity()
+    if mutate is not None:
+        mutate(integrity)
+    meta_dict = ds.dataset_meta.to_df().iloc[0].to_dict()
+    meta_dict.update(integrity)
+    ds.save_structure([meta_dict], "dataset", prefix="exp")
+    ds.refresh()
+    return integrity
+
+
+class TestVerifyChecksRecordedNumbers:
+    """file_row_counts and file_sizes_bytes were computed and stored but never read back.
+
+    verify_integrity compared checksums only, so the two other recorded fields
+    were decorative: a dataset whose row counts had drifted verified clean.
+    """
+
+    def test_detects_a_row_count_mismatch(self, dataset_dir):
+        import qpx
+
+        ds = qpx.open_dataset(str(dataset_dir))
+        target = _data_file(ds, "file_row_counts")
+        _seal(ds, lambda i: i["file_row_counts"].__setitem__(target, 999_999))
+
+        result = ds.verify_integrity()
+
+        assert any("Row count mismatch" in e and target in e for e in result["errors"])
+        ds.close()
+
+    def test_detects_a_size_mismatch(self, dataset_dir):
+        import qpx
+
+        ds = qpx.open_dataset(str(dataset_dir))
+        target = _data_file(ds, "file_sizes_bytes")
+        _seal(ds, lambda i: i["file_sizes_bytes"].__setitem__(target, 12))
+
+        result = ds.verify_integrity()
+
+        assert any("Size mismatch" in e and target in e for e in result["errors"])
+        ds.close()
+
+    def test_warns_instead_of_passing_on_the_unreadable_sentinel(self, dataset_dir):
+        """compute_integrity stores -1 when it cannot read a file's metadata.
+
+        Treating that as a verified row count is how an integrity record for an
+        unreadable file came back clean.
+        """
+        import qpx
+
+        ds = qpx.open_dataset(str(dataset_dir))
+        target = _data_file(ds, "file_row_counts")
+        _seal(ds, lambda i: i["file_row_counts"].__setitem__(target, -1))
+
+        result = ds.verify_integrity()
+
+        assert any("was not recorded" in w and target in w for w in result["warnings"])
+        assert not any("Row count mismatch" in e for e in result["errors"])
+        ds.close()
+
+
+class TestVerifyDetectsUnrecordedFiles:
+    def test_flags_a_file_missing_from_the_record(self, dataset_dir):
+        """Verification walked only the stored keys, so an added file passed clean."""
+        import shutil
+
+        import qpx
+
+        ds = qpx.open_dataset(str(dataset_dir))
+        _seal(ds)
+        source = next(p for p in dataset_dir.rglob("*.parquet") if "dataset" not in p.name)
+        shutil.copy(source, dataset_dir / "smuggled.parquet")
+
+        result = ds.verify_integrity()
+
+        assert any("not covered by the integrity record" in w and "smuggled" in w for w in result["warnings"])
+        ds.close()
+
+    def test_a_clean_dataset_reports_no_coverage_warnings(self, dataset_dir):
+        import qpx
+
+        ds = qpx.open_dataset(str(dataset_dir))
+        _seal(ds)
+
+        result = ds.verify_integrity()
+
+        assert not any("not covered" in w for w in result["warnings"])
+        assert len(result["errors"]) == 0
+        ds.close()

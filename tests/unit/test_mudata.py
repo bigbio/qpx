@@ -723,3 +723,137 @@ def test_protein_var_gene_names_serialise_when_every_gene_is_null(tmp_path):
         dataset.close()
 
     assert (tmp_path / "g.h5mu").exists()
+
+
+class TestCombineChunksOffsetOverflow:
+    """A string ChunkedArray over 2 GiB cannot be combined with int32 offsets.
+
+    MSV000085836 (TMT, 552 runs x 10 channels) hit this: the multiplexed
+    observation path combines run_file_name, which repeats a long filename once
+    per channel per precursor. build_mudata caught the error and returned a
+    MuData with no `precursors` modality, so the pipeline wrote a silently
+    incomplete h5mu and exited 0 (bigbio/qpx#316).
+    """
+
+    def test_widens_string_to_large_string(self):
+        import pyarrow as pa
+
+        from qpx.mudata import _combine_chunks
+
+        col = pa.chunked_array([pa.array(["a", "b"]), pa.array(["c"])])
+        combined = _combine_chunks(col)
+
+        assert combined.type == pa.large_string()
+        assert combined.to_pylist() == ["a", "b", "c"]
+
+    def test_widens_binary_to_large_binary(self):
+        import pyarrow as pa
+
+        from qpx.mudata import _combine_chunks
+
+        col = pa.chunked_array([pa.array([b"a"]), pa.array([b"b"])])
+
+        assert _combine_chunks(col).type == pa.large_binary()
+
+    def test_leaves_non_string_columns_alone(self):
+        import pyarrow as pa
+
+        from qpx.mudata import _combine_chunks
+
+        col = pa.chunked_array([pa.array([1, 2]), pa.array([3])])
+        combined = _combine_chunks(col)
+
+        assert combined.type == pa.int64()
+        assert combined.to_pylist() == [1, 2, 3]
+
+    def test_preserves_nulls(self):
+        import pyarrow as pa
+
+        from qpx.mudata import _combine_chunks
+
+        col = pa.chunked_array([pa.array(["a", None], type=pa.string()), pa.array([None], type=pa.string())])
+        combined = _combine_chunks(col)
+
+        assert combined.to_pylist() == ["a", None, None]
+
+    @pytest.mark.large_data
+    def test_combines_a_column_past_the_int32_offset_limit(self):
+        """The real failure. Allocates ~2.4 GB, so it is opt-in.
+
+        Run with: pytest -m large_data tests/unit/test_mudata.py
+        """
+        import pyarrow as pa
+
+        from qpx.mudata import _combine_chunks
+
+        value = "x" * (1 << 20)  # 1 MiB per value
+        chunk = pa.array([value] * 800)  # ~800 MiB per chunk
+        col = pa.chunked_array([chunk] * 3)  # 2.4 GB total > 2 GiB int32 limit
+
+        with pytest.raises(pa.ArrowInvalid, match="offset overflow"):
+            col.combine_chunks()
+
+        combined = _combine_chunks(col)
+
+        assert combined.type == pa.large_string()
+        assert len(combined) == 2400
+
+
+class TestFailedModalitiesAreReported:
+    """A modality that fails to build must leave a trace a caller can branch on.
+
+    _try_build_modality logs and continues, so a MuData missing `precursors`
+    looked identical to one that never had it. MSV000085836 shipped an h5mu with
+    proteins and no precursors, reported as success (bigbio/qpx#316).
+    """
+
+    def test_records_the_reason_a_modality_failed(self):
+        from qpx.mudata import _try_build_modality
+
+        mod, failures = {}, {}
+
+        def boom():
+            raise ValueError("offset overflow while concatenating arrays")
+
+        _try_build_modality("precursors", boom, mod, failures)
+
+        assert "precursors" not in mod
+        assert "precursors" in failures
+        assert "offset overflow" in failures["precursors"]
+        assert failures["precursors"].startswith("ValueError")
+
+    def test_records_nothing_when_the_build_succeeds(self):
+        from qpx.mudata import _try_build_modality
+
+        mod, failures = {}, {}
+        _try_build_modality("proteins", lambda: SimpleNamespace(n_obs=3), mod, failures)
+
+        assert "proteins" in mod
+        assert failures == {}
+
+    def test_an_empty_modality_is_not_a_failure(self):
+        """A view with no rows is skipped, but nothing went wrong — don't claim it did."""
+        from qpx.mudata import _try_build_modality
+
+        mod, failures = {}, {}
+        _try_build_modality("differential", lambda: SimpleNamespace(n_obs=0), mod, failures)
+
+        assert mod == {}
+        assert failures == {}
+
+    def test_failures_survive_the_h5mu_round_trip(self, tmp_path):
+        import anndata as ad
+        import mudata as mu
+
+        adata = ad.AnnData(
+            X=np.zeros((2, 2), dtype=np.float32),
+            var=pd.DataFrame(index=["v1", "v2"]),
+        )
+        mdata = mu.MuData({"proteins": adata})
+        mdata.uns["qpx_failed_modalities"] = {"precursors": "ArrowInvalid: offset overflow"}
+        path = tmp_path / "d.h5mu"
+        mdata.write(str(path))
+
+        reloaded = mu.read_h5mu(str(path))
+
+        assert reloaded.uns["qpx_failed_modalities"]["precursors"].startswith("ArrowInvalid")

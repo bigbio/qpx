@@ -22,8 +22,8 @@ from qpx.converters.openms_consensus.feature_adapter import (
     load_consensus_map,
 )
 from qpx.converters.openms_consensus.pg_adapter import (
-    accession_to_group,
     consensus_protein_groups_to_records,
+    protein_group_maps,
 )
 from qpx.converters.orchestrator import BaseOrchestrator
 from qpx.core.constants import FEATURE, ONTOLOGY, PG, PSM, RUN, SAMPLE
@@ -100,14 +100,14 @@ def _should_stream(path: str) -> bool:
         return False
 
 
-def _cf_feature_psm_records(cf, map_info, group_map, resolve_run, seen, *, want_feature, want_psm, enzyme=None):
+def _cf_feature_psm_records(cf, map_info, group_map, resolve_run, seen, *, want_feature, want_psm, enzyme=None, group_meta=None):
     """Feature + PSM records for one consensus feature, cross-linked when both views
     are emitted. Shared by the streaming and in-memory paths so their output matches.
     """
     from qpx.converters.openms_consensus.feature_adapter import feature_records_for_cf
     from qpx.converters.openms_consensus.psm_adapter import _cf_element_runs, psm_records_for_pid
 
-    cf_feats = feature_records_for_cf(cf, map_info, group_map, enzyme=enzyme) if want_feature else []
+    cf_feats = feature_records_for_cf(cf, map_info, group_map, enzyme=enzyme, group_meta=group_meta) if want_feature else []
     cf_psms: list[dict] = []
     if want_psm:
         # Multi-run isobaric PIDs carry a local id_merge_index; the feature's
@@ -148,6 +148,7 @@ def _stream_feature_psm(
     batch,
     include_unassigned_psms=True,
     enzyme=None,
+    group_meta=None,
 ):
     """One ordered element/unassigned pass: write feature/psm in batches and
     accumulate the pg maps in place (the streaming path's inner loop)."""
@@ -171,6 +172,7 @@ def _stream_feature_psm(
                 want_feature=fw is not None,
                 want_psm=pw is not None,
                 enzyme=enzyme,
+                group_meta=group_meta,
             )
             feat_buf.extend(cf_feats)
             psm_buf.extend(cf_psms)
@@ -222,7 +224,6 @@ def _convert_streaming(
     from qpx.converters.openms_consensus.feature_adapter import _run_stem, feature_map_info, resolve_enzyme
     from qpx.converters.openms_consensus.pg_adapter import (
         _ProteinMaps,
-        accession_to_group,
         build_pg_records,
     )
     from qpx.converters.openms_consensus.psm_adapter import _run_resolver
@@ -237,7 +238,7 @@ def _convert_streaming(
     headers = cm.getColumnHeaders()
     map_run = {i: _run_stem(headers[i].filename) for i in headers}
     want_feature, want_psm, want_pg = ("feature" in structures, "psm" in structures, "pg" in structures)
-    group_map = accession_to_group(cm) if want_feature else None
+    group_map, group_meta = protein_group_maps(cm) if want_feature else (None, None)
     resolve_run = _run_resolver(cm) if want_psm or want_pg else None
     maps = _ProteinMaps() if want_pg else None
     pep_intensity: dict = defaultdict(float) if want_pg else {}
@@ -278,6 +279,7 @@ def _convert_streaming(
             batch=100_000,
             include_unassigned_psms=include_unassigned_psms,
             enzyme=resolve_enzyme(cm, sdrf_path),
+            group_meta=group_meta,
         )
         if fw is not None:
             written["feature"] = out / f"{output_prefix}.feature.parquet"
@@ -575,7 +577,7 @@ class OpenMSConsensusConverter(BaseOrchestrator):  # pylint: disable=too-few-pub
             map_info = feature_map_info(cm)
             # Share the full protein-group membership so feature.anchor_protein and
             # feature.pg_accessions match pg (unambiguous even for shared leaders).
-            group_map = accession_to_group(cm) if want_feature else None
+            group_map, group_meta = protein_group_maps(cm) if want_feature else (None, None)
             resolve_run = _run_resolver(cm) if want_psm else None
             seen: set = set()
             enzyme = resolve_enzyme(cm, sdrf_path)
@@ -591,6 +593,7 @@ class OpenMSConsensusConverter(BaseOrchestrator):  # pylint: disable=too-few-pub
                     want_feature=want_feature,
                     want_psm=want_psm,
                     enzyme=enzyme,
+                    group_meta=group_meta,
                 )
                 feat_recs.extend(cf_feats)
                 psm_recs.extend(cf_psms)

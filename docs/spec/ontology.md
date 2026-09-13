@@ -198,7 +198,7 @@ Sample metadata fields map to biological ontologies. These mappings are critical
 | `anchor_protein` | anchor protein | `MS:1001591` | Representative protein of the protein group |
 | `pg_positions` | --- | --- | Peptide start/end positions in each protein |
 | `pg_global_qvalue` | protein-level global FDR | `MS:1001214` | Global q-value of the protein group |
-| `unique` | --- | --- | Unique peptide indicator |
+| `unique` | --- | --- | True for a single-protein group; null when the peptide's evidence spans more than one inferred group |
 | `gg_accessions` | --- | --- | Gene group identifiers |
 | `gg_names` | --- | --- | Gene group names |
 | `mass_error_ppm` | --- | --- | Mass error in ppm |

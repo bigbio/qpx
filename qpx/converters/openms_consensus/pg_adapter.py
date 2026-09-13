@@ -29,6 +29,7 @@ from qpx.converters.openms_consensus.feature_adapter import (
     load_consensus_map,
     to_proforma,
 )
+from qpx.converters.openms_consensus.protein_groups import ProteinGroupIndex, identification_identifier
 from qpx.converters.openms_consensus.psm_adapter import _run_resolver
 
 _GENE_RE = re.compile(r"GN=([^\s]+)")
@@ -186,15 +187,51 @@ def _merge_protein_ids(cm) -> tuple[dict[str, bool], dict[str, float], dict[str,
     return acc_decoy, acc_qvalue, acc_gene, groups
 
 
-def accession_to_group(cm) -> dict[str, list[str]]:
-    """Map each accession to its full protein-group membership (feature.pg_accessions).
+def _group_qvalue_and_genes(
+    accs, acc_qvalue: dict[str, float], acc_gene: dict[str, str]
+) -> tuple[float | None, list[str] | None]:
+    """A protein group's global q-value (best member) and gene names.
 
-    group[0] is still the leader (feature.anchor_protein). Sharing the whole
-    membership lets a feature stamp BOTH anchor_protein AND pg_accessions, so the
-    feature->pg join is unambiguous even when two distinct groups share a leader
-    (bigbio/qpx#266, cf. #240)."""
-    _, _, _, groups = _merge_protein_ids(cm)
-    return {acc: list(grp) for grp in groups for acc in grp}
+    The single definition behind both ``pg.global_qvalue``/``pg.gg_names`` and the
+    feature view's ``pg_global_qvalue``/``gg_names``, so the two views cannot
+    disagree about the same group.
+    """
+    qvals = [acc_qvalue[a] for a in accs if a in acc_qvalue]
+    genes = [acc_gene[a] for a in accs if a in acc_gene] or None
+    return (min(qvals) if qvals else None), genes
+
+
+def protein_group_maps(cm) -> tuple[ProteinGroupIndex, dict[tuple[str, ...], tuple[float | None, list[str] | None]]]:
+    """Group lookup by membership/source, plus group -> (global q-value, genes).
+
+    Both come from one ``_merge_protein_ids`` pass. The second map lets the
+    feature view carry the group's confidence and gene names: they were computed
+    here for pg and then discarded, leaving ``feature.pg_global_qvalue`` and
+    ``feature.gg_names`` null on every OpenMS dataset while pg had them for every
+    group (the DIA-NN converter fills both).
+    """
+    _, acc_qvalue, acc_gene, groups = _merge_protein_ids(cm)
+    group_map = ProteinGroupIndex.from_groups(groups)
+    groups_by_identification: dict[str, list[list[str]]] = defaultdict(list)
+    for prot in cm.getProteinIdentifications():
+        identifier = identification_identifier(prot)
+        if identifier:
+            groups_by_identification[identifier].extend(_build_groups(prot))
+    group_map.by_identification = {
+        identifier: ProteinGroupIndex.from_groups(source_groups) for identifier, source_groups in groups_by_identification.items()
+    }
+    group_meta = {tuple(grp): _group_qvalue_and_genes(grp, acc_qvalue, acc_gene) for grp in groups}
+    return group_map, group_meta
+
+
+def accession_to_group(cm) -> dict[str, list[str]]:
+    """Map unambiguous accessions to their full protein-group membership.
+
+    group[0] remains the producer's leader. For shared accessions and groups from
+    multiple identification runs, use the full index in ``protein_group_maps``.
+    """
+    group_map, _ = protein_group_maps(cm)
+    return group_map.unambiguous_accessions()
 
 
 def _map_info(cm) -> dict[int, tuple[str, str]]:
@@ -331,9 +368,7 @@ def build_pg_records(cm, map_info, m: _ProteinMaps, pep_intensity: dict, sdrf_pa
         n_feat_unique = sum(1 for ft in feats if m.feat_to_accs.get(ft, set()).issubset(group_accs))
         # Prefer the target_decoy meta; fall back to the accession prefix.
         is_decoy = all(acc_decoy.get(a, _is_decoy_accession(a)) for a in accs)
-        qvals = [acc_qvalue[a] for a in accs if a in acc_qvalue]
-        global_qvalue = min(qvals) if qvals else None
-        genes = [acc_gene[a] for a in accs if a in acc_gene] or None
+        global_qvalue, genes = _group_qvalue_and_genes(accs, acc_qvalue, acc_gene)
         # Only the quantification units where this group was actually identified
         # (its peptides appear in a run of that unit) — not every unit.
         group_runs: set[str] = set()

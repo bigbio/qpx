@@ -138,6 +138,11 @@ class _PeptideIdentification(_MetaMixin):
     def getHits(self):
         return self._hits
 
+    @property
+    def identifier(self):
+        """Source IdentificationRun ID, matching the streamed protein header."""
+        return self._meta.get("identification_run_ref", "")
+
     def getMZ(self):
         return self._mz
 
@@ -228,13 +233,19 @@ class _Group:
 
 
 class _ProteinIdentification:
-    __slots__ = ("_hits", "_groups", "_score_type", "_run_paths")
+    __slots__ = ("_hits", "_groups", "_score_type", "_run_paths", "_identifier")
 
-    def __init__(self, hits, groups, score_type, run_paths=None):
+    def __init__(self, hits, groups, score_type, run_paths=None, identifier=""):
         self._hits = hits
         self._groups = groups
         self._score_type = score_type
         self._run_paths = run_paths or []
+        self._identifier = identifier
+
+    @property
+    def identifier(self):
+        """Source IdentificationRun ID referenced by peptide identifications."""
+        return self._identifier
 
     def getHits(self):
         return self._hits
@@ -271,8 +282,8 @@ def _parse_peptide_id(pid_el, ph_to_acc: dict[str, str]) -> _PeptideIdentificati
     mz = float(a["MZ"]) if a.get("MZ") not in (None, "") else 0.0
     rt = float(a["RT"]) if a.get("RT") not in (None, "") else 0.0
     higher = a.get("higher_score_better", "false").lower() == "true"
-    # Only the map_index / id_merge_index metas are read off a PID by the adapters.
     meta = _user_params(pid_el)
+    meta["identification_run_ref"] = a.get("identification_run_ref", "")
     return _PeptideIdentification(hits, mz, rt, a.get("spectrum_reference", ""), a.get("score_type", ""), higher, meta)
 
 
@@ -329,6 +340,7 @@ class StreamingConsensusMap:
         ph_hits: list[_ProteinHit] = []
         ph_meta: dict[str, str] = {}  # ProteinIdentification-level UserParams (groups live here)
         prot_score_type = ""
+        identifier = ""
         for event, el in iterparse(self._path, events=("start", "end")):
             tag = _localname(el.tag)
             if event == "end" and tag == "map":
@@ -341,6 +353,8 @@ class StreamingConsensusMap:
                 if enzyme and not self._enzyme:
                     self._enzyme = enzyme
                 el.clear()
+            elif event == "start" and tag == "IdentificationRun":
+                identifier = el.attrib.get("id", "")
             elif event == "start" and tag == "ProteinIdentification":
                 ph_hits = []
                 ph_meta = {}
@@ -358,7 +372,9 @@ class StreamingConsensusMap:
                 # "score,PH_a,PH_b,...". Collect them before the element clears.
                 ph_meta = _user_params(el)
                 self._prots.append(
-                    _ProteinIdentification(ph_hits, self._build_groups(ph_meta), prot_score_type, _parse_spectra_data(ph_meta))
+                    _ProteinIdentification(
+                        ph_hits, self._build_groups(ph_meta), prot_score_type, _parse_spectra_data(ph_meta), identifier
+                    )
                 )
                 el.clear()
                 # do NOT stop: the <mapList> comes after the IdentificationRun.

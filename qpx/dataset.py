@@ -39,6 +39,93 @@ if TYPE_CHECKING:
 _log = logging.getLogger(__name__)
 
 
+def _verify_one_file(
+    fpath: Path,
+    name: str,
+    expected_sha: str,
+    expected_size: int | None,
+    expected_rows: int | None,
+) -> tuple[list[str], list[str]]:
+    """Check one recorded file's size, checksum and row count.
+
+    Returns ``(errors, warnings)``.
+    """
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    if expected_size is not None:
+        actual_size = fpath.stat().st_size
+        if actual_size != expected_size:
+            # Cheap and decisive: a size change is a content change, and
+            # reporting it by name beats a bare checksum mismatch.
+            errors.append(f"Size mismatch: {name} ({actual_size} != {expected_size})")
+
+    if _sha256_file(fpath) != expected_sha:
+        errors.append(f"Checksum mismatch: {name}")
+
+    if expected_rows is None:
+        return errors, warnings
+    if expected_rows < 0:
+        # The -1 sentinel compute_integrity stores for a file whose metadata it
+        # could not read. Never silently treat it as a verified count.
+        warnings.append(f"Row count was not recorded for {name}; it could not be read at packaging time")
+        return errors, warnings
+
+    actual_rows = _row_count(fpath)
+    if actual_rows is None:
+        warnings.append(f"Could not read a row count for {name}")
+    elif actual_rows != expected_rows:
+        errors.append(f"Row count mismatch: {name} ({actual_rows} != {expected_rows})")
+    return errors, warnings
+
+
+def _as_int(value) -> int | None:
+    """Coerce a stored integrity number to int, or None if it is not one.
+
+    Integrity dicts come back through pandas, so the values are often numpy
+    integers and ``isinstance(value, int)`` is False for them — type-testing
+    here silently skipped every comparison.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _row_count(path: Path) -> int | None:
+    """Row count of a Parquet or AnnData file, or None when it cannot be read."""
+    try:
+        if path.suffix == ".h5ad":
+            import anndata
+
+            return int(anndata.read_h5ad(path, backed="r").n_obs)
+        import pyarrow.parquet as pq
+
+        return int(pq.read_metadata(path).num_rows)
+    # pylint: disable-next=broad-exception-caught
+    except Exception as exc:  # noqa: BLE001 - verification must not raise on a bad file
+        _log.debug("Could not read a row count for %s: %s", path, exc)
+        return None
+
+
+def _sha256_file(path: Path) -> str:
+    """SHA-256 of a file, read in chunks.
+
+    Never ``read_bytes()`` here: these are Parquet views, and a feature table
+    routinely runs to gigabytes (PXD017199's is 1.66 GB, and a large DIA report
+    is far bigger). Slurping one to hash it allocates the whole file.
+    """
+    import hashlib
+
+    sha = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(65536), b""):
+            sha.update(chunk)
+    return sha.hexdigest()
+
+
 class Dataset:
     """
     A QPX dataset — a directory of related Parquet/H5AD files.
@@ -1090,7 +1177,6 @@ class Dataset:
             file_row_counts, file_sizes_bytes, total_structures, packaged_at).
         """
         self._require_local("compute_integrity")
-        import hashlib
         from datetime import datetime, timezone
 
         import pyarrow.parquet as pq
@@ -1105,30 +1191,29 @@ class Dataset:
         for f in sorted(path.rglob("*.parquet")):
             name = f.relative_to(path).as_posix()
             sizes[name] = f.stat().st_size
-            sha = hashlib.sha256()
-            with open(f, "rb") as fh:
-                for chunk in iter(lambda: fh.read(65536), b""):
-                    sha.update(chunk)
-            checksums[name] = sha.hexdigest()
+            checksums[name] = _sha256_file(f)
             try:
                 row_counts[name] = pq.read_metadata(f).num_rows
-            except Exception:
+            # pylint: disable-next=broad-exception-caught
+            except Exception as exc:  # noqa: BLE001 - one bad file must not abort the whole record
+                # -1 is the "could not be read" sentinel. Record it, but say so:
+                # storing it silently produced an integrity record that looked
+                # complete for a file whose metadata was unreadable.
+                _log.warning("Could not read Parquet metadata for %s: %s", name, exc)
                 row_counts[name] = -1
 
         # H5AD files (AnnData from downstream tools)
         for f in sorted(path.rglob("*.h5ad")):
             name = f.relative_to(path).as_posix()
             sizes[name] = f.stat().st_size
-            sha = hashlib.sha256()
-            with open(f, "rb") as fh:
-                for chunk in iter(lambda: fh.read(65536), b""):
-                    sha.update(chunk)
-            checksums[name] = sha.hexdigest()
+            checksums[name] = _sha256_file(f)
             try:
                 import anndata
 
                 row_counts[name] = anndata.read_h5ad(f, backed="r").n_obs
-            except Exception:
+            # pylint: disable-next=broad-exception-caught
+            except Exception as exc:  # noqa: BLE001 - one bad file must not abort the whole record
+                _log.warning("Could not read AnnData obs count for %s: %s", name, exc)
                 row_counts[name] = -1
 
         return {
@@ -1150,9 +1235,8 @@ class Dataset:
         dict[str, list[str]]
             Dict with 'errors' and 'warnings' lists.
         """
-        import hashlib
-
         errors, warnings = [], []
+        verified: set[Path] = set()
         if self._is_s3:
             warnings.append("Integrity verification is not supported for S3-backed datasets.")
             return {"errors": errors, "warnings": warnings}
@@ -1169,6 +1253,13 @@ class Dataset:
         if not isinstance(stored_checksums, dict):
             warnings.append("file_checksums is null")
             return {"errors": errors, "warnings": warnings}
+
+        def _stored(field: str) -> dict:
+            value = meta_df[field].iloc[0] if field in meta_df.columns else None
+            return value if isinstance(value, dict) else {}
+
+        stored_row_counts = _stored("file_row_counts")
+        stored_sizes = _stored("file_sizes_bytes")
 
         # Skip only the metadata file carrying this integrity record: nested
         # *.dataset.parquet files are ordinary recorded inputs and must verify.
@@ -1189,9 +1280,26 @@ class Dataset:
             if not fpath.exists():
                 errors.append(f"Missing file: {name}")
                 continue
-            actual_sha = hashlib.sha256(fpath.read_bytes()).hexdigest()
-            if actual_sha != expected_sha:
-                errors.append(f"Checksum mismatch: {name}")
+            verified.add(fpath)
+
+            file_errors, file_warnings = _verify_one_file(
+                fpath,
+                name,
+                expected_sha,
+                _as_int(stored_sizes.get(name)),
+                _as_int(stored_row_counts.get(name)),
+            )
+            errors.extend(file_errors)
+            warnings.extend(file_warnings)
+
+        # Files present but absent from the record. Verification that only walks
+        # the stored keys can answer "are the recorded files intact?" but never
+        # "is anything here that should not be?", so an added file passed clean.
+        for actual in sorted(path.rglob("*.parquet")) + sorted(path.rglob("*.h5ad")):
+            resolved = actual.resolve()
+            if resolved == dataset_meta_path or resolved in verified:
+                continue
+            warnings.append(f"File not covered by the integrity record: {actual.relative_to(path).as_posix()}")
 
         return {"errors": errors, "warnings": warnings}
 

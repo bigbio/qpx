@@ -16,6 +16,7 @@ import re
 from typing import Optional
 
 from qpx.converters.channel_labels import normalize_label
+from qpx.converters.openms_consensus.protein_groups import ProteinGroupIndex, identification_identifier
 from qpx.core.cleavage import count_missed_cleavages
 from qpx.core.files import run_file_stem as _run_stem
 
@@ -450,7 +451,9 @@ def _group_subfeatures_by_run(cf, map_info: dict[int, tuple[str, str]]) -> dict[
     return by_run
 
 
-def consensus_features_to_records(consensusxml_path: str | None = None, cm=None, group_map=None, sdrf_path=None) -> list[dict]:
+def consensus_features_to_records(
+    consensusxml_path: str | None = None, cm=None, group_map=None, sdrf_path=None, group_meta=None
+) -> list[dict]:
     """Return QPX feature record dicts extracted from a consensusXML.
 
     Pass either ``consensusxml_path`` (loaded here) or an already-loaded ``cm``.
@@ -458,22 +461,22 @@ def consensus_features_to_records(consensusxml_path: str | None = None, cm=None,
     ``missed_cleavages``; without it the enzyme falls back to the consensusXML
     ``SearchParameters``.
 
-    ``group_map`` (accession -> full protein-group membership, from
-    ``pg_adapter.accession_to_group``) makes each feature stamp BOTH the same
-    group leader the pg view uses as ``anchor_protein`` AND the full
-    ``pg_accessions`` membership, so the feature->pg join is unambiguous even
-    when two distinct groups share a leader; without it the anchor falls back to
-    the peptide's first protein evidence and ``pg_accessions`` is null.
+    ``group_map`` accepts the index from ``pg_adapter.protein_group_maps`` or a
+    legacy accession -> membership dict. Resolved groups carry the pg view's
+    leader and full membership; unresolved groups and annotations stay null.
+    Without a group, a sole protein evidence may still supply the anchor.
     """
     cm = cm if cm is not None else load_consensus_map(consensusxml_path)
     map_info = feature_map_info(cm)
+    if isinstance(group_map, dict):
+        group_map = ProteinGroupIndex.from_groups(group_map.values())
     # Resolve the enzyme once, as the converter does, so this public entry point
     # reports missed_cleavages too. Without it a caller of the library API got a
     # null column while the same data through the CLI got a value.
     enzyme = resolve_enzyme(cm, sdrf_path)
     records: list[dict] = []
     for cf in cm:
-        records.extend(feature_records_for_cf(cf, map_info, group_map, enzyme=enzyme))
+        records.extend(feature_records_for_cf(cf, map_info, group_map, enzyme=enzyme, group_meta=group_meta))
     return records
 
 
@@ -487,7 +490,43 @@ def feature_map_info(cm) -> dict[int, tuple[str, str]]:
     return {idx: (_run_stem(headers[idx].filename), _map_label(headers[idx].label)) for idx in headers}
 
 
-def feature_records_for_cf(cf, map_info: dict[int, tuple[str, str]], group_map=None, enzyme=None) -> list[dict]:
+def _protein_group_fields(pid, group_map, group_meta) -> dict:
+    """Attach metadata only after resolving the identification's protein group."""
+    accessions = {ev.getProteinAccession() for ev in pid.getHits()[0].getPeptideEvidences()}
+    accessions = {acc.decode() if isinstance(acc, bytes) else acc for acc in accessions if acc}
+    if isinstance(group_map, dict):
+        group_map = ProteinGroupIndex.from_groups(group_map.values())
+    group = group_map.resolve(accessions, identification_identifier(pid)) if group_map is not None else None
+    qvalue, genes = (group_meta or {}).get(group, (None, None)) if group else (None, None)
+    return {
+        "anchor_protein": group[0] if group else (next(iter(accessions)) if len(accessions) == 1 else None),
+        "pg_accessions": [{"accession": a, "start": None, "end": None, "pre": None, "post": None} for a in group]
+        if group
+        else None,
+        "unique": len(group) == 1 if group else None,
+        "pg_global_qvalue": qvalue,
+        "gg_accessions": genes,
+        "gg_names": genes,
+    }
+
+
+def _protein_groups_by_run(pids, map_info, cf_runs, group_map, group_meta) -> dict[str, dict]:
+    """Use each run's own identification; conflicting assignments stay unknown."""
+    by_run: dict[str, dict] = {}
+    sequence = pids[0].getHits()[0].getSequence()
+    for pid in pids:
+        hits = pid.getHits()
+        run = _pid_run(pid, map_info, cf_runs)
+        if run is None or not hits:
+            continue
+        fields = _protein_group_fields(pid, group_map, group_meta)
+        if hits[0].getSequence() != sequence:
+            fields = dict.fromkeys(fields)
+        by_run[run] = dict.fromkeys(fields) if run in by_run and by_run[run] != fields else fields
+    return by_run
+
+
+def feature_records_for_cf(cf, map_info: dict[int, tuple[str, str]], group_map=None, enzyme=None, group_meta=None) -> list[dict]:
     """Feature records for one consensus feature (one per run, channels as intensities).
 
     ``pg_accessions`` carries the full protein-group membership; the feature->pg
@@ -515,22 +554,10 @@ def feature_records_for_cf(cf, map_info: dict[int, tuple[str, str]], group_map=N
     streamed_consensus_rt = getattr(cf, "consensus_rt", None)
     consensus_rt = float(cf.getRT() if streamed_consensus_rt is None else streamed_consensus_rt)
     calculated_mz = float(seq_obj.getMZ(charge)) if charge else observed_mz
-    evidences = hit.getPeptideEvidences()
-    orig = evidences[0].getProteinAccession() if evidences else None
-    if isinstance(orig, bytes):
-        orig = orig.decode()
-    # Resolve to the full protein-group membership so feature.anchor_protein AND
-    # feature.pg_accessions match the pg view (peptide evidence order alone does
-    # not identify the leader, nor the group when leaders are shared). Keep the
-    # group in the order _merge_protein_ids/_build_groups produced so pg_accessions
-    # lines up row-for-row with the pg view's pg_accessions for that group.
-    group = group_map.get(orig) if (group_map and orig is not None) else None
-    anchor_protein = group[0] if group else orig
-    pg_accessions = [{"accession": a, "start": None, "end": None, "pre": None, "post": None} for a in group] if group else None
-    # A peptide is unique when its resolved group holds exactly one protein.
-    # With no resolved group the answer is unknown: a lone peptide evidence is
-    # not proof of uniqueness, and claiming True there would invent information.
-    unique = (len(group) == 1) if group else None
+    protein_fields = _protein_group_fields(pids[0], group_map, group_meta)
+    protein_fields_by_run = _protein_groups_by_run(pids, map_info, cf_runs, group_map, group_meta)
+    if any(fields != protein_fields for fields in protein_fields_by_run.values()):
+        protein_fields = dict.fromkeys(protein_fields)
     error_ppm = mass_error_ppm(calculated_mz, observed_mz) if charge > 0 else None
     # Missed cleavages are a property of the peptide and the search enzyme, both
     # of which are in hand; the DIA-NN path already reports them (bigbio/qpx#300).
@@ -557,10 +584,8 @@ def feature_records_for_cf(cf, map_info: dict[int, tuple[str, str]], group_map=N
                 "observed_mz": observed_mz,
                 "mass_error_ppm": error_ppm,
                 "missed_cleavages": missed,
-                "unique": unique,
                 "consensus_rt": consensus_rt,
-                "anchor_protein": anchor_protein,
-                "pg_accessions": pg_accessions,
+                **protein_fields_by_run.get(run, protein_fields),
                 "additional_scores": additional_scores,
             }
         )
