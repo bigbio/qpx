@@ -724,6 +724,12 @@ def _reshape_de_results(de: pd.DataFrame):
 # ---------------------------------------------------------------------------
 
 
+def _available_quant_modalities(dataset: Dataset) -> set[str]:
+    """Return quantification modalities with registered QPX source structures."""
+    sources = {"precursors": dataset.feature, "proteins": dataset.pg}
+    return {name for name, structure in sources.items() if structure is not None}
+
+
 def _try_build_modality(name: str, builder, mod: dict, failures: dict[str, str] | None = None) -> None:
     """Call *builder*, add the result to *mod* if non-empty.
 
@@ -843,7 +849,7 @@ def build_mudata(
             raise ValueError(f"Unknown modalities: {unknown}. Valid: {sorted(_VALID_MODALITIES)}")
         requested = set(modalities)
     else:
-        requested = _VALID_MODALITIES.copy()
+        requested = _available_quant_modalities(dataset) | {"expression", "differential"}
 
     feat_label_field = _detect_label_field(engine, "feature")
     pg_label_field = _detect_label_field(engine, "pg")
@@ -920,14 +926,7 @@ def write_dataset_mudata(
 
         dataset = Dataset(str(output_folder), file_prefix=prefix)
         try:
-            required_modalities = {
-                name
-                for name, structure in (
-                    ("precursors", dataset.feature),
-                    ("proteins", dataset.pg),
-                )
-                if structure is not None
-            }
+            required_modalities = _available_quant_modalities(dataset)
             if not required_modalities:
                 logger.info("Skipping muData for %s: no feature or pg quantification data", prefix)
                 return None

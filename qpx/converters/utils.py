@@ -38,6 +38,27 @@ def parse_uniprot_id(entry: str) -> tuple[str, str]:
     return entry, entry
 
 
+def uniprot_entry_name(entry: str) -> Optional[str]:
+    """The entry name of a ``db|ACCESSION|NAME`` id, or None when it has none.
+
+    Unlike :func:`parse_uniprot_id`, a bare accession does not double as its own
+    name: ``pg_names`` should be null rather than repeat ``pg_accessions``.
+    """
+    parts = str(entry).split("|")
+    return parts[2] if len(parts) >= 3 and parts[2] else None
+
+
+def is_contaminant_accession(accession) -> bool:
+    """True for a contaminant protein, by the ``CONTAM`` accession marker.
+
+    The quantms/sdrf-pipelines contaminant database prefixes its entries
+    ``CONTAM_`` (``sp|CONTAM_P19001|CONTAM_K1C19_MOUSE``). One rule shared by the
+    converters, so the same protein is not a contaminant in one and unflagged in
+    another (bigbio/qpx#300).
+    """
+    return "CONTAM" in str(accession).upper()
+
+
 def strip_uniprot_prefix(accession: str) -> str:
     """Strip a leading ``sp|``/``tr|`` UniProt db prefix, returning the accession.
 

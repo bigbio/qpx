@@ -30,6 +30,7 @@ from qpx.converters.openms_consensus.feature_adapter import (
 from qpx.converters.openms_consensus.feature_adapter import (
     pep_of as _pep_of,
 )
+from qpx.converters.utils import safe_float
 from qpx.core.cleavage import count_missed_cleavages
 
 _log = logging.getLogger(__name__)
@@ -228,7 +229,7 @@ def _psm_additional_scores(primary, hits, score, score_type, score_is_qvalue, hi
     for other in hits:
         if other is primary:
             continue
-        other_score = float(other.getScore()) if other.getScore() is not None else None
+        other_score = safe_float(other.getScore())
         if other_score is not None:
             base = "q-value" if score_is_qvalue else (score_type or "search_score")
             _append_unique_score(additional_scores, base, other_score, higher_better)
@@ -303,7 +304,7 @@ def psm_records_for_pid(pid, resolve_run, seen: set[tuple], cf_runs=None, enzyme
         calc_mz = float(seq_obj.getMZ(charge)) if charge > 0 else None
         is_decoy = primary.metaValueExists("target_decoy") and "decoy" in str(primary.getMetaValue("target_decoy")).lower()
         pep = _pep_of(primary)
-        score = float(primary.getScore()) if primary.getScore() is not None else None
+        score = safe_float(primary.getScore())
         additional_scores, site_scores = _psm_additional_scores(primary, hits, score, score_type, score_is_qvalue, higher_better)
         modifications = to_modifications(seq_obj, site_scores)
         records.append(

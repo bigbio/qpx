@@ -81,6 +81,35 @@ def test_qvalue_of_returns_none_without_a_score():
     assert qvalue_of(_scored_hit(score=None), "q-value") is None
 
 
+@pytest.mark.parametrize(("score", "expected"), [(None, None), ("", None), ("0", 0.0), ("0.125", 0.125)])
+def test_streaming_missing_scores_are_not_zero(tmp_path, score, expected):
+    """A native hit's default zero must not turn missing confidence into zero FDR."""
+    root = fromstring(_TMT_CONSENSUSXML)
+    for identification in root.findall(".//ProteinIdentification") + root.findall(".//PeptideIdentification"):
+        identification.set("score_type", "q-value")
+    for hit in root.findall(".//ProteinHit") + root.findall(".//PeptideHit"):
+        if score is None:
+            del hit.attrib["score"]
+        else:
+            hit.set("score", score)
+    source = tmp_path / "scores.consensusXML"
+    ET.ElementTree(root).write(source, encoding="utf-8", xml_declaration=True)
+    written = OpenMSConsensusConverter().convert(
+        str(source), str(tmp_path / "out"), structures=("feature", "psm", "pg"), streaming=True
+    )
+
+    for view, field in (("feature", "peptide_qvalue"), ("pg", "global_qvalue")):
+        rows = pq.read_table(written[view]).to_pylist()
+        assert rows
+        assert all(row[field] == expected for row in rows)
+    psms = pq.read_table(written["psm"]).to_pylist()
+    assert psms
+    scores = [
+        score["score_value"] for row in psms for score in row["additional_scores"] or [] if score["score_name"] == "q-value"
+    ]
+    assert scores == ([expected] * len(psms) if expected is not None else [])
+
+
 def test_mass_error_ppm_is_computed_from_the_two_mz_values():
     """mass_error_ppm is derived when both m/z inputs are present."""
     assert mass_error_ppm(456.5589294433594, 456.5606994628906) == pytest.approx(3.876, abs=1e-2)
@@ -299,10 +328,29 @@ def _separate_identification_groups_xml(reverse_identifications=False):
 
 @pytest.mark.parametrize("streaming", [False, True])
 @pytest.mark.parametrize("reverse_identifications", [False, True])
-def test_feature_group_uses_its_runs_identification(tmp_path, streaming, reverse_identifications):
+@pytest.mark.parametrize("merge_index", [False, True])
+def test_feature_group_uses_its_runs_identification(tmp_path, streaming, reverse_identifications, merge_index):
     """Each run resolves its group from its own source identification."""
+    root = fromstring(_separate_identification_groups_xml(reverse_identifications))
+    if merge_index:
+        indices = {}
+        for index, identification in enumerate(root.findall("IdentificationRun")):
+            identifier = identification.get("id")
+            indices[identifier] = str(index)
+            run = "run_01" if identifier == "PI_0" else "run_02"
+            ET.SubElement(
+                identification.find("ProteinIdentification"),
+                "UserParam",
+                type="stringList",
+                name="spectra_data",
+                value=f"[{run}.mzML]",
+            )
+        for pid in root.findall(".//PeptideIdentification"):
+            mapping = pid.find("UserParam[@name='map_index']")
+            mapping.set("name", "id_merge_index")
+            mapping.set("value", indices[pid.get("identification_run_ref")])
     cx = tmp_path / "separate_identifications.consensusXML"
-    cx.write_text(_separate_identification_groups_xml(reverse_identifications))
+    cx.write_text(ET.tostring(root, encoding="unicode"))
     written = OpenMSConsensusConverter().convert(
         str(cx), str(tmp_path / "out"), output_prefix="t", structures=("feature", "pg"), streaming=streaming
     )
@@ -342,3 +390,46 @@ def test_sequence_conflict_clears_run_protein_fields(tmp_path, streaming, add_ma
         assert features["run_02"][field] is None, field
     for run, intensity in (("run_01", 1000.0), ("run_02", 3000.0)):
         assert features[run]["intensities"][0]["intensity"] == intensity
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+def test_pg_names_come_from_uniprot_entry_names(tmp_path, streaming):
+    """pg.pg_names was null on every OpenMS dataset although the accessions carry
+    the entry name (``sp|ACC|NAME``); DIA-NN fills it (bigbio/qpx#300)."""
+    import duckdb
+
+    from tests.converters.test_openms_consensus import _SHARED_LEADER_CONSENSUSXML
+
+    xml = _SHARED_LEADER_CONSENSUSXML
+    for acc, full in (("A", "sp|P11111|AAA_HUMAN"), ("B", "sp|P22222|BBB_HUMAN"), ("C", "sp|P33333|CCC_HUMAN")):
+        xml = xml.replace(f'accession="{acc}"', f'accession="{full}"')
+    cx = tmp_path / "named.consensusXML"
+    cx.write_text(xml)
+    written = OpenMSConsensusConverter().convert(
+        str(cx), str(tmp_path / ("stream" if streaming else "mem")), output_prefix="t", structures=("pg",), streaming=streaming
+    )
+
+    names = {
+        tuple(sorted(accs)): name_list
+        for accs, name_list in duckdb.connect()
+        .execute("SELECT DISTINCT pg_accessions, pg_names FROM read_parquet($1)", [str(written["pg"])])
+        .fetchall()
+    }
+    assert names[("sp|P11111|AAA_HUMAN", "sp|P22222|BBB_HUMAN")] in (["AAA_HUMAN", "BBB_HUMAN"], ["BBB_HUMAN", "AAA_HUMAN"])
+    assert names[("sp|P11111|AAA_HUMAN", "sp|P33333|CCC_HUMAN")] in (["AAA_HUMAN", "CCC_HUMAN"], ["CCC_HUMAN", "AAA_HUMAN"])
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+def test_pg_names_stay_null_for_bare_accessions(tmp_path, streaming):
+    """A bare accession has no entry name; pg_names must not echo pg_accessions."""
+    import duckdb
+
+    from tests.converters.test_openms_consensus import _SHARED_LEADER_CONSENSUSXML
+
+    cx = tmp_path / "bare.consensusXML"
+    cx.write_text(_SHARED_LEADER_CONSENSUSXML)
+    written = OpenMSConsensusConverter().convert(
+        str(cx), str(tmp_path / ("stream" if streaming else "mem")), output_prefix="t", structures=("pg",), streaming=streaming
+    )
+
+    assert duckdb.connect().execute("SELECT count(pg_names) FROM read_parquet($1)", [str(written["pg"])]).fetchone()[0] == 0

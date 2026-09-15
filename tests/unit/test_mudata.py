@@ -807,6 +807,35 @@ class TestFailedModalitiesAreReported:
     proteins and no precursors, reported as success (bigbio/qpx#316).
     """
 
+    @pytest.mark.parametrize("modalities", [None, ["precursors", "proteins"]], ids=["default", "explicit"])
+    @pytest.mark.parametrize(
+        ("missing_structure", "remaining_modality", "missing_modality"),
+        [("feature", "proteins", "precursors"), ("pg", "precursors", "proteins")],
+    )
+    def test_absent_sources_fail_only_when_explicitly_requested(
+        self, dataset_dir, modalities, missing_structure, remaining_modality, missing_modality
+    ):
+        (dataset_dir / f"exp.{missing_structure}.parquet").unlink()
+
+        with Dataset(dataset_dir, duckdb_threads=24) as dataset:
+            mdata = build_mudata(dataset, modalities=modalities)
+
+        assert set(mdata.mod) == {remaining_modality}
+        expected_failures = {missing_modality} if modalities is not None else set()
+        assert set(mdata.uns["qpx_failed_modalities"]) == expected_failures
+
+    def test_default_build_records_failure_of_an_available_modality(self, dataset_dir, monkeypatch):
+        def fail(*_args, **_kwargs):
+            raise ValueError("Cannot build the available feature data")
+
+        monkeypatch.setattr("qpx.mudata._build_precursor_adata", fail)
+
+        with Dataset(dataset_dir, duckdb_threads=24) as dataset:
+            mdata = build_mudata(dataset)
+
+        assert set(mdata.mod) == {"proteins"}
+        assert mdata.uns["qpx_failed_modalities"] == {"precursors": "ValueError: Cannot build the available feature data"}
+
     def test_records_the_reason_a_modality_failed(self):
         from qpx.mudata import _try_build_modality
 

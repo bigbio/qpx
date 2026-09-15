@@ -17,6 +17,7 @@ from typing import Optional
 
 from qpx.converters.channel_labels import normalize_label
 from qpx.converters.openms_consensus.protein_groups import ProteinGroupIndex, identification_identifier
+from qpx.converters.utils import safe_float
 from qpx.core.cleavage import count_missed_cleavages
 from qpx.core.files import run_file_stem as _run_stem
 
@@ -144,8 +145,7 @@ def qvalue_of(hit, score_type: str) -> float | None:
     """
     if str(score_type or "").lower() not in _QVALUE_SCORE_TYPES:
         return None
-    score = hit.getScore()
-    return float(score) if score is not None else None
+    return safe_float(hit.getScore())
 
 
 def _canonical_channel(label: Optional[str]) -> str:
@@ -376,8 +376,10 @@ def _pid_scans(pid) -> list[int]:
     return _scan_of(ref)
 
 
-def _pid_run(pid, map_info: dict[int, tuple[str, str]], cf_runs: Optional[set[str]] = None) -> str | None:
+def _pid_run(pid, map_info: dict[int, tuple[str, str]], cf_runs: Optional[set[str]] = None, resolve_run=None) -> str | None:
     """Resolve one identification to the run that produced it."""
+    if resolve_run is not None:
+        return resolve_run(pid, cf_runs)
     pid_run = None
     if pid.metaValueExists("map_index"):
         pid_run = map_info.get(int(pid.getMetaValue("map_index")), (None, None))[0]
@@ -390,23 +392,21 @@ def _pid_run(pid, map_info: dict[int, tuple[str, str]], cf_runs: Optional[set[st
     return pid_run
 
 
-def _scan_by_run(pids, map_info: dict[int, tuple[str, str]], cf_runs: Optional[set[str]] = None) -> dict[str, list[int]]:
+def _scan_by_run(
+    pids, map_info: dict[int, tuple[str, str]], cf_runs: Optional[set[str]] = None, resolve_run=None
+) -> dict[str, list[int]]:
     """Attribute each identification's scan(s) to its own run.
 
-    A consensus feature links spectra from several runs, so scans are resolved
-    per ID via its ``map_index`` (falling back to the sole run only when every
-    map is the same physical run, e.g. isobaric channels) rather than copying
-    one ID's scan onto every run's record. In a multi-run isobaric consensusXML
-    the PID carries only a local ``id_merge_index`` (no global ``map_index``); the
-    caller's ``cf_runs`` (the feature's positive-intensity element runs) then
-    attributes the scan — each such feature lives in a single run.
+    The shared PSM resolver handles map indices, single-run features and merged
+    run order from ``spectra_data``. Without it, only ``map_index`` or a sole
+    feature/map run can establish the origin.
     """
     scan_by_run: dict[str, list[int]] = {}
     for pid in pids:
         scans = _pid_scans(pid)
         if not scans:
             continue
-        pid_run = _pid_run(pid, map_info, cf_runs)
+        pid_run = _pid_run(pid, map_info, cf_runs, resolve_run)
         if pid_run is not None:
             run_scans = scan_by_run.setdefault(pid_run, [])
             run_scans.extend(scan for scan in scans if scan not in run_scans)
@@ -417,12 +417,13 @@ def _confidence_by_run(
     pids,
     map_info: dict[int, tuple[str, str]],
     cf_runs: Optional[set[str]] = None,
+    resolve_run=None,
 ) -> dict[str, tuple[float | None, float | None]]:
     """Return the first identification's PEP and q-value for each run."""
     confidence_by_run: dict[str, tuple[float | None, float | None]] = {}
     for pid in pids:
         hits = pid.getHits()
-        pid_run = _pid_run(pid, map_info, cf_runs)
+        pid_run = _pid_run(pid, map_info, cf_runs, resolve_run)
         if not hits or pid_run is None or pid_run in confidence_by_run:
             continue
         hit = hits[0]
@@ -474,9 +475,14 @@ def consensus_features_to_records(
     # reports missed_cleavages too. Without it a caller of the library API got a
     # null column while the same data through the CLI got a value.
     enzyme = resolve_enzyme(cm, sdrf_path)
+    from qpx.converters.openms_consensus.psm_adapter import _run_resolver
+
+    resolve_run = _run_resolver(cm)
     records: list[dict] = []
     for cf in cm:
-        records.extend(feature_records_for_cf(cf, map_info, group_map, enzyme=enzyme, group_meta=group_meta))
+        records.extend(
+            feature_records_for_cf(cf, map_info, group_map, enzyme=enzyme, group_meta=group_meta, resolve_run=resolve_run)
+        )
     return records
 
 
@@ -510,13 +516,13 @@ def _protein_group_fields(pid, group_map, group_meta) -> dict:
     }
 
 
-def _protein_groups_by_run(pids, map_info, cf_runs, group_map, group_meta) -> dict[str, dict]:
+def _protein_groups_by_run(pids, map_info, cf_runs, group_map, group_meta, resolve_run=None) -> dict[str, dict]:
     """Use each run's own identification; conflicting assignments stay unknown."""
     by_run: dict[str, dict] = {}
     sequence = pids[0].getHits()[0].getSequence()
     for pid in pids:
         hits = pid.getHits()
-        run = _pid_run(pid, map_info, cf_runs)
+        run = _pid_run(pid, map_info, cf_runs, resolve_run)
         if run is None or not hits:
             continue
         fields = _protein_group_fields(pid, group_map, group_meta)
@@ -526,7 +532,66 @@ def _protein_groups_by_run(pids, map_info, cf_runs, group_map, group_meta) -> di
     return by_run
 
 
-def feature_records_for_cf(cf, map_info: dict[int, tuple[str, str]], group_map=None, enzyme=None, group_meta=None) -> list[dict]:
+def _peptide_positions(hit) -> set[tuple[str, int, int]]:
+    """Preserve observed peptide-to-protein mappings in QPX's 1-based coordinates."""
+    positions: set[tuple[str, int, int]] = set()
+    for evidence in hit.getPeptideEvidences():
+        accession = evidence.getProteinAccession()
+        accession = accession.decode() if isinstance(accession, bytes) else accession
+        start, end = evidence.getStart(), evidence.getEnd()
+        if accession and 0 <= start <= end:
+            positions.add((accession, start + 1, end + 1))
+    return positions
+
+
+def _feature_evidence_by_run(pids, map_info, cf_runs, resolve_run):
+    """Collect evidence once per consensus feature, including unresolved source runs."""
+    sequence = pids[0].getHits()[0].getSequence()
+    by_run: dict[str, dict] = {}
+    all_positions: set[tuple[str, int, int]] = set()
+    for pid in pids:
+        hits = pid.getHits()
+        if not hits:
+            continue
+        matches = hits[0].getSequence() == sequence
+        positions = _peptide_positions(hits[0]) if matches else set()
+        all_positions.update(positions)
+        run = _pid_run(pid, map_info, cf_runs, resolve_run)
+        if run is not None:
+            evidence = by_run.setdefault(run, {"consistent": True, "has_spectrum": False, "positions": set()})
+            evidence["consistent"] = evidence["consistent"] and matches
+            evidence["has_spectrum"] = evidence["has_spectrum"] or bool(_pid_scans(pid))
+            evidence["positions"].update(positions)
+    return by_run, all_positions
+
+
+def _feature_identification_fields(run, protein_fields, evidence_by_run, all_positions) -> dict:
+    """Record direct identification origins and the peptide's protein positions.
+
+    A resolved group keeps positions on its own members. A peptide whose evidence
+    spans several inferred groups has no group (assigning one would be a guess),
+    but its coordinates on each evidence protein are recorded facts, and every
+    ``pg_positions`` entry names its own protein — so they are all kept rather
+    than dropped with the group.
+    """
+    evidence = evidence_by_run.get(run, {"consistent": False, "has_spectrum": False, "positions": all_positions})
+    if run in evidence_by_run and not evidence["consistent"]:
+        return {"id_run_file_name": None, "pg_positions": None}
+    members = {entry["accession"] for entry in protein_fields.get("pg_accessions") or []}
+    positions = [
+        {"protein_accession": acc, "start": start, "end": end}
+        for acc, start, end in sorted(evidence["positions"])
+        if not members or acc in members
+    ]
+    return {
+        "id_run_file_name": run if evidence["consistent"] and evidence["has_spectrum"] else None,
+        "pg_positions": positions or None,
+    }
+
+
+def feature_records_for_cf(
+    cf, map_info: dict[int, tuple[str, str]], group_map=None, enzyme=None, group_meta=None, resolve_run=None
+) -> list[dict]:
     """Feature records for one consensus feature (one per run, channels as intensities).
 
     ``pg_accessions`` carries the full protein-group membership; the feature->pg
@@ -538,8 +603,9 @@ def feature_records_for_cf(cf, map_info: dict[int, tuple[str, str]], group_map=N
         return []
     by_run = _group_subfeatures_by_run(cf, map_info)
     cf_runs = set(by_run)
-    scan_by_run = _scan_by_run(pids, map_info, cf_runs=cf_runs)
-    confidence_by_run = _confidence_by_run(pids, map_info, cf_runs=cf_runs)
+    scan_by_run = _scan_by_run(pids, map_info, cf_runs=cf_runs, resolve_run=resolve_run)
+    confidence_by_run = _confidence_by_run(pids, map_info, cf_runs=cf_runs, resolve_run=resolve_run)
+    evidence_by_run, all_positions = _feature_evidence_by_run(pids, map_info, cf_runs, resolve_run)
     hit = pids[0].getHits()[0]
     seq_obj = hit.getSequence()
     peptidoform = to_proforma(seq_obj)
@@ -555,7 +621,7 @@ def feature_records_for_cf(cf, map_info: dict[int, tuple[str, str]], group_map=N
     consensus_rt = float(cf.getRT() if streamed_consensus_rt is None else streamed_consensus_rt)
     calculated_mz = float(seq_obj.getMZ(charge)) if charge else observed_mz
     protein_fields = _protein_group_fields(pids[0], group_map, group_meta)
-    protein_fields_by_run = _protein_groups_by_run(pids, map_info, cf_runs, group_map, group_meta)
+    protein_fields_by_run = _protein_groups_by_run(pids, map_info, cf_runs, group_map, group_meta, resolve_run=resolve_run)
     if any(fields != protein_fields for fields in protein_fields_by_run.values()):
         protein_fields = dict.fromkeys(protein_fields)
     error_ppm = mass_error_ppm(calculated_mz, observed_mz) if charge > 0 else None
@@ -567,6 +633,7 @@ def feature_records_for_cf(cf, map_info: dict[int, tuple[str, str]], group_map=N
     for run, entry in by_run.items():
         intensities = [{"label": label, "intensity": inten} for label, inten in entry["labels"].items()]
         posterior_error_probability, peptide_qvalue = confidence_by_run.get(run, (None, None))
+        run_protein_fields = protein_fields_by_run.get(run, protein_fields)
         records.append(
             {
                 "sequence": sequence,
@@ -585,7 +652,8 @@ def feature_records_for_cf(cf, map_info: dict[int, tuple[str, str]], group_map=N
                 "mass_error_ppm": error_ppm,
                 "missed_cleavages": missed,
                 "consensus_rt": consensus_rt,
-                **protein_fields_by_run.get(run, protein_fields),
+                **run_protein_fields,
+                **_feature_identification_fields(run, run_protein_fields, evidence_by_run, all_positions),
                 "additional_scores": additional_scores,
             }
         )

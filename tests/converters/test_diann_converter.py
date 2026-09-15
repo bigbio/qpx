@@ -349,6 +349,34 @@ def test_plexdia_pg_preserves_each_channel_quantity(tmp_path):
     }
 
 
+@pytest.mark.parametrize("fallback_channel", ["L", "H"])
+def test_plexdia_pg_quantification_method_matches_each_channel(tmp_path, fallback_channel):
+    """A channel using MaxLFQ must not change another channel's quantity source."""
+    from qpx.converters.diann.pg_adapter import DiannPgAdapter
+
+    report_path, matrix_path, sdrf_path = _write_plexdia_inputs(tmp_path)
+    report = pd.read_csv(report_path, sep="\t")
+    report.loc[report["Channel"] == fallback_channel, "PG.Quantity"] = float("nan")
+    report.to_csv(report_path, sep="\t", index=False)
+    output_path = tmp_path / "mixed.pg.parquet"
+    with DiannPgAdapter() as adapter:
+        adapter.convert(
+            diann_report=str(report_path),
+            pg_matrix_path=str(matrix_path),
+            output_path=str(output_path),
+            sdrf_path=str(sdrf_path),
+        )
+
+    rows = pq.read_table(output_path).to_pylist()
+    expected_intensities = {"L": 1000.0, "H": 2000.0}
+    expected_intensities[fallback_channel] = {"L": 900.0, "H": 1800.0}[fallback_channel]
+    assert len(rows) == 2
+    assert {row["label"]: row["intensity"] for row in rows} == expected_intensities
+    for row in rows:
+        method = "PG.MaxLFQ" if row["label"] == fallback_channel else "PG.Quantity"
+        assert row["cv_params"] == [{"cv_name": "quantification_method", "cv_value": method}]
+
+
 def test_diann_pg_inconsistent_annotations_do_not_split_group(tmp_path):
     """One protein group with inconsistent per-precursor name/gene annotations
     must produce a single unique pg record, not duplicate-identity rows.
@@ -1300,3 +1328,127 @@ def test_feature_pg_softlink_real_small_dataset(tmp_path_factory):
     with open_converted(out, prefix="d") as ds:
         _feat, _pg, link = assert_softlink_valid(ds)
     assert link, "expected at least some computed feature->pg softlink edges"
+
+
+def _diann_row(**overrides) -> dict:
+    row = {
+        "Run": "run_A",
+        "Protein.Group": "P1",
+        "Protein.Names": "N1",
+        "Genes": "G1",
+        "Stripped.Sequence": "PEPTIDEK",
+        "Precursor.Id": "PEPTIDEK2",
+        "Precursor.Charge": 2,
+        "Proteotypic": 1,
+        "Precursor.Quantity": 100.0,
+        "PG.Quantity": 1000.0,
+        "Q.Value": 0.002,
+        "PG.Q.Value": 0.002,
+        "Global.PG.Q.Value": 0.003,
+        "GG.Q.Value": 0.004,
+    }
+    row.update(overrides)
+    return row
+
+
+def test_diann_pg_flags_contaminants_like_the_openms_path(tmp_path):
+    """pg.contaminant was hard-coded None for DIA-NN (bigbio/qpx#300).
+
+    PXD017199 carries 176 CONTAM_ protein groups, all unflagged, while the
+    OpenMS converter flags the same accessions. Both now share one rule.
+    """
+    group = "sp|CONTAM_P19001|CONTAM_K1C19_MOUSE"
+    rows = [_diann_row(**{"Protein.Group": group, "Protein.Names": "CONTAM_K1C19_MOUSE"})]
+    matrix = [{"Protein.Group": group, "Protein.Names": "CONTAM_K1C19_MOUSE", "Genes": "G1", "run_A": 900.0}]
+
+    out = _pg_rows_single_run(tmp_path, rows, matrix_rows=matrix)
+
+    assert out[0]["contaminant"] is True
+
+
+def test_diann_pg_target_protein_is_not_a_contaminant(tmp_path):
+    out = _pg_rows_single_run(tmp_path, [_diann_row()])
+
+    assert out[0]["contaminant"] is False
+
+
+def test_diann_pg_records_which_quantity_became_the_intensity(tmp_path):
+    """pg.cv_params was hard-coded None; OpenMS stamps quantification_method (#300)."""
+    out = _pg_rows_single_run(tmp_path, [_diann_row()])
+
+    assert out[0]["intensity"] == 1000.0
+    assert out[0]["cv_params"] == [{"cv_name": "quantification_method", "cv_value": "PG.Quantity"}]
+
+
+def test_diann_pg_quantification_method_names_the_maxlfq_fallback(tmp_path):
+    """Reports without PG.Quantity fall back to MaxLFQ, and must say so."""
+    row = _diann_row(**{"PG.MaxLFQ": 700.0})
+    del row["PG.Quantity"]
+    matrix = [{"Protein.Group": "P1", "Protein.Names": "N1", "Genes": "G1", "run_A": 700.0}]
+
+    out = _pg_rows_single_run(tmp_path, [row], matrix_rows=matrix)
+
+    assert out[0]["intensity"] == 700.0
+    assert out[0]["cv_params"] == [{"cv_name": "quantification_method", "cv_value": "PG.MaxLFQ"}]
+
+
+def test_protein_properties_from_fasta_on_bare_diann_accessions(converted_output, tmp_path):
+    """DIA-NN reports bare accessions (``P12345``) and no protein sequence at all.
+
+    A FASTA keyed ``sp|P12345|NAME`` must still reach them. Proteins left out of
+    the FASTA (as DIA-NN's internal decoys always are) stay null and are reported.
+    """
+    import duckdb
+    from click.testing import CliRunner
+
+    from qpx.cli.transform import transform
+
+    feature = converted_output / "diann_test.feature.parquet"
+    if not (converted_output / "diann_test.pg.parquet").exists():
+        pytest.skip("pg.parquet was not produced")
+    groups = (
+        duckdb.connect()
+        .execute(
+            "SELECT a, list(DISTINCT sequence) FROM (SELECT sequence, unnest(list_transform(pg_accessions, x -> x.accession)) a "
+            "FROM read_parquet($1) WHERE NOT is_decoy) GROUP BY a ORDER BY a",
+            [str(feature)],
+        )
+        .fetchall()
+    )
+    assert len(groups) >= 2, "fixture needs at least two proteins"
+    withheld = groups[0][0]
+    linker = "WWWWW"  # never inside a tryptic peptide here, so each peptide occurs once
+    records = []
+    for accession, peptides in groups[1:]:
+        records.append(f">sp|{accession}|{accession}_HUMAN\nM{linker}{linker.join(sorted(peptides))}{linker}\n")
+    fasta = tmp_path / "search.fasta"
+    fasta.write_text("".join(records))
+
+    out = tmp_path / "annotated"
+    result = CliRunner().invoke(
+        transform,
+        ["protein-properties", "--dataset", str(converted_output), "--fasta", str(fasta), "--output-folder", str(out)],
+    )
+    assert result.exit_code == 0, result.output
+
+    con = duckdb.connect()
+    pg = dict(
+        con.execute(
+            "SELECT anchor_protein, any_value(molecular_weight) FROM read_parquet($1) WHERE NOT is_decoy GROUP BY 1",
+            [str(out / "diann_test.pg.parquet")],
+        ).fetchall()
+    )
+    assert pg[withheld] is None
+    assert all(pg[accession] is not None for accession, _ in groups[1:] if accession in pg)
+    assert withheld in result.output
+
+    bad = con.execute(
+        "SELECT count(*) FROM (SELECT sequence, unnest(pg_positions) p FROM read_parquet($1) WHERE pg_positions IS NOT NULL) "
+        'WHERE p."end" - p.start + 1 <> length(sequence)',
+        [str(out / "diann_test.feature.parquet")],
+    ).fetchone()[0]
+    filled = con.execute(
+        "SELECT count(*) FROM read_parquet($1) WHERE pg_positions IS NOT NULL", [str(out / "diann_test.feature.parquet")]
+    ).fetchone()[0]
+    assert filled > 0
+    assert bad == 0

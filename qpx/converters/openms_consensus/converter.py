@@ -26,7 +26,7 @@ from qpx.converters.openms_consensus.pg_adapter import (
     protein_group_maps,
 )
 from qpx.converters.orchestrator import BaseOrchestrator
-from qpx.core.constants import FEATURE, ONTOLOGY, PG, PSM, RUN, SAMPLE
+from qpx.core.constants import DATASET, FEATURE, ONTOLOGY, PG, PROVENANCE, PSM, RUN, SAMPLE
 from qpx.core.data import FeatureSchema
 from qpx.core.data.identity import derive_id
 from qpx.writers.feature import FeatureWriter
@@ -107,7 +107,11 @@ def _cf_feature_psm_records(cf, map_info, group_map, resolve_run, seen, *, want_
     from qpx.converters.openms_consensus.feature_adapter import feature_records_for_cf
     from qpx.converters.openms_consensus.psm_adapter import _cf_element_runs, psm_records_for_pid
 
-    cf_feats = feature_records_for_cf(cf, map_info, group_map, enzyme=enzyme, group_meta=group_meta) if want_feature else []
+    cf_feats = (
+        feature_records_for_cf(cf, map_info, group_map, enzyme=enzyme, group_meta=group_meta, resolve_run=resolve_run)
+        if want_feature
+        else []
+    )
     cf_psms: list[dict] = []
     if want_psm:
         # Multi-run isobaric PIDs carry a local id_merge_index; the feature's
@@ -123,7 +127,7 @@ def _cf_feature_psm_records(cf, map_info, group_map, resolve_run, seen, *, want_
 
 
 def _write_view(writer_cls, path, records, *, creator, compression, identity_composite=None):
-    """Write ``records`` to a view parquet via its writer (empty -> header only)."""
+    """Write records via a view writer; empty input does not create a file."""
     kwargs = {"creator": creator, "compression": compression}
     if identity_composite is not None:
         kwargs["identity_composite"] = identity_composite
@@ -149,9 +153,9 @@ def _stream_feature_psm(
     include_unassigned_psms=True,
     enzyme=None,
     group_meta=None,
-):
+) -> int:
     """One ordered element/unassigned pass: write feature/psm in batches and
-    accumulate the pg maps in place (the streaming path's inner loop)."""
+    accumulate the pg maps in place. Return the number of emitted feature records."""
     from qpx.converters.openms_consensus.pg_adapter import (
         accumulate_cf_intensity,
         accumulate_cf_maps,
@@ -161,6 +165,7 @@ def _stream_feature_psm(
 
     feat_buf: list[dict] = []
     psm_buf: list[dict] = []
+    feature_count = 0
     for kind, obj in cm.iter_all():
         if kind == "element":
             cf_feats, cf_psms = _cf_feature_psm_records(
@@ -175,6 +180,7 @@ def _stream_feature_psm(
                 group_meta=group_meta,
             )
             feat_buf.extend(cf_feats)
+            feature_count += len(cf_feats)
             psm_buf.extend(cf_psms)
             if maps is not None:
                 accumulate_cf_maps(obj, map_run, maps)
@@ -198,6 +204,7 @@ def _stream_feature_psm(
         fw.write_batch(feat_buf)
     if pw is not None and psm_buf:
         pw.write_batch(psm_buf)
+    return feature_count
 
 
 def _convert_streaming(
@@ -239,7 +246,7 @@ def _convert_streaming(
     map_run = {i: _run_stem(headers[i].filename) for i in headers}
     want_feature, want_psm, want_pg = ("feature" in structures, "psm" in structures, "pg" in structures)
     group_map, group_meta = protein_group_maps(cm) if want_feature else (None, None)
-    resolve_run = _run_resolver(cm) if want_psm or want_pg else None
+    resolve_run = _run_resolver(cm)
     maps = _ProteinMaps() if want_pg else None
     pep_intensity: dict = defaultdict(float) if want_pg else {}
     seen: set = set()
@@ -265,7 +272,7 @@ def _convert_streaming(
                     compression=compression,
                 )
             )
-        _stream_feature_psm(
+        feature_count = _stream_feature_psm(
             cm,
             fw,
             pw,
@@ -281,16 +288,17 @@ def _convert_streaming(
             enzyme=resolve_enzyme(cm, sdrf_path),
             group_meta=group_meta,
         )
-        if fw is not None:
+        if fw is not None and feature_count:
             written["feature"] = out / f"{output_prefix}.feature.parquet"
-        if pw is not None:
+        if pw is not None and seen:
             written["psm"] = out / f"{output_prefix}.psm.parquet"
 
     if want_pg:
         records = build_pg_records(cm, map_info, maps, pep_intensity, sdrf_path, pg_top)
-        written["pg"] = _write_view(
-            PgWriter, out / f"{output_prefix}.pg.parquet", records, creator=creator, compression=compression
-        )
+        if records:
+            written["pg"] = _write_view(
+                PgWriter, out / f"{output_prefix}.pg.parquet", records, creator=creator, compression=compression
+            )
     return written
 
 
@@ -367,6 +375,14 @@ def _write_sdrf_metadata(
     return {name: paths[name] for name in metadata}, run_ontology
 
 
+def _remove_orphaned_metadata(output_folder: Path, output_prefix: str) -> None:
+    """Remove metadata after an empty rerun only if no same-prefix data remains."""
+    if any((output_folder / f"{output_prefix}.{view}.parquet").is_file() for view in _STRUCTURE_ALL):
+        return
+    for view in (DATASET, ONTOLOGY, PROVENANCE):
+        (output_folder / f"{output_prefix}.{view}.parquet").unlink(missing_ok=True)
+
+
 class OpenMSConsensusConverter(BaseOrchestrator):  # pylint: disable=too-few-public-methods
     """consensusXML + SDRF -> QPX views.
 
@@ -394,6 +410,14 @@ class OpenMSConsensusConverter(BaseOrchestrator):  # pylint: disable=too-few-pub
         unassigned PeptideIdentifications from the source reach ``psm.parquet``.
         They are retained to preserve identification evidence; pass ``False``
         to exclude them.
+
+        Requested feature/PSM/PG views with no exportable records are skipped
+        with a warning and excluded from output metadata. After successful core
+        conversion, remove any existing file for each skipped view and this
+        output prefix so Dataset cannot discover stale records. Other requested
+        views are still exported; an entirely empty export returns an empty dict.
+        When no same-prefix core or run/sample views remain, their orphaned
+        ontology/provenance/dataset metadata is also removed.
 
         ``feature_id`` records a link in the exported dataset, not quantification
         status. It is only populated when both feature and PSM views are emitted;
@@ -461,6 +485,11 @@ class OpenMSConsensusConverter(BaseOrchestrator):  # pylint: disable=too-few-pub
                     )
                 )
 
+        for view in (FEATURE, PSM, PG):
+            if view in requested and view not in written:
+                (out / f"{output_prefix}.{view}.parquet").unlink(missing_ok=True)
+                _log.warning("No exportable %s records; skipping %s Parquet output.", view.upper(), view.upper())
+
         sdrf_paths, run_ontology = _write_sdrf_metadata(out, output_prefix, sdrf_path, requested, compression)
         written.update(sdrf_paths)
 
@@ -469,6 +498,8 @@ class OpenMSConsensusConverter(BaseOrchestrator):  # pylint: disable=too-few-pub
         # ontology entries only materialise when a PSI-MS term resolves.
         if written:
             self._write_metadata(out, output_prefix, written, consensusxml_path, run_ontology, requested, project_accession)
+        else:
+            _remove_orphaned_metadata(out, output_prefix)
 
         return written
 
@@ -504,7 +535,7 @@ class OpenMSConsensusConverter(BaseOrchestrator):  # pylint: disable=too-few-pub
                 ontology_entries.extend(score_ontology_entries(names, view=view))  # noqa: PERF401
         self._write_ontology(out, output_prefix, ontology_entries)
 
-        structures = sorted(requested & {PSM, FEATURE, PG, RUN, SAMPLE})
+        structures = sorted(requested.intersection(written, {PSM, FEATURE, PG, RUN, SAMPLE}))
         provenance_records = self._build_provenance(structures, consensusxml_path)
         self._write_provenance(out, output_prefix, provenance_records)
         if provenance_records:
@@ -578,7 +609,7 @@ class OpenMSConsensusConverter(BaseOrchestrator):  # pylint: disable=too-few-pub
             # Share the full protein-group membership so feature.anchor_protein and
             # feature.pg_accessions match pg (unambiguous even for shared leaders).
             group_map, group_meta = protein_group_maps(cm) if want_feature else (None, None)
-            resolve_run = _run_resolver(cm) if want_psm else None
+            resolve_run = _run_resolver(cm)
             seen: set = set()
             enzyme = resolve_enzyme(cm, sdrf_path)
             feat_recs: list[dict] = []
@@ -600,7 +631,7 @@ class OpenMSConsensusConverter(BaseOrchestrator):  # pylint: disable=too-few-pub
             if want_psm and include_unassigned_psms:
                 for pid in cm.getUnassignedPeptideIdentifications():
                     psm_recs.extend(psm_records_for_pid(pid, resolve_run, seen, enzyme=enzyme))
-            if want_feature:
+            if feat_recs:
                 written["feature"] = _write_view(
                     FeatureWriter,
                     out / f"{output_prefix}.feature.parquet",
@@ -609,7 +640,7 @@ class OpenMSConsensusConverter(BaseOrchestrator):  # pylint: disable=too-few-pub
                     compression=compression,
                     identity_composite=_FEATURE_IDENTITY_COMPOSITE,
                 )
-            if want_psm:
+            if want_psm and psm_recs:
                 written["psm"] = _write_view(
                     PsmWriter,
                     out / f"{output_prefix}.psm.parquet",
@@ -620,7 +651,8 @@ class OpenMSConsensusConverter(BaseOrchestrator):  # pylint: disable=too-few-pub
                 )
         if "pg" in structures:
             recs = consensus_protein_groups_to_records(sdrf_path=sdrf_path, cm=cm, top=pg_top)
-            written["pg"] = _write_view(
-                PgWriter, out / f"{output_prefix}.pg.parquet", recs, creator=creator, compression=compression
-            )
+            if recs:
+                written["pg"] = _write_view(
+                    PgWriter, out / f"{output_prefix}.pg.parquet", recs, creator=creator, compression=compression
+                )
         return written

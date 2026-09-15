@@ -21,6 +21,7 @@ modification handling is byte-identical.
 from __future__ import annotations
 
 import numpy as np
+import pyopenms as oms
 from defusedxml.ElementTree import iterparse
 
 
@@ -86,41 +87,6 @@ class _MetaMixin:
 
     def getMetaValue(self, key: str):
         return self._meta.get(key)
-
-
-class _Evidence:
-    __slots__ = ("_acc",)
-
-    def __init__(self, acc: str):
-        self._acc = acc
-
-    def getProteinAccession(self) -> str:
-        return self._acc
-
-
-class _PeptideHit(_MetaMixin):
-    __slots__ = ("_seq", "_charge", "_accs", "_meta", "_score")
-
-    def __init__(self, seq: str, charge: int, accs: list[str], meta: dict[str, str], score: float):
-        self._seq = seq
-        self._charge = charge
-        self._accs = accs
-        self._meta = meta
-        self._score = score
-
-    def getSequence(self):
-        import pyopenms as oms
-
-        return oms.AASequence.fromString(self._seq)
-
-    def getCharge(self) -> int:
-        return self._charge
-
-    def getScore(self):
-        return self._score
-
-    def getPeptideEvidences(self) -> list[_Evidence]:
-        return [_Evidence(a) for a in self._accs]
 
 
 class _PeptideIdentification(_MetaMixin):
@@ -205,26 +171,6 @@ class _ConsensusFeature:
         return self._pids
 
 
-class _ProteinHit(_MetaMixin):
-    __slots__ = ("_acc", "_score", "_desc", "_meta")
-
-    def __init__(self, acc, score, desc, meta):
-        self._acc = acc
-        self._score = score
-        self._desc = desc
-        self._meta = meta
-
-    def getAccession(self):
-        return self._acc
-
-    def getScore(self):
-        return self._score
-
-    def getDescription(self):
-        # pyopenms exposes the FASTA header via the "Description" UserParam.
-        return self._meta.get("Description", self._desc)
-
-
 class _Group:
     __slots__ = ("accessions",)
 
@@ -267,13 +213,50 @@ class _ProteinIdentification:
 # ---------------------------------------------------------------------------
 
 
-def _parse_peptide_hit(hit_el, ph_to_acc: dict[str, str]) -> _PeptideHit:
-    meta = _user_params(hit_el)
+def _parse_hit_score(attrs: dict[str, str]) -> float:
+    """Use NaN for absent scores; adapters normalize it to None, not zero."""
+    return _f32(attrs.get("score") or "nan")
+
+
+def _parse_protein_hit(element) -> oms.ProteinHit:
+    attrs = element.attrib
+    hit = oms.ProteinHit()
+    hit.setAccession(attrs.get("accession", ""))
+    hit.setScore(_parse_hit_score(attrs))
+    hit.setDescription(attrs.get("description", ""))
+    hit.setCoverage(float(attrs.get("coverage", "-1")))
+    hit.setSequence(attrs.get("sequence", ""))
+    for key, value in _user_params(element).items():
+        hit.setMetaValue(key, value)
+    return hit
+
+
+def _parse_peptide_evidences(hit_el, ph_to_acc: dict[str, str]) -> list[oms.PeptideEvidence]:
+    """Keep the parallel protein-reference and coordinate lists aligned."""
     refs = hit_el.attrib.get("protein_refs", "").split()
-    accs = [ph_to_acc[r] for r in refs if r in ph_to_acc]
-    charge = int(hit_el.attrib.get("charge") or 0)
-    score = _f32(hit_el.attrib["score"]) if hit_el.attrib.get("score") not in (None, "") else None
-    return _PeptideHit(hit_el.attrib.get("sequence", ""), charge, accs, meta, score)
+    starts = [int(value) for value in hit_el.attrib.get("start", "").split()]
+    ends = [int(value) for value in hit_el.attrib.get("end", "").split()]
+    evidences = []
+    for index, ref in enumerate(refs):
+        if ref not in ph_to_acc:
+            continue
+        evidence = oms.PeptideEvidence()
+        evidence.setProteinAccession(ph_to_acc[ref])
+        evidence.setStart(starts[index] if index < len(starts) else -1)
+        evidence.setEnd(ends[index] if index < len(ends) else -1)
+        evidences.append(evidence)
+    return evidences
+
+
+def _parse_peptide_hit(hit_el, ph_to_acc: dict[str, str]) -> oms.PeptideHit:
+    hit = oms.PeptideHit()
+    hit.setSequence(oms.AASequence.fromString(hit_el.attrib.get("sequence", "")))
+    hit.setCharge(int(hit_el.attrib.get("charge") or 0))
+    hit.setScore(_parse_hit_score(hit_el.attrib))
+    hit.setPeptideEvidences(_parse_peptide_evidences(hit_el, ph_to_acc))
+    for key, value in _user_params(hit_el).items():
+        hit.setMetaValue(key, value)
+    return hit
 
 
 def _parse_peptide_id(pid_el, ph_to_acc: dict[str, str]) -> _PeptideIdentification:
@@ -337,7 +320,7 @@ class StreamingConsensusMap:
     # -- header (proteins + maps), parsed once --------------------------------
 
     def _parse_header(self) -> None:
-        ph_hits: list[_ProteinHit] = []
+        ph_hits: list[oms.ProteinHit] = []
         ph_meta: dict[str, str] = {}  # ProteinIdentification-level UserParams (groups live here)
         prot_score_type = ""
         identifier = ""
@@ -363,8 +346,7 @@ class StreamingConsensusMap:
                 acc = el.attrib.get("accession", "")
                 phid = el.attrib.get("id", "")
                 self._ph_to_acc[phid] = acc
-                score = _f32(el.attrib["score"]) if el.attrib.get("score") not in (None, "") else None
-                ph_hits.append(_ProteinHit(acc, score, el.attrib.get("description", ""), _user_params(el)))
+                ph_hits.append(_parse_protein_hit(el))
                 el.clear()
             elif event == "end" and tag == "ProteinIdentification":
                 # The indistinguishable groups are ProteinIdentification-level

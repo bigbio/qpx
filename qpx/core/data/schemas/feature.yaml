@@ -123,7 +123,7 @@ fields:
   pg_positions:
     type: "list<protein_position>"
     optional: true
-    doc: "Peptide positions"
+    doc: "One-based peptide positions, one entry per protein occurrence: on the members of the resolved protein group, or on every evidence protein when the peptide is shared across groups and pg_accessions is null."
 
   # Ion mobility window
   ion_mobility_start:

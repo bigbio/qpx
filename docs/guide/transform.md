@@ -103,6 +103,7 @@ The `transform` command group provides tools for processing and transforming QPX
 ## Available Commands
 
 - [gene-map](#gene-map) - Map genes from FASTA
+- [protein-properties](#protein-properties) - Fill protein coverage, molecular weight and peptide positions from an optional FASTA
 - [normalize-accessions](#normalize-accessions) - Normalize protein accession formats (full ↔ bare)
 - [update-metadata](#update-metadata) - Update sample/run metadata from a revised SDRF
 - [quantify](#quantify) - Protein quantification via mokume (DirectLFQ, MaxLFQ, iBAQ, TopN, etc.)
@@ -174,6 +175,52 @@ to write an annotated copy and leave the source dataset untouched.
 - Use the same FASTA the search used, so every identified protein can be mapped
 - Gene names come from the `GN=` field of the FASTA headers; entries without it stay unmapped
 - Enable verbose mode for debugging
+
+---
+
+## protein-properties
+
+### Description {#protein-properties-description}
+
+Fills protein properties a producer did not record, from the FASTA used for the search. DIA-NN never reports protein sequences, and some consensusXML files carry protein hits without them. For **target rows only**, and **only where the value is null**:
+
+| Field | Computed as |
+| --- | --- |
+| `pg.molecular_weight` | Average mass of the anchor protein's sequence, in kDa (same definition as the OpenMS consensusXML converter) |
+| `pg.sequence_coverage` | Percent of the anchor covered by the dataset's target peptides whose evidence names it: PSM `protein_accessions`, feature group membership, recorded positions |
+| `feature.pg_positions` | Every one-based occurrence of the peptide in each member of its protein group |
+
+A value the producer recorded is never overwritten. The FASTA is optional: proteins absent from it — DIA-NN's internal decoys, contaminants from another database, isoforms not in the file — keep a null value and are counted in the report. FASTA decoy entries (`DECOY_`, `REV_`, ...) are skipped so they cannot collide with a target's accession. The step is appended to the provenance view with the FASTA's SHA-256.
+
+The same step runs after conversion when `--fasta` is passed to `qpxc convert diann` or `qpxc convert openms-consensus`.
+
+### Parameters {#protein-properties-parameters}
+
+| Parameter | Description |
+| --- | --- |
+| `--dataset` | QPX dataset directory (flat Parquet views) |
+| `--fasta` | Protein FASTA used for the search (plain or `.gz`) |
+| `--in-place` | Overwrite the dataset's files |
+| `--output-folder` | Write an annotated copy instead (empty, outside the dataset) |
+
+### Usage Examples {#protein-properties-examples}
+
+```bash
+# Annotate an existing dataset in place
+qpxc transform protein-properties \
+    --dataset ./PXD017199 \
+    --fasta Homo-sapiens-uniprot-reviewed-contaminants.fasta \
+    --in-place
+
+# Or during conversion
+qpxc convert diann --report-path report.parquet ... --fasta search.fasta
+```
+
+### Best Practices {#protein-properties-best-practices}
+
+- Use the exact database the search used. The command warns when fewer than half of the target protein groups are found.
+- Accessions match both as the full identifier (`sp|P12345|NAME`) and as the bare accession (`P12345`).
+- Coverage reflects the peptides **exported in the dataset** (after FDR filtering). On PXD000612 it agrees with OpenMS's recorded coverage to a median difference of 0.0 points (93% of groups within 1 point, correlation 0.9995).
 
 ---
 

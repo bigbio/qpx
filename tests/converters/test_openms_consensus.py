@@ -143,7 +143,7 @@ def test_pg_peptide_counts_are_per_protein(monkeypatch):
 
         @staticmethod
         def getProteinIdentifications():
-            return [object()]
+            return []
 
     protein_maps = pg_adapter._ProteinMaps()
     protein_maps.acc_to_pep.update({"P1": {"PEPA", "PEPB"}, "P2": {"PEPB"}})
@@ -991,3 +991,45 @@ def test_openms_consensus_identity_retains_all_spectrum_references(tmp_path, str
     assert table.column("scan").to_pylist() == [[42, 43]]
     assert table.column("consensus_rt").to_pylist() == pytest.approx([100.123456])
     assert table.schema.metadata[b"identity_composite"] == (b"peptidoform,charge,run_file_name,rt,scan,observed_mz,consensus_rt")
+
+
+def test_openms_consensus_cli_fills_protein_properties_from_optional_fasta(tmp_path):
+    """--fasta is optional: without it nothing changes; with it, the missing
+    sequence-derived fields are filled from the FASTA after conversion."""
+    import pyarrow.parquet as pq
+    from click.testing import CliRunner
+
+    from qpx.cli.convert import convert
+
+    cx = tmp_path / "tmt.consensusXML"
+    cx.write_text(_TMT_CONSENSUSXML)
+    fasta = tmp_path / "db.fasta"
+    fasta.write_text(">sp|P12345|PROT_HUMAN Protein GN=PROT\nMKPEPTIDEKAAA\n")
+
+    def run(folder, *extra):
+        result = CliRunner().invoke(
+            convert,
+            [
+                "openms-consensus",
+                "--consensusxml",
+                str(cx),
+                "--output-folder",
+                str(folder),
+                "--output-prefix",
+                "t",
+                "--structures",
+                "feature,pg,psm",
+                *extra,
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        return pq.read_table(folder / "t.feature.parquet").to_pylist(), pq.read_table(folder / "t.pg.parquet").to_pylist()
+
+    plain_features, plain_pg = run(tmp_path / "plain")
+    assert all(row["pg_positions"] is None for row in plain_features)
+    assert all(row["molecular_weight"] is None for row in plain_pg)
+
+    features, pg = run(tmp_path / "with_fasta", "--fasta", str(fasta))
+    assert features[0]["pg_positions"] == [{"protein_accession": "P12345", "start": 3, "end": 10}]
+    assert pg[0]["molecular_weight"] is not None
+    assert pg[0]["sequence_coverage"] is not None

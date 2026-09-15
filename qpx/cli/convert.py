@@ -39,6 +39,23 @@ def _log_summary(output_folder) -> None:
     log_conversion_summary(output_folder, logger=logger)
 
 
+def _annotate_protein_properties(output_folder: Path, fasta: Optional[Path]) -> None:
+    """Fill null protein properties from an optional FASTA after a conversion.
+
+    The conversion has already succeeded, so a dataset this step cannot handle
+    (e.g. partitioned views) is reported and left as converted rather than failed.
+    """
+    if fasta is None:
+        return
+    from qpx.cli.transform import annotate_dataset_protein_properties
+
+    click.echo(f"Filling protein properties from {fasta.name}")
+    try:
+        annotate_dataset_protein_properties(Path(output_folder), fasta, in_place=True)
+    except click.ClickException as exc:
+        click.echo(f"WARNING: protein properties from FASTA skipped: {exc.format_message()}")
+
+
 def _maybe_enrich_pride(output_folder, project_accession: str | None, enrich: bool) -> None:
     """Optionally enrich a converted dataset with PRIDE metadata."""
     if not enrich:
@@ -170,6 +187,16 @@ def convert():
     help="DIA-NN summary log file (version auto-detected from first line)",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
 )
+@click.option(
+    "--fasta",
+    help=(
+        "Optional protein FASTA used for the search. When given, fills null pg.sequence_coverage, "
+        "pg.molecular_weight and feature.pg_positions for target rows after conversion; proteins "
+        "absent from it (e.g. DIA-NN internal decoys) stay null. See 'qpxc transform protein-properties'."
+    ),
+    default=None,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
 @click.option("--verbose", help="Enable verbose logging", is_flag=True)
 def convert_diann_cmd(
     report_path: Path,
@@ -189,6 +216,7 @@ def convert_diann_cmd(
     enrich_pride: bool,
     compression: str,
     diann_log: Optional[Path],
+    fasta: Optional[Path],
     verbose: bool,
 ):
     """Convert DIA-NN report to QPX format.
@@ -255,6 +283,7 @@ def convert_diann_cmd(
     converter.write_provenance(output_folder, prefix=prefix)
     converter.write_dataset(output_folder, prefix=prefix, project_accession=project_accession)
 
+    _annotate_protein_properties(output_folder, fasta)
     _maybe_enrich_pride(output_folder, project_accession, enrich_pride)
 
     _log_summary(output_folder)
@@ -893,6 +922,16 @@ def convert_openms_cmd(**kwargs):
     show_default=True,
     help="Parquet compression codec.",
 )
+@click.option(
+    "--fasta",
+    help=(
+        "Optional protein FASTA used for the search. When given, fills null pg.sequence_coverage, "
+        "pg.molecular_weight and feature.pg_positions for target rows after conversion; proteins "
+        "absent from it (e.g. DIA-NN internal decoys) stay null. See 'qpxc transform protein-properties'."
+    ),
+    default=None,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
 def convert_openms_consensus_cmd(
     consensusxml_path,
     sdrf_path,
@@ -905,6 +944,7 @@ def convert_openms_consensus_cmd(
     project_accession,
     include_unassigned_psms,
     compression,
+    fasta,
 ):
     """Convert an OpenMS consensusXML (+ SDRF) to QPX.
 
@@ -931,6 +971,8 @@ def convert_openms_consensus_cmd(
         project_accession=project_accession,
         compression=compression,
     )
+    if written:
+        _annotate_protein_properties(Path(output_folder), fasta)
     _log_summary(output_folder)
     click.echo(f"consensusXML conversion complete. Wrote: {sorted(written)}")
 

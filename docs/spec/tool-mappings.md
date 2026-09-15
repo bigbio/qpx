@@ -7,12 +7,15 @@ This page documents how fields from different proteomics search engines and tool
 
 A dash (`---`) indicates that the tool does not provide a direct mapping for that field.
 
+For conditional fields, derived values and reasons for nulls in DIA-NN and OpenMS
+consensusXML, see [Field population](converter-coverage.md#field-population-dia-nn-and-openms-consensusxml).
+
 ## PSM Field Mappings
 
 The PSM (Peptide Spectrum Match) view captures spectrum-level identification results. The table below shows how each QPX PSM field maps to columns in common proteomics tools.
 
 | QPX Field | MaxQuant | DIA-NN | FragPipe |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `sequence` | Sequence | Stripped.Sequence | Peptide |
 | `peptidoform` | Modified sequence | Modified.Sequence | Modified Peptide |
 | `charge` | Charge | Precursor.Charge | Charge |
@@ -33,7 +36,7 @@ The PSM (Peptide Spectrum Match) view captures spectrum-level identification res
 The Feature view captures quantified peptide features with intensity data. Features aggregate information across scans and are the primary view for DIA and label-free quantification workflows.
 
 | QPX Field | MaxQuant | DIA-NN | FragPipe | QuantMS MSstats |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `sequence` | Sequence | Stripped.Sequence | Peptide | PeptideSequence (unmodified) |
 | `peptidoform` | Modified sequence | Modified.Sequence | Modified Peptide | PeptideSequence (ProForma-normalized) |
 | `charge` | Charge | Precursor.Charge | --- | Charge / PrecursorCharge |
@@ -58,7 +61,7 @@ DIA-NN `Q.Value` is precursor-level and is stored in `additional_scores` as `pre
 The Protein Group view captures protein-level quantification and inference results. The table below covers the three main supported tools.
 
 | QPX Field | MaxQuant | DIA-NN | FragPipe |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `pg_accessions` | Protein IDs | Protein.Group | Group + Indistinguishable Proteins |
 | `pg_names` | Protein names | Protein.Names | --- |
 | `gg_accessions` | Gene names | Genes | --- |

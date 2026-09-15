@@ -810,6 +810,41 @@ QPX format 1.1. The consensusXML carries per-run peptide-feature intensities,
 PSMs, and the protein-inference graph; the SDRF supplies sample/label/fraction
 metadata and the `grouped_runs` quantification units.
 
+If PSM output is requested but no exportable PSM records remain (for example,
+the identifications lack spectrum references), the converter logs a warning and
+does not create `psm.parquet` or register it in the returned outputs or provenance.
+Other requested views are still exported. A PSM-only request with no exportable
+records completes with a warning and no output files.
+
+Protein properties are taken from the group's existing `anchor_protein`:
+`ProteinHit.coverage` populates `pg.sequence_coverage` (percent), and
+`Posterior Probability_score` is retained in `pg.additional_scores` as
+`posterior_probability` with `higher_better: true`. These describe the
+representative protein, not an aggregate probability or coverage of the group.
+Missing or unknown values remain null. If repeated records for that accession
+contain conflicting values, the conflicting field remains null; values from
+other group members are not substituted. Both consensusXML readers use this
+mapping.
+
+`pg.molecular_weight` is the theoretical average molecular weight of that same
+anchor's complete, unmodified `ProteinHit.sequence`, in **kDa**. It remains null
+when the sequence is absent, contains ambiguous residues such as B/Z/X or
+modification notation, or conflicts across records for the anchor. U/O and the
+isobaric I/L code J are supported. Other group members and identified peptides
+are not used to reconstruct the sequence; this path does not load a FASTA.
+
+`feature.pg_positions` retains the assigned peptide's known positions within
+the resolved protein group. OpenMS's zero-based inclusive coordinates are
+converted to QPX's one-based inclusive coordinates. Repeated evidence is
+deduplicated, while distinct positions for the same protein are preserved.
+Unknown positions and proteins without direct peptide evidence are omitted.
+Positions come from the run's own identifications when available; otherwise
+matching identifications on the consensus feature can supply sequence positions.
+`feature.id_run_file_name` is populated only when the run has a resolved direct
+identification of the exported peptide with a spectrum reference. Transferred
+features without their own identification, unresolved source runs and conflicting
+peptide assignments keep this field null.
+
 !!! warning "Protein intensity is an interim, unnormalized rollup"
     The consensusXML has no protein-level abundance — that quantity lived only in
     the mzTab (`protein_abundance_assay`, from ProteinQuantifier). Until OpenMS

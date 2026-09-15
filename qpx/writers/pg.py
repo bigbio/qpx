@@ -27,6 +27,8 @@ def _explode_pg_records(records: list[dict]) -> list[dict]:
     ``intensities`` (``list<{label, intensity}>``) is unrolled into scalar
     ``label`` + ``intensity`` columns; ``additional_intensities`` is filtered to
     the entries carrying that label (kept as ``list<additional_intensity>``).
+    Non-null ``cv_params`` on an intensity entry override the record-level
+    parameters for that label.
     A record with no primary intensity (identification-only) yields a single row
     with null ``label``/``intensity``/``additional_intensities``.
     """
@@ -59,6 +61,8 @@ def _explode_pg_records(records: list[dict]) -> list[dict]:
             row["label"] = label
             row["intensity"] = intensity
             row["additional_intensities"] = additional_by_label.get(label) or None
+            if isinstance(entry, dict) and entry.get("cv_params") is not None:
+                row["cv_params"] = entry["cv_params"]
             exploded.append(row)
     return exploded
 

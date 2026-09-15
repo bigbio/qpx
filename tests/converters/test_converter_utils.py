@@ -283,3 +283,21 @@ class TestStripUniprotPrefix:
     )
     def test_strip(self, entry, expected):
         assert strip_uniprot_prefix(entry) == expected
+
+
+def test_uniprot_entry_name_only_for_three_field_ids():
+    from qpx.converters.utils import uniprot_entry_name
+
+    assert uniprot_entry_name("sp|P12345|PROT_HUMAN") == "PROT_HUMAN"
+    assert uniprot_entry_name("sp|CONTAM_P19001|CONTAM_K1C19_MOUSE") == "CONTAM_K1C19_MOUSE"
+    assert uniprot_entry_name("P12345") is None
+    assert uniprot_entry_name("sp|P12345") is None
+    assert uniprot_entry_name("sp|P12345|") is None
+
+
+def test_is_contaminant_accession():
+    from qpx.converters.utils import is_contaminant_accession
+
+    assert is_contaminant_accession("sp|CONTAM_P19001|CONTAM_K1C19_MOUSE")
+    assert is_contaminant_accession("CONTAM_P02769")
+    assert not is_contaminant_accession("sp|P12345|PROT_HUMAN")
