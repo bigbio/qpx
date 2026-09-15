@@ -319,3 +319,53 @@ def test_coverage_does_not_alias_decoy_evidence_to_a_target(dataset_dir, tmp_pat
 
     pg = {row["anchor_protein"]: row for row in _rows(dataset_dir, "pg")}
     assert pg["P67890"]["sequence_coverage"] is None
+
+
+def test_rewrite_keeps_the_qpx_parquet_encoding(dataset_dir, tmp_path):
+    """Rewritten views must be encoded like every other QPX writer, not with pyarrow
+    defaults (byte-stream-split on rt/mz, zstd level, dictionaries, format 2.6)."""
+
+    def encodings(path):
+        meta = pq.ParquetFile(path).metadata
+        out = {}
+        for rg in range(meta.num_row_groups):
+            for col in range(meta.num_columns):
+                chunk = meta.row_group(rg).column(col)
+                out[chunk.path_in_schema] = (tuple(sorted(chunk.encodings)), chunk.compression)
+        return out, meta.format_version
+
+    before, before_version = encodings(dataset_dir / "exp.feature.parquet")
+    _run(dataset_dir, _dataset_fasta(tmp_path), "--in-place")
+    after, after_version = encodings(dataset_dir / "exp.feature.parquet")
+
+    assert after_version == before_version
+    for column in ("rt", "calculated_mz", "observed_mz"):
+        if column in before:
+            assert after[column] == before[column], column
+
+
+def test_coverage_uses_a_partitioned_psm_view(dataset_dir, tmp_path):
+    """Dataset reads a PSM view split into psm/; skipping it silently fell back to
+    group membership for coverage (the ACTB 4.5% vs 84.3% undercount)."""
+    from qpx.writers import PsmWriter
+    from tests.conftest import make_psm_record
+
+    psm = make_psm_record(sequence="THIRDPEP", run_file_name="run_02")
+    psm["protein_accessions"] = ["P12345", "P67890"]
+    part = dataset_dir / "psm" / "run_file_name=run_02"
+    part.mkdir(parents=True)
+    with PsmWriter(part / "part-0.parquet") as writer:
+        writer.write_batch([psm])
+
+    result = _run(dataset_dir, _dataset_fasta(tmp_path), "--in-place")
+
+    pg = {r["anchor_protein"]: r for r in _rows(dataset_dir, "pg")}
+    assert pg["P67890"]["sequence_coverage"] == pytest.approx(100 * 8 / 13, rel=1e-5)
+    assert "coverage evidence from: feature, psm" in result.output
+
+
+def test_reports_when_no_psm_evidence_is_available(dataset_dir, tmp_path):
+    result = _run(dataset_dir, _dataset_fasta(tmp_path), "--in-place")
+
+    assert "coverage evidence from: feature" in result.output
+    assert "no PSM view" in result.output

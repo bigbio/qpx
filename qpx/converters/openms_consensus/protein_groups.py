@@ -37,10 +37,19 @@ class ProteinGroupIndex:
 
         Evidence may include proteins excluded by upstream inference, so do not
         require the inferred group to contain every possible sequence match.
-        A known identification's groups take precedence over the merged index.
+
+        A known identification's groups take precedence over the merged index: a
+        run that inferred groups but excluded these proteins stays authoritative.
+        A run with no protein inference of its own — an identifier the index does
+        not know, or one with no groups — falls back to the merged index, rather
+        than nulling the protein attribution of every feature from that run.
         """
-        index = self.by_identification.get(identifier) if identifier and self.by_identification else self
-        if index is None or not accessions:
+        index = self
+        if identifier and self.by_identification:
+            run_index = self.by_identification.get(identifier)
+            if run_index is not None and run_index.by_membership:
+                index = run_index
+        if not accessions:
             return None
         key = frozenset(accessions)
         if key in index.by_membership:

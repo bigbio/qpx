@@ -155,13 +155,20 @@ def _copy_dataset_files(dataset: Path, out_dir: Path) -> None:
     shutil.copytree(dataset, out_dir, dirs_exist_ok=True)
 
 
-def _gene_map_dataset_prefix(dataset: Path, command: str = "gene-map") -> str:
-    """Reject unsupported quantification layouts before copying or annotation."""
+def _gene_map_dataset_prefix(dataset: Path, command: str = "gene-map", prefix: Optional[str] = None) -> str:
+    """Reject unsupported quantification layouts before copying or annotation.
+
+    ``prefix`` skips discovery when the caller already knows it (a converter that
+    just wrote the files), so a second dataset in the same folder cannot make the
+    prefix ambiguous.
+    """
     from qpx.transforms.utils import discover_qpx_file_prefix
 
     for view in ("pg", "feature"):
         if any((dataset / view).rglob("*.parquet")):
             raise click.ClickException(f"Partitioned {view} data is not supported by {command}; use flat Parquet views")
+    if prefix:
+        return prefix
     try:
         return discover_qpx_file_prefix(dataset)
     except ValueError as exc:
@@ -302,6 +309,7 @@ def annotate_dataset_protein_properties(
     *,
     in_place: bool,
     output_folder: Optional[Path] = None,
+    prefix: Optional[str] = None,
 ):
     """Fill null protein properties of a QPX dataset from a FASTA; return the report.
 
@@ -316,7 +324,7 @@ def annotate_dataset_protein_properties(
     from qpx.transforms.protein_properties import annotate_protein_properties
 
     dataset = dataset.resolve()
-    prefix = _gene_map_dataset_prefix(dataset, command="protein-properties")
+    prefix = _gene_map_dataset_prefix(dataset, command="protein-properties", prefix=prefix)
     out_dir = dataset if in_place else Path(output_folder).resolve()
     if not in_place:
         _copy_dataset_files(dataset, out_dir)
@@ -339,6 +347,10 @@ def annotate_dataset_protein_properties(
 
 def _echo_protein_properties_report(report) -> None:
     click.echo(f"  FASTA: {report.fasta_entries} entries ({report.fasta_decoy_entries} decoys skipped)")
+    evidence = ", ".join(report.coverage_evidence) or "none"
+    click.echo(f"  coverage evidence from: {evidence}")
+    if "psm" not in report.coverage_evidence:
+        click.echo("  note: no PSM view, so coverage counts only peptides assigned to each protein group")
     click.echo(
         f"  pg: {report.pg_coverage_filled} sequence_coverage and {report.pg_molecular_weight_filled} molecular_weight "
         f"filled of {report.pg_rows_eligible} target rows needing them; {report.pg_anchors_not_in_fasta} anchors not in the FASTA"

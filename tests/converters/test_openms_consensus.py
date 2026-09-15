@@ -1033,3 +1033,47 @@ def test_openms_consensus_cli_fills_protein_properties_from_optional_fasta(tmp_p
     assert features[0]["pg_positions"] == [{"protein_accession": "P12345", "start": 3, "end": 10}]
     assert pg[0]["molecular_weight"] is not None
     assert pg[0]["sequence_coverage"] is not None
+
+
+def test_openms_consensus_fasta_uses_the_output_prefix_in_a_shared_folder(tmp_path):
+    """--fasta rediscovered the prefix by scanning the folder; a second dataset in
+    the same folder made that ambiguous, and the step failed with only a warning
+    while the conversion exited 0."""
+    import pyarrow.parquet as pq
+    from click.testing import CliRunner
+
+    from qpx.cli.convert import convert
+
+    cx = tmp_path / "tmt.consensusXML"
+    cx.write_text(_TMT_CONSENSUSXML)
+    fasta = tmp_path / "db.fasta"
+    fasta.write_text(">sp|P12345|PROT_HUMAN Protein GN=PROT\nMKPEPTIDEKAAA\n")
+    folder = tmp_path / "shared"
+
+    def convert_as(prefix, *extra):
+        result = CliRunner().invoke(
+            convert,
+            [
+                "openms-consensus",
+                "--consensusxml",
+                str(cx),
+                "--output-folder",
+                str(folder),
+                "--output-prefix",
+                prefix,
+                "--structures",
+                "feature,pg,psm",
+                *extra,
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        return result
+
+    convert_as("first")
+    result = convert_as("second", "--fasta", str(fasta))
+
+    assert "protein properties from FASTA skipped" not in result.output, result.output
+    rows = pq.read_table(folder / "second.feature.parquet").to_pylist()
+    assert rows[0]["pg_positions"] == [{"protein_accession": "P12345", "start": 3, "end": 10}]
+    # The other dataset in the folder is left untouched.
+    assert pq.read_table(folder / "first.feature.parquet").to_pylist()[0]["pg_positions"] is None

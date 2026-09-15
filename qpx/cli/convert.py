@@ -39,7 +39,7 @@ def _log_summary(output_folder) -> None:
     log_conversion_summary(output_folder, logger=logger)
 
 
-def _annotate_protein_properties(output_folder: Path, fasta: Optional[Path]) -> None:
+def _annotate_protein_properties(output_folder: Path, fasta: Optional[Path], prefix: Optional[str] = None) -> None:
     """Fill null protein properties from an optional FASTA after a conversion.
 
     The conversion has already succeeded, so a dataset this step cannot handle
@@ -51,7 +51,7 @@ def _annotate_protein_properties(output_folder: Path, fasta: Optional[Path]) -> 
 
     click.echo(f"Filling protein properties from {fasta.name}")
     try:
-        annotate_dataset_protein_properties(Path(output_folder), fasta, in_place=True)
+        annotate_dataset_protein_properties(Path(output_folder), fasta, in_place=True, prefix=prefix)
     except click.ClickException as exc:
         click.echo(f"WARNING: protein properties from FASTA skipped: {exc.format_message()}")
 
@@ -283,7 +283,7 @@ def convert_diann_cmd(
     converter.write_provenance(output_folder, prefix=prefix)
     converter.write_dataset(output_folder, prefix=prefix, project_accession=project_accession)
 
-    _annotate_protein_properties(output_folder, fasta)
+    _annotate_protein_properties(output_folder, fasta, prefix)
     _maybe_enrich_pride(output_folder, project_accession, enrich_pride)
 
     _log_summary(output_folder)
@@ -972,7 +972,7 @@ def convert_openms_consensus_cmd(
         compression=compression,
     )
     if written:
-        _annotate_protein_properties(Path(output_folder), fasta)
+        _annotate_protein_properties(Path(output_folder), fasta, output_prefix)
     _log_summary(output_folder)
     click.echo(f"consensusXML conversion complete. Wrote: {sorted(written)}")
 

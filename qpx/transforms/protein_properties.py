@@ -156,6 +156,7 @@ class ProteinPropertiesReport:  # pylint: disable=too-many-instance-attributes
     feature_positions_filled: int = 0
     feature_rows_without_match: int = 0
     unmatched_examples: list[str] = field(default_factory=list)
+    coverage_evidence: list[str] = field(default_factory=list)
 
     @property
     def pg_match_rate(self) -> float | None:
@@ -220,7 +221,33 @@ def _evidence_query(column: str, has_decoy_flag: bool) -> str:
     return template.replace("{decoy}", _TARGET_ONLY if has_decoy_flag else "")
 
 
-def _peptide_protein_candidates(feature_path: Path, psm_path: Path | None = None) -> dict[str, set[str]]:
+def _view_source(dataset_dir: Path, prefix: str, view: str) -> str | None:
+    """A flat ``<prefix>.<view>.parquet`` file, else a partitioned ``<view>/`` directory glob.
+
+    ``Dataset`` reads either layout, so evidence must too: a partitioned PSM view
+    that is skipped leaves coverage built from group membership alone, the
+    undercount PSM evidence exists to prevent.
+    """
+    flat = dataset_dir / f"{prefix}.{view}.parquet"
+    if flat.is_file():
+        return str(flat)
+    directory = dataset_dir / view
+    if directory.is_dir() and any(directory.rglob("*.parquet")):
+        return str(directory / "**" / "*.parquet")
+    return None
+
+
+def _source_schema_names(source: str) -> set[str]:
+    """Column names of a flat file or of the first file behind a partition glob."""
+    if "*" not in source:
+        return set(pq.read_schema(source).names)
+    first = next(Path(source.split("**", 1)[0]).rglob("*.parquet"))
+    return set(pq.read_schema(first).names)
+
+
+def _peptide_protein_candidates(
+    feature_path: str | Path | None, psm_path: str | Path | None = None, used: list[str] | None = None
+) -> dict[str, set[str]]:
     """Map each target peptide sequence to every protein its evidence names.
 
     Sources, unioned: the PSM view's ``protein_accessions`` (every protein an
@@ -237,23 +264,28 @@ def _peptide_protein_candidates(feature_path: Path, psm_path: Path | None = None
     candidates: dict[str, set[str]] = defaultdict(set)
     con = duckdb.connect()
     try:
-        for view_path in (feature_path, psm_path):
-            if view_path is not None and Path(view_path).is_file():
-                _collect_evidence(con, Path(view_path), candidates)
+        for view, source in (("feature", feature_path), ("psm", psm_path)):
+            if source is None or ("*" not in str(source) and not Path(source).is_file()):
+                continue
+            if _collect_evidence(con, str(source), candidates) and used is not None:
+                used.append(view)
     finally:
         con.close()
     return candidates
 
 
-def _collect_evidence(con, view_path: Path, candidates: dict[str, set[str]]) -> None:
-    """Add one view's peptide -> protein evidence to ``candidates``."""
-    columns = set(pq.read_schema(view_path).names)
+def _collect_evidence(con, source: str, candidates: dict[str, set[str]]) -> bool:
+    """Add one view's peptide -> protein evidence to ``candidates``; True if it had any."""
+    columns = _source_schema_names(source)
     if "sequence" not in columns:
-        return
+        return False
+    found = False
     for column in (name for name in _EVIDENCE_QUERIES if name in columns):
-        rows = con.execute(_evidence_query(column, "is_decoy" in columns), [str(view_path)]).fetchall()
+        rows = con.execute(_evidence_query(column, "is_decoy" in columns), [source]).fetchall()
         for sequence, accessions in rows:
             candidates[sequence].update(accession for accession in accessions or () if accession)
+        found = True
+    return found
 
 
 def _protein_peptides(candidates: dict[str, set[str]], fasta: FastaSequences) -> dict[str, set[str]]:
@@ -276,10 +308,14 @@ def _stamped_schema(schema: pa.Schema) -> tuple[pa.Schema, str]:
 
 def _rewrite_view(source: Path, destination: Path, fill_batch) -> None:
     """Rewrite a view row group by row group, keeping its schema and footer identity."""
+    from qpx.writers.base import parquet_write_options
+
     parquet = pq.ParquetFile(source)
     schema, compression = _stamped_schema(parquet.schema_arrow)
-    codec = None if compression == "none" else compression
-    with pq.ParquetWriter(str(destination), schema, compression=codec) as writer:
+    # The same encoding every QPX writer uses (byte-stream-split on rt/mz leaves,
+    # per-column dictionaries, zstd level, format 2.6). A bare compression= kept
+    # the footer identity but silently re-encoded the file with pyarrow defaults.
+    with pq.ParquetWriter(str(destination), schema, **parquet_write_options(schema, compression)) as writer:
         for group in range(parquet.num_row_groups):
             table = parquet.read_row_group(group)
             writer.write_table(fill_batch(table).cast(schema))
@@ -426,8 +462,11 @@ def annotate_protein_properties(
 
     pg_path = dataset_dir / f"{prefix}.pg.parquet"
     feature_path = dataset_dir / f"{prefix}.feature.parquet"
-    psm_path = dataset_dir / f"{prefix}.psm.parquet"
-    candidates = _peptide_protein_candidates(feature_path, psm_path)
+    candidates = _peptide_protein_candidates(
+        _view_source(dataset_dir, prefix, "feature"),
+        _view_source(dataset_dir, prefix, "psm"),
+        used=report.coverage_evidence,
+    )
 
     if pg_path.is_file():
         protein_peptides = _protein_peptides(candidates, fasta)
