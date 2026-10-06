@@ -159,8 +159,8 @@ class TestOpenMSConverter:
         assert "grouped_runs" in pg_table.column_names
         assert "run_file_name" not in pg_table.column_names
 
-    def test_duplicate_identity_warns_and_replaces_output(self, tmp_path, caplog):
-        """A duplicate primary key is tolerated with a warning; the core file is rewritten."""
+    def test_duplicate_identity_warns_and_preserves_legacy_records(self, tmp_path, caplog):
+        """Legacy duplicates retain their source values and receive shared derived IDs."""
         qpx_dir = tmp_path / "openms_qpx"
         qpx_dir.mkdir()
         records = [
@@ -180,14 +180,15 @@ class TestOpenMSConverter:
         sentinel = b"pre-existing output"
         destination.write_bytes(sentinel)
 
-        with caplog.at_level(logging.WARNING):
+        with caplog.at_level(logging.WARNING, logger="qpx.writers.base"):
             OpenMSConverter(qpx_dir=qpx_dir).convert(output_folder=output, output_prefix="openms")
 
-        # The converter completed: the destination is replaced with the real parquet output.
-        assert destination.read_bytes() != sentinel
         rewritten = pq.read_table(destination)
-        assert rewritten.num_rows == 2
-        assert "duplicate row" in caplog.text.lower()
+        assert rewritten.drop_columns(["psm_id", "feature_id"]).equals(legacy, check_metadata=False)
+        assert rewritten.column("psm_id").null_count == 0
+        assert len(set(rewritten.column("psm_id").to_pylist())) == 1
+        assert "Primary key (psm_id) has 1 duplicate row" in caplog.text
+        assert pq.read_table(source).equals(legacy, check_metadata=False)
         assert not list(output.glob(".openms.psm.parquet.*.tmp"))
 
     def test_convert_full_bundle(self, tmp_path):
@@ -447,7 +448,7 @@ class TestFractionGroupCapture:
         _write_minimal_sdrf(sdrf_path)  # label free -> LFQ
 
         cxml = tmp_path / "lfq.consensusXML"
-        write_lfq_consensusxml(cxml, [(0, "run_01.mzML", "3", "1", "1")])
+        write_lfq_consensusxml(cxml, [(0, "run_01.mzML", "3", "1", "1")], trailing="</consensusXML>")
 
         output = tmp_path / "output"
         converter = OpenMSConverter(qpx_dir=qpx_dir, sdrf_path=sdrf_path, consensusxml_path=cxml)

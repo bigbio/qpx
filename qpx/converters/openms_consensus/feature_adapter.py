@@ -458,7 +458,7 @@ def _pid_scans(pid) -> list[int]:
 
     Uses the shared parser in :mod:`psm_adapter` (imported lazily to avoid a
     circular import — psm_adapter imports this module) so feature.scan and
-    psm.scan are produced by the same logic, including Sciex ``cycle=`` ordinals
+    psm.scan are produced by the same logic, including all native ID components
     and the deterministic surrogate fallback.
     """
     ref = pid.getSpectrumReference() if hasattr(pid, "getSpectrumReference") else ""
@@ -495,14 +495,15 @@ def _scan_by_run(
     feature/map run can establish the origin.
     """
     scan_by_run: dict[str, list[int]] = {}
+    seen: dict[str, set[tuple[int, ...]]] = {}
     for pid in pids:
         scans = _pid_scans(pid)
         if not scans:
             continue
         pid_run = _pid_run(pid, map_info, cf_runs, resolve_run)
-        if pid_run is not None:
-            run_scans = scan_by_run.setdefault(pid_run, [])
-            run_scans.extend(scan for scan in scans if scan not in run_scans)
+        if pid_run is not None and tuple(scans) not in seen.setdefault(pid_run, set()):
+            seen[pid_run].add(tuple(scans))
+            scan_by_run.setdefault(pid_run, []).extend(scans)
     return scan_by_run
 
 
@@ -599,7 +600,10 @@ def primary_run_stems(protein_identification) -> list[str]:
     if get_paths is None:
         return []
     paths: list = []
-    get_paths(paths)
+    try:
+        get_paths(paths)  # pyopenms < 3.6 fills an output list
+    except TypeError:
+        paths = get_paths()  # pyopenms >= 3.6 returns the paths
     return [_run_stem(p.decode() if isinstance(p, (bytes, bytearray)) else str(p)) for p in paths]
 
 

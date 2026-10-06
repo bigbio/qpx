@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import datetime
 import logging
 import os
@@ -441,6 +442,28 @@ class BaseWriter:
     def write_batch(self, records: list[dict]):
         """Accumulate records and flush when batch_size is reached."""
         return self._guard(self._write_batch, records)
+
+    def set_scan_format(self, scan_format: str) -> None:
+        """Declare a confirmed format before close, including after streamed batches."""
+        self._guard(self._set_scan_format, scan_format)
+
+    def _set_scan_format(self, scan_format: str) -> None:
+        """Keep footer keys and the serialized Arrow schema in sync atomically."""
+        if self._writer is not None and not hasattr(self._writer, "add_key_value_metadata"):
+            logger.warning(
+                "Cannot add scan_format after batches were written: PyArrow 17 or newer is required; "
+                "keeping the existing footer declaration for %s",
+                self._path,
+            )
+            return
+        self._file_metadata[b"scan_format"] = scan_format.encode()
+        if self._writer is not None:
+            self._writer.add_key_value_metadata(
+                {
+                    b"scan_format": self._file_metadata[b"scan_format"],
+                    b"ARROW:schema": base64.b64encode(self.arrow_schema.serialize().to_pybytes()),
+                }
+            )
 
     def _write_batch(self, records: list[dict]):
         self._buffer.extend(records)

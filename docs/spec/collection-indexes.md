@@ -1,5 +1,14 @@
 # Collection Indexes
 
+!!! warning "Design proposal — not implemented"
+
+    This entire page describes proposed index formats and APIs. QPX does not
+    currently implement `qpx.open_collection()`, `coll.index()`,
+    `coll.build_index()`, or `coll.build_all_indexes()`. The schemas, SQL, and
+    code examples below are design sketches, not supported package behavior.
+    For current cross-dataset queries, use the
+    [DatasetCollection API](collection.md#current-api).
+
 An **index** is a materialized, pre-computed data structure that enables fast search across all datasets in a [collection](collection.md). Unlike the collection itself (which is programmatic), indexes are **persisted as Parquet files** because the alternative -- scanning the full collection for every query -- is impractical at scale.
 
 ## Why Indexes?

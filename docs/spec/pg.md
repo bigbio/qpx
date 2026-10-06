@@ -15,7 +15,8 @@ This view is analogous to outputs from tools such as MaxQuant (`proteinGroups.tx
 
 `pg_id` is the non-null primary key. The schema-default `identity_composite` is
 `[pg_accessions, grouped_runs, label]`; `label` is null only for
-identification-only protein groups that carry no quantity. Fields marked with
+identification-only protein groups with no label context. A known label is
+retained even when its intensity is null. Fields marked with
 **(nullable)** may have null values. See the full YAML schema in
 [`pg.yaml`](schemas/pg.yaml).
 
@@ -49,7 +50,7 @@ A `pg` row is an **analyte**: the quantified unit is the protein group *as a who
   - `canonical(feature.pg_accessions) = canonical(pg.pg_accessions)` — the same order-independent membership set that keys `pg_id`; **AND**
   - `feature.run_file_name ∈ pg.grouped_runs`; **AND**
   - a label in `feature.intensities` `IS NOT DISTINCT FROM pg.label`, so a feature links **only** to pg rows for the channels/labels it actually carries (LFQ: one `LFQ` row; TMT/plexDIA: one row per channel the feature has, never the missing ones).
-  `pg_id` is read straight from the matched pg row (never re-derived); never join on `anchor_protein` alone. **No match = identified but not quantified** in that channel/fraction — the feature simply produces no link (not an error). `feature.pg_ids` remains an **optional producer hardlink** (a slot a producer MAY populate); qpx's own converters do **not** materialize it, and when it is absent consumers use the computed softlink above.
+  `pg_id` is read straight from the matched pg row (never re-derived); never join on `anchor_protein` alone. **No match means no matching PG link** in that channel/fraction — the feature simply produces no link (not an error). Link presence does not establish whether a quantity exists; inspect the matched PG row's `intensity`. `feature.pg_ids` remains an **optional producer hardlink** (a slot a producer MAY populate); qpx's own converters do **not** materialize it, and when it is absent consumers use the computed softlink above.
 - **Integrity check:** a row with a non-null `anchor_protein` MUST also carry `pg_accessions` (its full group membership). Since the group is the analyte and the join key, a protein-mapped feature that lacked membership would be an orphan. QPX validates this (a warning on the write/convert path, an error under `qpxc validate --strict`). Blank/whitespace `anchor_protein` is treated as unset (not a membership violation).
 
 ### Counts
@@ -78,12 +79,33 @@ A `pg` row is an **analyte**: the quantified unit is the protein group *as a who
 
 | Field | Description | Type | Required |
 |-------|-------------|------|----------|
-| `label` | Channel/label of this quantification (e.g., TMT126, LFQ); **one row per label**. Null for identification-only groups. Part of the default identity composite. | `string` | Yes (nullable) |
-| `intensity` | Primary raw intensity value for this label. Null for identification-only groups. | `float32` | No |
+| `label` | Channel/label (e.g., TMT126, LFQ); **one row per label**, including identified groups without a quantity. Null only when identification-only input provides no label context. Part of the default identity composite. | `string` | Yes (nullable) |
+| `intensity` | Primary raw intensity value for this label. Null when the identified group has no reported quantity. | `float32` | No |
 | `additional_intensities` | Pre-computed intensity values from the upstream tool (normalized, LFQ, iBAQ, etc.) for this row's label. See [Intensities](intensities.md) | `array[struct]` | No |
 | `additional_scores` | Additional scores and metrics (posterior error probability, confidence, etc.). See [Scores](scores.md) | `array[struct]` | No |
 
-Since QPX 1.1 the protein-group quantification is **flattened**: instead of an `intensities` list, each row carries a scalar `label` + `intensity`, so there is one row per `(pg_accessions, grouped_runs, label)`. Identification-only groups (no quantity) have null `label`/`intensity`.
+Since QPX 1.1 the protein-group quantification is **flattened**: instead of an `intensities` list, each row carries a scalar `label` + `intensity`, so there is one row per `(pg_accessions, grouped_runs, label)`.
+
+#### Missing quantities and absent groups
+
+For a known quantification unit and label, distinguish identification from quantification:
+
+| Evidence in the producing workflow | PG representation |
+|---|---|
+| Identified and quantified | A row with the known `label` and reported `intensity` |
+| Passed identification/FDR filtering, but no quantity is available | A row with the known `label` and `intensity = null` |
+| No identification or quantification evidence for this unit | No row for that group/unit/label combination |
+
+Do not drop an identified group merely because its quantity is missing, and do
+not fill unobserved combinations with zero or synthetic null rows. Global peptide
+or spectral counts alone do not establish identification in a particular unit;
+the input must support that attribution. Missing evidence fields must not be
+treated as proof that a group was identified in every run.
+
+A tool's zero sentinel for an unavailable quantity is represented as null when
+the input supplies identification evidence for that unit. A genuine measured
+zero is a numeric quantity, not a missing value. Identification-only inputs with
+no label context (for example, mzIdentML) retain null `label` and `intensity`.
 
 Each entry in `additional_intensities` contains:
 
@@ -343,6 +365,6 @@ FragPipe outputs are pre-filtered (no decoys or contaminants). Per-experiment co
     The PG view provides per-file protein group quantification. For derived per-sample summaries (protein counts, abundances, etc.), see [API Views](views.md). For downstream absolute or differential expression results, see the [Absolute Expression](absolute.md) and [Differential Expression](differential.md) views.
 
 !!! warning "Identity constraints"
-    `pg_id` is the primary key. When QPX derives it, the default identity composite is `pg_accessions`, `grouped_runs`, and `label`. `pg_accessions` and `grouped_runs` MUST NOT be null. `label` is null **only** for identification-only protein groups that carry no quantity (e.g. mzIdentML); when a quantity exists, `label` is non-null and there is one row per label. Both `pg_accessions` and `grouped_runs` are compared as sets for identity: duplicate members are ignored and order does not affect the derived ID. `grouped_runs` itself MUST contain distinct raw files and is **stored in fraction order** — sorting is not applied, because it would destroy fraction ordering (and lexicographically misorder names like `F1, F10, F2`). Each record represents a single protein group quantified in one quantification unit (the group of raw files/fractions aggregated together) for one label. A protein quantity only exists after aggregating peptides across a sample's fractions, so the PG view identifies this group of raw files rather than a single raw file; for unfractionated or DIA data the list has a single element.
+    `pg_id` is the primary key. When QPX derives it, the default identity composite is `pg_accessions`, `grouped_runs`, and `label`. `pg_accessions` and `grouped_runs` MUST NOT be null. `label` is null **only** for identification-only protein groups with no label context (e.g. mzIdentML); a known label is retained when its intensity is null, and there is one row per applicable label. Both `pg_accessions` and `grouped_runs` are compared as sets for identity: duplicate members are ignored and order does not affect the derived ID. `grouped_runs` itself MUST contain distinct raw files and is **stored in fraction order** — sorting is not applied, because it would destroy fraction ordering (and lexicographically misorder names like `F1, F10, F2`). Each record represents a single protein group identified or quantified in one quantification unit (the group of raw files/fractions aggregated together) for one label. A protein quantity only exists after aggregating peptides across a sample's fractions, so the PG view identifies this group of raw files rather than a single raw file; for unfractionated or DIA data the list has a single element.
 
     Within one `(pg_accessions, label)`, the `grouped_runs` sets across rows MUST be **disjoint** — every raw file contributes to at most one row, so no measurement is counted twice (the *run-disjointness* invariant enforced by validation).

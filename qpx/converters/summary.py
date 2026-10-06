@@ -6,10 +6,9 @@ views, the number of distinct peptidoforms (and, when cheap, proteins and
 genes), plus feature->pg link diagnostics built on the computed softlink
 (:meth:`qpx.dataset.Dataset.link_feature_pg`).
 
-The link diagnostics surface the *identified-but-not-quantified* reading: a
-feature with no pg link (:meth:`~qpx.dataset.Dataset.features_without_pg_link`)
-was identified but contributes to no protein-group quantity — e.g. a shared
-feature that does not feed a proteotypic-only protein quantity.
+The link diagnostics count features with no matching protein-group link
+(:meth:`~qpx.dataset.Dataset.features_without_pg_link`). Link presence does not
+indicate whether a feature or its protein group has a quantified intensity.
 
 Everything is computed with DuckDB ``COUNT`` / ``COUNT(DISTINCT ...)`` over the
 registered views (fast, and identical on the local and S3 read paths); whole
@@ -194,7 +193,7 @@ def format_conversion_summary(summary: dict) -> str:
         if linked is not None:
             detail.append(f"{_fmt(linked)} features linked")
         if without is not None:
-            detail.append(f"{_fmt(without)} identified-but-not-quantified")
+            detail.append(f"{_fmt(without)} features without a pg link")
         suffix = f" ({'; '.join(detail)})" if detail else ""
         lines.append(f"  {'feature->pg links':<{label_width}}: {_fmt(n_links)}{suffix}")
 

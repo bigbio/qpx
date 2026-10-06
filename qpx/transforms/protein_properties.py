@@ -306,8 +306,37 @@ def _stamped_schema(schema: pa.Schema) -> tuple[pa.Schema, str]:
     return stamped, compression
 
 
+# Upper bound on the uncompressed bytes read per batch while rewriting a view.
+_REWRITE_BATCH_BYTES = 256 * 1024 * 1024
+
+
+# Rows decoded to measure a view's in-memory row size before choosing the batch size.
+_REWRITE_PROBE_ROWS = 64
+
+
+def _rewrite_batch_rows(parquet: pq.ParquetFile, group: int) -> int:
+    """Rows per batch so one *decoded* batch stays under ``_REWRITE_BATCH_BYTES``.
+
+    The footer's ``total_byte_size`` is the encoded size; dictionary-encoded nested
+    columns (``grouped_runs`` repeats ~1,000 run names per row) decode ~50x larger,
+    so the row size is measured on a small probe batch instead.
+    """
+    rows = parquet.metadata.row_group(group).num_rows
+    if rows == 0:
+        return 1
+    probe = next(parquet.iter_batches(batch_size=min(rows, _REWRITE_PROBE_ROWS), row_groups=[group]))
+    per_row = max(1, probe.nbytes // max(probe.num_rows, 1))
+    return max(1, min(rows, _REWRITE_BATCH_BYTES // per_row))
+
+
 def _rewrite_view(source: Path, destination: Path, fill_batch) -> None:
-    """Rewrite a view row group by row group, keeping its schema and footer identity."""
+    """Rewrite a view in bounded batches, keeping its schema and footer identity.
+
+    A whole row group is never read at once: a TMT pg view over ~1,000 runs holds
+    nested intensity lists larger than 2 GB per row group, which pyarrow cannot
+    read into one array ("Nested data conversions not implemented for chunked
+    array outputs").
+    """
     from qpx.writers.base import parquet_write_options
 
     parquet = pq.ParquetFile(source)
@@ -317,8 +346,10 @@ def _rewrite_view(source: Path, destination: Path, fill_batch) -> None:
     # the footer identity but silently re-encoded the file with pyarrow defaults.
     with pq.ParquetWriter(str(destination), schema, **parquet_write_options(schema, compression)) as writer:
         for group in range(parquet.num_row_groups):
-            table = parquet.read_row_group(group)
-            writer.write_table(fill_batch(table).cast(schema))
+            batch_size = _rewrite_batch_rows(parquet, group)
+            for batch in parquet.iter_batches(batch_size=batch_size, row_groups=[group]):
+                table = pa.Table.from_batches([batch])
+                writer.write_table(fill_batch(table).cast(schema))
 
 
 def _fill_pg_rows(anchors, decoys, columns, fasta: FastaSequences, protein_peptides, report: ProteinPropertiesReport) -> None:

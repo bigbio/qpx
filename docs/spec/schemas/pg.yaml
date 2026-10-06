@@ -49,16 +49,16 @@ fields:
     type: float64
     doc: "Protein group q-value at run level"
 
-  # Quantification (flattened: one row per label. label/intensity are null for
-  # identification-only protein groups that carry no quantity, e.g. mzIdentML.)
+  # Quantification (flattened: retain known labels for identified groups even
+  # without a quantity. Both fields are null only when label context is absent.)
   label:
     type: string
     nullable: true
-    doc: "Channel/label of this quantification; null for identification-only groups (no intensity). Part of the default identity composite."
+    doc: "Channel/label of this quantification; retained for identified groups without a quantity, null only when identification-only input has no label context. Part of the default identity composite."
   intensity:
     type: float32
     nullable: true
-    doc: "Primary intensity for this label; null for identification-only groups"
+    doc: "Primary intensity for this label; null when the identified group has no reported quantity. Without identification or quantification evidence for this unit, omit the row instead of adding a zero or null placeholder."
   additional_intensities:
     type: "list<additional_intensity>"
     doc: "Tool-provided intensities (normalized, LFQ, iBAQ) for this row's label, read from upstream output"

@@ -772,12 +772,7 @@ class Dataset:
         if df.empty:
             return pd.DataFrame()
 
-        matrix = df.pivot_table(
-            index="sample_accession",
-            columns="feature_id",
-            values="intensity",
-            aggfunc="sum",
-        )
+        matrix = df.groupby(["sample_accession", "feature_id"])["intensity"].sum(min_count=1).unstack("feature_id")
         matrix.columns.name = None
 
         if fillna is not None:

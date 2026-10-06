@@ -137,6 +137,44 @@ def _canonicalize_primary_key_column(column: pa.ChunkedArray) -> pa.Array | pa.C
     return pa.array(values, type=pa.string())
 
 
+def _scan_format_issues(table: pa.Table, structure: str, severity: str) -> list[ValidationIssue]:
+    """Check a declared PSM format without guessing legacy or Feature encodings."""
+    if structure != "psm" or "scan" not in table.column_names:
+        return []
+    declared = (table.schema.metadata or {}).get(b"scan_format")
+    if not declared:
+        return []
+    scan_format = declared.decode(errors="replace")
+    if scan_format not in {"scan", "index", "nativeId"}:
+        return [
+            ValidationIssue(
+                structure, "scan_format", "warning", "scan", f"Unknown scan_format {scan_format!r}; cardinality not checked"
+            )
+        ]
+    scans = table.column("scan")
+    if not (pa.types.is_list(scans.type) or pa.types.is_large_list(scans.type)):
+        return []  # The existing type check reports this separately.
+    lengths = pc.call_function("list_value_length", [scans])
+    minimum, maximum = (2, 4) if scan_format == "nativeId" else (1, 1)
+    outside = pc.call_function(
+        "or",
+        [pc.call_function("less", [lengths, pa.scalar(minimum)]), pc.call_function("greater", [lengths, pa.scalar(maximum)])],
+    )
+    invalid = pc.call_function("and", [pc.call_function("greater", [lengths, pa.scalar(0)]), outside])
+    count = pc.call_function("sum", [invalid]).as_py() or 0
+    if not count:
+        return []
+    return [
+        ValidationIssue(
+            structure,
+            "scan_format",
+            severity,
+            "scan",
+            f"{count} non-empty PSM scan array(s) violate scan_format={scan_format!r}: expected {minimum}–{maximum} components",
+        )
+    ]
+
+
 def _query_pg_referential_issues(
     con,
     structure: str,
@@ -422,6 +460,7 @@ class ViewSchema:
             2. Column types match the schema
             3. Non-nullable columns contain no null values
             4. Primary key is unique
+            5. Non-empty PSM scans match a declared scan_format
 
         Args:
             table: The Arrow table to validate.
@@ -499,6 +538,7 @@ class ViewSchema:
             result.issues.extend(_pg_referential_issues(table, self._view_name, gated_severity))
 
         result.issues.extend(_anchor_membership_issues(table, self._view_name, gated_severity))
+        result.issues.extend(_scan_format_issues(table, self._view_name, gated_severity))
 
         return result
 

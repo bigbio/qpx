@@ -205,8 +205,8 @@ class SpectronautPgAdapter(SpectronautBaseAdapter):
         pg_names, gg_accessions = self._extract_pg_names_genes(row)
 
         # Intensities
-        pg_quantity = safe_float(row["pg_quantity"]) or 0.0
-        intensities = [{"label": "LFQ", "intensity": float(pg_quantity)}]
+        pg_quantity = safe_float(row["pg_quantity"])
+        intensities = [{"label": "LFQ", "intensity": pg_quantity}]
 
         # Q-values and scores
         global_qvalue, pg_qvalue, additional_scores = self._build_pg_scores(row)

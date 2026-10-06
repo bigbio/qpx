@@ -48,6 +48,7 @@ __all__ = [
 
 _FAMILY_PREFIX = {"TMT": "tmt", "ITRAQ": "itraq", "iTRAQ": "itraq"}
 _CANONICAL_LABELS = {label.casefold(): label for channel_labels in CHANNEL_LABELS.values() for label in channel_labels.values()}
+_SILAC_LABELS = set(CHANNEL_LABELS["silac3plex"].values())
 _ONTOLOGY_NAME = re.compile(r"(?:^|;)\s*NT\s*=\s*([^;]+)", re.IGNORECASE)
 
 
@@ -204,7 +205,7 @@ def fraction_groups_from_sdrf(sdrf_path: Optional[str]) -> Optional[dict[str, li
 
 
 def experiment_type_from_labels(sdrf_labels: Optional[set[str]]) -> str:
-    """Classify the labeling type (``"TMT"`` / ``"iTRAQ"`` / ``"LFQ"``) from SDRF labels."""
+    """Classify TMT, iTRAQ, SILAC or LFQ from the SDRF channel labels."""
     if not sdrf_labels:
         return "LFQ"
     upper = {label.upper() for label in sdrf_labels}
@@ -212,6 +213,8 @@ def experiment_type_from_labels(sdrf_labels: Optional[set[str]]) -> str:
         return "TMT"
     if any("ITRAQ" in label for label in upper):
         return "iTRAQ"
+    if any(normalize_label(label) in _SILAC_LABELS for label in sdrf_labels):
+        return "SILAC"
     return "LFQ"
 
 

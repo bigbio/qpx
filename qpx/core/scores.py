@@ -534,6 +534,8 @@ def field_ontology_entries(
         ontology_version = _get_ontology().version
     except Exception:
         ontology_version = None
+    if ontology_version == "unknown":
+        ontology_version = None
 
     entries: list[dict] = []
 
@@ -550,7 +552,7 @@ def field_ontology_entries(
                     "ontology_name": cv_info["ontology_name"] if cv_info else None,
                     "ontology_accession": (cv_info.get("ontology_accession") if cv_info else None),
                     "ontology_source": (cv_info.get("ontology_source") if cv_info else None),
-                    "ontology_version": ontology_version,
+                    "ontology_version": (ontology_version if cv_info and cv_info.get("ontology_source") == "MS" else None),
                     "view": view,
                     "description": (
                         cv_info["description"] if cv_info else f"{tool_name or 'unknown'} {source_column} (no CV term)"
@@ -635,6 +637,8 @@ def score_ontology_entries(
         ontology_version = _get_ontology().version
     except Exception:
         ontology_version = None
+    if ontology_version == "unknown":
+        ontology_version = None
 
     entries: list[dict] = []
     for name in sorted(score_names):
@@ -647,7 +651,7 @@ def score_ontology_entries(
                 "ontology_name": info["ontology_name"],
                 "ontology_accession": info["ontology_accession"],
                 "ontology_source": info["ontology_source"],
-                "ontology_version": ontology_version,
+                "ontology_version": ontology_version if info["ontology_source"] == "MS" else None,
                 "view": view,
                 "description": info["description"],
                 "source_column_name": None,

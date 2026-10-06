@@ -452,7 +452,7 @@ class SdrfConverter(BaseConverter):
                     "ontology_name": term["name"],
                     "ontology_accession": term["accession"],
                     "ontology_source": term["source"],
-                    "ontology_version": ms.version,
+                    "ontology_version": ms.version if ms.version != "unknown" else None,
                     "view": "run",
                     "description": term["definition"],
                 }

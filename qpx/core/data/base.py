@@ -7,6 +7,7 @@ from typing import Iterator
 
 import pandas as pd
 import pyarrow as pa
+import pyarrow.parquet as pq
 
 from qpx.core.convert import QueryResult
 from qpx.core.data.schema import ValidationResult
@@ -148,6 +149,12 @@ class BaseStructure:
         required-null issues to errors; the default is lenient.
         """
         table = self.to_arrow()
+        # DuckDB drops footer metadata. A single local PSM file has one format;
+        # never apply the first shard's declaration to a union of several files.
+        if self._schema_class.view_name == "psm" and len(self._file_paths) == 1 and Path(self._file_path).is_file():
+            scan_format = (pq.read_metadata(self._file_path).metadata or {}).get(b"scan_format")
+            if scan_format:
+                table = table.replace_schema_metadata({**(table.schema.metadata or {}), b"scan_format": scan_format})
         return self._schema_class.validate_full(table, strict=strict)
 
     # --- Parquet metadata (delegates to core.parquet_io) ---

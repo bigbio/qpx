@@ -789,7 +789,8 @@ def convert_mzidentml_cmd(
     "--consensusxml",
     "consensusxml_path",
     help="OpenMS .consensusXML (the -out_cxml companion of -out_qpx); its "
-    "ColumnHeaders give the authoritative channel count/order for relabeling.",
+    "ColumnHeaders give the authoritative channel count/order for relabeling. "
+    "Peptide identifications, when present, recover PSM runs using exact spectrum matches.",
     required=False,
     default=None,
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
@@ -826,11 +827,15 @@ def convert_mzidentml_cmd(
 def convert_openms_cmd(**kwargs):
     r"""[DEPRECATED] Enrich OpenMS ProteomicsLFQ -out_qpx output into a full QPX dataset.
 
-    DEPRECATED: OpenMS -out_qpx mis-assigns every PSM's run_file_name to the first
-    run (OpenMS#9872) and emits duplicate PSMs (OpenMS#9871). Use
-    ``qpxc convert openms-consensus`` — it reads the consensusXML directly and
-    resolves the correct run per PSM. This command is kept for now and will be
-    reconsidered once OpenMS ships an -out_qpx with the correct per-PSM run.
+    DEPRECATED: Some OpenMS exporters assign PSMs to the first run or emit
+    conflicting identities (OpenMS#9872, OpenMS#9871). Prefer
+    ``qpxc convert openms-consensus`` to read the original consensusXML directly.
+
+    With --consensusxml, uniquely matching spectrum evidence restores PSM runs.
+    Missing or ambiguous spectrum matches fail before existing core outputs are
+    replaced. Duplicate identities are retained with warnings; use
+    ``qpxc validate`` to report them as errors. Rows are not discarded
+    or assigned arbitrary IDs to resolve conflicts.
 
     Validates the existing psm/feature/pg parquet files, copies them to the
     output folder, and generates the missing metadata tables (run, sample,
@@ -869,11 +874,14 @@ def convert_openms_cmd(**kwargs):
         consensusxml_path=kwargs.get("consensusxml_path"),
         compression=compression,
     )
-    converter.convert(
-        output_folder=output_folder,
-        output_prefix=output_prefix,
-        project_accession=project_accession,
-    )
+    try:
+        converter.convert(
+            output_folder=output_folder,
+            output_prefix=output_prefix,
+            project_accession=project_accession,
+        )
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
 
     _maybe_enrich_pride(output_folder, project_accession, enrich_pride)
 

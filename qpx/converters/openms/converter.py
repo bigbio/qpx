@@ -27,6 +27,7 @@ from qpx.converters.channel_labels import (
     relabel_intensities_table,
     resolve_channel_labels,
 )
+from qpx.converters.openms.run_names import RunNormalizer, build_run_normalizer, normalize_run_names
 from qpx.converters.orchestrator import BaseOrchestrator
 from qpx.converters.sdrf import SdrfConverter
 from qpx.core.constants import FEATURE, ONTOLOGY, PG, PSM, RUN, SAMPLE
@@ -155,12 +156,9 @@ def _collect_score_names(table_path: Path) -> set[str]:
 def _validate_core(discovered: dict[str, Path]) -> None:
     """Validate each discovered parquet file against its QPX schema.
 
-    Uses ``strict=False`` so the convert path persists source data as-produced:
-    a duplicate primary key (and a null in a non-nullable column) is a warning,
-    not a blocking error, while the format stabilises. Missing columns and type
-    mismatches remain errors regardless of ``strict``. Null primary keys are
-    still fatal — the writer rejects them at close time before this runs. The
-    ``qpxc validate --strict`` audit/CI path stays strict and is unaffected.
+    Preserve source records with duplicate identities, which the writer reports
+    as warnings. Strict validation remains an explicit audit step. Missing
+    columns and type mismatches are errors; the writer rejects null IDs.
     """
     for view, path in discovered.items():
         schema = load_schema(_VIEW_SCHEMAS[view])
@@ -209,6 +207,7 @@ def _rewrite_core_file(
     is_lfq: bool | None,
     compression: str,
     fraction_group_lookup: dict[str, str],
+    run_normalizer: RunNormalizer = normalize_run_names,
 ) -> tuple[Path, int, int]:
     """Upgrade one OpenMS core file while streaming by Parquet row group."""
     parquet = pq.ParquetFile(src_path)
@@ -219,6 +218,8 @@ def _rewrite_core_file(
         "software_provider": metadata.get(b"software_provider", b"OpenMS").decode(),
         "compression": compression,
     }
+    if view == FEATURE:
+        writer_kwargs["override_provided_ids"] = False
     identity_composite = _source_identity_composite(parquet, view)
     if identity_composite:
         writer_kwargs["identity_composite"] = identity_composite
@@ -246,6 +247,7 @@ def _rewrite_core_file(
                     run_column=run_column,
                     cv_param_resolver=fraction_group_resolver,
                 )
+                table = run_normalizer(table, view)
                 annotated += group_annotated
                 rows += table.num_rows
                 if view != PG or "intensities" not in table.column_names:
@@ -267,6 +269,7 @@ def _copy_core(
     is_lfq: bool | None = None,
     compression: str = "zstd",
     fraction_group_lookup: Optional[dict[str, str]] = None,
+    run_normalizer: RunNormalizer = normalize_run_names,
 ) -> dict[str, Path]:
     """
     Upgrade and copy core parquet files to the output directory.
@@ -274,9 +277,9 @@ def _copy_core(
     ``feature`` and ``pg`` carry ``intensities[].label`` — OpenMS ``-out_qpx``
     writes the run filename (feature) or a bare channel index (pg) there, so
     those two are relabeled with canonical channel labels when the experiment
-    type is known (``is_lfq=None`` preserves their source labels: no SDRF
-    evidence). When a consensusXML ``fraction_group`` design is available, that
-    cv_param is stamped onto pg/feature rows in the same streaming pass. Legacy
+    type can be resolved (``is_lfq=None`` preserves their source labels, including
+    SILAC channels already assigned by OpenMS). When a ``fraction_group`` design
+    is available, that cv_param is stamped onto pg/feature rows in the same streaming pass. Legacy
     pre-1.1 tables are projected onto the current schemas and receive mandatory
     IDs before they are atomically installed at the destination.
     """
@@ -294,6 +297,7 @@ def _copy_core(
                 is_lfq,
                 compression,
                 fraction_group_lookup,
+                run_normalizer,
             )
             staged[view] = (temp_path, src_path, dst, rows, annotated)
 
@@ -349,7 +353,10 @@ class OpenMSConverter(BaseOrchestrator):
             Optional OpenMS ``.consensusXML`` (the ``-out_cxml`` companion of
             ``-out_qpx``). When given, its ColumnHeaders provide the
             authoritative channel count/order for relabeling isobaric channels;
-            otherwise the plex is resolved from the SDRF + data indices.
+            otherwise the plex is resolved from the SDRF + data indices. When
+            peptide identifications are present, each PSM's run is recovered
+            from exact spectrum evidence. Missing or ambiguous matches fail
+            conversion before existing core outputs are replaced.
         compression : str
             Parquet compression codec (default ``zstd``).
 
@@ -375,10 +382,10 @@ class OpenMSConverter(BaseOrchestrator):
         """
         logger.warning(
             "`qpxc convert openms` (over the OpenMS -out_qpx parquet folder) is DEPRECATED. "
-            "OpenMS -out_qpx mis-assigns every PSM's run_file_name to the first run (OpenMS#9872) "
-            "and emits duplicate PSMs (OpenMS#9871). Use `qpxc convert openms-consensus` "
-            "(reads the consensusXML directly, resolving the run per PSM) instead. This path will "
-            "be reconsidered once OpenMS ships an -out_qpx that carries the correct per-PSM run."
+            "Some OpenMS exporters assign PSMs to the first run or emit conflicting identities "
+            "(OpenMS#9872, OpenMS#9871). A companion consensusXML can restore uniquely matched PSM runs; "
+            "remaining duplicate IDs are retained with warnings. Prefer `qpxc convert openms-consensus` "
+            "to read the original consensusXML directly."
         )
 
         output_folder = Path(output_folder)
@@ -396,12 +403,11 @@ class OpenMSConverter(BaseOrchestrator):
 
         # Parse the consensusXML leading <mapList> ONCE and derive both the
         # channel labels and the experimental-design fraction_group grouping from
-        # that single pass (see parse_consensusxml_maplist) — the file may be tens
-        # of GB, so it must not be read twice.
+        # that header pass. Recovering PSM runs separately streams the full file.
         maplist = parse_consensusxml_maplist(self.consensusxml_path) if self.consensusxml_path else {}
 
         channel_labels = {}
-        if maplist and experiment_type:
+        if maplist and experiment_type and experiment_type != "SILAC":
             channel_labels = channel_labels_from_consensusxml(
                 self.consensusxml_path, experiment_type, sdrf_labels, maplist=maplist
             )
@@ -409,9 +415,11 @@ class OpenMSConverter(BaseOrchestrator):
                 logger.info("Resolved %d channels from consensusXML", len(channel_labels))
         if not channel_labels and experiment_type:
             channel_labels = resolve_channel_labels(experiment_type, sdrf_labels)
-        is_lfq = experiment_type == "LFQ" if experiment_type else None
+        is_lfq = experiment_type == "LFQ" if experiment_type not in (None, "SILAC") else None
         if experiment_type is None:
             logger.info("No SDRF channel labels available; preserving OpenMS intensity labels")
+        elif experiment_type == "SILAC":
+            logger.info("Preserving OpenMS SILAC intensity labels")
 
         # OpenMS's experimental-design ``fraction_group`` (the replicate/fraction
         # grouping key) is stamped as a cv_param on pg + feature rows during the
@@ -431,6 +439,7 @@ class OpenMSConverter(BaseOrchestrator):
             is_lfq,
             self._compression,
             fraction_group_lookup,
+            build_run_normalizer(self.sdrf_path, self.consensusxml_path, maplist, PSM in discovered),
         )
 
         ontology_entries = self._convert_sdrf(output_folder, output_prefix)
@@ -508,6 +517,8 @@ class OpenMSConverter(BaseOrchestrator):
         is_isobaric = experiment_type in {"TMT", "iTRAQ"}
         step_name = "isobaric_quantification" if is_isobaric else "label_free_quantification"
         tool_name = "OpenMS/IsobaricWorkflow" if is_isobaric else "OpenMS/ProteomicsLFQ"
+        if experiment_type == "SILAC":
+            step_name, tool_name = "silac_quantification", "OpenMS"
         return [
             {
                 "step_order": 1,

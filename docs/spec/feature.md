@@ -11,6 +11,11 @@ by its run or quantification unit; the original ID remains traceable in
 Converters may override the schema default when their producer represents a
 different Feature-level entity.
 
+When enriching an existing native OpenMS QPX bundle, QPX preserves supplied
+opaque IDs and their cross-view references. Run references are normalized to
+the SDRF basename convention before any missing IDs are derived; supplied IDs
+are not recalculated from the normalized run names.
+
 For a de novo workflow without a database search, set `is_decoy` to `false` and
 record a `de_novo_peptide_sequencing` step in `provenance.parquet`. Protein-mapping
 fields may be null; `anchor_protein` is an annotation and is not part of a

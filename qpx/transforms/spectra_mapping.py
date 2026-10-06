@@ -33,6 +33,8 @@ from typing import Optional, Union
 import numpy as np
 import pandas as pd
 
+from qpx.core.scan import scan_from_native_id
+
 logger = logging.getLogger(__name__)
 
 
@@ -57,11 +59,27 @@ class _MzMLCache:
         self._experiments: dict[str, object] = {}
         self._lookups: dict[str, object] = {}
         self._patterns: dict[str, str] = {}
+        self._component_indices: dict[str, dict[tuple[int, ...], Optional[int]]] = {}
+
+    def _component_index(self, mzml_path: str, components: tuple[int, ...]) -> Optional[int]:
+        """Find a unique complete native ID; never fall back to one component."""
+        if mzml_path not in self._component_indices:
+            indices: dict[tuple[int, ...], Optional[int]] = {}
+            for index, spectrum in enumerate(self._experiments[mzml_path]):
+                key = tuple(scan_from_native_id(spectrum.getNativeID()))
+                if key:
+                    indices[key] = None if key in indices else index
+            self._component_indices[mzml_path] = indices
+        indices = self._component_indices[mzml_path]
+        index = indices.get(components)
+        if index is None:
+            logger.warning("No unique spectrum for native ID components %s in %s", components, mzml_path)
+        return index
 
     def get_spectrum(
         self,
         mzml_path: str,
-        scan_number: int,
+        scan_number: Union[int, tuple[int, ...]],
         native_id_pattern: Optional[str] = None,
     ) -> tuple[int, np.ndarray, np.ndarray]:
         """
@@ -69,7 +87,7 @@ class _MzMLCache:
 
         Args:
             mzml_path: Full path to the mzML file.
-            scan_number: Scan number to retrieve.
+            scan_number: Scan number or complete native ID components to retrieve.
             native_id_pattern: Optional custom regex for native ID parsing.
 
         Returns:
@@ -93,6 +111,12 @@ class _MzMLCache:
             self._patterns.pop(mzml_path, None)
 
         exp = self._experiments[mzml_path]
+
+        if isinstance(scan_number, tuple):
+            index = self._component_index(mzml_path, scan_number)
+            if index is None:
+                return 0, np.array([], dtype=np.float32), np.array([], dtype=np.float32)
+            return self._spectrum_arrays(exp.getSpectrum(index))
 
         # Build spectrum lookup if not cached
         if mzml_path not in self._lookups:
@@ -123,9 +147,12 @@ class _MzMLCache:
         except (IndexError, RuntimeError):
             return 0, np.array([], dtype=np.float32), np.array([], dtype=np.float32)
 
-        spectrum = exp.getSpectrum(index)
-        mz_array, intensity_array = spectrum.get_peaks()
+        return self._spectrum_arrays(exp.getSpectrum(index))
 
+    @staticmethod
+    def _spectrum_arrays(spectrum) -> tuple[int, np.ndarray, np.ndarray]:
+        """Return peak arrays with the transform's stable output dtypes."""
+        mz_array, intensity_array = spectrum.get_peaks()
         return (
             len(mz_array),
             np.array(mz_array, dtype=np.float32),
@@ -137,6 +164,7 @@ class _MzMLCache:
         self._experiments.clear()
         self._lookups.clear()
         self._patterns.clear()
+        self._component_indices.clear()
 
 
 class SpectraMappingTransform:
@@ -214,14 +242,14 @@ class SpectraMappingTransform:
     def get_spectrum(
         self,
         run_file_name: str,
-        scan_number: int,
+        scan_number: Union[int, tuple[int, ...]],
     ) -> tuple[int, np.ndarray, np.ndarray]:
         """
         Get a single spectrum by run file name and scan number.
 
         Args:
             run_file_name: Name of the MS run (without mzML extension).
-            scan_number: Scan number to retrieve.
+            scan_number: Scan number or complete native ID components to retrieve.
 
         Returns:
             Tuple of (num_peaks, mz_array, intensity_array).
@@ -241,7 +269,7 @@ class SpectraMappingTransform:
     def get_spectra_batch(
         self,
         run_file_name: str,
-        scan_numbers: list[int],
+        scan_numbers: list[Union[int, tuple[int, ...]]],
     ) -> list[tuple[int, np.ndarray, np.ndarray]]:
         """
         Get multiple spectra from the same run file.
@@ -251,7 +279,7 @@ class SpectraMappingTransform:
 
         Args:
             run_file_name: Name of the MS run.
-            scan_numbers: List of scan numbers to retrieve.
+            scan_numbers: Scan numbers or complete native ID component tuples.
 
         Returns:
             List of (num_peaks, mz_array, intensity_array) tuples.
@@ -309,16 +337,16 @@ class SpectraMappingTransform:
                 if run_df.empty:
                     continue
 
-                # Extract scan numbers from the scan column
-                # In the new schema, scan is a list of int32 components
+                # PSM.scan identifies one spectrum; preserve every component.
                 scan_numbers = []
                 for scan_val in run_df["scan"]:
-                    if isinstance(scan_val, (list, np.ndarray)) and len(scan_val) > 0:
-                        scan_numbers.append(int(scan_val[0]))
+                    if isinstance(scan_val, (list, tuple, np.ndarray)):
+                        components = tuple(int(value) for value in scan_val)
+                        scan_numbers.append(components[0] if len(components) == 1 else components)
                     elif isinstance(scan_val, (int, np.integer)):
                         scan_numbers.append(int(scan_val))
                     else:
-                        scan_numbers.append(0)
+                        scan_numbers.append(())
 
                 # Batch-extract spectra for this run
                 spectra = self.get_spectra_batch(run_file, scan_numbers)

@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`convert openms` reports data errors as CLI errors** ([#341](https://github.com/bigbio/qpx/pull/341)) — companion-match and validation failures (for example "no exact companion XML match" with `--consensusxml`) exited with a Python traceback; they now exit with a one-line error, as `convert openms-consensus` already did.
+- **`--fasta` protein properties on large TMT datasets** ([#338](https://github.com/bigbio/qpx/pull/338)) — the pg/feature rewrite read whole row groups, and on PXD023662 (1,113 TMT runs) the dictionary-encoded `grouped_runs` list decoded to 7.8 GB in one row group (173 MB on disk), failing with `ArrowNotImplementedError: Nested data conversions not implemented for chunked array outputs`. Row groups are now streamed in batches bounded to 256 MB of decoded data (sized from a decoded probe, not the footer). Output is unchanged.
 - **`convert openms-consensus` on FeatureFinderIdentification maps built from group-merged IDs** (nf-core/mhcquant) ([#334](https://github.com/bigbio/qpx/pull/334)):
   - PSM run: copies of one identification in every run's map resolve to the spectrum's run via `id_merge_index` (per ProteinIdentification) instead of `map_index`, and collapse to one PSM. Output for quantms ProteomicsLFQ/IsobaricWorkflow maps is unchanged.
   - A single-run map with an empty column header (FileConverter featureXML → consensusXML) takes the run from the identification metadata instead of writing `run_file_name = ""`.

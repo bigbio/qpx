@@ -369,3 +369,53 @@ def test_reports_when_no_psm_evidence_is_available(dataset_dir, tmp_path):
 
     assert "coverage evidence from: feature" in result.output
     assert "no PSM view" in result.output
+
+
+def test_rewrite_never_reads_a_whole_row_group(dataset_dir, tmp_path, monkeypatch):
+    """A TMT pg view over ~1,000 runs has row groups whose nested intensity lists
+    exceed 2 GB; pyarrow cannot read such a group in one call (PXD023662). The
+    rewrite must stream bounded batches and give the same result."""
+    import pyarrow as pa
+
+    from qpx.transforms import protein_properties
+
+    reference = tmp_path / "reference"
+    reference.mkdir()
+    for path in dataset_dir.iterdir():
+        if path.is_file():
+            (reference / path.name).write_bytes(path.read_bytes())
+    fasta = _dataset_fasta(tmp_path)
+    _run(reference, fasta, "--in-place")
+
+    def too_large(self, *args, **kwargs):
+        raise pa.ArrowNotImplementedError("Nested data conversions not implemented for chunked array outputs")
+
+    monkeypatch.setattr(pq.ParquetFile, "read_row_group", too_large)
+    monkeypatch.setattr(protein_properties, "_REWRITE_BATCH_BYTES", 1)
+    _run(dataset_dir, fasta, "--in-place")
+
+    for view in ("pg", "feature"):
+        assert _rows(dataset_dir, view) == _rows(reference, view), view
+
+
+def test_rewrite_batches_are_sized_by_decoded_bytes(tmp_path, monkeypatch):
+    """Dictionary-encoded nested columns (``grouped_runs``) decode ~50x larger than
+    the footer's encoded size; a batch sized from the footer still overflowed on
+    PXD023662. Batches must be bounded by their decoded size."""
+    import pyarrow as pa
+
+    from qpx.transforms import protein_properties
+
+    runs = [f"run_{i:04d}_a_long_tmt_raw_file_name" for i in range(200)]
+    table = pa.table({"grouped_runs": [runs] * 2000})
+    path = tmp_path / "nested.parquet"
+    pq.write_table(table, path, row_group_size=2000, use_dictionary=True)
+    parquet = pq.ParquetFile(path)
+    bound = 1_000_000
+    assert parquet.metadata.row_group(0).total_byte_size < bound < table.nbytes
+
+    monkeypatch.setattr(protein_properties, "_REWRITE_BATCH_BYTES", bound)
+    batch_size = protein_properties._rewrite_batch_rows(parquet, 0)
+    batch = next(parquet.iter_batches(batch_size=batch_size, row_groups=[0]))
+    assert 1 <= batch.num_rows < 2000
+    assert batch.nbytes <= 2 * bound

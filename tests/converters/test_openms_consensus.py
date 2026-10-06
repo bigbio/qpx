@@ -449,7 +449,7 @@ def test_consensus_psm_distinct_peptidoforms_both_emitted(tmp_path):
 
 
 def test_consensus_psm_sciex_nativeid_not_dropped(tmp_path):
-    """A Sciex WIFF nativeID (no scan token, cycle-based) is kept, keyed by cycle."""
+    """A Sciex WIFF nativeID retains all four components, including repeats."""
     from qpx.converters.openms_consensus.psm_adapter import consensus_psms_to_records
 
     xml = _TMT_CONSENSUSXML.replace(
@@ -462,7 +462,7 @@ def test_consensus_psm_sciex_nativeid_not_dropped(tmp_path):
     records = consensus_psms_to_records(str(path))
 
     assert len(records) == 1  # not silently dropped
-    assert list(records[0]["scan"]) == [123]  # cycle is the scan-equivalent ordinal
+    assert list(records[0]["scan"]) == [1, 1, 123, 2]
 
 
 def test_consensus_psm_unknown_nativeid_uses_surrogate_scan(tmp_path):
@@ -472,7 +472,7 @@ def test_consensus_psm_unknown_nativeid_uses_surrogate_scan(tmp_path):
 
     xml = _TMT_CONSENSUSXML.replace(
         'spectrum_reference="controllerType=0 controllerNumber=1 scan=42"',
-        'spectrum_reference="sample=1 period=1 experiment=2"',
+        'spectrum_reference="uuid=opaque-spectrum-reference"',
     )
     path = tmp_path / "exotic.consensusXML"
     path.write_text(xml)

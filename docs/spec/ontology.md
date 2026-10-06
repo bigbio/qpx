@@ -20,6 +20,14 @@ Each QPX dataset includes an `ontology.parquet` file that stores the field-to-on
 
 See the full YAML schema in [`ontology.yaml`](schemas/ontology.yaml).
 
+### Ontology versions
+
+`ontology_version` records the version of the ontology resource used for a row's mapping. QPX's PSI-MS field, score and SDRF run mappings use the version stored in the loaded PSI-MS ontology Parquet file. This is independent of the QPX package version, search-engine version and the latest version available online.
+
+Fields without a CV mapping and tool-specific scores without an ontology accession have a null version. An unavailable or unversioned ontology resource also leaves the version null. A modification accession alone does not establish a UNIMOD or PSI-MOD release, so no version should be inferred from it.
+
+The CV versions declared by an input file describe that producer's vocabulary. They must not replace the version of a different ontology resource used by QPX to resolve an output mapping.
+
 !!! note "Primary key"
     Rows are unique on `(field_name, view)`. Converters collapse duplicates
     (first-wins) when the same field is accumulated both as a discovered score

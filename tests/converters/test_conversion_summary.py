@@ -135,7 +135,7 @@ def test_format_block_renders_expected_lines(converted_output):
     assert "protein groups" in block
     assert "peptidoforms" in block
     assert "feature->pg links" in block
-    assert "identified-but-not-quantified" in block
+    assert "features without a pg link" in block
 
 
 def test_diagnostics_degrade_without_pg(converted_output):

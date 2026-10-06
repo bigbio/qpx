@@ -1,5 +1,42 @@
 # Collections
 
+!!! warning "Design proposal — not an implemented API"
+
+    Except for **Current API** below, this page describes a proposed collection
+    API. Directory discovery, `qpx.open_collection()`, unified cross-dataset
+    views, `coll.summary()`, and collection indexes are not implemented. The
+    examples in the proposal are illustrative and cannot be run against the
+    current QPX package.
+
+## Current API
+
+Use `qpx.DatasetCollection` with an explicit list of opened datasets. Structures
+are registered with a dataset index, such as `pg_0` and `pg_1`, rather than a
+single unified `pg` view:
+
+```python
+import qpx
+
+with (
+    qpx.Dataset("/data/my_collection/PXD000561/", structures=["pg"]) as ds1,
+    qpx.Dataset("/data/my_collection/PXD002137/", structures=["pg"]) as ds2,
+    qpx.DatasetCollection([ds1, ds2]) as coll,
+):
+    result = coll.sql("""
+        SELECT 'PXD000561' AS dataset, COUNT(*) AS protein_group_rows FROM pg_0
+        UNION ALL
+        SELECT 'PXD002137' AS dataset, COUNT(*) AS protein_group_rows FROM pg_1
+    """)
+    print(result.to_df())
+```
+
+`coll.datasets` contains the supplied `Dataset` objects, and
+`coll.structure_names` lists the registered structures for each dataset index.
+See [Multi-Dataset Analysis](../examples/integration.md#multi-dataset-analysis)
+for the supported query and merge operations.
+
+## Proposed Collection Model
+
 A **collection** is a group of QPX datasets stored under a common path. Collections enable cross-dataset operations -- browsing available datasets, querying across all of them, and building materialized indexes for fast search.
 
 Collections are **programmatic, not persisted**. There is no `collection.parquet` file. The collection is defined by a directory convention: any subfolder that contains a `*.dataset.parquet` file is recognized as a QPX dataset within the collection.
