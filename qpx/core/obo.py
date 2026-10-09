@@ -33,14 +33,8 @@ from qpx.core.http import safe_urlopen
 
 logger = logging.getLogger(__name__)
 
-# Default OBO source URLs
+# Default OBO source URL
 PSI_MS_OBO_URL = "https://raw.githubusercontent.com/HUPO-PSI/psi-ms-CV/master/psi-ms.obo"
-PRIDE_CV_OBO_URL = "https://raw.githubusercontent.com/PRIDE-Archive/pride-ontology/master/pride_cv.obo"
-
-# Aliases for backward compatibility with local names
-_HIGHER_BETTER_ACC = CV_HIGHER_BETTER
-_LOWER_BETTER_ACC = CV_LOWER_BETTER
-_SCORE_PARENT_IDS = SCORE_PARENT_IDS
 
 # Arrow schema for ontology Parquet files
 TERMS_SCHEMA = pa.schema(
@@ -136,9 +130,9 @@ def parse_obo(text: str, source: str = "MS") -> list[CVTerm]:
                 is_a_parents.append(parent_id)
             elif line.startswith("relationship: has_order "):
                 order_acc = line.split("has_order ")[1].split("!")[0].strip()
-                if order_acc == _HIGHER_BETTER_ACC:
+                if order_acc == CV_HIGHER_BETTER:
                     higher_better = True
-                elif order_acc == _LOWER_BETTER_ACC:
+                elif order_acc == CV_LOWER_BETTER:
                     higher_better = False
             elif line.startswith("synonym: "):
                 m = re.match(r'^synonym:\s*"(.+?)"', line)
@@ -148,7 +142,7 @@ def parse_obo(text: str, source: str = "MS") -> list[CVTerm]:
                 is_obsolete = True
 
         if accession and name:
-            is_score = bool(set(is_a_parents) & _SCORE_PARENT_IDS)
+            is_score = bool(set(is_a_parents) & SCORE_PARENT_IDS)
             terms.append(
                 CVTerm(
                     accession=accession,

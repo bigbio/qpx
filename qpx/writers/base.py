@@ -52,6 +52,10 @@ logger = logging.getLogger(__name__)
 # the file). Rather than probe the data at write time, we simply omit them here:
 # they fall back to dictionary encoding, which is safe everywhere (never worse
 # than PLAIN) and avoids the TMT regression. RT/mz leaves (a proven win) stay.
+#
+# The mz view's peak arrays are split as well: on Thermo DIA, timsTOF DDA-PASEF and
+# diaPASEF spectra, m/z measured ~36% smaller than dictionary encoding; intensity
+# 10% smaller (Thermo, DDA-PASEF) or 2% larger (diaPASEF), ~25% smaller files overall.
 _BYTE_STREAM_SPLIT_LEAVES: tuple[str, ...] = (
     "predicted_rt",
     "rt",
@@ -59,6 +63,8 @@ _BYTE_STREAM_SPLIT_LEAVES: tuple[str, ...] = (
     "rt_stop",
     "calculated_mz",
     "observed_mz",
+    "mz.list.element",
+    "intensity.list.element",
 )
 
 # ZSTD level 9 (vs the pyarrow default of 3) buys a few extra percent at modest

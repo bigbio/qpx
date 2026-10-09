@@ -29,6 +29,29 @@ logger = logging.getLogger(__name__)
 # Derive field map from central YAML mappings
 _PG_MAP = get_field_mappings("fragpipe", "pg")
 
+_SPECTRAL_COUNT_SUFFIXES = ("Spectral Count", "Unique Spectral Count", "Total Spectral Count")
+
+
+def _experiment_quantities(row, experiment: str) -> tuple[float | None, list[dict]] | None:
+    """Primary intensity and MaxLFQ entries of one experiment; ``None`` without evidence in it.
+
+    MaxLFQ-only experiments (detected from a "<exp> MaxLFQ Intensity" column) have
+    no Total Intensity; MaxLFQ is then the primary intensity rather than dropping
+    the protein group. Unit-specific identifications survive a missing quantity.
+    """
+    total_intensity = safe_float(row.get(f"{experiment} Total Intensity")) or 0.0
+    maxlfq = safe_float(row.get(f"{experiment} MaxLFQ Intensity"))
+    if total_intensity > 0:
+        primary = total_intensity
+    elif maxlfq is not None and maxlfq > 0:
+        primary = maxlfq
+    elif any((safe_float(row.get(f"{experiment} {suffix}")) or 0) > 0 for suffix in _SPECTRAL_COUNT_SUFFIXES):
+        # Without a primary quantity, MaxLFQ can only hold FragPipe's zero sentinel.
+        return None, []
+    else:
+        return None
+    return primary, [{"intensity_name": "maxlfq", "intensity_value": float(maxlfq)}] if maxlfq is not None else []
+
 
 def normalize_run_name(value: str) -> str:
     """Return a QPX run name for a FragPipe raw-file value."""
@@ -324,40 +347,20 @@ class FragPipePgAdapter(BaseConverter):
 
         # Expand per experiment
         for experiment in experiments:
-            total_int_col = f"{experiment} Total Intensity"
-            maxlfq_col = f"{experiment} MaxLFQ Intensity"
             spec_count_col = f"{experiment} Spectral Count"
             unique_spec_col = f"{experiment} Unique Spectral Count"
 
-            total_intensity = safe_float(row.get(total_int_col)) or 0.0
-            maxlfq_val = safe_float(row.get(maxlfq_col))
-            # MaxLFQ-only experiments (detected from a "<exp> MaxLFQ Intensity"
-            # column) have no Total Intensity; fall back to MaxLFQ as the primary
-            # intensity rather than dropping the protein group entirely.
-            primary_intensity = None
-            if total_intensity > 0:
-                primary_intensity = total_intensity
-            elif maxlfq_val is not None and maxlfq_val > 0:
-                primary_intensity = maxlfq_val
-            # Unit-specific identifications survive a missing quantity.
-            if primary_intensity is None and not any(
-                (safe_float(row.get(f"{experiment} {suffix}")) or 0) > 0
-                for suffix in ("Spectral Count", "Unique Spectral Count", "Total Spectral Count")
-            ):
+            quantities = _experiment_quantities(row, experiment)
+            if quantities is None:
                 continue
+            primary_intensity, extra_vals = quantities
 
             # Intensities (new schema: {label, intensity})
             label = "LFQ"
             intensities = [{"label": label, "intensity": primary_intensity}]
 
             # Additional intensities pre-computed by FragPipe (MaxLFQ)
-            additional_intensities = []
-            extra_vals = []
-            # Without a primary quantity, MaxLFQ can only hold FragPipe's zero sentinel.
-            if maxlfq_val is not None and primary_intensity is not None:
-                extra_vals.append({"intensity_name": "maxlfq", "intensity_value": float(maxlfq_val)})
-            if extra_vals:
-                additional_intensities.append({"label": label, "intensities": extra_vals})
+            additional_intensities = [{"label": label, "intensities": extra_vals}] if extra_vals else []
 
             # Additional scores
             additional_scores = []

@@ -15,8 +15,3 @@ ONTOLOGY = "ontology"
 PROVENANCE = "provenance"
 PEPMAP = "pepmap"
 MZ = "mz"
-
-# Common structure sets for converters
-QUANT_STRUCTURES = (PSM, FEATURE, PG)
-SAMPLE_RUN_STRUCTURES = (SAMPLE, RUN)
-METADATA_STRUCTURES = (SAMPLE, RUN, ONTOLOGY)

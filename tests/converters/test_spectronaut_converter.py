@@ -53,8 +53,7 @@ def converted_output(tmp_path_factory):
 def feature_table(converted_output):
     """Read the feature.parquet produced by the converter."""
     path = converted_output / "sn_test.feature.parquet"
-    if not path.exists():
-        pytest.skip("feature.parquet was not produced")
+    assert path.exists(), "feature.parquet was not produced"
     return pq.read_table(str(path))
 
 
@@ -62,8 +61,7 @@ def feature_table(converted_output):
 def pg_table(converted_output):
     """Read the pg.parquet produced by the converter."""
     path = converted_output / "sn_test.pg.parquet"
-    if not path.exists():
-        pytest.skip("pg.parquet was not produced")
+    assert path.exists(), "pg.parquet was not produced"
     return pq.read_table(str(path))
 
 
@@ -159,15 +157,13 @@ class TestSpectronautOntologyConversion:
 
     def test_ontology_file_exists_or_no_scores(self, converted_output):
         path = converted_output / "sn_test.ontology.parquet"
-        if not path.exists():
-            pytest.skip("ontology.parquet not written (no scores discovered)")
+        assert path.exists(), "ontology.parquet not written (no scores discovered)"
         table = pq.read_table(str(path))
         assert table.num_rows > 0, "ontology.parquet exists but is empty"
 
     def test_ontology_columns(self, converted_output):
         path = converted_output / "sn_test.ontology.parquet"
-        if not path.exists():
-            pytest.skip("ontology.parquet not written (no scores discovered)")
+        assert path.exists(), "ontology.parquet not written (no scores discovered)"
         table = pq.read_table(str(path))
         column_names = set(table.column_names)
         expected = {"field_name", "view"}
@@ -178,8 +174,7 @@ class TestSpectronautOntologyConversion:
         from qpx.core.data import OntologySchema
 
         path = converted_output / "sn_test.ontology.parquet"
-        if not path.exists():
-            pytest.skip("ontology.parquet not written (no scores discovered)")
+        assert path.exists(), "ontology.parquet not written (no scores discovered)"
         table = pq.read_table(str(path))
         errors = OntologySchema.validate(table)
         assert not errors, f"Schema validation errors: {errors}"
@@ -200,16 +195,14 @@ class TestSpectronautProvenance:
 
     def test_has_spectronaut_step(self, converted_output):
         path = converted_output / "sn_test.provenance.parquet"
-        if not path.exists():
-            pytest.skip("provenance.parquet not written")
+        assert path.exists(), "provenance.parquet not written"
         table = pq.read_table(str(path))
         tool_names = table.column("tool_name").to_pylist()
         assert any("Spectronaut" in str(t) for t in tool_names if t), "Expected Spectronaut in provenance tool_names"
 
     def test_has_qpx_step(self, converted_output):
         path = converted_output / "sn_test.provenance.parquet"
-        if not path.exists():
-            pytest.skip("provenance.parquet not written")
+        assert path.exists(), "provenance.parquet not written"
         table = pq.read_table(str(path))
         tool_names = table.column("tool_name").to_pylist()
         assert any("qpx" in str(t).lower() for t in tool_names if t), "Expected qpx in provenance tool_names"

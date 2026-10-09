@@ -128,8 +128,7 @@ class CdapFeatureAdapter(CdapBaseAdapter):
         typed_cols.append('TRY_CAST("RTAtPrecursorHalfElution" AS DOUBLE) AS rt' if has_rt else "CAST(NULL AS DOUBLE) AS rt")
         if has_precursor_area:
             typed_cols.append('TRY_CAST("PrecursorArea" AS DOUBLE) AS precursor_area')
-        # Pre-extract reporter-ion intensities from "value/ppm" format in SQL
-        # so Python never calls parse_intensity_cell.
+        # Pre-extract reporter-ion intensities from "value/ppm" format in SQL.
         for col in channel_cols:
             qcol = self._quote_ident(col)
             typed_cols.append(

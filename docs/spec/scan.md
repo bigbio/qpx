@@ -105,7 +105,7 @@ The `scan` field appears in the following QPX views:
 | ---- | ---------- | ----- |
 | PSM (`psm_file`) | `scan` | Scan of the identified MS/MS spectrum |
 | Feature (`feature_file`) | `scan` | Scan components reported by the feature producer |
-| MZ (`mz_file`) | `id` | String spectrum identifier, retaining the native ID |
+| MZ (`mz_file`) | `id`, `scan` | `id` is the string spectrum identifier retaining the native ID; `scan` holds the same components as PSM/feature `scan` for joins |
 
 !!! tip
     The OpenMS consensusXML converter can combine components from multiple supporting spectra in `feature.scan`. Use the linked PSM rows to retrieve each complete spectrum identifier; do not treat the combined feature array as one native ID. `id_run_file_name` records the direct identification's run when that origin is known.

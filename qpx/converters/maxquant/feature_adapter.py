@@ -244,24 +244,20 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         empty = {"by_group": {}, "by_accession": {}}
         if not protein_groups_path:
             return empty
-        try:
-            df = self._conn.execute(
-                "SELECT * FROM read_csv_auto($1, delim='\t', header=true, auto_detect=true, null_padding=true)",
-                [protein_groups_path],
-            ).df()
-            acc_col, qval_col, gene_col = self._detect_pg_columns(df)
-            if not acc_col:
-                return empty
-            maps = self._build_pg_lookup(df, acc_col, qval_col, gene_col)
-            self.logger.info(
-                "Built protein group maps: %d group(s), %d unambiguous accession(s)",
-                len(maps["by_group"]),
-                len(maps["by_accession"]),
-            )
-            return maps
-        except (FileNotFoundError, pd.errors.ParserError, KeyError, ValueError, duckdb.Error) as e:
-            self.logger.warning("Could not build protein group maps: %s", e)
-        return empty
+        df = self._conn.execute(
+            "SELECT * FROM read_csv_auto($1, delim='\t', header=true, auto_detect=true, null_padding=true)",
+            [protein_groups_path],
+        ).df()
+        acc_col, qval_col, gene_col = self._detect_pg_columns(df)
+        if not acc_col:
+            raise ValueError(f"{protein_groups_path} has no 'Protein IDs' or 'Majority protein IDs' column")
+        maps = self._build_pg_lookup(df, acc_col, qval_col, gene_col)
+        self.logger.info(
+            "Built protein group maps: %d group(s), %d unambiguous accession(s)",
+            len(maps["by_group"]),
+            len(maps["by_accession"]),
+        )
+        return maps
 
     @staticmethod
     def _detect_pg_columns(df: pd.DataFrame) -> tuple:

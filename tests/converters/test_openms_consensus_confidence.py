@@ -17,6 +17,7 @@ from qpx.converters.openms_consensus.feature_adapter import (
     pep_of,
     qvalue_of,
 )
+from qpx.converters.openms_consensus.protein_groups import ProteinGroupIndex
 from qpx.converters.openms_consensus.psm_adapter import consensus_psms_to_records
 from tests.converters.test_openms_consensus import (
     _TMT_CONSENSUSXML,
@@ -142,7 +143,7 @@ def test_zero_charge_feature_has_no_mass_error(tmp_path):
     records = feature_records_for_cf(
         list(consensus_map)[0],
         map_info,
-        group_map={"P12345": ["P12345"]},
+        group_map=ProteinGroupIndex.from_groups([["P12345"]]),
     )
 
     assert records
@@ -171,13 +172,13 @@ def test_unique_is_unknown_without_a_resolved_group(tmp_path):
     map_info = feature_map_info(consensus_map)
     consensus_feature = list(consensus_map)[0]
 
-    unresolved = feature_records_for_cf(consensus_feature, map_info, group_map={})
+    unresolved = feature_records_for_cf(consensus_feature, map_info, group_map=ProteinGroupIndex.from_groups([]))
     assert unresolved, "expected at least one feature record"
     for record in unresolved:
         assert record["anchor_protein"] == "P12345", "anchor still resolves from peptide evidence"
         assert record["unique"] is None, "unique must be unknown when no group resolved"
 
-    resolved = feature_records_for_cf(consensus_feature, map_info, group_map={"P12345": ["P12345"]})
+    resolved = feature_records_for_cf(consensus_feature, map_info, group_map=ProteinGroupIndex.from_groups([["P12345"]]))
     assert all(record["unique"] is True for record in resolved), "a resolved group of one is unique"
 
 

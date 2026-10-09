@@ -107,8 +107,7 @@ def dataset(tmp_path_factory):
 def feature_table(dataset):
     """Raw PyArrow table for feature.parquet."""
     path = Path(dataset.path) / f"{_PREFIX}.feature.parquet"
-    if not path.exists():
-        pytest.skip("feature.parquet was not produced")
+    assert path.exists(), "feature.parquet was not produced"
     return pq.read_table(str(path))
 
 
@@ -116,8 +115,7 @@ def feature_table(dataset):
 def pg_table(dataset):
     """Raw PyArrow table for pg.parquet."""
     path = Path(dataset.path) / f"{_PREFIX}.pg.parquet"
-    if not path.exists():
-        pytest.skip("pg.parquet was not produced")
+    assert path.exists(), "pg.parquet was not produced"
     return pq.read_table(str(path))
 
 

@@ -607,6 +607,11 @@ class Dataset:
     def available_structures(self) -> list[str]:
         return list(self._structures.keys())
 
+    @property
+    def file_prefix(self) -> str | None:
+        """Prefix of the QPX file names this dataset was opened with, if any."""
+        return self._file_prefix
+
     # --- Analysis helpers ---
 
     def _abundance_sql(self, level: str) -> str:

@@ -105,29 +105,8 @@ class CdapBaseAdapter(BaseConverter):
         return [], "LFQ"
 
     # ------------------------------------------------------------------
-    # Value parsers (intensity, protein)
+    # Value parsers (protein)
     # ------------------------------------------------------------------
-
-    @staticmethod
-    def parse_intensity_cell(cell: object) -> Optional[float]:
-        """Parse a CDAP intensity cell of the form ``intensity/ppm``.
-
-        Returns ``None`` for missing values and the float intensity (0 allowed)
-        otherwise.  Handles the common ``0/?`` / ``0.0/?`` sentinels.
-        """
-        if cell is None:
-            return None
-        text = str(cell).strip()
-        if not text or text in ("?", "/?"):
-            return None
-        # CDAP guarantees `intensity/ppm`; missing intensity means literally 0.
-        head = text.split("/", 1)[0]
-        if not head or head == "?":
-            return None
-        try:
-            return float(head)
-        except ValueError:
-            return None
 
     @staticmethod
     @lru_cache(maxsize=100_000)

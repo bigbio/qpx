@@ -75,26 +75,6 @@ def strip_uniprot_prefix(accession: str) -> str:
 
 
 # ------------------------------------------------------------------
-# CV term column-name helpers
-# ------------------------------------------------------------------
-
-
-def cv_column_names(cv_term: str, suffix: str) -> tuple[str, str]:
-    """Return (lowercase, uppercase) opt_global column names for a CV term."""
-    cv_code = cv_term.split(":")[1]
-    return (
-        f"opt_global_cv_ms:{cv_code}_{suffix}",
-        f"opt_global_cv_MS:{cv_code}_{suffix}",
-    )
-
-
-def get_cv_value(row: dict, cv_term: str, suffix: str, default=None):
-    """Get a value from a row dict trying both CV column name variants."""
-    lo, hi = cv_column_names(cv_term, suffix)
-    return row.get(lo, row.get(hi, default))
-
-
-# ------------------------------------------------------------------
 # MaxQuant helpers
 # ------------------------------------------------------------------
 

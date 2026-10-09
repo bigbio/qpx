@@ -377,7 +377,6 @@ class ViewSchema:
         file_type: str,
         primary_key: list[str],
         fields: dict[str, FieldDef],
-        doc: str = "",
         extra_columns: bool = False,
         identity_composite: list[str] | None = None,
     ):
@@ -385,7 +384,6 @@ class ViewSchema:
         self._file_type = file_type
         self._primary_key = tuple(primary_key)
         self._fields = fields
-        self._doc = doc
         self._extra_columns = extra_columns
         self._identity_composite = tuple(identity_composite) if identity_composite else None
         self._arrow_schema_cache: pa.Schema | None = None

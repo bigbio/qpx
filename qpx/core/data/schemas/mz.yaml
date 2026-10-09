@@ -13,8 +13,8 @@ fields:
     type: string
     doc: "Run file containing this spectrum (links to PSM/feature run_file_name)"
   scan:
-    type: int32
-    doc: "Scan number from native ID (links to PSM/feature scan)"
+    type: "list<int32>"
+    doc: "Scan ID from native ID (array of int components; links to PSM/feature scan)"
   ms_level:
     type: int32
     required: true

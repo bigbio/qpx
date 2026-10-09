@@ -138,10 +138,6 @@ def test_pg_peptide_counts_are_per_protein(monkeypatch):
             return {0: Header()}
 
         @staticmethod
-        def getExperimentType():
-            return "label-free"
-
-        @staticmethod
         def getProteinIdentifications():
             return []
 

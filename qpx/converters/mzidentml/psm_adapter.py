@@ -91,7 +91,6 @@ class MzIdentMLPsmAdapter(BaseConverter):
             tree = etree.parse(path)
         root = tree.getroot()
         ns = root.nsmap.get(None, "")
-        self._ns = ns
 
         return {
             "spectra_data": self._parse_spectra_data(root, ns),

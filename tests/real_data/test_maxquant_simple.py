@@ -63,8 +63,7 @@ def dataset(tmp_path_factory):
 def psm_table(dataset):
     """Raw PyArrow table for psm.parquet."""
     path = Path(dataset.path) / f"{_PREFIX}.psm.parquet"
-    if not path.exists():
-        pytest.skip("psm.parquet was not produced")
+    assert path.exists(), "psm.parquet was not produced"
     return pq.read_table(str(path))
 
 
@@ -72,8 +71,7 @@ def psm_table(dataset):
 def feature_table(dataset):
     """Raw PyArrow table for feature.parquet."""
     path = Path(dataset.path) / f"{_PREFIX}.feature.parquet"
-    if not path.exists():
-        pytest.skip("feature.parquet was not produced")
+    assert path.exists(), "feature.parquet was not produced"
     return pq.read_table(str(path))
 
 

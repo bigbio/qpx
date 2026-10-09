@@ -179,8 +179,7 @@ def _converted_output(tmp_path_factory):
 def _feature_table(converted_output):
     """Read the feature.parquet produced by the converter."""
     path = converted_output / "diann_test.feature.parquet"
-    if not path.exists():
-        pytest.skip("feature.parquet was not produced")
+    assert path.exists(), "feature.parquet was not produced"
     return pq.read_table(str(path))
 
 
@@ -188,8 +187,7 @@ def _feature_table(converted_output):
 def pg_table(converted_output):
     """Read the pg.parquet produced by the converter."""
     path = converted_output / "diann_test.pg.parquet"
-    if not path.exists():
-        pytest.skip("pg.parquet was not produced")
+    assert path.exists(), "pg.parquet was not produced"
     return pq.read_table(str(path))
 
 
@@ -1025,16 +1023,14 @@ class TestDiaNNOntologyConversion:
 
     def test_ontology_file_exists_or_no_scores(self, converted_output):
         path = converted_output / "diann_test.ontology.parquet"
-        if not path.exists():
-            pytest.skip("ontology.parquet not written (no scores discovered)")
+        assert path.exists(), "ontology.parquet not written (no scores discovered)"
 
         table = pq.read_table(str(path))
         assert table.num_rows > 0, "ontology.parquet exists but is empty"
 
     def test_ontology_columns(self, converted_output):
         path = converted_output / "diann_test.ontology.parquet"
-        if not path.exists():
-            pytest.skip("ontology.parquet not written (no scores discovered)")
+        assert path.exists(), "ontology.parquet not written (no scores discovered)"
 
         table = pq.read_table(str(path))
         column_names = set(table.column_names)
@@ -1053,8 +1049,7 @@ class TestDiaNNOntologyConversion:
         from qpx.core.data import OntologySchema
 
         path = converted_output / "diann_test.ontology.parquet"
-        if not path.exists():
-            pytest.skip("ontology.parquet not written (no scores discovered)")
+        assert path.exists(), "ontology.parquet not written (no scores discovered)"
         table = pq.read_table(str(path))
         errors = OntologySchema.validate(table)
         assert not errors, f"Schema validation errors: {errors}"
@@ -1404,8 +1399,7 @@ def test_protein_properties_from_fasta_on_bare_diann_accessions(converted_output
     from qpx.cli.transform import transform
 
     feature = converted_output / "diann_test.feature.parquet"
-    if not (converted_output / "diann_test.pg.parquet").exists():
-        pytest.skip("pg.parquet was not produced")
+    assert (converted_output / "diann_test.pg.parquet").exists(), "pg.parquet was not produced"
     groups = (
         duckdb.connect()
         .execute(
@@ -1484,3 +1478,84 @@ def test_diann_convert_writes_the_mudata_view(tmp_path, mudata_flag, expect_h5mu
     assert result.exit_code == 0, result.output
     assert (out / "d.feature.parquet").is_file()
     assert (out / "d.h5mu").is_file() is expect_h5mu
+
+
+def test_ms_info_scans_accept_one_component_native_ids():
+    """tdf2mzml ``index=N`` IDs stay verbatim in MS-info tables and still give a scan number."""
+    from qpx.converters.diann.feature_adapter import _ms_info_scans
+
+    scans = _ms_info_scans(pd.Series(["7", "index=5", "controllerType=0 controllerNumber=1 scan=9", "frame=1 scan=2", None]))
+
+    assert scans.tolist()[:3] == [7, 5, 9]
+    assert scans.iloc[3:].isna().all()
+
+
+def test_nearest_ms2_picks_the_precursor_window_among_spectra_sharing_a_time():
+    """diaPASEF windows of one frame share a time; the window centre nearest the
+    precursor m/z identifies the spectrum, and a later time is not chosen."""
+    from qpx.converters.diann.feature_adapter import _nearest_ms2
+
+    right = pd.DataFrame(
+        {
+            "_ms_rt": [100.0, 100.0, 100.0, 100.1],
+            "_matched_scan": [1.0, 2.0, 3.0, 4.0],
+            "_matched_mz": [412.5, 437.5, 462.5, 437.5],
+        }
+    )
+    left = pd.DataFrame({"_merge_row": [0, 1, 2], "rt": [100.0, 100.0, 100.02], "observed_mz": [440.1, 410.0, None]})
+
+    nearest = _nearest_ms2(left, right).set_index("_merge_row")["_matched_scan"]
+
+    assert nearest.to_dict() == {0: 2.0, 1: 1.0, 2: 1.0}
+
+
+@pytest.mark.parametrize("with_ms_info", [False, True])
+def test_diann_ms2_scan_position_becomes_a_scan_only_through_ms_info(tmp_path, with_ms_info):
+    """DIA-NN 1.8 MS2.Scan counts the run's MS2 spectra from 0. Without MS info it
+    names no native scan, so feature.scan stays empty; with it, the position selects
+    the scan. The MS-info precursor m/z is a DIA window centre and never fills
+    observed_mz."""
+    from qpx.converters.diann.feature_adapter import DiannFeatureAdapter
+
+    report_path = tmp_path / "report.tsv"
+    pd.DataFrame(
+        [
+            {
+                "Run": "run_A",
+                "Protein.Group": "P1",
+                "Genes": "G1",
+                "Modified.Sequence": "PEPTIDEK",
+                "Stripped.Sequence": "PEPTIDEK",
+                "Precursor.Charge": 2,
+                "Q.Value": 0.002,
+                "Precursor.Quantity": 100.0,
+                "RT": 10.0,
+                "MS2.Scan": 2,
+            }
+        ]
+    ).to_csv(report_path, sep="\t", index=False)
+    ms_info = tmp_path / "ms_info"
+    ms_info.mkdir()
+    # Native scan 2 would read as "MS2.Scan is a scan number"; the RT alone points at scan 3.
+    pd.DataFrame(
+        {
+            "scan": ["1", "2", "3", "4"],
+            "ms_level": [1, 2, 2, 2],
+            "rt": [599.0, 599.5, 600.0, 600.5],
+            "precursor_mz": [None, 412.5, 437.5, 462.5],
+        }
+    ).to_parquet(ms_info / "run_A_ms_info.parquet", index=False)
+
+    output_path = tmp_path / "report.feature.parquet"
+    with DiannFeatureAdapter() as adapter:
+        adapter.convert(
+            diann_report=str(report_path),
+            output_path=str(output_path),
+            mzml_info_folder=str(ms_info) if with_ms_info else None,
+            qvalue_threshold=0.01,
+        )
+
+    row = pq.read_table(output_path).to_pylist()[0]
+    assert row["scan"] == ([4] if with_ms_info else [])
+    assert row["observed_mz"] is None
+    assert row["mass_error_ppm"] is None

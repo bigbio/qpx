@@ -58,9 +58,3 @@ class ProteinGroupIndex:
         if len(candidates) == 1:
             return self.by_membership[next(iter(candidates))]
         return None
-
-    def unambiguous_accessions(self) -> dict[str, list[str]]:
-        """Legacy accession lookup, excluding proteins shared across groups."""
-        return {
-            acc: list(self.by_membership[next(iter(groups))]) for acc, groups in self.by_accession.items() if len(groups) == 1
-        }

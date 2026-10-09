@@ -319,16 +319,6 @@ def protein_group_maps(cm) -> tuple[ProteinGroupIndex, dict[tuple[str, ...], tup
     return group_map, group_meta
 
 
-def accession_to_group(cm) -> dict[str, list[str]]:
-    """Map unambiguous accessions to their full protein-group membership.
-
-    group[0] remains the producer's leader. For shared accessions and groups from
-    multiple identification runs, use the full index in ``protein_group_maps``.
-    """
-    group_map, _ = protein_group_maps(cm)
-    return group_map.unambiguous_accessions()
-
-
 def _map_info(cm) -> dict[int, tuple[str, str]]:
     """Map index -> (run_file_name, channel label), matching the feature adapter.
 

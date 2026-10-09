@@ -16,6 +16,7 @@ from typing import Optional
 
 import pandas as pd
 import pyarrow as pa
+import pyarrow.parquet as pq
 
 from qpx.converters.base import resolve_columns
 from qpx.converters.diann.base_adapter import DiaNNBaseAdapter
@@ -23,6 +24,7 @@ from qpx.converters.diann.constants import to_modifications, to_proforma
 from qpx.converters.mappings import get_field_mappings
 from qpx.converters.ptm import compute_precursor_mz
 from qpx.core.cleavage import count_missed_cleavages
+from qpx.core.scan import scan_from_native_id
 from qpx.core.sql import sql_build, validate_identifier
 from qpx.writers.feature import FeatureWriter
 
@@ -77,6 +79,31 @@ def _safe_float_sql(column: str) -> str:
 def _safe_double_sql(column: str) -> str:
     """Build a SQL expression that converts a finite value to DOUBLE."""
     return f'CASE WHEN r."{column}" IS NOT NULL AND NOT isnan(CAST(r."{column}" AS DOUBLE)) THEN CAST(r."{column}" AS DOUBLE) END'
+
+
+def _ms_info_scans(values: pd.Series) -> pd.Series:
+    """Scan numbers of an MS-info table: numbers, or one-component native IDs such as ``index=5``."""
+    scans = pd.to_numeric(values, errors="coerce")
+    native = scans.isna() & values.notna()
+    if native.any():
+        components = values[native].map(lambda value: scan_from_native_id(str(value)))
+        scans[native] = components.map(lambda parts: parts[0] if len(parts) == 1 else None)
+    return scans
+
+
+def _nearest_ms2(left: pd.DataFrame, right: pd.DataFrame) -> pd.DataFrame:
+    """Nearest MS2 entry by RT for each feature row.
+
+    DIA spectra acquired together (the windows of one diaPASEF frame) share one
+    time; among them the window centre nearest the precursor m/z is the feature's
+    fragment spectrum.
+    """
+    times = right[["_ms_rt"]].drop_duplicates()
+    nearest = pd.merge_asof(left, times, left_on="rt", right_on="_ms_rt", direction="nearest")
+    nearest = nearest.merge(right, on="_ms_rt", how="left")
+    gap = (nearest["_matched_mz"] - nearest["observed_mz"].where(nearest["observed_mz"] > 0)).abs()
+    nearest = nearest.assign(_gap=gap).sort_values(["_merge_row", "_gap"], kind="stable", na_position="last")
+    return nearest.drop_duplicates("_merge_row").drop(columns="_gap")
 
 
 class DiannFeatureAdapter(DiaNNBaseAdapter):
@@ -193,16 +220,10 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
 
     def _load_sdrf_enzyme(self, sdrf_path: str) -> str | None:
         """Load the first enzyme name from SDRF for missed-cleavage computation."""
-        try:
-            from qpx.core.sdrf import SDRFHandler
+        from qpx.core.sdrf import SDRFHandler
 
-            handler = SDRFHandler(sdrf_path)
-            enzymes = handler.get_enzymes()
-            if enzymes:
-                return str(enzymes[0])
-        except (OSError, KeyError, TypeError, ValueError):
-            self.logger.debug("Could not load enzyme from SDRF")
-        return None
+        enzymes = SDRFHandler(sdrf_path).get_enzymes()
+        return str(enzymes[0]) if enzymes else None
 
     def _discover_runs(self, mzml_info_folder: Optional[str]) -> list[str]:
         """Discover run names from ms_info files or from the report."""
@@ -417,13 +438,13 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
         run_col = resolved["run_file_name"]
         parts.append(f"regexp_replace(r.\"{run_col}\", '(?i)\\.(mzML|raw|d|wiff|htrms)$', '') AS run_file_name")
 
+        # MS2.Scan (DIA-NN 1.8) is a 0-based position among the run's MS2 spectra,
+        # not a native scan number: it becomes a scan only through the MS-info table.
+        parts.append("[]::INTEGER[] AS scan")
         ms2_col = resolved.get("ms2_scan")
-        if ms2_col and has_column(ms2_col):
-            parts.append(
-                f'CASE WHEN r."{ms2_col}" IS NOT NULL THEN [CAST(r."{ms2_col}" AS INTEGER)] ELSE []::INTEGER[] END AS scan'
-            )
-        else:
-            parts.append("[]::INTEGER[] AS scan")
+        parts.append(
+            f'CAST(r."{ms2_col}" AS INTEGER) AS _ms2_index' if ms2_col and has_column(ms2_col) else "NULL::INTEGER AS _ms2_index"
+        )
 
         rt_col = resolved.get("rt")
         parts.append(
@@ -852,73 +873,47 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
             merged_parts.append(group_df)
 
         merged_df = pd.concat(merged_parts, ignore_index=True)
-
-        # Recompute the mass error for rows whose observed_mz was only just
-        # backfilled from the mzML. The SQL derives it before this merge runs, so
-        # without this those rows keep a null error while carrying both m/z
-        # (bigbio/qpx#298). Only null errors are filled; a reported value wins.
-        if {"calculated_mz", "observed_mz", "mass_error_ppm"} <= set(merged_df.columns):
-            calc = pd.to_numeric(merged_df["calculated_mz"], errors="coerce")
-            obs = pd.to_numeric(merged_df["observed_mz"], errors="coerce")
-            derivable = merged_df["mass_error_ppm"].isna() & (calc > 0) & (obs > 0)
-            if derivable.any():
-                merged_df.loc[derivable, "mass_error_ppm"] = ((obs[derivable] - calc[derivable]) / calc[derivable] * 1e6).astype(
-                    "float32"
-                )
         # Rebuild Arrow table preserving the original schema for non-scan columns
         return pa.Table.from_pandas(merged_df, schema=table.schema, preserve_index=False)
 
     def _merge_scan_info(self, run_data: pd.DataFrame, ms_info_path: Path) -> pd.DataFrame:
-        """Fill missing scan metadata from one run's MS-info table."""
-        target = pd.read_parquet(ms_info_path, columns=["rt", "scan", "precursor_mz"])
+        """Fill feature scans from one run's MS-info table.
+
+        A DIA-NN 1.8 ``MS2.Scan`` position selects that run's MS2 spectrum in
+        acquisition order. Rows without one take the nearest MS2 entry by RT (by
+        window among entries sharing that time), never past the measured
+        acquisition range. The table's precursor m/z is an isolation-window centre
+        for DIA spectra, so it never stands in for a feature's observed m/z.
+        """
+        columns = [name for name in ("rt", "scan", "precursor_mz", "ms_level") if name in pq.read_schema(ms_info_path).names]
+        target = pd.read_parquet(ms_info_path, columns=columns)
         run_data = run_data.copy()
         run_data["_merge_row"] = range(len(run_data))
         run_data["rt"] = run_data["rt"].astype("float64")
         run_data["observed_mz"] = pd.to_numeric(run_data["observed_mz"], errors="coerce").astype("float64")
-        target["scan"] = pd.to_numeric(target["scan"], errors="coerce")
+        target["scan"] = _ms_info_scans(target["scan"])
         target["precursor_mz"] = pd.to_numeric(target["precursor_mz"], errors="coerce")
         target["rt"] = target["rt"].astype("float64")
 
-        def _first_scan(value) -> int | None:
-            if hasattr(value, "tolist"):
-                value = value.tolist()
-            if isinstance(value, (list, tuple)):
-                value = value[0] if value else None
-            try:
-                return int(value) if value is not None else None
-            except (TypeError, ValueError):
-                return None
+        ms2 = target[target["ms_level"] == 2] if "ms_level" in target else target[target["precursor_mz"].notna()]
+        positions = pd.Series(ms2["scan"].to_numpy())
+        indexed_scan = pd.to_numeric(run_data["_ms2_index"], errors="coerce").astype("Int64").map(positions)
+        has_index = indexed_scan.notna()
+        run_data.loc[has_index, "scan"] = indexed_scan[has_index].map(lambda value: [int(value)])
 
-        report_scans = run_data["scan"].map(_first_scan)
-        scan_to_mz = target.dropna(subset=["scan"]).drop_duplicates("scan").set_index("scan")["precursor_mz"]
-        exact_mz = report_scans.map(scan_to_mz)
-        observed_mz = run_data["observed_mz"]
-        fill_exact_mz = (observed_mz.isna() | (observed_mz <= 0)) & exact_mz.notna()
-        run_data.loc[fill_exact_mz, "observed_mz"] = exact_mz[fill_exact_mz]
-
-        # Older DIA-NN reports may not carry MS2.Scan.  For only those rows,
-        # select the nearest MS2 entry by RT, and never extend past the measured
-        # acquisition range.  Existing report scans remain authoritative.
-        missing_scan = report_scans.isna() & run_data["rt"].notna()
+        missing_scan = ~has_index & run_data["rt"].notna()
         rt_target = target.dropna(subset=["rt", "scan", "precursor_mz"]).sort_values("rt")
         if missing_scan.any() and not rt_target.empty:
-            left = run_data.loc[missing_scan, ["_merge_row", "rt"]].sort_values("rt")
+            left = run_data.loc[missing_scan, ["_merge_row", "rt", "observed_mz"]].sort_values("rt")
             right = rt_target[["rt", "scan", "precursor_mz"]].rename(
                 columns={"rt": "_ms_rt", "scan": "_matched_scan", "precursor_mz": "_matched_mz"}
             )
-            nearest = pd.merge_asof(left, right, left_on="rt", right_on="_ms_rt", direction="nearest")
+            nearest = _nearest_ms2(left, right)
             outside_acquisition = (nearest["rt"] < right["_ms_rt"].min()) | (nearest["rt"] > right["_ms_rt"].max())
-            nearest.loc[outside_acquisition, ["_matched_scan", "_matched_mz"]] = None
+            nearest.loc[outside_acquisition, "_matched_scan"] = None
 
-            scan_matches = nearest.set_index("_merge_row")["_matched_scan"]
-            mz_matches = nearest.set_index("_merge_row")["_matched_mz"]
-            matched_scan = run_data["_merge_row"].map(scan_matches)
-            matched_mz = run_data["_merge_row"].map(mz_matches)
+            matched_scan = run_data["_merge_row"].map(nearest.set_index("_merge_row")["_matched_scan"])
             has_match = matched_scan.notna()
             run_data.loc[has_match, "scan"] = matched_scan[has_match].map(lambda value: [int(value)])
-
-            observed_mz = run_data["observed_mz"]
-            fill_nearest_mz = has_match & (observed_mz.isna() | (observed_mz <= 0)) & matched_mz.notna()
-            run_data.loc[fill_nearest_mz, "observed_mz"] = matched_mz[fill_nearest_mz]
 
         return run_data.drop(columns="_merge_row")

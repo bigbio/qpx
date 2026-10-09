@@ -50,24 +50,21 @@ def converted_output(tmp_path_factory):
 @pytest.fixture(scope="module")
 def psm_table(converted_output):
     path = converted_output / f"{_PREFIX}.psm.parquet"
-    if not path.exists():
-        pytest.skip("psm.parquet was not produced")
+    assert path.exists(), "psm.parquet was not produced"
     return pq.read_table(str(path))
 
 
 @pytest.fixture(scope="module")
 def feature_table(converted_output):
     path = converted_output / f"{_PREFIX}.feature.parquet"
-    if not path.exists():
-        pytest.skip("feature.parquet was not produced")
+    assert path.exists(), "feature.parquet was not produced"
     return pq.read_table(str(path))
 
 
 @pytest.fixture(scope="module")
 def pg_table(converted_output):
     path = converted_output / f"{_PREFIX}.pg.parquet"
-    if not path.exists():
-        pytest.skip("pg.parquet was not produced")
+    assert path.exists(), "pg.parquet was not produced"
     return pq.read_table(str(path))
 
 
@@ -214,8 +211,7 @@ class TestCdapMetadata:
 
     def test_ontology_exists_and_nonempty(self, converted_output):
         path = converted_output / f"{_PREFIX}.ontology.parquet"
-        if not path.exists():
-            pytest.skip("ontology.parquet not written")
+        assert path.exists(), "ontology.parquet not written"
         table = pq.read_table(str(path))
         assert table.num_rows > 0
 

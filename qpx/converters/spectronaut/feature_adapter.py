@@ -167,16 +167,10 @@ class SpectronautFeatureAdapter(SpectronautBaseAdapter):
 
     def _load_sdrf_enzyme(self, sdrf_path: str) -> str | None:
         """Load the first enzyme name from SDRF."""
-        try:
-            from qpx.core.sdrf import SDRFHandler
+        from qpx.core.sdrf import SDRFHandler
 
-            handler = SDRFHandler(sdrf_path)
-            enzymes = handler.get_enzymes()
-            if enzymes:
-                return str(enzymes[0])
-        except (ValueError, KeyError, OSError, TypeError):
-            self.logger.debug("Could not load enzyme from SDRF")
-        return None
+        enzymes = SDRFHandler(sdrf_path).get_enzymes()
+        return str(enzymes[0]) if enzymes else None
 
     def _discover_runs(self) -> list[str]:
         """Discover raw run values from the report for SQL filtering."""

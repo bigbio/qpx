@@ -8,11 +8,16 @@ from pathlib import Path
 
 import duckdb
 
-from qpx.core.sql import escape_path, sql_build, validate_table
+from qpx.core.sql import escape_path, sql_build, validate_identifier, validate_table
 
 logger = logging.getLogger(__name__)
 
 _SAFE_SET_VALUE = re.compile(r"^[\w./:@\-]+$")
+
+# Columns that became list<int32> after files were written. Older files are read
+# in the current shape: mz.scan was a single int32 before it followed the
+# PSM/feature scan convention.
+_SCALAR_TO_LIST_COLUMNS: dict[str, tuple[str, ...]] = {"mz": ("scan",)}
 
 
 def _validate_set_value(value: str, name: str) -> str:
@@ -94,15 +99,32 @@ class DuckDBEngine:
     def connection(self) -> duckdb.DuckDBPyConnection:
         return self._conn
 
+    def _create_view(self, name: str, source: str) -> None:
+        """Create view *name* over a ``read_parquet`` *source*, reading legacy scalar columns as lists."""
+        view = validate_table(name)
+        self._conn.execute(sql_build("CREATE OR REPLACE VIEW $view AS SELECT * FROM $source", view=view, source=source))
+        columns = _SCALAR_TO_LIST_COLUMNS.get(view, ())
+        if not columns:
+            return
+        types = dict(self._conn.execute(sql_build("SELECT column_name, column_type FROM (DESCRIBE $view)", view=view)).fetchall())
+        legacy = [column for column in columns if column in types and not types[column].endswith("]")]
+        if legacy:
+            replace = ", ".join(
+                sql_build("CASE WHEN $column IS NULL THEN NULL ELSE [CAST($column AS INTEGER)] END AS $column", column=column)
+                for column in map(validate_identifier, legacy)
+            )
+            self._conn.execute(
+                sql_build(
+                    "CREATE OR REPLACE VIEW $view AS SELECT * REPLACE ($replace) FROM $source",
+                    view=view,
+                    replace=replace,
+                    source=source,
+                )
+            )
+
     def register_parquet(self, name: str, file_path: str | Path) -> None:
         """Register a Parquet file as a lazy DuckDB view."""
-        self._conn.execute(
-            sql_build(
-                "CREATE OR REPLACE VIEW $view AS SELECT * FROM read_parquet('$path')",
-                view=validate_table(name),
-                path=escape_path(str(file_path)),
-            )
-        )
+        self._create_view(name, sql_build("read_parquet('$path')", path=escape_path(str(file_path))))
 
     def register_parquet_files(self, name: str, file_paths) -> None:
         """Register several Parquet shards as one unioned DuckDB view.
@@ -116,34 +138,16 @@ class DuckDBEngine:
             self.register_parquet(name, paths[0])
             return
         path_list = ", ".join(f"'{escape_path(str(p))}'" for p in paths)
-        self._conn.execute(
-            sql_build(
-                "CREATE OR REPLACE VIEW $view AS SELECT * FROM read_parquet([$paths])",
-                view=validate_table(name),
-                paths=path_list,
-            )
-        )
+        self._create_view(name, sql_build("read_parquet([$paths])", paths=path_list))
 
     def register_partitioned_parquet(self, name: str, directory: str | Path) -> None:
         """Register a Hive-partitioned Parquet directory as a DuckDB view."""
         glob_pattern = str(Path(directory) / "**" / "*.parquet")
-        self._conn.execute(
-            sql_build(
-                "CREATE OR REPLACE VIEW $view AS SELECT * FROM read_parquet('$path', hive_partitioning=true)",
-                view=validate_table(name),
-                path=escape_path(glob_pattern),
-            )
-        )
+        self._create_view(name, sql_build("read_parquet('$path', hive_partitioning=true)", path=escape_path(glob_pattern)))
 
     def register_s3_parquet(self, name: str, s3_path: str) -> None:
         """Register an S3 Parquet file as a DuckDB view."""
-        self._conn.execute(
-            sql_build(
-                "CREATE OR REPLACE VIEW $view AS SELECT * FROM read_parquet('$path')",
-                view=validate_table(name),
-                path=escape_path(s3_path),
-            )
-        )
+        self._create_view(name, sql_build("read_parquet('$path')", path=escape_path(s3_path)))
 
     def register_view(self, name: str, sql: str) -> None:
         """Register ``sql`` as a named DuckDB view, without string DDL.

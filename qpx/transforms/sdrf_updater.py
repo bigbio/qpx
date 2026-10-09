@@ -30,24 +30,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Fields in run.parquet that affect identification/quantification.
-# If these differ between old and new SDRF, we warn and skip.
-PROTECTED_RUN_FIELDS = {
-    "instrument",
-    "enzymes",
-    "modification_parameters",
-    "fraction",
-    "dissociation_method",
-}
-
-# Fields checked at the sample-run mapping level.
-# If the mapping of samples to runs changes, we block.
-PROTECTED_MAPPING_FIELDS = {
-    "comment[data file]",
-    "comment[label]",
-    "source name",
-}
-
 
 def _read_sdrf_normalized(path: str | Path) -> "pd.DataFrame":
     """Read SDRF and normalize column names to lowercase."""

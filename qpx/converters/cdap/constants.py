@@ -71,13 +71,6 @@ CHANNEL_DEFS: dict[str, list[str]] = {
     "iTRAQ4": ["iTRAQ114", "iTRAQ115", "iTRAQ116", "iTRAQ117"],
 }
 
-# Meta columns (skip when extracting data channels). Match by suffix because the
-# prefix follows the same TMTxx/iTRAQ pattern as data channels.
-META_SUFFIXES: tuple[str, ...] = ("Flags", "FractionOfTotalAb", "TotalAb")
-
-# Stand-alone legacy meta column found in 6 TMT10 studies.
-EXTRA_META_COLUMNS: tuple[str, ...] = ("TMTFlags",)
-
 # ---------------------------------------------------------------------------
 # Modification masses -> UNIMOD accessions
 # ---------------------------------------------------------------------------
@@ -110,41 +103,8 @@ PTM_MASSES: dict[str, int] = {
 ALL_MOD_MASSES: dict[str, int] = {**LABEL_TAG_MASSES, **PTM_MASSES}
 
 # ---------------------------------------------------------------------------
-# Decoy / core column definitions
+# Decoy definitions
 # ---------------------------------------------------------------------------
 
 # CDAP marks decoy hits with this fixed prefix on every accession.
 DECOY_PREFIX: str = "XXX_"
-
-# Core columns guaranteed to exist in all 91 surveyed studies.
-CORE_COLUMNS: tuple[str, ...] = (
-    "FileName",
-    "ScanNum",
-    "QueryPrecursorMz",
-    "OriginalPrecursorMz",
-    "PrecursorError(ppm)",
-    "QueryCharge",
-    "OriginalCharge",
-    "PrecursorScanNum",
-    "PeptideSequence",
-    "AmbiguousMatch",
-    "Protein",
-    "DeNovoScore",
-    "MSGFScore",
-    "Evalue",
-    "Qvalue",
-    "PepQvalue",
-    "PrecursorPurity",
-    "FractionDecomposition",
-)
-
-# Optional columns present in most -- but not all -- studies.
-OPTIONAL_COLUMNS: tuple[str, ...] = (
-    "HCDEnergy",
-    "PrecursorArea",
-    "PrecursorRelAb",
-    "RTAtPrecursorHalfElution",
-    "PhosphoRSPeptide",
-    "nPhospho",
-    "FullyLocalized",
-)

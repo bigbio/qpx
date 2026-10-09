@@ -250,3 +250,44 @@ def test_public_records_api_reports_missed_cleavages(tmp_path):
     unknown = tmp_path / "unknown.consensusXML"
     unknown.write_text(_TMT_CONSENSUSXML)
     assert all(r["missed_cleavages"] is None for r in consensus_features_to_records(str(unknown)))
+
+
+def test_streaming_reads_gzip_consensusxml(tmp_path):
+    """The streaming reader decompresses ``.consensusXML.gz``; auto mode picks it by size."""
+    import gzip
+
+    import pyarrow.parquet as pq
+
+    plain = tmp_path / "run.consensusXML"
+    plain.write_text(_TMT_CONSENSUSXML)
+    packed = tmp_path / "run.consensusXML.gz"
+    packed.write_bytes(gzip.compress(plain.read_bytes()))
+
+    tables = {}
+    for name, source in (("plain", plain), ("packed", packed)):
+        written = OpenMSConsensusConverter().convert(
+            str(source), str(tmp_path / name), structures=("feature", "psm"), streaming=True
+        )
+        tables[name] = {view: pq.read_table(path).to_pylist() for view, path in written.items() if view in ("feature", "psm")}
+
+    assert tables["packed"] == tables["plain"]
+    assert tables["packed"]["psm"]
+
+
+def test_streaming_threshold_uses_the_decompressed_size(tmp_path):
+    """A small .gz of a large consensusXML still selects the streaming reader."""
+    import gzip
+
+    from qpx.converters.openms_consensus.streaming import exceeds_xml_size
+
+    plain = tmp_path / "run.consensusXML"
+    plain.write_text(_TMT_CONSENSUSXML * 50)
+    packed = tmp_path / "run.consensusXML.gz"
+    packed.write_bytes(gzip.compress(plain.read_bytes()))
+    limit = (packed.stat().st_size + plain.stat().st_size) // 2
+
+    assert packed.stat().st_size < limit < plain.stat().st_size
+    assert exceeds_xml_size(str(packed), limit)
+    assert exceeds_xml_size(str(plain), limit)
+    assert not exceeds_xml_size(str(packed), plain.stat().st_size)
+    assert not exceeds_xml_size(str(plain), plain.stat().st_size)

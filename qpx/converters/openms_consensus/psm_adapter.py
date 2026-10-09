@@ -40,7 +40,7 @@ from qpx.converters.openms_consensus.feature_adapter import (
 from qpx.converters.openms_consensus.protein_groups import identification_identifier
 from qpx.converters.utils import safe_float
 from qpx.core.cleavage import count_missed_cleavages
-from qpx.core.scan import scan_from_native_id
+from qpx.core.scan import scan_format_from_native_id, scan_from_native_id
 
 _log = logging.getLogger(__name__)
 
@@ -365,3 +365,29 @@ def psm_records_for_pid(
             }
         )
     return records
+
+
+def collect_psm_scan_formats(identifications, formats: set[str | None], *, enabled=True) -> None:
+    """Accumulate explicit PID formats; unknown references prevent a file declaration."""
+    if not enabled:
+        return
+    for pid in identifications:
+        if not pid.getHits():
+            continue
+        reference = pid.getSpectrumReference() if hasattr(pid, "getSpectrumReference") else ""
+        if not reference and pid.metaValueExists("spectrum_reference"):
+            reference = pid.getMetaValue("spectrum_reference")
+        if reference:
+            formats.add(scan_format_from_native_id(str(reference)))
+
+
+def uniform_scan_format(formats: set[str | None]) -> str | None:
+    """Return the declaration only after the full input confirms one known format."""
+    return next(iter(formats)) if len(formats) == 1 else None
+
+
+def declare_psm_scan_format(writer, formats: set[str | None]) -> None:
+    """Finalize a streamed PSM writer's confirmed declaration before it closes."""
+    scan_format = uniform_scan_format(formats)
+    if writer is not None and scan_format is not None:
+        writer.set_scan_format(scan_format)

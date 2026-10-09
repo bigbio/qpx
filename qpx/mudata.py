@@ -841,7 +841,7 @@ def build_mudata(
 
     engine = dataset._engine
     ds_path = Path(dataset.path)
-    file_prefix = getattr(dataset, "_file_prefix", None)
+    file_prefix = dataset.file_prefix
 
     if modalities is not None:
         unknown = set(modalities) - _VALID_MODALITIES

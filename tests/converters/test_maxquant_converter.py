@@ -265,8 +265,7 @@ def converted_output(tmp_path_factory):
 def psm_table(converted_output):
     """Read the psm.parquet produced by the converter."""
     path = converted_output / f"{_PREFIX}.psm.parquet"
-    if not path.exists():
-        pytest.skip("psm.parquet was not produced")
+    assert path.exists(), "psm.parquet was not produced"
     return pq.read_table(str(path))
 
 
@@ -274,8 +273,7 @@ def psm_table(converted_output):
 def feature_table(converted_output):
     """Read the feature.parquet produced by the converter."""
     path = converted_output / f"{_PREFIX}.feature.parquet"
-    if not path.exists():
-        pytest.skip("feature.parquet was not produced")
+    assert path.exists(), "feature.parquet was not produced"
     return pq.read_table(str(path))
 
 
@@ -468,8 +466,7 @@ class TestMaxQuantFixedModOnly:
     @pytest.fixture(scope="class")
     def fixed_feature_table(self, fixed_mod_output):
         path = fixed_mod_output / "fixed_mod_test.feature.parquet"
-        if not path.exists():
-            pytest.skip("fixed_mod feature.parquet was not produced")
+        assert path.exists(), "fixed_mod feature.parquet was not produced"
         return pq.read_table(str(path))
 
     def test_fixed_mod_has_fewer_rows_than_unrestricted(self, feature_table, fixed_feature_table):
@@ -512,8 +509,7 @@ class TestMaxQuantOntologyConversion:
 
     def test_ontology_file_exists_or_no_scores(self, converted_output):
         path = converted_output / f"{_PREFIX}.ontology.parquet"
-        if not path.exists():
-            pytest.skip("ontology.parquet not written (no scores discovered)")
+        assert path.exists(), "ontology.parquet not written (no scores discovered)"
 
         table = pq.read_table(str(path))
         if table.num_rows == 0:
@@ -521,8 +517,7 @@ class TestMaxQuantOntologyConversion:
 
     def test_ontology_columns(self, converted_output):
         path = converted_output / f"{_PREFIX}.ontology.parquet"
-        if not path.exists():
-            pytest.skip("ontology.parquet not written (no scores discovered)")
+        assert path.exists(), "ontology.parquet not written (no scores discovered)"
 
         table = pq.read_table(str(path))
         column_names = set(table.column_names)
@@ -535,8 +530,7 @@ class TestMaxQuantOntologyConversion:
         from qpx.core.data import OntologySchema
 
         path = converted_output / f"{_PREFIX}.ontology.parquet"
-        if not path.exists():
-            pytest.skip("ontology.parquet not written (no scores discovered)")
+        assert path.exists(), "ontology.parquet not written (no scores discovered)"
         table = pq.read_table(str(path))
         errors = OntologySchema.validate(table)
         if errors:

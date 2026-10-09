@@ -4,8 +4,6 @@ Provides temp directories, minimal valid Parquet files for each structure type,
 and a complete dataset directory with feature, pg, sample, and run parquets.
 """
 
-from pathlib import Path
-
 import pyarrow as pa
 import pytest
 
@@ -19,11 +17,6 @@ from qpx.writers import (
     RunWriter,
     SampleWriter,
 )
-
-# Stable root paths for use by tests in subdirectories
-TESTS_ROOT = Path(__file__).parent
-PROJECT_ROOT = TESTS_ROOT.parent
-
 
 # ---------------------------------------------------------------------------
 # Shared schema/validation helpers (hoisted from unit tests)
