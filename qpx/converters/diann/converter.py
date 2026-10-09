@@ -142,10 +142,7 @@ class DiaNNConverter(BaseOrchestrator):
             if self.report_path.endswith(".parquet"):
                 reader = f"read_parquet('{escape_path(self.report_path)}')"
             else:
-                reader = (
-                    f"read_csv_auto('{escape_path(self.report_path)}', "
-                    "delim='\t', header=true, auto_detect=true)"
-                )
+                reader = f"read_csv_auto('{escape_path(self.report_path)}', delim='\t', header=true, auto_detect=true)"
             cols = {row[0] for row in con.execute(f"DESCRIBE SELECT * FROM {reader}").fetchall()}
             resolved = resolve_columns(get_field_mappings("diann", "feature"), cols)
             run_col = resolved.get("run_file_name")
@@ -154,11 +151,7 @@ class DiaNNConverter(BaseOrchestrator):
                 logger.warning("could not resolve Run / MS2.Scan columns; keeping all scans")
                 return None
             rows = con.execute(f'SELECT DISTINCT "{run_col}", "{scan_col}" FROM {reader}').fetchall()
-            matched = {
-                (str(run), int(scan))
-                for run, scan in rows
-                if run is not None and scan is not None
-            }
+            matched = {(str(run), int(scan)) for run, scan in rows if run is not None and scan is not None}
             logger.info("matched %s (run_file_name, scan) from DIA-NN report", len(matched))
             return matched
         finally:

@@ -51,8 +51,7 @@ class DiannMzAdapter:
         try:
             for ams_file in ams_files:
                 cursor = con.execute(
-                    "SELECT run_name, scan, precursor_rt, mz_array, intensity_array "
-                    f"FROM parquet_scan('{str(ams_file)}')"
+                    f"SELECT run_name, scan, precursor_rt, mz_array, intensity_array FROM parquet_scan('{str(ams_file)}')"
                 )
                 for run_name, scan, precursor_rt, mz, intensity in cursor.fetchall():
                     scan0 = int(scan[0]) if isinstance(scan, (list, tuple)) else int(scan)
