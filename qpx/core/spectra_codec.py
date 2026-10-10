@@ -51,7 +51,7 @@ def _varint_decode(data: bytes, n: int) -> np.ndarray:
     shift = 0
     for b in data:
         val |= (b & 0x7F) << shift
-        if not (b & 0x80):
+        if not b & 0x80:
             out[j] = val
             j += 1
             val = 0

@@ -9,6 +9,7 @@ import duckdb
 import numpy as np
 
 from qpx.core.spectra_codec import encode_intensity, encode_mz
+from qpx.core.sql import escape_path, sql_build
 from qpx.writers.mz import MzWriter
 
 logger = logging.getLogger(__name__)
@@ -50,8 +51,12 @@ class DiannMzAdapter:
         writer = MzWriter(output_path, compression=self._compression)
         try:
             for ams_file in ams_files:
+                safe_path = escape_path(str(ams_file))
                 cursor = con.execute(
-                    f"SELECT run_name, scan, precursor_rt, mz_array, intensity_array FROM parquet_scan('{str(ams_file)}')"
+                    sql_build(
+                        "SELECT run_name, scan, precursor_rt, mz_array, intensity_array FROM parquet_scan('$path')",
+                        path=safe_path,
+                    )
                 )
                 for run_name, scan, precursor_rt, mz, intensity in cursor.fetchall():
                     scan0 = int(scan[0]) if isinstance(scan, (list, tuple)) else int(scan)
