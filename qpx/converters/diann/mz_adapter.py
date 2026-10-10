@@ -82,6 +82,7 @@ class DiannMzAdapter:
 
     @staticmethod
     def build_record(run_name: str, scan: int, precursor_rt, mz, intensity) -> dict:
+        """Build one ``mz``-view record with losslessly-encoded peak arrays."""
         mz = np.asarray(mz, dtype=np.float32)
         intensity = np.asarray(intensity, dtype=np.float32)
         return {
