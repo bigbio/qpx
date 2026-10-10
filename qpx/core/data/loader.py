@@ -26,6 +26,7 @@ PRIMITIVE_MAP = {
     "float32": pa.float32(),
     "float64": pa.float64(),
     "bool": pa.bool_(),
+    "binary": pa.binary(),
 }
 
 # Module-level cache for custom types loaded from types.yaml

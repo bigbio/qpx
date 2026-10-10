@@ -34,11 +34,9 @@ fields:
     doc: "Inverse ion mobility (TIMS)"
   ion_injection_time:
     type: float32
-    required: true
     doc: "Ion injection time (ms)"
   total_ion_current:
     type: float32
-    required: true
     doc: "Total ion current"
 
   # Precursor info (MS2+ only)
@@ -46,15 +44,13 @@ fields:
     type: "list<precursor>"
     doc: "Precursor ions"
 
-  # Spectral data
+  # Spectral data (losslessly encoded binary blobs, see qpx.core.spectra_codec)
   mz:
-    type: "list<float32>"
-    required: true
-    doc: "m/z values"
+    type: binary
+    doc: "Losslessly encoded m/z array (uint32 delta + varint)"
   intensity:
-    type: "list<float32>"
-    required: true
-    doc: "Intensity values"
+    type: binary
+    doc: "Losslessly encoded intensity array (bitshuffled float32)"
 
   # Metadata
   cv_params:

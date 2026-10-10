@@ -59,8 +59,12 @@ def test_from_dir_all_levels(mzml_dir, tmp_path):
     assert {"run_file_name", "scan", "ms_level", "mz", "intensity"} <= set(table.column_names)
     assert set(table.column("run_file_name").to_pylist()) == {"run_a"}
     assert sorted(table.column("scan").to_pylist()) == [1, 2, 3]
-    # every spectrum keeps its peaks
-    assert all(len(mz) == 3 for mz in table.column("mz").to_pylist())
+    # every spectrum keeps its peaks (decoded from the lossless binary blobs)
+    from qpx.core.spectra_codec import decode_mz
+
+    mz_blobs = table.column("mz").to_pylist()
+    int_blobs = table.column("intensity").to_pylist()
+    assert all(len(decode_mz(mz_blobs[i], len(int_blobs[i]) // 4)) == 3 for i in range(table.num_rows))
 
 
 def test_from_dir_ms2_only(mzml_dir, tmp_path):

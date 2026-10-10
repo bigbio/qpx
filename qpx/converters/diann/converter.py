@@ -98,6 +98,70 @@ class DiaNNConverter(BaseOrchestrator):
             self._resolved_mappings_by_view[PG] = resolve_columns(get_field_mappings("diann", "pg"), cols)
         logger.info("DIA-NN PG conversion complete")
 
+    def convert_mz(
+        self,
+        ams_info_folder,
+        output_folder=".",
+        output_prefix=None,
+        matched_scans=None,
+    ):
+        """Generate the ``mz`` view from mzML-derived AMS_info spectra.
+
+        Writes only the feature-matched MS2 scans. When ``matched_scans`` (a set of
+        ``(run_file_name, scan)`` tuples) is omitted it is derived from the DIA-NN
+        report's ``Run`` / ``MS2.Scan`` columns. Peak arrays are losslessly encoded
+        into ``mz_blob`` / ``intensity_blob``.
+        """
+        from qpx.converters.diann.mz_adapter import DiannMzAdapter
+
+        output_folder = Path(output_folder)
+        prefix = output_prefix or "diann"
+        if matched_scans is None:
+            matched_scans = self._extract_matched_scans()
+        adapter = DiannMzAdapter(compression=self._compression)
+        adapter.convert(
+            ams_info_folder=str(ams_info_folder),
+            output_path=str(output_folder / f"{prefix}.mz.parquet"),
+            matched_scans=matched_scans,
+        )
+        logger.info("DIA-NN mz conversion complete")
+
+    def _extract_matched_scans(self) -> set[tuple[str, int]] | None:
+        """Return the ``(run_file_name, scan)`` pairs with a DIA feature match.
+
+        Resolves the report's run and MS2 scan columns via the DIA-NN column
+        mapping, then returns the distinct pairs. Returns ``None`` when the columns
+        cannot be resolved (callers then keep all scans).
+        """
+        import duckdb
+
+        from qpx.core.sql import escape_path, sql_build, validate_identifier
+
+        con = duckdb.connect()
+        try:
+            safe_path = escape_path(self.report_path)
+            if self.report_path.endswith(".parquet"):
+                reader = sql_build("read_parquet('$path')", path=safe_path)
+            else:
+                reader = sql_build("read_csv_auto('$path', delim='\t', header=true, auto_detect=true)", path=safe_path)
+            cols = {row[0] for row in con.execute(sql_build("DESCRIBE SELECT * FROM $reader", reader=reader)).fetchall()}
+            resolved = resolve_columns(get_field_mappings("diann", "feature"), cols)
+            run_col = resolved.get("run_file_name")
+            scan_col = resolved.get("ms2_scan")
+            if run_col is None or scan_col is None:
+                logger.warning("could not resolve Run / MS2.Scan columns; keeping all scans")
+                return None
+            run_ident = validate_identifier(run_col)
+            scan_ident = validate_identifier(scan_col)
+            rows = con.execute(
+                sql_build("SELECT DISTINCT $run, $scan FROM $reader", run=run_ident, scan=scan_ident, reader=reader)
+            ).fetchall()
+            matched = {(str(run), int(scan)) for run, scan in rows if run is not None and scan is not None}
+            logger.info("matched %s (run_file_name, scan) from DIA-NN report", len(matched))
+            return matched
+        finally:
+            con.close()
+
     def convert_sdrf(
         self,
         output_folder: str | Path,
