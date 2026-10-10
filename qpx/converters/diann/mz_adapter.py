@@ -66,7 +66,7 @@ class DiannMzAdapter:
                     if matched_scans is not None and key not in matched_scans:
                         continue
                     seen.add(key)
-                    pending.append(self._record(run_name, scan0, precursor_rt, mz, intensity))
+                    pending.append(self.build_record(run_name, scan0, precursor_rt, mz, intensity))
                     if len(pending) >= self._batch_size:
                         writer.write_batch(pending)
                         written += len(pending)
@@ -81,7 +81,7 @@ class DiannMzAdapter:
         return written
 
     @staticmethod
-    def _record(run_name: str, scan: int, precursor_rt, mz, intensity) -> dict:
+    def build_record(run_name: str, scan: int, precursor_rt, mz, intensity) -> dict:
         mz = np.asarray(mz, dtype=np.float32)
         intensity = np.asarray(intensity, dtype=np.float32)
         return {
