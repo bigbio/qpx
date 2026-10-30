@@ -23,7 +23,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from qpx.converters.base import resolve_columns
-from qpx.converters.diann.base_adapter import DiaNNBaseAdapter, run_name_sql
+from qpx.converters.diann.base_adapter import BATCH_ROWS, DiaNNBaseAdapter, run_name_sql
 from qpx.converters.diann.constants import to_modifications, to_proforma
 from qpx.converters.diann.feature_sql import _SCORE_MAPPINGS, _build_batch_sql
 from qpx.converters.mappings import get_field_mappings
@@ -88,7 +88,7 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
         mzml_info_folder: Optional[str] = None,
         sdrf_path: Optional[str] = None,
         qvalue_threshold: Optional[float] = None,
-        file_num: int = 100,  # VIEW-based lazy IO reduces per-batch memory
+        batch_rows: int = BATCH_ROWS,
         creator: str = "diann",
         mod_masses: tuple[tuple[str, float], ...] = (),
     ) -> None:
@@ -102,6 +102,7 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
         threshold is provided, the precursor ``Q.Value`` filter is applied.
         ``mod_masses`` holds the ``(name, mass delta)`` modifications declared in
         the DIA-NN log, which resolve modifications the report names.
+        Runs are converted in batches of about ``batch_rows`` report rows.
         """
         # 1. Create VIEW over report (lazy — no data loaded into memory)
         self._load_diann_report(diann_report)
@@ -154,7 +155,7 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
             compression=self._compression,
             identity_composite=_FEATURE_IDENTITY_COMPOSITE,
         ) as writer:
-            for table in self._feature_batches(run_names, file_num, sql_template, mods_lookup, target_schema, mzml_info_folder):
+            for table in self._feature_batches(run_names, batch_rows, sql_template, mods_lookup, target_schema, mzml_info_folder):
                 writer.write_table(table)
 
         self.logger.info(f"DIA-NN feature conversion complete -> {output_path}")
@@ -162,16 +163,18 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
     def _feature_batches(
         self,
         run_names: list[str],
-        file_num: int,
+        batch_rows: int,
         sql_template: str,
         mods_lookup: dict,
         target_schema: pa.Schema,
         mzml_info_folder: Optional[str],
     ) -> Iterator[pa.Table]:
         """Yield assembled feature tables for consecutive batches of runs."""
-        for i in range(0, len(run_names), file_num):
-            batch_runs = run_names[i : i + file_num]
-            self.logger.info(f"Processing runs {i + 1}-{min(i + file_num, len(run_names))} of {len(run_names)}")
+        run_col = validate_identifier(self._resolved["run_file_name"])
+        done = 0
+        for batch_runs in self._run_batches(run_col, self._report_runs(run_names), batch_rows):
+            self.logger.info(f"Processing runs {done + 1}-{done + len(batch_runs)} of {len(run_names)}")
+            done += len(batch_runs)
             table = self._process_batch_arrow(
                 batch_runs,
                 sql_template,
@@ -213,6 +216,20 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
             self.logger.info(f"Discovered {len(run_names)} runs from report")
 
         return run_names
+
+    def _report_runs(self, run_names: list[str]) -> list[str]:
+        """The report ``Run`` values of *run_names*, which lack the raw-file extension, in that order.
+
+        Batches filter the ``Run`` column itself, which DuckDB pushes into the scan.
+        """
+        run_col = validate_identifier(self._resolved["run_file_name"])
+        by_name: dict[str, list[str]] = {}
+        rows = self._conn.execute(
+            sql_build("SELECT DISTINCT $run, $name FROM report ORDER BY 1", run=run_col, name=run_name_sql(run_col))
+        ).fetchall()
+        for raw, name in rows:
+            by_name.setdefault(name, []).append(raw)
+        return [raw for name in run_names for raw in by_name.get(name, [])]
 
     def _report_run_names(self) -> set[str]:
         """Return the distinct extension-stripped Run values in the report."""

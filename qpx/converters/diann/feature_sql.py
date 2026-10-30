@@ -55,7 +55,7 @@ _BATCH_SQL = """
         AND r.$seq_col = lk.sequence
         AND r.$chg_col = lk.charge
     $channel_join
-    WHERE $run_name IN ({run_placeholders})
+    WHERE r.$run_col IN ({run_placeholders})
       $qvalue_filter
       AND r.$pg_col IS NOT NULL
     """
@@ -373,7 +373,7 @@ def _build_batch_sql(
         seq_col=validate_identifier(seq_col),
         chg_col=validate_identifier(chg_col),
         channel_join=channel_join,
-        run_name=run_name_sql("r." + validate_identifier(run_col)),
+        run_col=validate_identifier(run_col),
         qvalue_filter=qvalue_filter,
         pg_col=validate_identifier(pg_col),
     )

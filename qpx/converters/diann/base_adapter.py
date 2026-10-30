@@ -7,56 +7,15 @@ Provides common data-loading helpers used by both
 from __future__ import annotations
 
 import os
-import re
+import tempfile
+from typing import Iterator
 
-import duckdb
 import pandas as pd
 from sdrf_pipelines.converters.diann.constants import PLEXDIA_REGISTRY
 
 from qpx.converters.base import BaseConverter
 from qpx.converters.channel_labels import normalize_label, read_sdrf_labels
 from qpx.core.sql import escape_path, sql_build, validate_identifier
-
-# Multiplier from on-disk file size to an estimated in-memory (materialized,
-# columnar) size. Parquet is compressed on disk so it inflates more when
-# materialized; a TSV is ~1x on disk but string/typing overhead still inflates
-# it in memory.
-_MATERIALIZE_SIZE_FACTOR = {"parquet": 5.0, "tsv": 2.5}
-# Materialize only when the estimate fits within this fraction of memory_limit,
-# leaving headroom for query working memory (memory_limit is not a strict bound
-# on process RSS in DuckDB).
-_MATERIALIZE_LIMIT_FRACTION = 0.5
-# When the memory_limit is unknown/unlimited, only materialize clearly small
-# reports where memory pressure is a non-issue.
-_MATERIALIZE_UNKNOWN_LIMIT_CAP = 512 * 1024 * 1024  # 512 MiB estimated
-
-_SIZE_UNITS = {
-    "B": 1,
-    "KB": 1000,
-    "MB": 1000**2,
-    "GB": 1000**3,
-    "TB": 1000**4,
-    "KIB": 1024,
-    "MIB": 1024**2,
-    "GIB": 1024**3,
-    "TIB": 1024**4,
-}
-
-
-def _parse_duckdb_size(value: str) -> int | None:
-    """Parse a DuckDB size setting (e.g. ``'14.3 GiB'``, ``'8192MB'``) into bytes.
-
-    Returns ``None`` for an unset/unlimited value (``'-1'`` / empty) or an
-    unrecognized format, so callers treat it as "budget unknown".
-    """
-    text = value.strip()
-    if not text or text == "-1":
-        return None
-    match = re.fullmatch(r"([\d.]+)\s*([KMGT]i?B|B)?", text, re.IGNORECASE)
-    if not match:
-        return None
-    return int(float(match.group(1)) * _SIZE_UNITS.get((match.group(2) or "B").upper(), 1))
-
 
 # DIA-NN channel name and mass offset of each canonical plexDIA label, from the
 # sdrf-pipelines registry that builds DIA-NN's --channels (MTRAQ4 -> "4", SILAC
@@ -67,6 +26,10 @@ _PLEXDIA_CHANNELS = {
     for label, channel in registry["channels"].items()
 }
 _CHANNEL_MASSES = dict(_PLEXDIA_CHANNELS.values())
+
+# Report rows per conversion batch of runs. The feature step of a 5.4 M-row
+# DIA-NN 2.5 report peaks at 4.3 GB with it, against 6.9 GB in one batch.
+BATCH_ROWS = 1_000_000
 
 # Raw-file extensions stripped from a report ``Run`` to give ``run_file_name``.
 RUN_EXTENSIONS = "mzML|raw|d|wiff|htrms"
@@ -153,81 +116,65 @@ class DiaNNBaseAdapter(BaseConverter):
     once rather than duplicated across the feature and PG adapters.
     """
 
+    # Temporary Parquet copy of a TSV report, removed on close.
+    _report_copy: str | None = None
+
     def _load_diann_report(self, path: str) -> None:
-        """Load a DIA-NN report into DuckDB, choosing TABLE vs VIEW by memory.
+        """Expose a DIA-NN report to DuckDB as the ``report`` view.
 
-        Materializing the report as a ``TABLE`` parses the source once so every
-        downstream scan is a cheap columnar read; a ``VIEW`` instead re-parses
-        the file on each scan (~hundreds of x slower per scan on a mid-size
-        report). But a ``TABLE`` holds the report in memory, which is unsafe for
-        the multi-GB reports DIA-NN can produce (median public report ~570 MB,
-        some > 10 GB). So the report is materialized only when its estimated
-        in-memory size fits safely within DuckDB's configured ``memory_limit``,
-        falls back to a ``VIEW`` otherwise, and a materialization that hits the
-        limit is rolled back to a ``VIEW``. ``memory_limit`` is not a strict RSS
-        bound, so unknown sizes take the conservative (VIEW) path.
-
-        Supports both TSV (``report.tsv``) and Parquet (``report.parquet``).
-        If the ``report`` relation already exists it is skipped.
+        A Parquet report is read in place: DuckDB scans only the columns and row
+        groups a query needs, as fast as a materialized table and in less memory.
+        A TSV (or gzipped TSV) report is first converted once to a temporary
+        Parquet file in DuckDB's ``temp_directory``, since a view over the text
+        would re-parse it for every batch of runs. The copy is removed when the
+        adapter closes. If the ``report`` relation already exists it is skipped.
         """
         if self._table_exists("report"):
             self.logger.debug("report already loaded -- skipping reload")
             return
-        safe_path = escape_path(path)
-        if path.endswith(".parquet"):
-            reader = sql_build("read_parquet('$path')", path=safe_path)
-        else:
-            reader = sql_build(
-                "read_csv_auto('$path', delim='\t', header=true, auto_detect=true, null_padding=true)",
-                path=safe_path,
+        if not path.endswith(".parquet"):
+            temp_dir = self._conn.execute("SELECT current_setting('temp_directory')").fetchone()[0]
+            os.makedirs(temp_dir, exist_ok=True)
+            handle, self._report_copy = tempfile.mkstemp(prefix="qpx_diann_report_", suffix=".parquet", dir=temp_dir)
+            os.close(handle)
+            self._conn.execute(
+                sql_build(
+                    "COPY (SELECT * FROM read_csv_auto('$path', delim='\t', header=true, auto_detect=true, "
+                    "null_padding=true)) TO '$copy' (FORMAT parquet)",
+                    path=escape_path(path),
+                    copy=escape_path(self._report_copy),
+                )
             )
+            self.logger.info("DIA-NN report copied to %s", self._report_copy)
+            path = self._report_copy
+        self._conn.execute(sql_build("CREATE VIEW report AS SELECT * FROM read_parquet('$path')", path=escape_path(path)))
+        self.logger.info("DIA-NN report view created")
 
-        materialized = False
-        if self._should_materialize_report(path):
-            try:
-                self._conn.execute(sql_build("CREATE TABLE report AS SELECT * FROM $reader", reader=reader))
-                materialized = True
-            except duckdb.OutOfMemoryException:
-                self._conn.execute("DROP TABLE IF EXISTS report")
-                self.logger.warning("DIA-NN report exceeded memory_limit while materializing; falling back to a lazy VIEW")
-        if not materialized:
-            self._conn.execute(sql_build("CREATE VIEW report AS SELECT * FROM $reader", reader=reader))
+    def close(self):
+        """Close the connection and remove the temporary copy of a TSV report."""
+        super().close()
+        if self._report_copy:
+            os.remove(self._report_copy)
+            self._report_copy = None
 
-        if materialized:
-            count = self._conn.execute("SELECT COUNT(*) FROM report").fetchall()[0][0]
-            self.logger.info("DIA-NN report table created (%s rows)", format(count, ","))
-        else:
-            self.logger.info("DIA-NN report view created")
+    def _run_batches(self, run_col: str, runs: list[str], batch_rows: int) -> Iterator[list[str]]:
+        """Split *runs*, values of the report column *run_col*, into consecutive batches of about *batch_rows* rows.
 
-    def _should_materialize_report(self, path: str) -> bool:
-        """Whether the report likely fits safely within DuckDB's ``memory_limit``.
-
-        Conservative by design: estimates the in-memory size from the on-disk
-        file size, requires it to fit within a fraction of the limit, and
-        declines for compressed or unknown-size inputs, or an unknown/unlimited
-        limit above a small absolute cap. A gzip file's compressed size cannot
-        safely bound the memory needed for its expanded rows.
+        A batch's memory follows its row count, which a fixed number of runs does
+        not bound: DIA-NN runs range from thousands to hundreds of thousands of
+        precursors.
         """
-        if path.casefold().endswith(".gz"):
-            return False
-        try:
-            file_bytes = os.path.getsize(path)
-        except OSError:
-            return False  # unknown size -> conservative VIEW
-        factor = _MATERIALIZE_SIZE_FACTOR["parquet" if path.endswith(".parquet") else "tsv"]
-        estimated = file_bytes * factor
-        limit = self._duckdb_memory_limit_bytes()
-        if limit is None:
-            return estimated <= _MATERIALIZE_UNKNOWN_LIMIT_CAP
-        return estimated <= _MATERIALIZE_LIMIT_FRACTION * limit
-
-    def _duckdb_memory_limit_bytes(self) -> int | None:
-        """DuckDB's configured ``memory_limit`` in bytes, or ``None`` if unknown."""
-        try:
-            raw = self._conn.execute("SELECT current_setting('memory_limit')").fetchall()[0][0]
-        except duckdb.Error:
-            return None
-        return _parse_duckdb_size(str(raw))
+        counts = dict(self._conn.execute(sql_build("SELECT $run, count(*) FROM report GROUP BY ALL", run=run_col)).fetchall())
+        batch: list[str] = []
+        rows = 0
+        for run in runs:
+            batch.append(run)
+            rows += counts.get(run, 0)
+            if rows >= batch_rows:
+                yield batch
+                batch, rows = [], 0
+        if batch:
+            yield batch
 
     def _register_channel_labels(
         self,

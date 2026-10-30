@@ -7,7 +7,6 @@ correct schemas and plausible values.
 
 import re
 from pathlib import Path
-from unittest.mock import Mock
 
 import pandas as pd
 import pyarrow as pa
@@ -1053,109 +1052,44 @@ class TestDiaNNOntologyConversion:
 
 
 class TestDiannReportLoading:
-    """Adaptive TABLE-vs-VIEW report loading (bigbio/qpx#221 — @Shen-YuFei)."""
+    """Report loading and run batching (bigbio/qpx#221 — @Shen-YuFei)."""
 
     @staticmethod
-    def _adapter(conn):
+    def _features(report, output_path, caplog, **kwargs):
         import logging
 
-        from qpx.converters.diann.base_adapter import DiaNNBaseAdapter
+        from qpx.converters.diann.feature_adapter import DiannFeatureAdapter
 
-        class _A(DiaNNBaseAdapter):
-            def convert(self, *args, **kwargs):
-                pass
+        with caplog.at_level(logging.INFO), DiannFeatureAdapter() as adapter:
+            adapter.convert(diann_report=str(report), output_path=str(output_path), **kwargs)
+        return pq.read_table(output_path).sort_by("feature_id")
 
-        adapter = _A.__new__(_A)  # bypass BaseConverter.__init__; we only need _conn + logger
-        adapter._conn = conn
-        adapter.logger = logging.getLogger("test")
-        return adapter
-
-    @staticmethod
-    def _relation_type(conn):
-        return conn.execute("SELECT table_type FROM information_schema.tables WHERE table_name='report'").fetchone()[0]
-
-    def test_parse_duckdb_size(self):
-        from qpx.converters.diann.base_adapter import _parse_duckdb_size
-
-        assert _parse_duckdb_size("14.3 GiB") == int(14.3 * 1024**3)
-        assert _parse_duckdb_size("8192MB") == 8192 * 1000**2
-        assert _parse_duckdb_size("200 MiB") == 200 * 1024**2
-        assert _parse_duckdb_size("-1") is None
-        assert _parse_duckdb_size("garbage") is None
-
-    def test_should_materialize_decision(self, tmp_path, monkeypatch):
+    def test_text_report_is_read_through_a_temporary_parquet_copy(self, tmp_path, caplog):
+        """A gzipped report is parsed once into a Parquet copy in the temp directory, removed on close."""
         import gzip
-        import os
 
-        from qpx.core.engine import DuckDBEngine
+        from qpx.core.engine import duckdb_defaults
 
-        report = tmp_path / "r.tsv"
-        report.write_text("Run\tX\nr1\t1\n", encoding="utf-8")
-        compressed_report = tmp_path / "r.tsv.gz"
-        with gzip.open(compressed_report, "wt", encoding="utf-8") as handle:
-            handle.write("Run\tX\nr1\t1\n")
-        with DuckDBEngine() as engine:
-            adapter = self._adapter(engine.connection)
-            should_materialize = getattr(adapter, "_should_materialize_report")
+        report = tmp_path / "report.tsv.gz"
+        report.write_bytes(gzip.compress(_REPORT.read_bytes()))
+        spill = tmp_path / "spill"
+        with duckdb_defaults(temp_directory=spill):
+            from_gz = self._features(report, tmp_path / "gz.feature.parquet", caplog)
+        copies = [Path(record.args[0]) for record in caplog.records if record.msg == "DIA-NN report copied to %s"]
+        assert [copy.parent for copy in copies] == [spill]
+        assert not copies[0].exists()
+        assert from_gz.equals(self._features(_REPORT, tmp_path / "tsv.feature.parquet", caplog))
 
-            monkeypatch.setattr(adapter, "_duckdb_memory_limit_bytes", lambda: 8 * 1024**3)
-            assert should_materialize(str(report)) is True  # tiny file, big limit
-            assert should_materialize(str(compressed_report)) is False
-
-            monkeypatch.setattr(os.path, "getsize", lambda _p: 5 * 1024**3)  # 5 GB file
-            assert should_materialize(str(report)) is False  # over 0.5*limit -> VIEW
-
-            monkeypatch.setattr(adapter, "_duckdb_memory_limit_bytes", lambda: None)
-            assert should_materialize(str(report)) is False  # unknown limit, big file
-
-    def test_small_report_materializes_table(self, tmp_path):
-        from qpx.core.engine import DuckDBEngine
-
+    def test_runs_are_batched_by_report_rows(self, tmp_path, caplog):
+        rows = pd.read_csv(_REPORT, sep="\t")
         report = tmp_path / "report.tsv"
-        report.write_text("Run\tX\n" + "\n".join(f"r1\t{i}" for i in range(20)) + "\n", encoding="utf-8")
-        engine = DuckDBEngine()
-        self._adapter(engine._conn)._load_diann_report(str(report))
-        assert self._relation_type(engine._conn) == "BASE TABLE"
-
-    def test_falls_back_to_view_when_over_budget(self, tmp_path, monkeypatch):
-        from qpx.core.engine import DuckDBEngine
-
-        report = tmp_path / "report.tsv"
-        report.write_text("Run\tX\n" + "\n".join(f"r1\t{i}" for i in range(20)) + "\n", encoding="utf-8")
-        engine = DuckDBEngine()
-        adapter = self._adapter(engine._conn)
-        monkeypatch.setattr(adapter, "_should_materialize_report", lambda _p: False)
-        adapter._load_diann_report(str(report))
-        assert self._relation_type(engine._conn) == "VIEW"
-
-    def test_materialization_oom_falls_back_without_scanning_view(self, tmp_path, monkeypatch):
-        """OOM fallback creates a VIEW without immediately scanning it."""
-        import duckdb
-
-        from qpx.core.engine import DuckDBEngine
-
-        report = tmp_path / "report.tsv"
-        report.write_text("Run\tX\nr1\t1\n", encoding="utf-8")
-        with DuckDBEngine() as engine:
-            statements = []
-            real_execute = engine.connection.execute
-
-            def execute(statement, *args, **kwargs):
-                """Force materialization to fail while preserving other queries."""
-                statements.append(statement)
-                if statement.startswith("CREATE TABLE report"):
-                    raise duckdb.OutOfMemoryException("forced materialization failure")
-                return real_execute(statement, *args, **kwargs)
-
-            conn = Mock(wraps=engine.connection)
-            conn.execute.side_effect = execute
-            adapter = self._adapter(conn)
-            monkeypatch.setattr(adapter, "_should_materialize_report", lambda _p: True)
-
-            getattr(adapter, "_load_diann_report")(str(report))
-
-            assert self._relation_type(engine.connection) == "VIEW"
-            assert not any(statement.startswith("SELECT COUNT(*)") for statement in statements)
+        pd.concat([rows, rows.assign(Run=rows["Run"] + "_B")]).to_csv(report, sep="\t", index=False)
+        one_batch = self._features(report, tmp_path / "one.feature.parquet", caplog)
+        caplog.clear()
+        per_run = self._features(report, tmp_path / "runs.feature.parquet", caplog, batch_rows=len(rows))
+        batches = [record.getMessage() for record in caplog.records if record.getMessage().startswith("Processing runs")]
+        assert batches == ["Processing runs 1-1 of 2", "Processing runs 2-2 of 2"]
+        assert per_run.equals(one_batch)
 
 
 # ---------------------------------------------------------------------------

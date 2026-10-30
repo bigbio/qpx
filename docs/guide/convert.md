@@ -193,7 +193,7 @@ Output files generated:
 
 **Issue**: Out of memory errors with large files
 
-- **Solution**: Increase `--max-memory` parameter (e.g., `8GB`, `16GB`)
+- **Solution**: Increase `--max-memory` (e.g., `8GB`, `16GB`). It limits DuckDB's buffer pool, not the whole process: the converter processes the runs in batches of about one million report rows, and each batch's Python columns and output come on top, so a 5.4 million-row report converted with `--max-memory 2GB` peaks at about 4.3 GB. A Parquet report is read in place; a TSV report is first converted once to a temporary Parquet file in the temp directory (`--temp-dir`).
 
 **Issue**: Slow processing
 

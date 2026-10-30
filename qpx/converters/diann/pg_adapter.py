@@ -22,7 +22,13 @@ import numpy as np
 import pandas as pd
 
 from qpx.converters.base import resolve_columns
-from qpx.converters.diann.base_adapter import RUN_EXTENSIONS, DiaNNBaseAdapter, decoy_protein_group_sql, run_name_sql
+from qpx.converters.diann.base_adapter import (
+    BATCH_ROWS,
+    RUN_EXTENSIONS,
+    DiaNNBaseAdapter,
+    decoy_protein_group_sql,
+    run_name_sql,
+)
 from qpx.converters.mappings import get_field_mappings
 from qpx.converters.utils import is_contaminant_accession
 from qpx.core.sql import sql_build, validate_identifier
@@ -290,7 +296,7 @@ class DiannPgAdapter(DiaNNBaseAdapter):
         pg_matrix_path: Optional[str],
         output_path: str,
         sdrf_path: Optional[str] = None,
-        file_num: int = 20,
+        batch_rows: int = BATCH_ROWS,
         creator: str = "diann",
         qvalue_threshold: Optional[float] = None,
     ) -> None:
@@ -304,7 +310,7 @@ class DiannPgAdapter(DiaNNBaseAdapter):
                 a channel (plexDIA) report.
             output_path: Destination Parquet path.
             sdrf_path: Optional SDRF file for sample mapping.
-            file_num: Number of runs to process per batch.
+            batch_rows: Report rows to aggregate per batch of runs.
             creator: Creator tag in Parquet metadata.
             qvalue_threshold: Optional precursor ``Q.Value`` cutoff. Filtering is
                 opt-in (bigbio/qpx#241): with the default ``None`` every protein
@@ -332,9 +338,10 @@ class DiannPgAdapter(DiaNNBaseAdapter):
 
         quantified = 0
         with PgWriter(output_path, creator=creator, compression=self._compression) as writer:
-            for i in range(0, len(runs), file_num):
-                batch_runs = runs[i : i + file_num]
-                self.logger.info(f"Processing PG runs {i + 1}-{min(i + file_num, len(runs))} of {len(runs)}")
+            done = 0
+            for batch_runs in self._run_batches(validate_identifier(self._resolved_pg["run_file_name"]), runs, batch_rows):
+                self.logger.info(f"Processing PG runs {done + 1}-{done + len(batch_runs)} of {len(runs)}")
+                done += len(batch_runs)
                 records = self._process_batch(
                     batch_runs,
                     pg_matrix_indexed,
