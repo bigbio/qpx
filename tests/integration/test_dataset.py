@@ -351,8 +351,8 @@ class TestIntensity:
         with Dataset(dataset_dir) as ds:
             rows = list(ds.intensity(level="protein"))
             assert len(rows) == 2
-            # Each row is a tuple: (sample_accession, feature_id, intensity)
-            assert len(rows[0]) == 3
+            # Each row is a tuple: (sample_accession, feature_id, intensity, quantification_unit)
+            assert ("SAMPLE_01", "P12345", 5000.0, "run_01|TMT126") in rows
 
     def test_intensity_missing_structure_raises(self, tmp_path):
         """Missing structures raise ValueError."""
@@ -412,20 +412,20 @@ class TestDesignMatrix:
             with pytest.raises(ValueError, match="requires"):
                 ds.design_matrix(level="protein")
 
-    def test_fillna_default_is_zero(self, dataset_dir):
-        """Missing values should be filled with 0 by default."""
+    def test_fillna_fills_missing_cells(self, dataset_dir):
+        """fillna=0.0 fills the cells of proteins a sample did not measure."""
         with Dataset(dataset_dir) as ds:
             matrix = ds.design_matrix(level="protein", fillna=0.0)
             # SAMPLE_01 has P12345 but not P67890 -> should be 0.0
             assert matrix.loc["SAMPLE_01", "P67890"] == pytest.approx(0.0)
 
-    def test_fillna_nan(self, dataset_dir):
-        """fillna=None should leave NaN in place."""
+    def test_fillna_default_keeps_nan(self, dataset_dir):
+        """Missing cells stay NaN by default (fillna=None); 0 was the old default."""
         import math
 
         with Dataset(dataset_dir) as ds:
-            matrix = ds.design_matrix(level="protein", fillna=None)
-            assert math.isnan(matrix.loc["SAMPLE_01", "P67890"])
+            assert math.isnan(ds.design_matrix(level="protein").loc["SAMPLE_01", "P67890"])
+            assert math.isnan(ds.design_matrix(level="protein", fillna=None).loc["SAMPLE_01", "P67890"])
 
     def test_invalid_level_raises(self, dataset_dir):
         """Invalid level parameter raises ValueError."""

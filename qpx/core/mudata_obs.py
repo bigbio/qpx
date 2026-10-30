@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 import pandas as pd
 
 from qpx.core.files import run_file_stem
+from qpx.core.sample_sql import UNIT_SEPARATOR
 from qpx.core.sql import sql_build
 
 if TYPE_CHECKING:
@@ -23,11 +24,6 @@ _RUN_OBS_SQL = """
                        $optional
                 FROM run r, UNNEST(r.samples) AS _t(rs)
                 """
-
-# A quantification unit (one pg ``grouped_runs`` set) is named by its distinct
-# member runs, sorted and joined by this separator, so a single-run unit keeps
-# its run_file_name.
-UNIT_SEPARATOR = ";"
 
 # Columns of run.parquet that describe one raw file rather than its samples.
 RUN_LEVEL_COLUMNS = ("run_accession", "fraction", "instrument")

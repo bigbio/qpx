@@ -49,12 +49,16 @@ def _nullable_dataset(tmp_path, request):
 
 @pytest.mark.parametrize("fillna", [None, 0.0, -1.0])
 def test_missing_intensities_match_parquet(nullable_dataset, fillna):
-    """Keep null-only axes and SQL sum semantics before explicit filling."""
+    """Keep null-only axes and SQL sum semantics before explicit filling.
+
+    SAMPLE_01 is measured in two runs (two quantification units), so summing
+    them has to be asked for with agg="sum".
+    """
     dataset_path, expected = nullable_dataset
     output = dataset_path / "matrix.parquet"
     with Dataset(dataset_path) as dataset:
-        matrix = dataset.design_matrix(fillna=fillna)
-        dataset.design_matrix(fillna=fillna, output_path=output)
+        matrix = dataset.design_matrix(fillna=fillna, agg="sum")
+        dataset.design_matrix(fillna=fillna, output_path=output, agg="sum")
 
     on_disk = pd.read_parquet(output).set_index("sample_accession").sort_index().sort_index(axis=1)
     pd.testing.assert_frame_equal(on_disk, expected)
@@ -63,9 +67,17 @@ def test_missing_intensities_match_parquet(nullable_dataset, fillna):
     pd.testing.assert_frame_equal(matrix, expected, check_dtype=False)
 
 
-def test_missing_intensities_default_to_zero(nullable_dataset):
-    """The default still explicitly fills stored and absent quantities with zero."""
+def test_repeated_measurements_are_not_summed_by_default(nullable_dataset):
+    """SAMPLE_01's two runs are two values per protein: the default refuses to add them up."""
+    dataset_path, _ = nullable_dataset
+    with Dataset(dataset_path) as dataset:
+        with pytest.raises(ValueError, match="1 samples have more than one quantification unit"):
+            dataset.design_matrix()
+
+
+def test_missing_intensities_stay_missing_by_default(nullable_dataset):
+    """Stored nulls and absent quantities stay NaN unless fillna is given."""
     dataset_path, expected = nullable_dataset
     with Dataset(dataset_path) as dataset:
-        matrix = dataset.design_matrix()
-    pd.testing.assert_frame_equal(matrix, expected.fillna(0.0), check_dtype=False)
+        matrix = dataset.design_matrix(agg="sum")
+    pd.testing.assert_frame_equal(matrix, expected, check_dtype=False)
