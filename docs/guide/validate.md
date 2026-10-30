@@ -131,6 +131,7 @@ The validator performs the following checks on each structure:
 
 | Check | Severity | Description |
 |-------|----------|-------------|
+| **Readable** | error | The structure's files can be read; a file in an incompatible older layout, such as a QPX 1.0 `pg.parquet`, fails validation with the reason instead of being left out |
 | **Column presence** | error | All required columns defined in the canonical schema must exist |
 | **Type matching** | error | Column Arrow types must match the schema definition |
 | **Null values** | strict | Non-nullable columns, and the non-nullable fields of their structs (such as `cv_params[].cv_value`), contain no nulls |

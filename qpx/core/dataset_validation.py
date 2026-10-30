@@ -243,6 +243,15 @@ class _DatasetValidationMixin:
     """Validate registered structures, cross-references and file integrity."""
 
     # --- Validation ---
+    def _unavailable_result(self, name: str) -> ValidationResult:
+        """An error result for a structure the dataset does not have or could not read."""
+        if name in self._skipped:
+            check, message = "unreadable_structure", f"Structure '{name}' could not be read: {self._skipped[name]}"
+        else:
+            check, message = "missing_structure", f"Structure '{name}' not found in dataset at {self.path}"
+        issue = ValidationIssue(structure=name, check=check, severity="error", column=None, message=message)
+        return ValidationResult(structure=name, issues=[issue])
+
     def validate(
         self, structures: list[str] | None = None, *, strict: bool = False, semantic: bool = False
     ) -> dict[str, ValidationResult]:
@@ -251,7 +260,8 @@ class _DatasetValidationMixin:
         Parameters
         ----------
         structures : list[str] | None
-            Structure names to validate.  If *None*, validates all available.
+            Structure names to validate.  If *None*, validates all available, and reports
+            those whose files could not be read as errors.
         strict : bool
             Report the issues that are warnings by default as errors.
         semantic : bool
@@ -262,24 +272,13 @@ class _DatasetValidationMixin:
         dict[str, ValidationResult]
             Mapping of structure name to its validation result.
         """
-        targets = structures or self.available_structures
+        targets = structures or [name for name in self.structure_names() if name in self._structures or name in self._skipped]
         results: dict[str, ValidationResult] = {}
         for name in targets:
             struct = self._structures.get(name)
-            if struct is None:
-                result = ValidationResult(structure=name)
-                result.issues.append(
-                    ValidationIssue(
-                        structure=name,
-                        check="missing_structure",
-                        severity="error",
-                        column=None,
-                        message=f"Structure '{name}' not found in dataset at {self.path}",
-                    )
-                )
-                results[name] = result
-            else:
-                results[name] = struct.validate(strict=strict, semantic=semantic)
+            results[name] = (
+                self._unavailable_result(name) if struct is None else struct.validate(strict=strict, semantic=semantic)
+            )
 
         present = {name for name in results if self._structures.get(name) is not None}
 

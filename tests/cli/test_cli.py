@@ -484,6 +484,18 @@ class TestValidateCLI:
         assert result.exit_code == 1
         assert "calculated_mz" in result.output
 
+    def test_validate_reports_an_unreadable_file(self, tmp_path):
+        """A pre-1.1 pg file is reported as invalid, without a traceback."""
+        from tests.unit.test_version import _write_old_pg_file
+
+        path = tmp_path / "old.pg.parquet"
+        _write_old_pg_file(path)
+        result = CliRunner().invoke(qpx_main, ["validate", "--file", str(path)])
+        assert result.exit_code == 1
+        assert isinstance(result.exception, SystemExit)
+        assert "pg: INVALID" in result.output
+        assert "could not be read" in result.output
+
 
 # ---------------------------------------------------------------------------
 # Ontology

@@ -102,6 +102,8 @@ class Dataset(_DatasetValidationMixin, _DatasetQueryMixin, _DatasetWriteMixin):
         )
 
         self._structures: dict[str, BaseStructure] = {}
+        # Structures whose files exist but could not be registered, with the reason.
+        self._skipped: dict[str, str] = {}
         self._discover_and_register(structures)
 
     def _discover_and_register(self, requested: list[str] | None):
@@ -152,10 +154,12 @@ class Dataset(_DatasetValidationMixin, _DatasetQueryMixin, _DatasetWriteMixin):
                     )
                 )
                 _log.warning("Skipping incompatible structure '%s': %s", name, exc)
+                self._skipped[name] = str(exc)
             except (FileNotFoundError, duckdb.IOException):
                 pass  # Structure not present in S3
             except (OSError, ValueError, duckdb.Error) as exc:
                 _log.warning("Failed to register '%s' from S3: %s", name, exc)
+                self._skipped[name] = str(exc)
 
     def _discover_local(self, requested: list[str] | None):
         """Register structures from local filesystem.
@@ -174,8 +178,10 @@ class Dataset(_DatasetValidationMixin, _DatasetQueryMixin, _DatasetWriteMixin):
                 # dataset — skip it with a warning so the other structures stay
                 # usable. (A direct read_pg()/PG.from_file() still raises.)
                 _log.warning("Skipping incompatible structure '%s': %s", name, exc)
+                self._skipped[name] = str(exc)
             except (OSError, ValueError, duckdb.Error) as exc:
                 _log.warning("Failed to register structure '%s': %s", name, exc)
+                self._skipped[name] = str(exc)
 
     def _register_local_structure(self, name: str, cls, suffix: str):
         """Register a single local structure (single file or Hive-partitioned dir)."""
@@ -271,6 +277,11 @@ class Dataset(_DatasetValidationMixin, _DatasetQueryMixin, _DatasetWriteMixin):
         return list(self._structures.keys())
 
     @property
+    def skipped_structures(self) -> dict[str, str]:
+        """Structures whose files are present but could not be read (an older layout, a corrupt file), with the reason."""
+        return dict(self._skipped)
+
+    @property
     def file_prefix(self) -> str | None:
         """Prefix of the QPX file names this dataset was opened with, if any."""
         return self._file_prefix
@@ -300,6 +311,7 @@ class Dataset(_DatasetValidationMixin, _DatasetQueryMixin, _DatasetWriteMixin):
             self.__dict__.pop(attr, None)
 
         self._structures.clear()
+        self._skipped.clear()
         self._discover_and_register(None)
 
     def close(self):

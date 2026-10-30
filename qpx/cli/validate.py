@@ -16,8 +16,10 @@ from pathlib import Path
 from typing import Optional
 
 import click
+import duckdb
 
 from qpx.cli.resources import duckdb_resource_options
+from qpx.core.data.validation import ValidationIssue, ValidationResult
 from qpx.dataset import Dataset
 
 logger = logging.getLogger("qpx.cli.validate")
@@ -99,10 +101,14 @@ def _validate_single_file(file_path: Path, semantic: bool):
     """Validate a single Parquet file by inferring its structure type."""
     from qpx.dataset import Dataset
 
-    for _, (cls, suffix) in Dataset._STRUCTURE_REGISTRY.items():
+    for name, (cls, suffix) in Dataset._STRUCTURE_REGISTRY.items():
         if file_path.name.endswith(suffix):
-            struct = cls.from_file(file_path)
-            result = struct.validate(strict=True, semantic=semantic)
+            try:
+                result = cls.from_file(file_path).validate(strict=True, semantic=semantic)
+            except (OSError, ValueError, duckdb.Error) as exc:
+                result = ValidationResult(structure=name)
+                message = f"{file_path.name} could not be read: {exc}"
+                result.issues.append(ValidationIssue(name, "unreadable_structure", "error", None, message))
             _print_result(result)
             sys.exit(0 if result.is_valid else 1)
 
