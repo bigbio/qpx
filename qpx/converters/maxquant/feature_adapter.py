@@ -573,7 +573,15 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         """Build intensities and additional_intensities from evidence row."""
         if re.sub(r"\d+", "", experiment_type).upper() in ("TMT", "ITRAQ") and tmt_channels:
             return self._reporter_intensities(row, tmt_channels, ri_offset)
-        return self._lfq_intensities(row), None
+        return self._lfq_intensities(row), self._lfq_spectral_count(row)
+
+    @staticmethod
+    def _lfq_spectral_count(row) -> Optional[list[dict]]:
+        """The evidence row's ``MS/MS count`` as the ``spectral_count`` of its LFQ label (0 for a matched feature)."""
+        count = safe_float(row.get("MS/MS count"))
+        if count is None:
+            return None
+        return [{"label": "LFQ", "intensities": [{"intensity_name": "spectral_count", "intensity_value": count}]}]
 
     @staticmethod
     def _reporter_intensities(row, tmt_channels: dict[str, int], ri_offset: int) -> tuple[list[dict], Optional[list[dict]]]:

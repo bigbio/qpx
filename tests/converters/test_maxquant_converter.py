@@ -178,6 +178,61 @@ def test_pg_zero_lfq_and_ibaq_are_missing(tmp_path):
     ]
 
 
+def test_pg_spectral_count_per_experiment(tmp_path):
+    """``MS/MS count <experiment>`` is the pg row's ``spectral_count``; 0 is a count, not a missing value."""
+    from qpx.converters.maxquant.pg_adapter import MaxQuantPgAdapter
+
+    protein_groups = tmp_path / "proteinGroups.txt"
+    protein_groups.write_text(
+        "Protein IDs\tMajority protein IDs\tMS/MS count\tIntensity exp1\tIntensity exp2\t"
+        "MS/MS count exp1\tMS/MS count exp2\n"
+        "P1\tP1\t7\t1000\t2000\t7\t0\n"
+    )
+    sdrf = tmp_path / "sdrf.tsv"
+    sdrf.write_text(
+        "source name\tcomment[data file]\tcomment[label]\nexp1\trun1.raw\tlabel free sample\nexp2\trun2.raw\tlabel free sample\n"
+    )
+    output = tmp_path / "pg.parquet"
+    with MaxQuantPgAdapter() as adapter:
+        adapter.convert(str(protein_groups), str(output), sdrf_path=str(sdrf))
+
+    counts = {
+        tuple(row["grouped_runs"]): {
+            entry["intensity_name"]: entry["intensity_value"] for entry in row["additional_intensities"][0]["intensities"]
+        }
+        for row in pq.read_table(output).to_pylist()
+    }
+    assert counts == {("run1",): {"spectral_count": 7.0}, ("run2",): {"spectral_count": 0.0}}
+
+
+def test_feature_spectral_count_from_evidence(tmp_path):
+    """Evidence ``MS/MS count`` is the feature's ``spectral_count``, also without an MS1 quantity."""
+    from qpx.converters.maxquant.feature_adapter import MaxQuantFeatureAdapter
+
+    evidence = tmp_path / "evidence.txt"
+    evidence.write_text(
+        _EVIDENCE_HEADER.replace("\tid\n", "\tid\tMS/MS count\n")
+        + "PEPTIDEA\t_PEPTIDEA_\t2\trun1\tMULTI-MSMS\t100\t450.25\t30.0\t29.5\t30.5\t0.01\tP1\tP1\t1000\t898.5\t1\t3\n"
+        + "PEPTIDEB\t_PEPTIDEB_\t2\trun1\tMULTI-MATCH\t\t450.25\t40.0\t39.5\t40.5\t\tP1\tP1\t2000\t898.5\t2\t0\n"
+        + "PEPTIDEC\t_PEPTIDEC_\t2\trun1\tMSMS\t300\t450.25\t50.0\t49.5\t50.5\t0.01\tP1\tP1\t\t898.5\t3\t1\n"
+    )
+    output = tmp_path / "feature.parquet"
+    with MaxQuantFeatureAdapter() as adapter:
+        adapter.convert(str(evidence), str(output))
+
+    counts = {
+        r["sequence"]: [
+            (a["label"], i["intensity_name"], i["intensity_value"]) for a in r["additional_intensities"] for i in a["intensities"]
+        ]
+        for r in pq.read_table(output).to_pylist()
+    }
+    assert counts == {
+        "PEPTIDEA": [("LFQ", "spectral_count", 3.0)],
+        "PEPTIDEB": [("LFQ", "spectral_count", 0.0)],
+        "PEPTIDEC": [("LFQ", "spectral_count", 1.0)],
+    }
+
+
 _MOD_SDRF_HEADER = (
     "source name\tcomment[data file]\tcomment[label]\tcomment[modification parameters]\t"
     "comment[modification parameters]\tcomment[modification parameters]\tcomment[modification parameters]\n"

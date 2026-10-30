@@ -90,7 +90,10 @@ def test_maxquant_lfq_retains_only_units_with_identification(tmp_path, missing_q
         assert retained[0]["grouped_runs"] == ["run1", "run2"]
         assert retained[0]["label"] == "LFQ"
         assert retained[0]["intensity"] is None
-        assert retained[0]["additional_intensities"] is None
+        # The zero LFQ and iBAQ are left out; the experiment's MS/MS count is the spectral count.
+        assert retained[0]["additional_intensities"] == [
+            {"label": "LFQ", "intensities": [{"intensity_name": "spectral_count", "intensity_value": 2.0}]}
+        ]
         assert retained[0]["global_qvalue"] == pytest.approx(0.001)
     assert sorted(row["intensity"] for row in rows if row["anchor_protein"] == "P2") == [100, 200]
 

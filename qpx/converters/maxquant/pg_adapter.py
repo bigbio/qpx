@@ -545,8 +545,14 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
 
     @staticmethod
     def _lfq_additional_intensities(row, experiment: str) -> list[dict]:
-        """The experiment's ``LFQ intensity`` and ``iBAQ``, without MaxQuant's 0 for a value it did not compute."""
+        """The experiment's ``LFQ intensity``, ``iBAQ`` and spectral count.
+
+        A 0 ``LFQ intensity`` or ``iBAQ`` is MaxQuant's value for one it did not
+        compute and is left out; ``MS/MS count <experiment>`` (razor and unique
+        peptide spectra) is a count, kept when 0.
+        """
         columns = (("lfq", f"LFQ intensity {experiment}"), ("ibaq", f"iBAQ {experiment}"))
         values = [(name, _positive(row.get(column))) for name, column in columns]
+        values.append(("spectral_count", safe_float(row.get(f"MS/MS count {experiment}"))))
         extra_vals = [{"intensity_name": name, "intensity_value": value} for name, value in values if value is not None]
         return [{"label": "LFQ", "intensities": extra_vals}] if extra_vals else []
