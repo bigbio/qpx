@@ -385,24 +385,14 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
 
     def _pg_anchor(self, row: dict, pg_accessions: list[str]) -> str:
         """Resolve the representative protein for a group."""
-        r = self._resolved
         # Anchor protein (first in Majority protein IDs, or first PG accession)
-        majority_raw = row.get(r.get("anchor_protein", "Majority protein IDs"))
-        if pd.notna(majority_raw) and majority_raw:
-            anchor_protein = self._norm_uniprot_id(str(majority_raw).split(";", maxsplit=1)[0])
-        elif pg_accessions:
-            anchor_protein = pg_accessions[0]
-        else:
-            anchor_protein = ""
-        return anchor_protein
+        return self._group_anchor(row.get(self._resolved.get("anchor_protein", "Majority protein IDs")), pg_accessions)
 
     def _pg_identity_fields(self, row: dict) -> tuple:
         """Resolve protein membership, names, genes, and representative."""
         r = self._resolved
         # Protein group identity
-        pg_acc_cell = row.get(r.get("pg_accessions", "Protein IDs"))
-        pg_acc_raw = str(pg_acc_cell) if pd.notna(pg_acc_cell) and pg_acc_cell is not None else ""
-        pg_accessions = [self._norm_uniprot_id(a.strip()) for a in pg_acc_raw.split(";") if a.strip()] if pg_acc_raw else []
+        pg_accessions = self._protein_list(row.get(r.get("pg_accessions", "Protein IDs")))
 
         pg_names_raw = row.get(r.get("pg_names", "Protein names"))
         pg_names = str(pg_names_raw).split(";") if pd.notna(pg_names_raw) and pg_names_raw else None

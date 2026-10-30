@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`convert maxquant` feature protein groups** — `feature.pg_accessions` was copied from `Leading proteins`, which lists one leading protein per group the peptide belongs to, so a feature of a multi-protein group carried only the leader and a shared peptide carried the leaders of all its groups. Neither matched the membership of any pg row, so on PXD001819 47,307 of 243,821 features (19.4 %) had no feature→pg link and read as identified but not quantified. With `proteinGroups.txt`, each feature now takes the group its `Protein group IDs` name, and a shared peptide the razor group MaxQuant assigned it to: `pg_accessions` and `anchor_protein` are the group's `Protein IDs` and first `Majority protein IDs` entry, exactly as the pg view writes them, and ontology.parquet names these proteinGroups.txt columns as their source. Every PXD001819 feature now links to its pg row. `unique` is true only for a peptide in one single-protein group; 28,434 PXD001819 features of multi-protein groups change from true to false, and shared peptides stay false. Without `proteinGroups.txt`, features keep `Leading proteins`, and `unique` keeps meaning a single group of any size, since `Leading proteins` does not give the group's size. The feature spec now defines `pg_accessions` and `unique` as the schema does.
+
 ## [1.2.0] - 2026-10-30
 
 ### Added

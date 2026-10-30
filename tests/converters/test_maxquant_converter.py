@@ -568,4 +568,152 @@ def test_feature_pg_softlink_real_full_dataset(tmp_path_factory):
 
     with open_converted(out, prefix="mq") as ds:
         _feat, _pg, link = assert_softlink_valid(ds)
+        unlinked = ds.features_without_pg_link().fetchall()
     assert link, "expected at least some computed feature->pg softlink edges"
+    # Every evidence row names its groups in "Protein group IDs" (243,821 features).
+    assert unlinked == []
+
+
+# ---------------------------------------------------------------------------
+# Feature protein group from evidence "Protein group IDs"
+# ---------------------------------------------------------------------------
+
+_GROUP_IDS_HEADER = (
+    "Sequence\tModified sequence\tCharge\tRaw file\tExperiment\tType\tMS/MS scan number\tm/z\t"
+    "Calibrated retention time\tCalibrated retention time start\tCalibrated retention time finish\t"
+    "PEP\tLeading razor protein\tLeading proteins\tProtein group IDs\tIntensity\tMass\tid\n"
+)
+
+
+def _group_id_evidence_row(index, sequence, razor, leading, group_ids):
+    return (
+        f"{sequence}\t_{sequence}_\t2\trun1\texp1\tMULTI-MSMS\t{100 + index}\t450.25\t30.0\t29.5\t30.5\t0.01\t"
+        f"{razor}\t{leading}\t{group_ids}\t1000\t898.5\t{index}\n"
+    )
+
+
+def _write_group_id_inputs(tmp_path, rows=None):
+    """evidence rows naming their groups by proteinGroups ``id``, as MaxQuant writes them.
+
+    Group 0 is P1;P2 (two proteins), group 1 is P3 alone, group 2 is P4;P5.
+    ``Leading proteins`` holds one leader per group, so it never equals a
+    multi-protein group's membership.
+    """
+    if rows is None:
+        rows = [
+            ("PEPTIDEA", "P1", "P1", "0"),  # one group of two proteins
+            ("PEPTIDEB", "P3", "P3", "1"),  # one group of one protein
+            ("PEPTIDEC", "P4", "P3;P4", "1;2"),  # shared by groups 1 and 2, razor group 2
+            ("PEPTIDED", "P3", "P3;P4", "1;2"),  # shared, razor group 1 (a single protein)
+        ]
+    evidence = tmp_path / "evidence.txt"
+    evidence.write_text(_GROUP_IDS_HEADER + "".join(_group_id_evidence_row(i, *row) for i, row in enumerate(rows)))
+    protein_groups = tmp_path / "proteinGroups.txt"
+    protein_groups.write_text(
+        "Protein IDs\tMajority protein IDs\tQ-value\tIntensity exp1\tid\n"
+        "P1;P2\tP1;P2\t0.001\t1000\t0\n"
+        "P3\tP3\t0.002\t2000\t1\n"
+        "P4;P5\tP4\t0.003\t3000\t2\n"
+    )
+    return evidence, protein_groups
+
+
+def test_feature_group_resolved_from_protein_group_ids(tmp_path):
+    """Feature membership is the group ``Protein group IDs`` names, not ``Leading proteins``.
+
+    ``Leading proteins`` lists one leader per group, so a multi-protein group's
+    feature carried only its leader and a shared peptide carried the leaders of
+    every group: neither matched any pg row's membership. The group must come
+    from ``Protein group IDs`` (the razor group for a shared peptide), with
+    ``unique`` true only for a peptide in one single-protein group.
+    """
+    from qpx.converters.maxquant.feature_adapter import MaxQuantFeatureAdapter
+
+    evidence, protein_groups = _write_group_id_inputs(tmp_path)
+    output = tmp_path / "feature.parquet"
+    with MaxQuantFeatureAdapter() as adapter:
+        adapter.convert(str(evidence), str(output), protein_groups_path=str(protein_groups))
+
+    observed = {
+        r["sequence"]: ([p["accession"] for p in r["pg_accessions"]], r["anchor_protein"], r["unique"], r["pg_global_qvalue"])
+        for r in pq.read_table(output).to_pylist()
+    }
+    assert observed == {
+        "PEPTIDEA": (["P1", "P2"], "P1", False, pytest.approx(0.001)),
+        "PEPTIDEB": (["P3"], "P3", True, pytest.approx(0.002)),
+        "PEPTIDEC": (["P4", "P5"], "P4", False, pytest.approx(0.003)),
+        "PEPTIDED": (["P3"], "P3", False, pytest.approx(0.002)),
+    }
+
+
+def test_feature_shared_peptide_without_razor_group_is_unresolved(tmp_path):
+    """A shared peptide whose razor protein is in none of its groups gets no group."""
+    from qpx.converters.maxquant.feature_adapter import MaxQuantFeatureAdapter
+
+    evidence, protein_groups = _write_group_id_inputs(tmp_path, rows=[("PEPTIDEC", "P9", "P3;P4", "1;2")])
+    output = tmp_path / "feature.parquet"
+    with MaxQuantFeatureAdapter() as adapter:
+        adapter.convert(str(evidence), str(output), protein_groups_path=str(protein_groups))
+
+    (row,) = pq.read_table(output).to_pylist()
+    assert (row["pg_accessions"], row["anchor_protein"], row["unique"]) == (None, None, None)
+
+
+def test_feature_pg_softlink_covers_every_group_id_feature(tmp_path):
+    """With ``Protein group IDs`` every feature links to its group's pg row."""
+    from qpx.converters.maxquant.converter import MaxQuantConverter
+    from qpx.core.constants import FEATURE, PG
+
+    evidence, protein_groups = _write_group_id_inputs(tmp_path)
+    out = tmp_path / "out"
+    MaxQuantConverter().convert(
+        output_folder=str(out),
+        evidence_file=str(evidence),
+        protein_groups_file=str(protein_groups),
+        output_prefix="mq",
+        structures=[FEATURE, PG],
+    )
+
+    with open_converted(out, prefix="mq") as ds:
+        feat, pg, link = assert_softlink_valid(ds)
+        assert ds.features_without_pg_link().fetchall() == []
+    pg_id_by_membership = {tuple(sorted(memb)): pg_id for pg_id, memb, *_ in pg}
+    assert pg_ids_by_sequence(feat, link) == {
+        "PEPTIDEA": [pg_id_by_membership[("P1", "P2")]],
+        "PEPTIDEB": [pg_id_by_membership[("P3",)]],
+        "PEPTIDEC": [pg_id_by_membership[("P4", "P5")]],
+        "PEPTIDED": [pg_id_by_membership[("P3",)]],
+    }
+
+
+@pytest.mark.parametrize(
+    ("with_protein_groups", "expected"),
+    [
+        (True, {"pg_accessions": "Protein IDs", "anchor_protein": "Majority protein IDs"}),
+        (False, {"pg_accessions": "Leading proteins", "anchor_protein": "Leading razor protein"}),
+    ],
+    ids=["protein_group_ids", "leading_proteins"],
+)
+def test_feature_group_source_columns_in_ontology(tmp_path, with_protein_groups, expected):
+    """ontology.parquet names the column the feature's group fields are read from.
+
+    With ``Protein group IDs`` resolved through proteinGroups.txt the group is
+    its ``Protein IDs`` and first ``Majority protein IDs`` entry, not
+    ``Leading proteins`` / ``Leading razor protein``.
+    """
+    from qpx.converters.maxquant.converter import MaxQuantConverter
+    from qpx.core.constants import FEATURE
+
+    evidence, protein_groups = _write_group_id_inputs(tmp_path)
+    out = tmp_path / "out"
+    MaxQuantConverter().convert(
+        output_folder=str(out),
+        evidence_file=str(evidence),
+        protein_groups_file=str(protein_groups) if with_protein_groups else None,
+        output_prefix="mq",
+        structures=[FEATURE],
+    )
+
+    entries = pq.read_table(out / "mq.ontology.parquet").to_pylist()
+    observed = {e["field_name"]: e["source_column_name"] for e in entries if e["view"] == "feature"}
+    assert {field: observed.get(field) for field in expected} == expected

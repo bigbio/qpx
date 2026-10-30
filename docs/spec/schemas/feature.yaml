@@ -121,7 +121,7 @@ fields:
     doc: "Representative protein of the peptide's protein group. Null when no protein mapping was performed, or when the peptide's protein evidence spans more than one inferred protein group (a shared peptide the producer did not assign); the feature's intensities are kept either way."
   unique:
     type: bool
-    doc: "True when the peptide resolves to a protein group of exactly one protein, False when that group has several members. Null when the group is unresolved, including a shared peptide whose evidence spans more than one inferred group."
+    doc: "True when the peptide resolves to a protein group of exactly one protein, False when that group has several members. A shared peptide the producer assigns to one of its groups (MaxQuant's razor group) carries that group and is False. Null when the group is unresolved, including a shared peptide whose evidence spans more than one inferred group and that the producer did not assign."
   pg_global_qvalue:
     type: float64
     optional: true

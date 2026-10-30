@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import Optional
 
+import pandas as pd
+
 from qpx.converters.base import BaseConverter
 from qpx.converters.utils import strip_uniprot_prefix
 
@@ -30,6 +32,25 @@ class MaxQuantBaseAdapter(BaseConverter):
             P55011  →  P55011  (returned as-is)
         """
         return strip_uniprot_prefix(pid)
+
+    @classmethod
+    def _protein_list(cls, cell) -> list[str]:
+        """Normalised accessions of a ``;``-separated MaxQuant protein cell.
+
+        This is the ``pg_accessions`` list the pg view writes for a
+        ``proteinGroups.txt`` row, so the feature view reuses it to carry the
+        same membership.
+        """
+        if cell is None or pd.isna(cell):
+            return []
+        return [cls._norm_uniprot_id(a.strip()) for a in str(cell).split(";") if a.strip()]
+
+    @classmethod
+    def _group_anchor(cls, majority_cell, accessions: list[str]) -> str:
+        """The group's representative: first ``Majority protein IDs`` entry, else first member."""
+        if majority_cell is not None and pd.notna(majority_cell) and majority_cell:
+            return cls._norm_uniprot_id(str(majority_cell).split(";", maxsplit=1)[0])
+        return accessions[0] if accessions else ""
 
     def _load_sdrf(self, sdrf_path: Optional[str]) -> tuple[dict, str, list]:
         """Load SDRF and return ``(sample_map, experiment_type, tmt_channels)``.
