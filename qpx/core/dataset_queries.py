@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from qpx.core.convert import QueryResult
+from qpx.core.sample_resolution import RUN_SAMPLES_SQL, feature_samples_sql
 from qpx.core.sql import escape_path, sql_build
 
 if TYPE_CHECKING:
@@ -252,50 +253,34 @@ class _DatasetQueryMixin:
             if self.pg is None or self.run is None:
                 raise ValueError("level='protein' requires pg and run structures.")
             # Since QPX 1.1 the pg view is flattened: one row per label with scalar
-            # p.label / p.intensity (no intensities list to UNNEST). Match each pg
-            # row to the sample carrying its label. ID-only rows (null label /
-            # intensity) never match a sample label and drop out naturally.
+            # p.label / p.intensity. Any member run of grouped_runs resolves the
+            # label to the unit's sample (pg.md), so the first one is joined. ID-only
+            # rows (null label / intensity) never match a sample label.
             return sql_build(
                 """
-            WITH numbered_pg AS MATERIALIZED (
-                SELECT ROW_NUMBER() OVER () AS pg_row_id, *
-                FROM pg
-            ),
-            pg_samples AS (
-                SELECT DISTINCT p.pg_row_id,
-                                rs.sample_accession,
-                                rs.label AS intensity_label
-                FROM numbered_pg p
-                CROSS JOIN UNNEST(list_distinct(p.grouped_runs)) AS _g(run_file_name)
-                JOIN run r USING (run_file_name)
-                CROSS JOIN UNNEST(r.samples) AS _s(rs)
-            )
-            SELECT ps.sample_accession,
+            WITH run_samples AS ($run_samples)
+            SELECT rs.sample_accession,
                    p.anchor_protein AS feature_id,
                    p.intensity
-            FROM numbered_pg p
-            JOIN pg_samples ps USING (pg_row_id)
-            WHERE p.label = ps.intensity_label
-              AND p.is_decoy = false
+            FROM pg p
+            JOIN run_samples rs ON rs.run_file_name = p.grouped_runs[1] AND rs.label = p.label
+            WHERE p.is_decoy = false
             """,
+                run_samples=RUN_SAMPLES_SQL,
             )
         if level == "peptide":
             if self.feature is None or self.run is None:
                 raise ValueError("level='peptide' requires feature and run structures.")
             return sql_build(
                 """
-            SELECT rs.sample_accession,
-                   f.sequence AS feature_id,
-                   SUM(i.intensity) AS intensity
-            FROM feature f,
-                 run r,
-                 UNNEST(r.samples) AS _t1(rs),
-                 UNNEST(f.intensities) AS _t2(i)
-            WHERE f.run_file_name = r.run_file_name
-              AND (i.label = rs.label OR len(r.samples) = 1)
-              AND f.is_decoy = false
-            GROUP BY rs.sample_accession, f.sequence
+            SELECT sample_accession,
+                   sequence AS feature_id,
+                   SUM(intensity) AS intensity
+            FROM ($feature_samples)
+            WHERE is_decoy = false
+            GROUP BY sample_accession, sequence
             """,
+                feature_samples=feature_samples_sql("feature", ("sequence", "is_decoy")),
             )
         raise ValueError(f"level must be 'protein' or 'peptide', got '{level}'")
 

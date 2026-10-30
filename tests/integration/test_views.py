@@ -4,6 +4,7 @@ import pandas as pd
 import pytest
 
 from qpx.core.convert import QueryResult
+from qpx.core.sample_resolution import feature_samples_sql
 from qpx.dataset import Dataset
 from qpx.views.api import IdentificationSummaryView, PeptideView, ProteinView
 
@@ -387,6 +388,15 @@ class TestMultiRunGroupedRuns:
         assert len(quantified) == 2
         assert set(quantified["sample_accession"]) == {"SAMPLE_A"}
         assert set(quantified["label"]) == {"LFQ"}
+
+    def test_feature_sample_resolution_plans_no_cross_product(self, multi_run_dataset_dir):
+        """Feature intensities reach their samples through equi-joins; UNNEST(run.samples) per joined row planned a product."""
+        with Dataset(multi_run_dataset_dir) as ds:
+            plan = ds.sql("EXPLAIN " + feature_samples_sql("feature", ("sequence",))).fetchall()
+        text = "\n".join(row[1] for row in plan)
+        assert "HASH_JOIN" in text
+        assert "CROSS_PRODUCT" not in text
+        assert "NESTED_LOOP_JOIN" not in text
 
 
 class TestViewIntegration:

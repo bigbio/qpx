@@ -69,21 +69,33 @@ label, without unnesting every fraction against every channel.
 
 ```sql
 -- Example: deriving peptide abundance per sample from feature + run
-SELECT f.sequence,
-       f.peptidoform,
+WITH run_samples AS (
+    SELECT r.run_file_name, sc.label, sc.sample_accession
+    FROM 'PXD014414.run.parquet' r
+    CROSS JOIN UNNEST(r.samples) AS s(sc)
+),
+feature_intensities AS (
+    SELECT f.sequence, f.peptidoform, f.run_file_name, i.label, i.intensity
+    FROM 'PXD014414.feature.parquet' f
+    CROSS JOIN UNNEST(f.intensities) AS _i(i)
+)
+SELECT fi.sequence,
+       fi.peptidoform,
        rs.sample_accession,
-       i.intensity AS abundance,
-       pg.gg_names
-FROM 'PXD014414.feature.parquet' f,
-     'PXD014414.run.parquet' r,
-     UNNEST(r.samples) AS rs,
-     UNNEST(f.intensities) AS i,
-     'PXD014414.pg.parquet' pg
-WHERE f.run_file_name = r.run_file_name
-  AND i.label = rs.label
-  AND f.anchor_protein = pg.anchor_protein
-  AND list_contains(pg.grouped_runs, f.run_file_name);
+       fi.intensity AS abundance
+FROM feature_intensities fi
+JOIN run_samples rs
+  ON rs.run_file_name = fi.run_file_name
+ AND rs.label = fi.label;
 ```
+
+Both lists are flattened before the join, so the sample is matched on
+`(run_file_name, label)`. Unnesting `run.samples` and `intensities` in the same
+`FROM` clause as the join instead plans a product of features and samples. In a
+single-sample run the API views also take a feature label that matches no sample,
+such as DIA-NN's `raw`, as that sample. For gene annotations, join `pg` through the
+feature-to-pg softlink (`Dataset.link_feature_pg()`: membership, run and label), not
+on `anchor_protein`, which can lead several groups.
 
 ## Relationship to primary views
 
