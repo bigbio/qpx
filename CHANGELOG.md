@@ -7,9 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **MuData reports cells with more than one intensity** — values that land in one matrix cell, such as two features of one precursor in one run, were summed without a trace: 14,020 of the 196,004 PXD001819 precursor cells (7.2%) receive more than one MaxQuant feature, 9,862 of them an MS/MS and a match-between-runs feature. `build_mudata(duplicates=...)` now takes `"sum"` (the default, as before) or `"mean"`; each modality's `uns["qpx_duplicates"]` records the aggregation and the number of such cells, and the build logs a warning when there are any. Values are unchanged by default.
+
 ### Changed
 
 - **Peptide and protein abundance helpers are faster** — `Dataset.intensity()`, `Dataset.design_matrix()`, `PeptideView.intensity()`, `ProteinView.intensity()` and `Feature.for_quantification()` unnested `run.samples` and the feature intensities inside one `FROM` list, so DuckDB planned a cross product of features and runs at peptide level and joined every channel of a TMT feature to every channel of its run before matching the label; at protein level every pg row was resolved against every member run of its `grouped_runs`. Both lists are now unnested on their own and joined on run and label, and each distinct `grouped_runs` set is resolved to its samples once. On 405 label-free runs (2.94 million features) `intensity("peptide")` takes 0.37 s instead of 33.1 s. On fractionated TMT16 (12 runs, 240,000 features) it takes 0.59 s instead of 35.3 s, and `PeptideView.intensity()` and `Feature.for_quantification()` finish in 0.6 s where they ran out of a 5 GB temp directory. `ProteinView.intensity()` on 1.28 million fractionated TMT16 pg rows takes 0.8 s instead of 19.7 s. The worked example in [Data Model](docs/spec/data-model.md#label-channel-sample-resolution) resolves each `grouped_runs` set once in the same way. Output is unchanged.
+- **BREAKING — MuData `proteins` obs column `run_file_name` is now `grouped_runs`** — protein observations are quantification units (see *Fixed*), so when `obs` is expanded over channels its run column names the unit's runs. The converters always write the expanded form, so every converter-written `.h5mu` has the new column, unfractionated ones included: on DIA-NN PXD036609 the protein observation names and values are the same as before and only the column name differs. Code that reads `mdata["proteins"].obs["run_file_name"]` must read `grouped_runs`; precursor observations keep `run_file_name`.
+
+### Fixed
+
+- **MuData protein observations are quantification units** — the `proteins` modality exploded `grouped_runs` into one observation per raw file, each holding a copy of its unit's value, so a fractionated design counted every protein-group quantity once per fraction: on the OpenMS BSA fractions (3 samples × 2 fractions) the matrix summed to 2.0 times the pg total, on one TMT10 plex in 3 fractions to 3.0 times, and the two fractions of a SILAC mixture were identical observations. Each quantification unit and label is now one observation, named by its member runs sorted and joined by `;` (an unfractionated unit keeps its run name). The sample is resolved through any member run, `run_accession`, `fraction` and `instrument` are joined over the members, and replicate numbers on which the members disagree are left empty. The observations of fractionated designs change, and the obs column is renamed (see *Changed*). See [MuData](docs/spec/anndata.md#mudata-h5mu).
 
 ## [1.2.0] - 2026-10-30
 

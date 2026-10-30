@@ -114,12 +114,22 @@ Converters that produce expression output also emit a single combined **MuData**
 
 | Modality (`mdata.mod[...]`) | `obs` (rows) | `var` (columns) | `X` |
 |---|---|---|---|
-| `precursors` | run (`run_file_name`, joined to sample metadata) | precursor identity `peptidoform\|charge` | sparse precursor intensity matrix |
-| `proteins` | run (`run_file_name`) | `anchor_protein` (with `gene_name` carried in `var`) | sparse protein-group intensity matrix |
+| `precursors` | run (`run_file_name`), with its `run.samples` entry (`sample_accession`, `label`, replicates) and run columns | precursor identity `peptidoform\|charge` | sparse precursor intensity matrix |
+| `proteins` | quantification unit (`grouped_runs`), with the sample of its label and run columns joined over its runs | `anchor_protein` (with `gene_name` carried in `var`) | sparse protein-group intensity matrix |
 | `expression` | Absolute Expression observations | AE variables | Absolute Expression matrix (loaded from the AE view when present) |
 | `differential` | Differential Expression observations | DE variables | Differential Expression matrix (loaded from the DE view when present) |
 
 A modality is included only when its source data is available, so a given `.h5mu` may carry a subset of these four.
+
+Multiplexed data (TMT, iTRAQ, plexDIA), or `all_intensity_labels=True`, expands `obs` over the channels: precursor observations are named `run|label` and protein observations `grouped_runs|label`.
+
+### Protein observations are quantification units
+
+A protein-group quantity exists once per [quantification unit](data-model.md#quantification-units-fractions-one-grouped_runs-one-quantity-per-label), the `grouped_runs` set of fractions aggregated together, and label. Each unit and label is one `proteins` observation, named by its distinct member runs, sorted and joined by `;` (`F1;F2;F3`, or `F1;F2;F3|TMT126` when expanded over channels); an unfractionated unit keeps its run name. When `obs` is expanded over channels, its `grouped_runs` and `intensity_label` columns hold the unit name and the label. qpx 1.2 and earlier called this column `run_file_name`. The converters always write the expanded form, so the column is `grouped_runs` in every converter-written `.h5mu`, unfractionated ones included. A pg row with an empty `grouped_runs` belongs to no unit and is left out. The sample comes from any member run that carries the label (they are fractions of one sample context), and `run_accession`, `fraction` and `instrument` are joined over the member runs with `;`. `biological_replicate` and `technical_replicate` are left empty when the member runs disagree, as when a producer groups the injections of a sample into one unit. Precursors stay per run, since a feature is measured in one raw file.
+
+### Repeated cells
+
+Several values can land in one matrix cell, such as two features of one precursor in one run (a MaxQuant MS/MS and a match-between-runs feature). They are combined with `build_mudata(ds, duplicates="sum")` (the default) or `duplicates="mean"`. Each modality's `uns["qpx_duplicates"]` records the aggregation and the number of such cells, and the build logs a warning when there are any.
 
 ### Cross-modality mapping
 
