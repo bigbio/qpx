@@ -84,6 +84,29 @@ _FEATURE_LABEL_SAMPLE_SQL = """
                 ORDER BY l.run_file_name, l.label
                 """
 
+# Multi-run units whose grouped_runs are not stored in ascending numeric
+# fraction order; units with a run that has no numeric fraction are skipped.
+_FRACTION_ORDER_SQL = """
+                WITH members AS (
+                    SELECT grouped_runs,
+                           unnest(grouped_runs) AS run_file_name,
+                           unnest(range(len(grouped_runs))) AS position
+                    FROM (SELECT DISTINCT grouped_runs FROM pg WHERE len(grouped_runs) > 1)
+                ),
+                fractions AS (
+                    SELECT m.grouped_runs,
+                           list(TRY_CAST(r.fraction AS DOUBLE) ORDER BY m.position) AS fractions
+                    FROM members m
+                    JOIN run r USING (run_file_name)
+                    GROUP BY m.grouped_runs
+                )
+                SELECT count(*)
+                FROM fractions
+                WHERE list_count(fractions) = len(fractions)
+                  AND len(fractions) > 1
+                  AND fractions <> list_sort(fractions)
+                """
+
 _PSM_LABEL_SQL = """
                 SELECT count(*)
                 FROM psm p
@@ -174,6 +197,17 @@ def psm_label_issues(engine, severity: str) -> list[ValidationIssue]:
         return []
     message = f"{count} psm row(s) have a label that is not in identified_labels of the feature they link to"
     return [_issue("psm", "label_not_identified", severity, "label", message)]
+
+
+def fraction_order_issues(engine) -> list[ValidationIssue]:
+    """Protein-group units whose grouped_runs are not in fraction order."""
+    if "fraction" not in {row[0] for row in engine.execute('DESCRIBE "run"').fetchall()}:
+        return []
+    count = engine.execute(_FRACTION_ORDER_SQL).fetchall()[0][0]
+    if not count:
+        return []
+    message = f"{count} grouped_runs list(s) are not stored in ascending run.fraction order"
+    return [_issue("pg", "grouped_runs_fraction_order", "warning", "grouped_runs", message)]
 
 
 def grouped_run_sample_issues(engine) -> list[ValidationIssue]:

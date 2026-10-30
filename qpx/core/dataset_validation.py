@@ -14,6 +14,7 @@ from qpx.core.files import sha256_file
 from qpx.core.label_validation import (
     dangling_run_issues,
     feature_label_issues,
+    fraction_order_issues,
     grouped_run_sample_issues,
     psm_label_issues,
     skipped_check_reason,
@@ -318,6 +319,8 @@ class _DatasetValidationMixin:
                     )
             if "feature" in present:
                 self._cross_view_issues(results["feature"], "label-sample", partial(feature_label_issues, self._engine), strict)
+            if "pg" in present:
+                self._cross_view_issues(results["pg"], "fraction order", partial(fraction_order_issues, self._engine), strict)
         if {"feature", "psm"} <= present:
             severity = "error" if strict else "warning"
             self._cross_view_issues(results["psm"], "psm label", partial(psm_label_issues, self._engine, severity), strict)

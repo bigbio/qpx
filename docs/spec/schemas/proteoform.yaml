@@ -72,6 +72,8 @@ fields:
     doc: "specific: the member has peptides specific to it within the family; shared: only peptides shared within the family support it (a closed vocabulary, checked by strict validation). A shared-only row establishes support for the family, not the presence of this member."
   proteoform_qvalue:
     type: float64
+    minimum: 0
+    maximum: 1
     nullable: true
     doc: "q-value over member claims: the estimated proportion of false members among the members of this view at least as well supported, where a member is false when it is not present in the sample. Estimated at the member level (each member counted once, e.g. by target-decoy or knockoff competition between members); the method belongs in provenance. A PSM-level q-value, even of the member's best PSM, does not control error over members: leave this null and keep PSM-level values in additional_scores."
   best_psm_id:
@@ -90,6 +92,7 @@ fields:
     doc: "Channel/label of this quantification; null for identification-only output. Part of the identity composite."
   intensity:
     type: float32
+    minimum: 0
     nullable: true
     doc: "Quantity of the member for this label, from peptides specific to it within the family that the protein inference assigns to its protein group (pg_id); null when not quantified"
   additional_intensities:

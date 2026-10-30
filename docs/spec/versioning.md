@@ -72,6 +72,10 @@ This version defines all core serialized views (PSM, Feature, PG, MZ), the deriv
       and one `intensities` entry per channel label, the optional
       `feature.identified_labels` and `psm.label`, labelled PSM peptidoforms,
       and `ratio_<num>_<den>` ratios on the numerator label.
+    - **Value ranges.** The YAML schemas declare `minimum` and `maximum` for
+      q-values and posterior error probabilities (0 to 1), sequence coverage
+      (0 to 100) and primary intensities (at least 0); NaN and infinite values
+      are outside every range.
 - **1.2** (backward-compatible): adds the [site](site.md) and
   [proteoform](proteoform.md) views, the optional `modification_candidates` column
   of the PSM and Feature views ([Modifications](modifications.md)) and the optional

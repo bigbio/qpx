@@ -13,7 +13,7 @@ import pyarrow.compute as pc
 
 from qpx.core.data.validation import (
     _SEQUENCE_EDIT_COLUMNS,
-    _UNIT_INTERVAL_COLUMNS,
+    _SINGLE_ROW_VIEWS,
     _VOCABULARIES,
     ValidationIssue,
     ValidationResult,
@@ -25,9 +25,10 @@ from qpx.core.data.validation import (
     _modification_candidate_counts,
     _modification_candidate_issues,
     _out_of_range_count,
+    _range_issues,
+    _range_values,
     _sequence_edit_counts,
     _sequence_edit_issues,
-    _unit_interval_issues,
     _vocabulary_count,
     _vocabulary_issues,
 )
@@ -41,7 +42,7 @@ from qpx.core.sql import sql_build
 class FieldDef:
     """A resolved schema field definition."""
 
-    __slots__ = ("name", "arrow_type", "nullable", "optional", "doc")
+    __slots__ = ("name", "arrow_type", "nullable", "optional", "doc", "value_ranges")
 
     def __init__(
         self,
@@ -51,12 +52,16 @@ class FieldDef:
         nullable: bool = True,
         optional: bool = False,
         doc: str = "",
+        value_ranges: dict | None = None,
     ):
         self.name = name
         self.arrow_type = arrow_type
         self.nullable = nullable
         self.optional = optional
         self.doc = doc
+        # Declared (minimum, maximum) by path below the field: () for the field
+        # itself, (name,) for a field of its struct or list-of-struct type.
+        self.value_ranges = value_ranges or {}
 
     def to_arrow_field(self) -> pa.Field:
         metadata = {"doc": self.doc} if self.doc else None
@@ -326,11 +331,12 @@ _ROW_CHECK_COLUMNS = (
 class _RowCounts:
     """Counts of the checks that read one row at a time, summed over a view's batches."""
 
-    def __init__(self, structure: str, schema: pa.Schema, required: list[str]):
+    def __init__(self, structure: str, schema: pa.Schema, required: list[str], ranges: dict):
         names = schema.names
         self.structure = structure
         self.nulls = dict.fromkeys(required, 0)
-        self.out_of_range = dict.fromkeys((name for name in _UNIT_INTERVAL_COLUMNS.get(structure, ()) if name in names), 0)
+        self.ranges = ranges
+        self.out_of_range = dict.fromkeys((path for path in ranges if path[0] in names), 0)
         self.vocabulary = dict.fromkeys((name for name in _VOCABULARIES.get(structure, {}) if name in names), 0)
         # Counts of the checks that are not kept per column.
         self.totals = {"anchor": 0, "fractions": (0, 0, 0), "candidates": (0, 0), "edits": (0, 0), "scan": 0}
@@ -341,8 +347,10 @@ class _RowCounts:
         for name in self.nulls:
             self.nulls[name] += batch.column(name).null_count
         totals["anchor"] += _anchor_without_membership(batch)
-        for name in self.out_of_range:
-            self.out_of_range[name] += _out_of_range_count(batch.column(name))
+        for path in self.out_of_range:
+            values = _range_values(batch.column(path[0]), path)
+            if values is not None:
+                self.out_of_range[path] += _out_of_range_count(values, *self.ranges[path])
         if self.structure == "site":
             totals["fractions"] = tuple(a + b for a, b in zip(totals["fractions"], _evidence_fraction_counts(batch)))
         totals["candidates"] = tuple(a + b for a, b in zip(totals["candidates"], _modification_candidate_counts(batch)))
@@ -370,7 +378,7 @@ class _RowCounts:
         """Issues from the value checks counted over the batches."""
         return [
             *_anchor_membership_issues(self.totals["anchor"], self.structure, severity),
-            *_unit_interval_issues(self.out_of_range, self.structure, severity),
+            *_range_issues(self.out_of_range, self.ranges, self.structure, severity),
             *_evidence_fraction_issues(self.totals["fractions"], self.structure, severity),
             *_vocabulary_issues(self.vocabulary, self.structure, severity),
             *_modification_candidate_issues(self.totals["candidates"], self.structure, severity),
@@ -416,6 +424,11 @@ class ViewSchema:
         return self._identity_composite
 
     @property
+    def value_ranges(self) -> dict[tuple[str, ...], tuple]:
+        """Declared (minimum, maximum) by column path: a field, or a field of its struct or list-of-struct type."""
+        return {(name, *sub): bounds for name, fdef in self._fields.items() for sub, bounds in fdef.value_ranges.items()}
+
+    @property
     def __name__(self) -> str:
         """For compatibility with parametrized tests and repr."""
         parts = self._view_name.split("_")
@@ -455,7 +468,7 @@ class ViewSchema:
     def validation_columns(self, schema: pa.Schema) -> list[str]:
         """The columns of *schema* that the row-level checks of validate_batches() read."""
         needed = {name for name, fdef in self._fields.items() if not fdef.nullable}
-        needed.update(_ROW_CHECK_COLUMNS, _UNIT_INTERVAL_COLUMNS.get(self._view_name, ()), _VOCABULARIES.get(self._view_name, {}))
+        needed.update(_ROW_CHECK_COLUMNS, (path[0] for path in self.value_ranges), _VOCABULARIES.get(self._view_name, {}))
         return [name for name in schema.names if name in needed]
 
     def validate(self, table: pa.Table, *, strict: bool = False) -> list[str]:
@@ -514,13 +527,16 @@ class ViewSchema:
         result.issues.extend(self._column_issues(schema))
 
         required = [name for name, fdef in self._fields.items() if name in schema.names and not fdef.nullable]
-        counts = _RowCounts(self._view_name, schema, required)
+        counts = _RowCounts(self._view_name, schema, required, self.value_ranges)
         scan_format = _declared_scan_format(schema, self._view_name)
         rows = 0
         for batch in batches:
             rows += batch.num_rows
             counts.add(batch, scan_format)
 
+        if self._view_name in _SINGLE_ROW_VIEWS and rows != 1:
+            message = f"The {self._view_name} view has {rows} rows; it must have exactly one"
+            result.issues.append(_issue(self._view_name, "row_count", "error", None, message))
         result.issues.extend(counts.null_issues(rows, severity))
         result.issues.extend(_primary_key_issues(keys, self._primary_key, self._view_name, severity))
         result.issues.extend(referential)

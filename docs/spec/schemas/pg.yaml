@@ -28,6 +28,8 @@ fields:
     doc: "Gene group names (gene symbols from tool output)"
   gg_qvalue:
     type: float64
+    minimum: 0
+    maximum: 1
     nullable: true
     doc: "Gene group q-value (e.g., DIA-NN GG.Q.Value)"
   anchor_protein:
@@ -44,9 +46,13 @@ fields:
   # Quality metrics
   global_qvalue:
     type: float64
+    minimum: 0
+    maximum: 1
     doc: "Global q-value at experiment level"
   pg_qvalue:
     type: float64
+    minimum: 0
+    maximum: 1
     doc: "Protein group q-value at run level"
 
   # Quantification (flattened: retain known labels for identified groups even
@@ -57,6 +63,7 @@ fields:
     doc: "Channel/label of this quantification; retained for identified groups without a quantity, null only when identification-only input has no label context. Part of the default identity composite."
   intensity:
     type: float32
+    minimum: 0
     nullable: true
     doc: "Primary intensity for this label; null when the identified group has no reported quantity. Without identification or quantification evidence for this unit, omit the row instead of adding a zero or null placeholder."
   additional_intensities:
@@ -87,6 +94,8 @@ fields:
   # Protein properties
   sequence_coverage:
     type: float32
+    minimum: 0
+    maximum: 100
     doc: "Sequence coverage percentage"
   molecular_weight:
     type: float32

@@ -293,6 +293,8 @@ The **Required** column of each view's field table says whether a column must be
 
 In the YAML schemas, `required: true` marks *yes* and `optional: true` marks *optional*; a field with neither is *no*. `qpxc validate` reports a missing *yes* or *no* column as an error and accepts a file without an *optional* column.
 
+A numeric field may declare `minimum` and/or `maximum`, also on a field of a struct type (the `intensity` of each `intensities` entry). Values outside the range, NaN and infinite values are invalid; null is a missing value and is always in range.
+
 ## Related pages
 
 - [PSM View](psm.md) — spectrum-level identifications.

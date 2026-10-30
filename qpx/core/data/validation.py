@@ -60,12 +60,6 @@ class ValidationResult:
         return f"{self.structure}: {status}{detail}"
 
 
-# Unit-interval columns of the site and proteoform views: q-values,
-# probabilities and evidence fractions.
-_UNIT_INTERVAL_COLUMNS = {
-    "site": ("site_qvalue", "modified_probability", "evidence_fraction"),
-    "proteoform": ("proteoform_qvalue",),
-}
 # Tolerance for a residue's evidence fractions summing to 1.
 _FRACTION_SUM_TOLERANCE = 1e-6
 # Producers round candidate probabilities (MaxQuant to three decimals), so an
@@ -76,30 +70,51 @@ _CANDIDATE_SUM_TOLERANCE = 0.01
 _VOCABULARIES = {
     "proteoform": {"kind": ("canonical", "isoform", "variant", "chain"), "evidence": ("specific", "shared")},
 }
+# Views that describe the whole dataset in exactly one row.
+_SINGLE_ROW_VIEWS = ("dataset",)
 
 
-def _out_of_range_count(values: pa.ChunkedArray | pa.Array) -> int:
-    """Non-null values that are not finite numbers in [0, 1]; 0 for non-float input."""
+def _out_of_range_count(values: pa.ChunkedArray | pa.Array, minimum: float | None = 0.0, maximum: float | None = 1.0) -> int:
+    """Non-null values that are not finite numbers in [minimum, maximum]; 0 for non-float input."""
     if not pa.types.is_floating(values.type):
         return 0
-    bad = pc.or_(
-        pc.or_(pc.less(values, 0.0), pc.greater(values, 1.0)),
-        pc.invert(pc.is_finite(values)),
-    )
+    bad = pc.invert(pc.is_finite(values))
+    if minimum is not None:
+        bad = pc.or_(bad, pc.less(values, minimum))
+    if maximum is not None:
+        bad = pc.or_(bad, pc.greater(values, maximum))
     return pc.sum(pc.cast(pc.fill_null(bad, False), pa.int64())).as_py() or 0
+
+
+def _range_values(column: pa.ChunkedArray | pa.Array, path: tuple[str, ...]) -> pa.ChunkedArray | pa.Array | None:
+    """The values at *path* (a column, or a field of its struct or list-of-struct type); None when the type differs."""
+    if len(path) == 1:
+        return column
+    if pa.types.is_list(column.type):
+        column = pc.call_function("list_flatten", [column])
+    if not pa.types.is_struct(column.type) or column.type.get_field_index(path[1]) < 0:
+        return None
+    return pc.call_function("struct_field", [column], pc.StructFieldOptions(path[1]))
 
 
 def _issue(structure: str, check: str, severity: str, column: str, message: str) -> ValidationIssue:
     return ValidationIssue(structure=structure, check=check, severity=severity, column=column, message=message)
 
 
-def _unit_interval_issues(counts: dict[str, int], structure: str, severity: str) -> list[ValidationIssue]:
-    """Flag q-values, probabilities and evidence fractions outside [0, 1] or not finite."""
+def _range_issues(counts: dict[tuple[str, ...], int], ranges: dict, structure: str, severity: str) -> list[ValidationIssue]:
+    """Flag values outside the range their schema declares, NaN and infinities."""
     issues = []
-    for name, bad in counts.items():
+    for path, bad in counts.items():
         if bad:
-            message = f"{bad} value(s) of {name} are not finite numbers in [0, 1]"
-            issues.append(_issue(structure, "value_out_of_range", severity, name, message))
+            minimum, maximum = ranges[path]
+            if minimum is None:
+                bounds = f"<= {maximum}"
+            elif maximum is None:
+                bounds = f">= {minimum}"
+            else:
+                bounds = f"in [{minimum}, {maximum}]"
+            message = f"{bad} value(s) of {'.'.join(path)} are not finite numbers {bounds}"
+            issues.append(_issue(structure, "value_out_of_range", severity, path[0], message))
     return issues
 
 

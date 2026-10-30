@@ -4,8 +4,8 @@ import pytest
 
 from qpx.core.data.identity import derive_id
 from qpx.dataset import Dataset
-from qpx.writers import DatasetWriter, FeatureWriter, PsmWriter, RunWriter
-from tests.conftest import make_dataset_record, make_feature_record, make_psm_record, make_run_record
+from qpx.writers import DatasetWriter, FeatureWriter, PgWriter, PsmWriter, RunWriter
+from tests.conftest import make_dataset_record, make_feature_record, make_pg_record, make_psm_record, make_run_record
 
 
 def _write_dataset(ds_dir, *, features, run_labels, psms=()):
@@ -112,3 +112,21 @@ def test_psm_label_outside_identified_labels(tmp_path):
     assert issue.severity == "warning"
     [strict_issue] = _issues(ds_dir, "psm", "label_not_identified", strict=True)
     assert strict_issue.severity == "error"
+
+
+@pytest.mark.parametrize(("grouped_runs", "flagged"), [(["run_02", "run_10"], False), (["run_10", "run_02"], True)])
+def test_grouped_runs_follow_the_fraction_order(tmp_path, grouped_runs, flagged):
+    """grouped_runs is stored in fraction order, compared as numbers (fraction 10 after fraction 2)."""
+    runs = []
+    for name, fraction in (("run_02", "2"), ("run_10", "10")):
+        run = make_run_record(run_accession=name, run_file_name=name)
+        run["fraction"] = fraction
+        runs.append(run)
+    pg = make_pg_record()
+    pg["grouped_runs"] = grouped_runs
+    with RunWriter(tmp_path / "exp.run.parquet") as w:
+        w.write_batch(runs)
+    with PgWriter(tmp_path / "exp.pg.parquet") as w:
+        w.write_batch([pg])
+    issues = _issues(tmp_path, "pg", "grouped_runs_fraction_order")
+    assert [issue.severity for issue in issues] == (["warning"] if flagged else [])

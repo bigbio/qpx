@@ -36,6 +36,8 @@ fields:
     doc: "Precursor charge"
   posterior_error_probability:
     type: float64
+    minimum: 0
+    maximum: 1
     doc: "PEP - probability PSM is incorrect (lower is better)"
   is_decoy:
     type: bool

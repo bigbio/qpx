@@ -131,6 +131,8 @@ The validator performs the following checks on each structure:
 | **Type matching** | Column Arrow types must match the schema definition |
 | **Null values** | Non-nullable columns must not contain null values |
 | **Primary key uniqueness** | Primary key columns must have unique values |
+| **Value ranges** | Values lie in the range their schema declares (q-values and PEP in [0, 1], sequence coverage in [0, 100], primary intensities at least 0) and are not NaN or infinite |
+| **Single row** | `dataset.parquet` has exactly one row |
 
 When a dataset holds several views, it also checks the references between them:
 
@@ -139,6 +141,7 @@ When a dataset holds several views, it also checks the references between them:
 | **Run references** | error | Every `run_file_name` of feature, psm and mz, and every member of `pg.grouped_runs`, is a run in `run.parquet` |
 | **Label → sample** | error | Each `(run, label)` of `feature.intensities` and each `(grouped_runs, label)` of pg resolves to exactly one `run.samples` entry, and a feature row lists each label once. A feature label that matches no sample of a single-sample run is only a warning, because the query helpers fall back to that sample |
 | **PSM label** | warning, error with `--strict` | `psm.label` is one of the `identified_labels` of the feature it links to |
+| **Fraction order** | warning | A multi-run `pg.grouped_runs` list is stored in ascending `run.fraction` order (when every member has a numeric fraction) |
 | **ID references** | warning, error with `--strict` | `psm.feature_id`, `feature.psm_ids`, `feature.pg_ids` and the site/proteoform `pg_id`/`best_psm_id` links name existing rows |
 
 A cross-view check whose query fails is reported as skipped, with the reason (I/O error, out of memory or possible schema drift), and fails strict validation.

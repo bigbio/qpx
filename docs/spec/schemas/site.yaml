@@ -60,14 +60,20 @@ fields:
   # Error control and probabilities
   site_qvalue:
     type: float64
+    minimum: 0
+    maximum: 1
     nullable: true
     doc: "q-value over the site-modification claims of this view: the estimated proportion of false claims among the rows at least as well supported. A claim is false when the residue does not carry this modification in the sample, whatever the reason (wrong peptide, wrong protein, wrong residue, wrong modification). The counting unit is the distinct row (protein, position, modification, grouped_runs), not the PSM. A set-level statistic, not the probability that this row is correct. Null when the producer has no estimate at this unit; the method and the population it was estimated over belong in provenance."
   modified_probability:
     type: float64
+    minimum: 0
+    maximum: 1
     nullable: true
     doc: "Probability that the residue carries some modification, from the spectra of the peptides that cover it. Not stoichiometry (the fraction of the protein's copies that are modified), which this view does not report."
   evidence_fraction:
     type: float64
+    minimum: 0
+    maximum: 1
     nullable: true
     doc: "Share of the residue's modification evidence that supports this modification: each spectrum's explanations (the candidate peptidoforms of that spectrum) are mutually exclusive and get posterior probabilities; the probability mass that places a modification on the residue is summed over spectra, and this is the part placing this modification. Together with the alternatives it sums to 1; a row without alternatives holds the whole pool, so its fraction is 1. A relative share, not the probability that the modification is present: two modifications that both occur on the residue (on different molecules or in different runs) are two rows, each with its own site_qvalue, and can each have a fraction near 0.5."
   alternatives:
