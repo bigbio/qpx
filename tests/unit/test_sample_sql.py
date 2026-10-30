@@ -134,6 +134,7 @@ def _reference_feature_samples(features, runs) -> pd.DataFrame:
                     rows.append(
                         {
                             "sequence": feature["sequence"],
+                            "peptidoform": feature["peptidoform"],
                             "is_decoy": feature["is_decoy"],
                             "sample_accession": sample["sample_accession"],
                             "label": sample["label"],
@@ -160,8 +161,8 @@ def test_feature_helpers_match_the_resolution_rule(tmt_dataset):
     assert set(quantified["fraction"]) == {"1", "2"}
 
     targets = reference[~reference["is_decoy"]]
-    expected = targets.groupby(["sample_accession", "sequence"], as_index=False)["intensity"].sum()
-    expected = expected.rename(columns={"sequence": "feature_id"})
+    expected = targets.groupby(["sample_accession", "peptidoform"], as_index=False)["intensity"].sum()
+    expected = expected.rename(columns={"peptidoform": "feature_id"})
     columns = ("sample_accession", "feature_id", "intensity")
     pd.testing.assert_frame_equal(_sorted(abundance, columns), _sorted(expected, columns), check_dtype=False)
 

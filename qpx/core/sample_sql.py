@@ -8,7 +8,7 @@ Dataset helpers and the API views.
 Both lists are unnested on their own, before any join, so every join is an
 equi-join on keys. Unnesting them inside one ``FROM`` list next to ``feature``
 and ``run`` made DuckDB plan a cross product of features and runs, which on 405
-runs took 32.5 s instead of 0.27 s and on fractionated TMT filled the temp
+runs took 33 s instead of 0.7 s and on fractionated TMT filled the temp
 directory.
 """
 

@@ -38,11 +38,67 @@ _REPEATED_CELLS_SQL = """
 _REPEATED_UNIT_CAUSES = (
     "technical replicates",
     "a reference channel repeated across plexes",
+    "several labels of one sample",
 )
 _PER_FRACTION_PG_CAUSE = (
     "fractions whose pg rows name only their own run in grouped_runs "
     "(CDAP, Spectronaut; agg='sum' adds up their partial quantities)"
 )
+
+
+# Since QPX 1.1 the pg view is flattened: one row per label with scalar
+# p.label / p.intensity (no intensities list to UNNEST). Each pg row matches the
+# sample carrying its label in its quantification unit (pg_unit_samples). ID-only
+# rows (null label / intensity) never match a sample label and drop out.
+_PROTEIN_ABUNDANCE_SQL = """
+    SELECT us.sample_accession,
+           p.anchor_protein AS feature_id,
+           p.intensity,
+           us.unit_runs || '|' || p.label AS quantification_unit
+    FROM pg p
+    JOIN pg_unit_samples us
+      ON us.grouped_runs = p.grouped_runs
+     AND us.sample_label = p.label
+    WHERE p.is_decoy = false
+"""
+
+# A peptidoform's features are summed within its quantification unit (charge
+# states, fractions of one sample), never across units, and modified forms (a
+# heavy standard, a phosphosite) stay apart. The unit's channel is the sample
+# label, except in a single-sample unit whose features carry several labels
+# (SILAC or plexDIA L/H without SDRF labels): there each label is its own unit,
+# not a sum. That is decided per unit, over all its runs, not per feature or per
+# run, so a peptide quantified only in H, or a fraction that saw only L, still
+# lands in the unit's H or L channel. Label-free units carry one feature label
+# (DIA-NN's "raw", "LFQ") and keep the sample label. Only single-sample runs are
+# counted: a multiplexed run matches each label exactly. The distinct labels of
+# each run are taken first, so the join to the units is on a few rows per run.
+_UNIT_LABELS_CTE = """
+    unit_labels AS (
+        SELECT u.unit_runs, count(DISTINCT rl.intensity_label) AS n_unit_labels
+        FROM (
+            SELECT DISTINCT run_file_name, intensity_label
+            FROM feature_intensities
+            WHERE run_file_name IN (SELECT run_file_name FROM run_samples WHERE n_samples = 1)
+        ) rl
+        JOIN run_units u USING (run_file_name)
+        GROUP BY u.unit_runs
+    )"""
+
+_PEPTIDE_ABUNDANCE_SQL = """
+    SELECT sample_accession,
+           peptidoform AS feature_id,
+           SUM(intensity) AS intensity,
+           unit_runs || '|' || unit_label AS quantification_unit
+    FROM (
+        SELECT fs.sample_accession, fs.peptidoform, fs.intensity, fs.unit_runs,
+               CASE WHEN ul.n_unit_labels > 1 THEN coalesce(fs.intensity_label, fs.sample_label)
+                    ELSE fs.sample_label END AS unit_label
+        FROM feature_samples fs
+        LEFT JOIN unit_labels ul USING (unit_runs)
+    )
+    GROUP BY sample_accession, unit_runs, unit_label, peptidoform
+"""
 
 
 def _design_matrix_keys(value_col: str, agg: str | None, by: str) -> list[str]:
@@ -295,40 +351,12 @@ class _DatasetQueryMixin:
         if level == "protein":
             if self.pg is None or self.run is None:
                 raise ValueError("level='protein' requires pg and run structures.")
-            # Since QPX 1.1 the pg view is flattened: one row per label with scalar
-            # p.label / p.intensity (no intensities list to UNNEST). Match each pg
-            # row to the sample carrying its label. ID-only rows (null label /
-            # intensity) never match a sample label and drop out naturally.
-            return (
-                pg_sample_ctes()
-                + """
-            SELECT us.sample_accession,
-                   p.anchor_protein AS feature_id,
-                   p.intensity,
-                   us.unit_runs || '|' || p.label AS quantification_unit
-            FROM pg p
-            JOIN pg_unit_samples us
-              ON us.grouped_runs = p.grouped_runs
-             AND us.sample_label = p.label
-            WHERE p.is_decoy = false
-            """
-            )
+            return pg_sample_ctes() + _PROTEIN_ABUNDANCE_SQL
         if level == "peptide":
             if self.feature is None or self.run is None:
                 raise ValueError("level='peptide' requires feature and run structures.")
-            # A peptide's features are summed within its quantification unit
-            # (charge states, fractions of one sample), never across units.
-            return (
-                feature_sample_ctes(("sequence",), feature_where="f.is_decoy = false")
-                + """
-            SELECT sample_accession,
-                   sequence AS feature_id,
-                   SUM(intensity) AS intensity,
-                   unit_runs || '|' || sample_label AS quantification_unit
-            FROM feature_samples
-            GROUP BY sample_accession, unit_runs, sample_label, sequence
-            """
-            )
+            ctes = feature_sample_ctes(("peptidoform",), feature_where="f.is_decoy = false")
+            return ctes + "," + _UNIT_LABELS_CTE + _PEPTIDE_ABUNDANCE_SQL
         raise ValueError(f"level must be 'protein' or 'peptide', got '{level}'")
 
     def intensity(self, level: str = "protein") -> QueryResult:
