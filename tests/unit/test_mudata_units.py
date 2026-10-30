@@ -4,7 +4,8 @@ A protein group is quantified once per quantification unit (a ``grouped_runs``
 set of fractions) and label. The proteins modality used to explode
 ``grouped_runs`` into one observation per fraction, each holding a copy of the
 unit's value, so a three-fraction TMT design summed to three times the pg
-total. It also summed cells that received two intensities without saying so.
+total. It also kept decoys without a flag and summed cells that received two
+intensities without saying so.
 """
 
 from __future__ import annotations
@@ -78,8 +79,8 @@ def test_protein_observations_are_quantification_units(tmp_path):
     assert list(obs["sample_accession"]) == ["plexA_TMT126", "plexA_TMT127N", "plexB_TMT126", "plexB_TMT127N"]
     assert set(obs["fraction"]) == {"1;2"}
     assert "run_file_name" not in obs.columns
-    # Each pg value appears once: 2 plexes x 2 groups x (100 + 101).
-    np.testing.assert_allclose(proteins.X.toarray().sum(), 804.0)
+    # Each target pg value appears once: 2 plexes x (100 + 101).
+    np.testing.assert_allclose(proteins.X.toarray().sum(), 402.0)
 
 
 def test_unit_observations_leave_disputed_replicate_numbers_empty(tmp_path):
@@ -119,12 +120,30 @@ def test_single_label_protein_observations_keep_run_names(tmp_path):
     assert list(proteins.obs["run_accession"]) == ["assay_01"]
 
 
+def test_decoys_are_left_out_by_default(tmp_path):
+    _fractionated_tmt(tmp_path)
+    mdata = _build(tmp_path, modalities=["proteins"])
+
+    assert list(mdata.mod["proteins"].var_names) == ["P1"]
+    assert "is_decoy" not in mdata.mod["proteins"].var.columns
+    assert mdata.uns["qpx_include_decoys"] is False
+
+
+def test_include_decoys_flags_them_in_var(tmp_path):
+    _fractionated_tmt(tmp_path)
+    proteins = _build(tmp_path, modalities=["proteins"], include_decoys=True).mod["proteins"]
+
+    assert list(proteins.var_names) == ["DECOY_P1", "P1"]
+    assert list(proteins.var["is_decoy"]) == [True, False]
+
+
 def _duplicate_precursor(path):
     """One precursor quantified by two features (e.g. MS/MS and MBR) in one run."""
     run = make_run_record()
     features = [
         make_feature_record(scan=[1], intensities=[{"label": "TMT126", "intensity": 100.0}]),
         make_feature_record(scan=[2], intensities=[{"label": "TMT126", "intensity": 300.0}]),
+        make_feature_record(sequence="DECOYK", peptidoform="DECOYK", is_decoy=True),
     ]
     with RunWriter(path / "t.run.parquet") as writer:
         writer.write_batch([run])
@@ -145,9 +164,11 @@ def test_duplicate_cells_are_reported(tmp_path, caplog):
 
 def test_duplicate_cells_can_be_averaged(tmp_path):
     _duplicate_precursor(tmp_path)
-    precursors = _build(tmp_path, modalities=["precursors"], duplicates="mean").mod["precursors"]
+    precursors = _build(tmp_path, modalities=["precursors"], duplicates="mean", include_decoys=True).mod["precursors"]
 
-    np.testing.assert_allclose(precursors.X.toarray(), [[200.0]])
+    assert list(precursors.var_names) == ["DECOYK|2", "PEPTIDEK|2"]
+    assert list(precursors.var["is_decoy"]) == [True, False]
+    np.testing.assert_allclose(precursors.X.toarray(), [[1000.0, 200.0]])
     assert precursors.uns["qpx_duplicates"] == {"aggregation": "mean", "cells": 1}
 
 
@@ -161,12 +182,13 @@ def test_unit_observations_survive_the_h5mu_round_trip(tmp_path):
     import mudata as mu
 
     _fractionated_tmt(tmp_path)
-    mdata = _build(tmp_path)
+    mdata = _build(tmp_path, include_decoys=True)
     mdata.write(str(tmp_path / "t.h5mu"))
     proteins = mu.read_h5mu(tmp_path / "t.h5mu").mod["proteins"]
 
     assert proteins.n_obs == 4
     assert proteins.uns["qpx_duplicates"]["cells"] == 0
+    assert list(proteins.var["is_decoy"]) == [True, False]
 
 
 def test_pg_rows_without_grouped_runs_are_not_an_observation(tmp_path):

@@ -127,7 +127,9 @@ Multiplexed data (TMT, iTRAQ, plexDIA), or `all_intensity_labels=True`, expands 
 
 A protein-group quantity exists once per [quantification unit](data-model.md#quantification-units-fractions-one-grouped_runs-one-quantity-per-label), the `grouped_runs` set of fractions aggregated together, and label. Each unit and label is one `proteins` observation, named by its distinct member runs, sorted and joined by `;` (`F1;F2;F3`, or `F1;F2;F3|TMT126` when expanded over channels); an unfractionated unit keeps its run name. When `obs` is expanded over channels, its `grouped_runs` and `intensity_label` columns hold the unit name and the label. qpx 1.2 and earlier called this column `run_file_name`. The converters always write the expanded form, so the column is `grouped_runs` in every converter-written `.h5mu`, unfractionated ones included. A pg row with an empty `grouped_runs` belongs to no unit and is left out. The sample comes from any member run that carries the label (they are fractions of one sample context), and `run_accession`, `fraction` and `instrument` are joined over the member runs with `;`. `biological_replicate` and `technical_replicate` are left empty when the member runs disagree, as when a producer groups the injections of a sample into one unit. Precursors stay per run, since a feature is measured in one raw file.
 
-### Repeated cells
+### Decoys and repeated cells
+
+Decoy precursors and protein groups are left out by default. `build_mudata(ds, include_decoys=True)` keeps them and adds a boolean `is_decoy` column to each modality's `var`; `mdata.uns["qpx_include_decoys"]` records the choice.
 
 Several values can land in one matrix cell, such as two features of one precursor in one run (a MaxQuant MS/MS and a match-between-runs feature). They are combined with `build_mudata(ds, duplicates="sum")` (the default) or `duplicates="mean"`. Each modality's `uns["qpx_duplicates"]` records the aggregation and the number of such cells, and the build logs a warning when there are any.
 
