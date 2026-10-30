@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`qpxc validate` sample-mapping check on fractionated multiplexed pg views** — the check that each pg label resolves to exactly one sample joined every pg row to the samples of each of its grouped runs, through a lateral `UNNEST(r.samples)` after the join to `run`. With a 2 GB DuckDB memory limit, DuckDB 2.0 ran out of memory on a fractionated TMT pg of 2 plexes × 12 fractions (192,000 rows, 3.9 MB) after spilling 2.9 GB, and `qpxc validate`, which sets no memory limit, grew past 4.5 GB; the failure was reported as "possible schema drift": strict validation marked the valid dataset INVALID, and lenient validation passed it unchecked, missing labels that resolve to no sample or to several. Each distinct (grouped runs, label) unit is now resolved once: the check takes 0.4 s and 0.2 GB on that dataset under DuckDB 1.5 and 2.0, and 3.8 s for 20 plexes (1.92 million rows), where it took 72 s and 3.3 GB under DuckDB 1.5 and failed under 2.0. `qpxc validate` of a MaxQuant TMT10 SPS-MS3 conversion (13 runs, 40,831 features) peaks at 0.4 GB instead of 1.9 GB and takes 2.6 s instead of 7.7 s. An ambiguous unit is reported once, with the number of pg rows that share it, instead of once per pg row. A check that cannot run now names the failure: DuckDB out of memory or temp space, an I/O error, a missing or retyped column ("possible schema drift"), or another query error. Check names and severities are unchanged.
+
 ## [1.2.0] - 2026-10-30
 
 ### Added

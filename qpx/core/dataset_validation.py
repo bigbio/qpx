@@ -10,6 +10,7 @@ import duckdb
 from qpx.core.data.schema import ValidationIssue, ValidationResult
 from qpx.core.data.validation import _LINK_CONTEXT_MESSAGE, _LINK_MEMBERSHIP_MESSAGE, _LINK_SQL
 from qpx.core.files import sha256_file
+from qpx.core.sql import sql_build
 
 _log = logging.getLogger("qpx.dataset")
 
@@ -48,60 +49,81 @@ _FEATURE_PSM_INVERSE_DESYNC_SQL = """
                     ORDER BY f.feature_id, p.psm_id
                     """
 
-_GROUPED_RUN_SAMPLE_MAPPING_SQL = """
-                WITH numbered_pg AS MATERIALIZED (
-                    SELECT ROW_NUMBER() OVER () AS pg_row_id, *
-                    FROM pg
+# run.samples as one row per (run, channel). It is unnested in the select list of
+# its own subquery: an UNNEST(r.samples) placed after a join to run is evaluated
+# for every joined row, and under DuckDB 2.0 that made the pg sample-mapping check
+# spill gigabytes on a fractionated TMT dataset of a few MB.
+_RUN_CHANNELS_SQL = """
+                    SELECT run_file_name, sc.label AS label, sc.sample_accession AS sample_accession
+                    FROM (SELECT run_file_name, UNNEST(samples) AS sc FROM run)
+"""
+
+# pg is flattened since 1.1 (scalar label). Every protein group of a plex repeats
+# the same (grouped runs, label) unit, so each distinct unit is resolved once
+# instead of once per pg row. ID-only rows (null label) have no sample to resolve.
+_GROUPED_RUN_SAMPLE_MAPPING_SQL = sql_build(
+    """
+                WITH units AS MATERIALIZED (
+                    SELECT ROW_NUMBER() OVER () AS unit_id, *
+                    FROM (
+                        SELECT list_sort(list_distinct(grouped_runs)) AS unit_runs,
+                               label,
+                               COUNT(*) AS pg_rows,
+                               MIN(anchor_protein) AS example_protein
+                        FROM pg
+                        WHERE label IS NOT NULL
+                        GROUP BY ALL
+                    )
                 ),
-                pg_labels AS (
-                    -- pg is flattened since 1.1: scalar p.label (no intensities
-                    -- list). ID-only rows (null label) have no sample to resolve.
-                    SELECT p.pg_row_id,
-                           p.anchor_protein,
-                           p.grouped_runs,
-                           p.label
-                    FROM numbered_pg p
-                    WHERE p.label IS NOT NULL
+                unit_members AS (
+                    SELECT unit_id, label, UNNEST(unit_runs) AS run_file_name
+                    FROM units
                 ),
-                sample_matches AS (
-                    SELECT pl.pg_row_id,
-                           pl.label,
-                           rs.sample_accession
-                    FROM pg_labels pl
-                    CROSS JOIN UNNEST(list_distinct(pl.grouped_runs)) AS _g(run_file_name)
-                    JOIN run r USING (run_file_name)
-                    CROSS JOIN UNNEST(r.samples) AS _s(rs)
-                    WHERE rs.label = pl.label
+                run_channels AS ($run_channels),
+                unit_samples AS (
+                    SELECT um.unit_id, rc.sample_accession
+                    FROM unit_members um
+                    JOIN run_channels rc
+                      ON rc.run_file_name = um.run_file_name
+                     AND rc.label = um.label
                 )
-                SELECT pl.anchor_protein,
-                       pl.grouped_runs,
-                       pl.label,
-                       COUNT(DISTINCT sm.sample_accession) AS sample_count,
-                       LIST(DISTINCT sm.sample_accession)
-                           FILTER (WHERE sm.sample_accession IS NOT NULL) AS samples
-                FROM pg_labels pl
-                LEFT JOIN sample_matches sm
-                  ON pl.pg_row_id = sm.pg_row_id
-                 AND pl.label = sm.label
-                GROUP BY pl.pg_row_id,
-                         pl.anchor_protein,
-                         pl.grouped_runs,
-                         pl.label
-                HAVING COUNT(DISTINCT sm.sample_accession) != 1
-                ORDER BY pl.anchor_protein, pl.label
-                """
+                SELECT u.example_protein,
+                       u.unit_runs,
+                       u.label,
+                       u.pg_rows,
+                       COUNT(DISTINCT us.sample_accession) AS sample_count,
+                       list_sort(LIST(DISTINCT us.sample_accession)
+                           FILTER (WHERE us.sample_accession IS NOT NULL)) AS samples
+                FROM units u
+                LEFT JOIN unit_samples us USING (unit_id)
+                GROUP BY u.unit_id, u.example_protein, u.unit_runs, u.label, u.pg_rows
+                HAVING COUNT(DISTINCT us.sample_accession) != 1
+                ORDER BY u.example_protein, u.label, u.unit_runs
+                """,
+    run_channels=_RUN_CHANNELS_SQL,
+)
 
 
 def _skipped_check_reason(exc: duckdb.Error) -> str:
     """Why a cross-structure check could not run, for its skipped issue.
 
-    An I/O failure says nothing about the data: DuckDB spills large queries to
-    its temp directory (``.tmp`` under the working directory by default), so a
-    read-only working directory fails the query (bigbio/qpx#300).
+    Only a binder or catalog error (a view or column the check reads is missing
+    or has another type) points at the data. DuckDB spills large queries to its
+    temp directory (``.tmp`` under the working directory by default): a
+    read-only working directory fails the query with an I/O error
+    (bigbio/qpx#300), and a query that outgrows the memory limit and the temp
+    space fails with an out-of-memory error.
     """
+    if isinstance(exc, duckdb.OutOfMemoryException):
+        return (
+            "DuckDB ran out of memory or temp space, which says nothing about the data; "
+            "raise the memory limit (Dataset(duckdb_memory=...)) or free temp space"
+        )
     if isinstance(exc, duckdb.IOException):
         return "I/O error; if DuckDB could not create its temp directory, run from a writable directory"
-    return "possible schema drift"
+    if isinstance(exc, (duckdb.BinderException, duckdb.CatalogException)):
+        return "possible schema drift"
+    return "query error"
 
 
 def _feature_psm_references(engine):
@@ -532,7 +554,12 @@ class _DatasetValidationMixin:
             )
 
     def _check_grouped_runs_sample_mapping(self, pg_result: ValidationResult, *, strict: bool) -> None:
-        """Require each PG intensity label to resolve to exactly one sample."""
+        """Require each PG label to resolve to exactly one sample across its grouped runs.
+
+        Each distinct (grouped-run set, label) unit is resolved once, and a unit
+        that resolves to no sample or to several is reported once, with the
+        number of pg rows that share it.
+        """
         try:
             rows = self._engine.execute(_GROUPED_RUN_SAMPLE_MAPPING_SQL).fetchall()
         except duckdb.Error as exc:
@@ -550,7 +577,7 @@ class _DatasetValidationMixin:
             )
             return
 
-        for anchor_protein, grouped_runs, label, sample_count, samples in rows:
+        for example_protein, grouped_runs, label, pg_rows, sample_count, samples in rows:
             pg_result.issues.append(
                 ValidationIssue(
                     structure="pg",
@@ -558,10 +585,10 @@ class _DatasetValidationMixin:
                     severity="error",
                     column="grouped_runs",
                     message=(
-                        f"PG {anchor_protein!r} label {label!r} across "
-                        f"grouped_runs={grouped_runs!r} resolves to "
-                        f"{sample_count} samples ({samples or []!r}); exactly "
-                        "one sample is required"
+                        f"{pg_rows} pg row(s) with label {label!r} across "
+                        f"grouped_runs={grouped_runs!r} (e.g. PG {example_protein!r}) "
+                        f"resolve to {sample_count} samples ({samples or []!r}); "
+                        "exactly one sample is required"
                     ),
                 )
             )
