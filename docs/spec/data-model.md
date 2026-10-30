@@ -240,6 +240,10 @@ The invariant that keeps this sound:
     `run.samples[].label` is the **canonical** channel name. It MUST match
     `feature.intensities[].label` and `pg.label` exactly. A quantity whose `label`
     has no matching `sample_channel` in the run cannot be resolved to a sample.
+    This holds for a run with a single sample too: the feature → pg softlink
+    matches labels exactly. A feature row lists each label at most once.
+    Validation reports a feature or pg label that matches no sample of its runs,
+    or several, and a label repeated within a feature row, as errors.
 
 Worked example (unnest the run, match the label):
 

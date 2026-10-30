@@ -141,6 +141,8 @@ When a dataset has a run view, rows are also resolved through it. A row that nam
 | `dangling_grouped_run` | pg | Every `grouped_runs` element must be a `run.run_file_name` |
 | `ambiguous_grouped_run_sample` | pg | Each `label` must match the channel of exactly one sample across the row's grouped runs; reported once per distinct (grouped runs, label) unit |
 | `dangling_run_file_name` | feature, psm, mz | `run_file_name` must be a `run.run_file_name` (skipped for an mz view without the optional column) |
+| `ambiguous_label_sample` | feature | Each `intensities[].label` must match the channel of exactly one sample of the row's run, also when the run has a single sample; reported once for all (run, label) pairs that match none and once for those that match several |
+| `duplicate_intensity_label` | feature | A row must not list a label twice in `intensities` |
 
 A cross-view check that cannot run is reported as `*_check_skipped` with the reason (DuckDB out of memory or temp space, an I/O error, a missing or retyped column, or another query error). It is an error under strict validation, which `qpxc validate` always uses, and a warning otherwise.
 

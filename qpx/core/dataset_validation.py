@@ -119,6 +119,50 @@ _GROUPED_RUN_SAMPLE_MAPPING_SQL = sql_build(
 )
 
 
+# Each distinct (run, label) of the feature intensities, with the number of
+# intensities that carry it, resolved once against the run's channels. Runs that
+# are not in the run view are left to the run_file_name check.
+_FEATURE_LABEL_SAMPLE_SQL = sql_build(
+    """
+                WITH units AS MATERIALIZED (
+                    SELECT ROW_NUMBER() OVER () AS unit_id, *
+                    FROM (
+                        SELECT run_file_name, i.label AS label, COUNT(*) AS n_values
+                        FROM (SELECT run_file_name, UNNEST(intensities) AS i FROM feature)
+                        GROUP BY ALL
+                    )
+                    WHERE run_file_name IN (SELECT run_file_name FROM run)
+                ),
+                run_channels AS ($run_channels),
+                unit_samples AS (
+                    SELECT u.unit_id, rc.sample_accession
+                    FROM units u
+                    JOIN run_channels rc
+                      ON rc.run_file_name = u.run_file_name
+                     AND rc.label = u.label
+                )
+                SELECT u.run_file_name,
+                       u.label,
+                       u.n_values,
+                       COUNT(DISTINCT us.sample_accession) AS sample_count,
+                       list_sort(LIST(DISTINCT us.sample_accession)
+                           FILTER (WHERE us.sample_accession IS NOT NULL)) AS samples
+                FROM units u
+                LEFT JOIN unit_samples us USING (unit_id)
+                GROUP BY u.unit_id, u.run_file_name, u.label, u.n_values
+                HAVING COUNT(DISTINCT us.sample_accession) != 1
+                ORDER BY u.run_file_name, u.label
+                """,
+    run_channels=_RUN_CHANNELS_SQL,
+)
+
+# Feature rows that list a (non-null) label more than once in intensities.
+_DUPLICATE_FEATURE_LABEL_SQL = """
+                SELECT COUNT(*)
+                FROM (SELECT list_transform(intensities, lambda x: x.label) AS labels FROM feature)
+                WHERE len(list_distinct(labels)) < len(list_filter(labels, lambda x: x IS NOT NULL))
+                """
+
 # Views whose rows name the acquisition run they were measured in.
 _RUN_KEYED_VIEWS = ("feature", "psm", "mz")
 
@@ -152,6 +196,38 @@ def _examples(items: list[str]) -> str:
     """The first few of the formatted *items*, for an issue message that counts them all."""
     shown = ", ".join(items[:_MAX_EXAMPLES])
     return f"{shown}, ..." if len(items) > _MAX_EXAMPLES else shown
+
+
+def _feature_label_issues(duplicated: int, units: list[tuple]) -> list[ValidationIssue]:
+    """Issues for feature labels that list a sample twice or name no single sample.
+
+    *units* are the (run_file_name, label, n_values, sample_count, samples)
+    rows of the (run, label) pairs that resolve to no sample or to several.
+    """
+    issues = []
+    if duplicated:
+        message = (
+            f"{duplicated} feature row(s) list a label more than once in intensities; a label names one sample, "
+            "which would receive several quantities from one row"
+        )
+        issues.append(_issue("feature", "duplicate_intensity_label", "error", "intensities", message))
+    unresolved = [unit for unit in units if unit[3] == 0]
+    if unresolved:
+        issues.append(_label_pair_issue(unresolved, "match no sample_channel label"))
+    ambiguous = [unit for unit in units if unit[3] > 1]
+    if ambiguous:
+        issues.append(_label_pair_issue(ambiguous, "match the labels of several samples"))
+    return issues
+
+
+def _label_pair_issue(units: list[tuple], what: str) -> ValidationIssue:
+    """One ambiguous_label_sample issue for the (run, label, n_values, sample_count, samples) *units*."""
+    examples = [f"({run!r}, {label!r})" + (f" -> {samples!r}" if count > 1 else "") for run, label, _, count, samples in units]
+    message = (
+        f"{sum(unit[2] for unit in units)} feature intensities in {len(units)} (run_file_name, label) pair(s) "
+        f"{what} of their run ({_examples(examples)}); each label must name exactly one sample in run.samples"
+    )
+    return _issue("feature", "ambiguous_label_sample", "error", "intensities", message)
 
 
 def _view_columns(engine, view: str) -> set[str]:
@@ -424,10 +500,13 @@ class _DatasetValidationMixin:
         if "pg" in present:
             self._check_grouped_runs_referential(results["pg"], strict=strict)
             self._check_grouped_runs_sample_mapping(results["pg"], strict=strict)
-        # feature, psm and mz rows each name the run they were measured in.
+        # feature, psm and mz rows each name the run they were measured in, and
+        # each feature label must name exactly one sample of that run.
         for view in _RUN_KEYED_VIEWS:
             if view in present:
                 self._check_run_file_names(view, results[view], strict=strict)
+        if "feature" in present:
+            self._check_feature_label_samples(results["feature"], strict=strict)
 
     def _check_cross_references(self, results: dict[str, ValidationResult], present: set[str], *, strict: bool) -> None:
         """Cross-structure checks of the id links between views."""
@@ -477,6 +556,23 @@ class _DatasetValidationMixin:
                 f"in run.parquet ({_examples([repr(name) for name, _ in rows])}); these rows resolve to no run or sample",
             )
         )
+
+    def _check_feature_label_samples(self, result: ValidationResult, *, strict: bool) -> None:
+        """Require each feature label to name exactly one sample of its run, once per row.
+
+        ``run.samples[].label`` is the canonical channel name and must match
+        ``feature.intensities[].label`` exactly (see the data-model spec). Each
+        distinct (run_file_name, label) pair is resolved once; rows of a run that
+        is not in the run view are left to :meth:`_check_run_file_names`.
+        """
+        try:
+            duplicated = self._engine.execute(_DUPLICATE_FEATURE_LABEL_SQL).fetchall()[0][0]
+            units = self._engine.execute(_FEATURE_LABEL_SAMPLE_SQL).fetchall()
+        except duckdb.Error as exc:
+            what = "feature label sample-mapping check"
+            result.issues.append(_skipped_issue("feature", "sample_mapping_check_skipped", what, exc, strict=strict))
+            return
+        result.issues.extend(_feature_label_issues(duplicated, units))
 
     def _check_pg_link(self, view: str, result: ValidationResult, *, strict: bool = False) -> None:
         """Flag site/proteoform links that do not resolve, or resolve to another context.

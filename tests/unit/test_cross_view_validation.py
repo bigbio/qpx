@@ -1,8 +1,11 @@
 """Cross-view checks of Dataset.validate() that resolve rows through the run view.
 
-The pg label -> sample check resolves each distinct (grouped runs, label) unit
-through ``run.samples``, once per unit rather than once per pg row. feature, psm
-and mz rows must name a run of the run view.
+The pg checks look up each distinct grouped run, and resolve each distinct
+(grouped runs, label) unit through ``run.samples``, once rather than once per pg
+row. feature, psm and mz rows must name a run of the run view, and each feature
+label must name exactly one sample of its run. The bounded-memory tests run the
+checks on fractionated TMT data with 32 MB of DuckDB memory and no temp space,
+where joining every row to its runs' channels runs out of memory.
 """
 
 import contextlib
@@ -331,3 +334,168 @@ def test_run_check_that_cannot_run_is_reported(tmp_path, strict, severity):
     assert len(skipped) == 1
     assert skipped[0].severity == severity
     assert "psm run_file_name referential check could not run (possible schema drift)" in skipped[0].message
+
+
+# ---------------------------------------------------------------------------
+# feature (run_file_name, label) -> exactly one run.samples entry
+# ---------------------------------------------------------------------------
+
+
+def _write_feature_dataset(ds_dir, runs, features):
+    """*features* are (run_file_name, [labels]) pairs; each becomes one feature row."""
+    ds_dir.mkdir(parents=True, exist_ok=True)
+    with RunWriter(ds_dir / "exp.run.parquet") as writer:
+        writer.write_batch(runs)
+    records = []
+    for i, (run, labels) in enumerate(features):
+        record = make_feature_record(sequence=f"PEPTIDE{i}K", peptidoform=f"PEPTIDE{i}K", run_file_name=run)
+        record["intensities"] = [{"label": label, "intensity": 100.0} for label in labels]
+        records.append(record)
+    with FeatureWriter(ds_dir / "exp.feature.parquet") as writer:
+        writer.write_batch(records)
+    return ds_dir
+
+
+def _lfq_runs(labels_per_run: dict[str, list[str]]) -> list[dict]:
+    """Runs whose samples carry the given channel labels, one sample per label."""
+    runs = []
+    for run_name, labels in labels_per_run.items():
+        run = make_run_record(run_accession=run_name, run_file_name=run_name)
+        run["samples"] = [
+            {"sample_accession": f"{run_name}_{label}", "label": label, "biological_replicate": 1, "technical_replicate": 1}
+            for label in labels
+        ]
+        runs.append(run)
+    return runs
+
+
+@pytest.mark.parametrize("strict", [False, True])
+def test_fractionated_tmt_features_resolve_every_label(tmp_path, strict):
+    features = [(_run_name(plex, fraction), list(TMT)) for plex in range(2) for fraction in range(3) for _ in range(4)]
+    ds_dir = _write_feature_dataset(tmp_path / "tmt", _tmt_runs(2, 3), features)
+    with Dataset(ds_dir) as ds:
+        feature = ds.validate(structures=["feature"], strict=strict)["feature"]
+
+    assert not _issues(feature, "ambiguous_label_sample")
+    assert not _issues(feature, "duplicate_intensity_label")
+    assert not [issue for issue in feature.issues if issue.check.endswith("check_skipped")]
+
+
+@pytest.mark.parametrize("strict", [False, True])
+def test_feature_run_and_label_checks_run_in_bounded_memory(tmp_path, strict):
+    """The checks group 24,000 fractionated TMT features to 24 runs and 96 (run, label) pairs.
+
+    Joining every intensity to all channels of its run instead (384,000 rows)
+    ran out of memory at this limit under DuckDB 2.0.
+    """
+    features = [(_run_name(plex, fraction), list(TMT)) for plex in range(2) for fraction in range(12) for _ in range(1000)]
+    ds_dir = _write_feature_dataset(tmp_path / "tmt", _tmt_runs(2, 12), features)
+    with _low_memory(ds_dir) as ds:
+        result = ValidationResult(structure="feature")
+        ds._check_run_file_names("feature", result, strict=strict)
+        ds._check_feature_label_samples(result, strict=strict)
+
+    assert result.issues == []
+
+
+@pytest.mark.parametrize("strict", [False, True])
+def test_feature_label_without_a_sample_is_an_error(tmp_path, strict):
+    """A channel the run does not carry resolves to no sample: the quantity is orphaned."""
+    run = _run_name(0, 0)
+    ds_dir = _write_feature_dataset(
+        tmp_path / "unknown-label", _tmt_runs(1, 1), [(run, ["TMT126", "TMT131"]), (run, ["TMT131"]), (run, ["TMT126"])]
+    )
+    with Dataset(ds_dir) as ds:
+        feature = ds.validate(structures=["feature"], strict=strict)["feature"]
+
+    (issue,) = _issues(feature, "ambiguous_label_sample")
+    assert issue.severity == "error"
+    assert issue.column == "intensities"
+    assert issue.message.startswith(
+        f"2 feature intensities in 1 (run_file_name, label) pair(s) match no sample_channel label of their run (('{run}', 'TMT131'))"
+    )
+    assert not feature.is_valid
+
+
+@pytest.mark.parametrize("strict", [False, True])
+def test_lfq_features_of_silac_runs_are_reported(tmp_path, strict):
+    """Features labelled LFQ in runs whose channels are SILAC light and heavy name no sample."""
+    runs = _lfq_runs({"A_F1": ["SILAC light", "SILAC heavy"], "A_F2": ["SILAC light", "SILAC heavy"]})
+    ds_dir = _write_feature_dataset(tmp_path / "silac", runs, [("A_F1", ["LFQ"]), ("A_F2", ["LFQ"]), ("A_F2", ["LFQ"])])
+    with Dataset(ds_dir) as ds:
+        feature = ds.validate(strict=strict)["feature"]
+
+    (issue,) = _issues(feature, "ambiguous_label_sample")
+    assert "3 feature intensities in 2 (run_file_name, label) pair(s) match no sample_channel label" in issue.message
+    assert not feature.is_valid
+
+
+def test_feature_label_must_match_a_single_sample_run_exactly(tmp_path):
+    """run.samples[].label is the canonical channel: a single-sample run does not excuse a mismatch.
+
+    The feature->pg softlink joins on the exact label, so a feature labelled
+    'raw' in an 'LFQ' run links to no pg row.
+    """
+    ds_dir = _write_feature_dataset(tmp_path / "lfq", _lfq_runs({"R1": ["LFQ"]}), [("R1", ["raw"]), ("R1", ["LFQ"])])
+    with Dataset(ds_dir) as ds:
+        feature = ds.validate(structures=["feature"])["feature"]
+
+    (issue,) = _issues(feature, "ambiguous_label_sample")
+    assert "1 feature intensities in 1 (run_file_name, label) pair(s) match no sample_channel label" in issue.message
+    assert "('R1', 'raw')" in issue.message
+
+
+@pytest.mark.parametrize("strict", [False, True])
+def test_feature_label_matching_several_samples_is_an_error(tmp_path, strict):
+    runs = _lfq_runs({"R1": ["TMT126", "TMT127N"]})
+    runs[0]["samples"][1]["label"] = "TMT126"  # two samples on one channel
+    ds_dir = _write_feature_dataset(tmp_path / "ambiguous", runs, [("R1", ["TMT126"])])
+    with Dataset(ds_dir) as ds:
+        feature = ds.validate(structures=["feature"], strict=strict)["feature"]
+
+    (issue,) = _issues(feature, "ambiguous_label_sample")
+    assert issue.severity == "error"
+    assert "match the labels of several samples of their run (('R1', 'TMT126') -> ['R1_TMT126', 'R1_TMT127N'])" in issue.message
+    assert not feature.is_valid
+
+
+@pytest.mark.parametrize("strict", [False, True])
+def test_feature_row_listing_a_label_twice_is_an_error(tmp_path, strict):
+    """Each label is one sample's quantity; listing it three times triples that sample's value."""
+    run = _run_name(0, 0)
+    ds_dir = _write_feature_dataset(
+        tmp_path / "labels-x3", _tmt_runs(1, 1), [(run, ["TMT126"] * 3), (run, ["TMT126", "TMT127N"]), (run, list(TMT) * 2)]
+    )
+    with Dataset(ds_dir) as ds:
+        feature = ds.validate(structures=["feature"], strict=strict)["feature"]
+
+    (issue,) = _issues(feature, "duplicate_intensity_label")
+    assert issue.severity == "error"
+    assert issue.message.startswith("2 feature row(s) list a label more than once in intensities")
+    assert not _issues(feature, "ambiguous_label_sample")
+    assert not feature.is_valid
+
+
+def test_labels_of_an_unknown_run_are_left_to_the_run_check(tmp_path):
+    """A row of an unknown run is reported once, as dangling, not also as an unresolved label."""
+    ds_dir = _write_feature_dataset(tmp_path / "unknown-run", _tmt_runs(1, 1), [("NOT_A_RUN", list(TMT))])
+    with Dataset(ds_dir) as ds:
+        feature = ds.validate(structures=["feature"])["feature"]
+
+    assert len(_issues(feature, "dangling_run_file_name")) == 1
+    assert not _issues(feature, "ambiguous_label_sample")
+
+
+@pytest.mark.parametrize(("strict", "severity"), [(False, "warning"), (True, "error")])
+def test_feature_label_check_that_cannot_run_is_reported(tmp_path, strict, severity):
+    """A run view without samples makes the label check fail explicitly instead of passing."""
+    run = _run_name(0, 0)
+    ds_dir = _write_feature_dataset(tmp_path / "drift", _tmt_runs(1, 1), [(run, list(TMT))])
+    with Dataset(ds_dir) as ds:
+        ds._engine.execute("CREATE OR REPLACE VIEW run AS SELECT 'plex0_F00' AS run_file_name")
+        feature = ds.validate(structures=["feature"], strict=strict)["feature"]
+
+    skipped = _issues(feature, "sample_mapping_check_skipped")
+    assert len(skipped) == 1
+    assert skipped[0].severity == severity
+    assert "feature label sample-mapping check could not run (possible schema drift)" in skipped[0].message
