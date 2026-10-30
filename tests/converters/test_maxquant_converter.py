@@ -121,6 +121,63 @@ def test_feature_dedup_does_not_degrade_without_type_column(tmp_path):
     assert len(rows) == 1, f"identity duplicates must collapse even without Type, got {len(rows)}"
 
 
+def test_feature_without_ms1_quantity_has_no_intensity(tmp_path):
+    """MaxQuant's blank or 0 ``Intensity`` (MS/MS-only evidence) is not a measured 0.0.
+
+    The intensity struct cannot hold a null, so the feature carries no intensity
+    entry, as an empty TMT channel does; the identified feature is kept.
+    """
+    from qpx.converters.maxquant.feature_adapter import MaxQuantFeatureAdapter
+
+    evidence = tmp_path / "evidence.txt"
+    evidence.write_text(
+        _EVIDENCE_HEADER
+        + "PEPTIDEA\t_PEPTIDEA_\t2\trun1\tMSMS\t100\t450.25\t30.0\t29.5\t30.5\t0.01\tP1\tP1\t\t898.5\t1\n"
+        + "PEPTIDEB\t_PEPTIDEB_\t2\trun1\tMSMS\t200\t450.25\t40.0\t39.5\t40.5\t0.01\tP1\tP1\t0\t898.5\t2\n"
+        + "PEPTIDEC\t_PEPTIDEC_\t2\trun1\tMULTI-MSMS\t300\t450.25\t50.0\t49.5\t50.5\t0.01\tP1\tP1\t1000\t898.5\t3\n"
+    )
+    output = tmp_path / "feature.parquet"
+    with MaxQuantFeatureAdapter() as adapter:
+        adapter.convert(str(evidence), str(output))
+
+    intensities = {r["sequence"]: r["intensities"] for r in pq.read_table(output).to_pylist()}
+    assert intensities == {
+        "PEPTIDEA": None,
+        "PEPTIDEB": None,
+        "PEPTIDEC": [{"label": "LFQ", "intensity": 1000.0}],
+    }
+
+
+def test_pg_zero_lfq_and_ibaq_are_missing(tmp_path):
+    """MaxQuant writes 0 for an LFQ or iBAQ value it did not compute; that is null, not 0.0."""
+    from qpx.converters.maxquant.pg_adapter import MaxQuantPgAdapter
+
+    protein_groups = tmp_path / "proteinGroups.txt"
+    protein_groups.write_text(
+        "Protein IDs\tMajority protein IDs\tIntensity exp1\tLFQ intensity exp1\tiBAQ exp1\n"
+        "P1\tP1\t1000\t0\t0\n"
+        "P2\tP2\t2000\t1500\t30\n"
+    )
+    sdrf = tmp_path / "sdrf.tsv"
+    sdrf.write_text("source name\tcomment[data file]\tcomment[label]\nexp1\trun1.raw\tlabel free sample\n")
+    output = tmp_path / "pg.parquet"
+    with MaxQuantPgAdapter() as adapter:
+        adapter.convert(str(protein_groups), str(output), sdrf_path=str(sdrf))
+
+    rows = {r["anchor_protein"]: r for r in pq.read_table(output).to_pylist()}
+    assert rows["P1"]["intensity"] == pytest.approx(1000.0)
+    assert rows["P1"]["additional_intensities"] is None
+    assert rows["P2"]["additional_intensities"] == [
+        {
+            "label": "LFQ",
+            "intensities": [
+                {"intensity_name": "lfq", "intensity_value": 1500.0},
+                {"intensity_name": "ibaq", "intensity_value": 30.0},
+            ],
+        }
+    ]
+
+
 def test_psm_handles_empty_modified_sequence(tmp_path):
     """Bug #248 (H): an empty ``Modified sequence`` must not abort the PSM view.
 
@@ -569,9 +626,12 @@ def test_feature_pg_softlink_real_full_dataset(tmp_path_factory):
     with open_converted(out, prefix="mq") as ds:
         _feat, _pg, link = assert_softlink_valid(ds)
         unlinked = ds.features_without_pg_link().fetchall()
+        unquantified = ds.sql("SELECT feature_id FROM feature WHERE intensities IS NULL ORDER BY feature_id").fetchall()
     assert link, "expected at least some computed feature->pg softlink edges"
-    # Every evidence row names its groups in "Protein group IDs" (243,821 features).
-    assert unlinked == []
+    # Every evidence row names its groups in "Protein group IDs", so the only
+    # features without a link are those with no quantity (MS/MS-only evidence),
+    # which carry no label to link through.
+    assert unlinked == unquantified
 
 
 # ---------------------------------------------------------------------------

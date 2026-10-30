@@ -617,15 +617,24 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
                             }
                         )
         else:
-            # LFQ: prefer MaxQuant-normalised "LFQ intensity" when available,
-            # fall back to raw "Intensity" (e.g. for datasets without LFQ algo).
-            lfq_val = safe_float(row.get("LFQ intensity"))
-            raw_val = safe_float(row.get(_FEATURE_MAP["intensity"][0]))
-            intensity_val = lfq_val if (lfq_val is not None and lfq_val > 0) else (raw_val or 0.0)
-            label = "LFQ"
-            intensities.append({"label": label, "intensity": float(intensity_val)})
+            intensities = self._lfq_intensities(row)
 
         return intensities, additional_intensities or None
+
+    @staticmethod
+    def _lfq_intensities(row) -> list[dict]:
+        """The label-free intensity of an evidence row, or none without a quantity.
+
+        Prefers MaxQuant-normalised "LFQ intensity" when available and falls back
+        to raw "Intensity" (e.g. for datasets without LFQ algo). MaxQuant writes 0
+        (or nothing) for evidence without an MS1 quantity, such as MS/MS-only
+        rows. The intensity struct cannot hold a null, so such a feature carries
+        no intensity entry, like an empty TMT channel.
+        """
+        lfq_val = safe_float(row.get("LFQ intensity"))
+        raw_val = safe_float(row.get(_FEATURE_MAP["intensity"][0]))
+        intensity_val = lfq_val if (lfq_val is not None and lfq_val > 0) else raw_val
+        return [{"label": "LFQ", "intensity": intensity_val}] if intensity_val else []
 
     @staticmethod
     def _genes_from_headers(fasta_raw: str) -> Optional[list[str]]:

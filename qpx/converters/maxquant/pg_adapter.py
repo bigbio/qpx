@@ -34,6 +34,12 @@ logger = logging.getLogger(__name__)
 _PG_MAP = get_field_mappings("maxquant", "pg")
 
 
+def _positive(value) -> Optional[float]:
+    """A positive quantity, or ``None`` for MaxQuant's blank or 0 (no value)."""
+    number = safe_float(value)
+    return number if number is not None and number > 0 else None
+
+
 class MaxQuantPgAdapter(MaxQuantBaseAdapter):
     """Convert MaxQuant ``proteinGroups.txt`` to ``pg.parquet``.
 
@@ -520,28 +526,23 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
         # ── LFQ: one record per run using "Intensity <run>" columns ──
         for intensity_col in intensity_cols.get("intensity", []):
             run_name = intensity_col.removeprefix("Intensity ")
-            intensity_val = safe_float(row.get(intensity_col)) or 0.0
-            if intensity_val <= 0:
-                if (safe_float(row.get(f"MS/MS count {run_name}")) or 0) <= 0:
-                    continue
-                # Global counts cannot establish identification in this unit.
-                intensity_val = None
-            lfq_val = safe_float(row.get(f"LFQ intensity {run_name}"))
-            ibaq_val = safe_float(row.get(f"iBAQ {run_name}"))
-            if intensity_val is None:
-                # Beside a missing intensity, zero LFQ and iBAQ are MaxQuant's sentinels.
-                lfq_val, ibaq_val = lfq_val or None, ibaq_val or None
-            extra_vals = []
-            if lfq_val is not None:
-                extra_vals.append({"intensity_name": "lfq", "intensity_value": float(lfq_val)})
-            if ibaq_val is not None:
-                extra_vals.append({"intensity_name": "ibaq", "intensity_value": float(ibaq_val)})
-            add_int = [{"label": "LFQ", "intensities": extra_vals}] if extra_vals else []
+            intensity_val = _positive(row.get(intensity_col))
+            # Global counts cannot establish identification in this unit.
+            if intensity_val is None and (safe_float(row.get(f"MS/MS count {run_name}")) or 0) <= 0:
+                continue
             records.append(
                 make_rec(
                     self._runs_for(run_name),
                     [{"label": "LFQ", "intensity": intensity_val}],
-                    add_int,
+                    self._lfq_additional_intensities(row, run_name),
                 )
             )
         return records
+
+    @staticmethod
+    def _lfq_additional_intensities(row, experiment: str) -> list[dict]:
+        """The experiment's ``LFQ intensity`` and ``iBAQ``, without MaxQuant's 0 for a value it did not compute."""
+        columns = (("lfq", f"LFQ intensity {experiment}"), ("ibaq", f"iBAQ {experiment}"))
+        values = [(name, _positive(row.get(column))) for name, column in columns]
+        extra_vals = [{"intensity_name": name, "intensity_value": value} for name, value in values if value is not None]
+        return [{"label": "LFQ", "intensities": extra_vals}] if extra_vals else []

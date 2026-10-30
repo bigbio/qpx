@@ -61,6 +61,9 @@ In a label-free quantification experiment, each feature row has a single intensi
 !!! note
     For LFQ experiments, each feature row corresponds to one MS run and one sample, so the `intensities` array always has a single element. For multiplexed experiments (TMT, iTRAQ), the array contains one element per label.
 
+!!! note "Missing quantities"
+    `intensity` cannot be null. A label without a measured quantity has no element, and a feature identified without any quantity (for example MaxQuant evidence of `Type` `MSMS`) has `intensities = null`. The MaxQuant converter also leaves out the 0 that MaxQuant writes for a value it did not measure, so a 0 in its output is a measured zero; other converters may still copy such zeros from their tool.
+
 ## Additional intensities
 
 The `additional_intensities` field stores pre-computed values produced by upstream tools -- normalized intensities, LFQ values, iBAQ values, and so on. QPX reads these from the tool's output files (e.g., MaxQuant's `proteinGroups.txt`, DIA-NN's report) and stores them as-is. Each element mirrors the label structure of primary intensities but adds a nested array of named intensity types.
