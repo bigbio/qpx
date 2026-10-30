@@ -1,62 +1,189 @@
-"""Shared PTM utilities: UNIMOD tables, ProForma builder/parser, precursor m/z.
+"""Shared PTM utilities: Unimod lookups, ProForma builder/parser, precursor m/z.
 
 This flat module consolidates shared logic previously spread across
 ``qpx.converters.ptm.unimod``, ``qpx.converters.ptm.proforma``,
 ``qpx.converters.ptm.modifications``, and ``qpx.converters.ptm.__init__``.
 
-Tool-specific constants (MaxQuant _MQ_MOD_TO_UNIMOD, _MQ_SHORT_TO_UNIMOD,
-resolve_to_unimod) are **not** included here -- they belong in the respective
-converter's ``constants.py``.
+Unimod accessions and masses come from pyopenms' ``ModificationsDB`` (the Unimod
+release pyopenms ships), not from a hand-written table. Tool-specific parsing
+(MaxQuant short names such as ``ox``) stays in the converter's ``constants.py``.
 """
 
 from __future__ import annotations
 
+import math
 import re
+from bisect import bisect_left, bisect_right
+from collections.abc import Iterator, Mapping
 from functools import lru_cache
-from typing import Optional, Tuple
+from typing import NamedTuple, Optional, Tuple
 
 # ---------------------------------------------------------------------------
-# UNIMOD mass registry
+# Unimod lookups (pyopenms ModificationsDB)
 # ---------------------------------------------------------------------------
-
-UNIMOD_MASS: dict[int, float] = {
-    1: 42.010565,
-    4: 57.021464,
-    5: 43.005814,
-    7: 0.984016,
-    21: 79.966331,
-    28: -17.026549,
-    34: 14.015650,
-    35: 15.994915,
-    36: 28.031300,
-    37: 42.046950,
-    121: 114.042927,
-    122: 27.994915,
-    214: -18.010565,
-    312: 229.162932,
-    385: 304.207146,
-    730: 304.207146,
-    737: 229.162932,
-}
 
 _MASS_TOL = 0.01
 
-_MASS_TO_UNIMOD: list[tuple[float, int]] = sorted((mass, uid) for uid, mass in UNIMOD_MASS.items())
+# OpenMS adds its own entries to ModificationsDB from ``CHEMISTRY/custom_mods.xml``
+# (CUSTOM0-9, PhosphoDecoy, ...) under record ids from 99900 up, which Unimod
+# leaves free. They are not Unimod accessions.
+_OPENMS_CUSTOM_RECORD_ID = 99900
+
+# Equal masses at the same site (same composition) are ambiguous. A tie goes to
+# the modification here when exactly one of the tied entries is listed; any other
+# tie stays unresolved and the mass is written. Listed are modifications search
+# engines are configured with, against isobaric amino-acid substitutions,
+# artefacts and cross-linker remnants: Acetyl 1 (Ser->Glu), Amidated 2,
+# Carbamidomethyl 4 (Gly 1263, Carbofuran), Carbamyl 5, Carboxymethyl 6,
+# Deamidated 7 (Asn->Asp 621, Gln->Glu 632), Methyl 34, Oxidation 35 (Phe->Tyr),
+# Dimethyl 36 (Ethyl 280, Delta:H(4)C(2) 255), Trimethyl 37 (Propyl 1305),
+# Propionyl 58, GG 121 (Dicarbamidomethyl 1290), Formyl 122, iTRAQ4plex 214
+# (mTRAQ:13C(3)15N(1) 889), mTRAQ 888 (Xlink:DMP[140]), Butyryl 1289
+# (Crotonaldehyde 253), Gluratylation 1848 (Xlink:BS2G[114]), Lactylation 2114
+# (Carboxyethyl 378) and Hexanoyl 2121 (MesitylOxide 1873).
+_PREFERRED_ON_TIE = frozenset({1, 2, 4, 5, 6, 7, 34, 35, 36, 37, 58, 121, 122, 214, 888, 1289, 1848, 2114, 2121})
 
 
-def mass_to_unimod(mass: float) -> Optional[int]:
-    """Find the UNIMOD accession whose delta is closest to *mass*.
+class _UnimodSite(NamedTuple):
+    """One site of a Unimod modification: ``residue`` is ``"X"`` for any residue, ``terminus`` "N", "C" or None."""
 
-    Returns ``None`` if no match within ``_MASS_TOL``.
+    accession: int
+    mass: float
+    residue: str
+    terminus: Optional[str]
+
+
+class _UnimodIndex:
+    """The Unimod entries of pyopenms' ``ModificationsDB``, sorted by delta mass.
+
+    ModificationsDB holds one entry per Unimod accession and site, read from the
+    Unimod release that pyopenms ships. Entries without a Unimod accession (from
+    PSI-MOD or XLMOD only) and OpenMS' own entries (record id 99900 and up) are
+    left out.
     """
-    best_uid = None
-    best_diff = _MASS_TOL + 1
-    for ref_mass, uid in _MASS_TO_UNIMOD:
-        diff = abs(ref_mass - mass)
-        if diff < best_diff:
-            best_diff = diff
-            best_uid = uid
-    return best_uid if best_diff <= _MASS_TOL else None
+
+    def __init__(self) -> None:
+        import pyopenms as oms  # pylint: disable=import-outside-toplevel
+
+        spec = oms.ResidueModification.TermSpecificity
+        termini = {int(spec.N_TERM): "N", int(spec.PROTEIN_N_TERM): "N", int(spec.C_TERM): "C", int(spec.PROTEIN_C_TERM): "C"}
+        db = oms.ModificationsDB()
+        sites = []
+        for index in range(db.getNumberOfModifications()):
+            mod = db.getModification(index)
+            if 0 < mod.getUniModRecordId() < _OPENMS_CUSTOM_RECORD_ID:
+                terminus = termini.get(int(mod.getTermSpecificity()))
+                sites.append(_UnimodSite(mod.getUniModRecordId(), mod.getDiffMonoMass(), mod.getOrigin(), terminus))
+        sites.sort(key=lambda site: site.mass)
+        self.sites = sites
+        self.masses = [site.mass for site in sites]
+        self.mass_by_accession = {site.accession: site.mass for site in sites}
+
+
+@lru_cache(maxsize=1)
+def _unimod_index() -> _UnimodIndex:
+    return _UnimodIndex()
+
+
+class _UnimodMasses(Mapping):
+    """Read-only ``{Unimod accession: monoisotopic delta mass}`` view of ``ModificationsDB``."""
+
+    def __getitem__(self, accession: int) -> float:
+        return _unimod_index().mass_by_accession[accession]
+
+    def __iter__(self) -> Iterator[int]:
+        return iter(_unimod_index().mass_by_accession)
+
+    def __len__(self) -> int:
+        return len(_unimod_index().mass_by_accession)
+
+
+UNIMOD_MASS: Mapping[int, float] = _UnimodMasses()
+
+
+def _site_rank(site: _UnimodSite, residue: Optional[str], terminus: Optional[str]) -> Optional[int]:
+    """How well a Unimod site fits a modification at *residue* / *terminus*; ``None`` if it does not.
+
+    0: same placement (residue, or the N-/C-terminus) and the site names the residue;
+    1: same placement and the site allows any residue; 2: the site names the
+    residue but has the other placement, as when a tool reports pyro-Glu, which
+    Unimod defines on the N-terminal Q, on the Q itself. Without a residue and a
+    terminus every site fits; without a residue, every site of the placement.
+    """
+    if residue is None:
+        return 0 if terminus is None or site.terminus == terminus else None
+    same_placement = site.terminus == terminus
+    if site.residue == residue:
+        return 0 if same_placement else 2
+    return 1 if site.residue == "X" and same_placement else None
+
+
+def _break_tie(accessions: set[int]) -> Optional[int]:
+    """The accession of equally good candidates: the only one, or the only one in ``_PREFERRED_ON_TIE``."""
+    if len(accessions) == 1:
+        return next(iter(accessions))
+    preferred = accessions & _PREFERRED_ON_TIE
+    return next(iter(preferred)) if len(preferred) == 1 else None
+
+
+@lru_cache(maxsize=8192)
+def mass_to_unimod(mass: float, residue: Optional[str] = None, terminus: Optional[str] = None) -> Optional[int]:
+    """Find the Unimod accession of a delta *mass* at a residue or terminus.
+
+    Args:
+        mass: Monoisotopic delta mass in Da.
+        residue: One-letter code of the modified residue; for a terminal
+            modification the terminal residue. ``None`` when unknown.
+        terminus: ``"N"`` or ``"C"`` for a modification of the peptide
+            terminus, ``None`` for a residue modification.
+
+    The candidates are the Unimod sites within ``_MASS_TOL`` Da that fit the site
+    (see :func:`_site_rank`). The closest mass wins, then the better site fit.
+    Entries left equal have the same composition at the same site; they resolve
+    only to a modification in ``_PREFERRED_ON_TIE`` (iTRAQ4plex 214, not
+    mTRAQ:13C(3)15N(1) 889; Butyryl 1289, not Crotonaldehyde 253). Returns
+    ``None`` if no site matches, the tie stays open (Isovaleryl, 2-methylbutyryl
+    and Pentanoyl on K) or *mass* is not finite.
+    """
+    if not math.isfinite(mass):
+        return None
+    index = _unimod_index()
+    low = bisect_left(index.masses, mass - _MASS_TOL)
+    high = bisect_right(index.masses, mass + _MASS_TOL)
+    keys: dict[int, tuple[float, int]] = {}
+    for site in index.sites[low:high]:
+        rank = _site_rank(site, residue, terminus)
+        if rank is not None:
+            key = (round(abs(site.mass - mass), 6), rank)
+            keys[site.accession] = min(key, keys.get(site.accession, key))
+    if not keys:
+        return None
+    best = min(keys.values())
+    return _break_tie({accession for accession, key in keys.items() if key == best})
+
+
+def format_mass_delta(mass: float) -> str:
+    """Signed ProForma mass tag for a delta mass without a Unimod entry, e.g. ``+999.1234``."""
+    return f"+{mass}" if mass >= 0 else str(mass)
+
+
+def mass_tag(mass: float, residue: Optional[str] = None, terminus: Optional[str] = None) -> str:
+    """ProForma tag for a delta mass: ``UNIMOD:n`` (see :func:`mass_to_unimod`), else the signed mass."""
+    accession = mass_to_unimod(mass, residue, terminus)
+    return f"UNIMOD:{accession}" if accession is not None else format_mass_delta(mass)
+
+
+def position_site(sequence: str, position: int) -> tuple[Optional[str], Optional[str]]:
+    """Residue and terminus of a :func:`build_proforma` position in *sequence*.
+
+    Position 0 is the N-terminus and ``len(sequence) + 1`` the C-terminus; both
+    return the terminal residue with ``"N"`` / ``"C"``.
+    """
+    if position <= 0:
+        return (sequence[:1] or None), "N"
+    if position > len(sequence):
+        return (sequence[-1:] or None), "C"
+    return sequence[position - 1], None
 
 
 # Monoisotopic amino acid residue masses (Da)
@@ -91,7 +218,7 @@ def parse_unimod_delta(mod_str: str) -> Optional[float]:
     """Extract the mass delta from a modification token.
 
     Accepts:
-        - ``UniMod:35`` / ``UNIMOD:35`` -> lookup in ``UNIMOD_MASS``
+        - ``UniMod:35`` / ``UNIMOD:35`` -> Unimod delta mass (``UNIMOD_MASS``)
         - ``+15.9949`` / ``-17.0265`` -> parse directly
     """
     m = re.match(r"(?:UniMod|UNIMOD):(\d+)", mod_str, re.IGNORECASE)
@@ -414,7 +541,10 @@ __all__ = [
     "WATER_MASS",
     "build_proforma",
     "compute_precursor_mz",
+    "format_mass_delta",
     "from_proforma",
+    "mass_tag",
     "mass_to_unimod",
     "parse_unimod_delta",
+    "position_site",
 ]

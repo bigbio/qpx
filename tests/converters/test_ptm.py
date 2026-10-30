@@ -1,11 +1,17 @@
 """Test shared PTM utilities (flat ptm.py)."""
 
+import pyopenms as oms
+import pytest
+
 from qpx.converters.ptm import (
+    _PREFERRED_ON_TIE,
     UNIMOD_MASS,
     _normalize_peptidoform,
     build_proforma,
     compute_precursor_mz,
+    format_mass_delta,
     from_proforma,
+    mass_tag,
     mass_to_unimod,
 )
 
@@ -22,6 +28,138 @@ class TestUnimodMassRegistry:
 
     def test_mass_to_unimod_unknown(self):
         assert mass_to_unimod(999.0) is None
+
+    @pytest.mark.parametrize(
+        ("accession", "mass"),
+        [
+            (27, -18.010565),  # Glu->pyro-Glu
+            (214, 144.102063),  # iTRAQ4plex (the old table held the Glu->pyro-Glu mass)
+            (259, 8.014199),  # Label:13C(6)15N(2)
+            (267, 10.008269),  # Label:13C(6)15N(4)
+            (312, 119.004099),  # Cysteinyl (the old table held the TMT6plex mass)
+            (385, -17.026549),  # Ammonia-loss (the old table held the TMTpro mass)
+            (730, 304.205360),  # iTRAQ8plex (the old table held the TMTpro mass)
+            (737, 229.162932),  # TMT6plex
+            (888, 140.094963),  # mTRAQ
+            (2016, 304.207146),  # TMTpro
+        ],
+    )
+    def test_masses_are_unimod(self, accession, mass):
+        """Every accession carries its Unimod delta mass, as pyopenms' ModificationsDB has it."""
+        assert UNIMOD_MASS[accession] == pytest.approx(mass, abs=1e-6)
+        assert accession in UNIMOD_MASS
+        assert UNIMOD_MASS.get(999_999) is None
+
+
+class TestMassToUnimod:
+    """Delta masses resolve to the Unimod accession defined at their residue or terminus."""
+
+    @pytest.mark.parametrize(
+        ("mass", "residue", "terminus", "accession"),
+        [
+            # Isobaric labels, on Lys and on the peptide N-terminus
+            (229.1629, "K", None, 737),
+            (229.1629, "P", "N", 737),
+            (304.2071, "K", None, 2016),
+            (304.2071, "P", "N", 2016),
+            (144.1021, "K", None, 214),
+            (144.1021, "P", "N", 214),
+            (304.2054, "K", None, 730),
+            (304.2054, "P", "N", 730),
+            (140.0950, "K", None, 888),
+            # Common modifications
+            (15.9949, "M", None, 35),
+            (79.9663, "S", None, 21),
+            (79.9663, "T", None, 21),
+            (79.9663, "Y", None, 21),
+            (57.0215, "C", None, 4),
+            (42.0106, "M", "N", 1),
+            (42.0106, "K", None, 1),
+            (0.9840, "N", None, 7),
+            (0.9840, "Q", None, 7),
+            (114.0429, "K", None, 121),
+            (14.0157, "K", None, 34),
+            (28.0313, "K", None, 36),
+            (-0.9840, "K", "C", 2),
+            (8.0142, "K", None, 259),
+            (10.0083, "R", None, 267),
+            # Equal masses at different sites
+            (-17.0265, "Q", "N", 28),
+            (-17.0265, "C", "N", 385),
+            (-17.0265, "Q", None, 28),  # pyro-Glu reported on the Q instead of the N-terminus
+            (-18.0106, "E", "N", 27),
+        ],
+    )
+    def test_accession(self, mass, residue, terminus, accession):
+        assert mass_to_unimod(mass, residue, terminus) == accession
+
+    @pytest.mark.parametrize(
+        ("mass", "residue", "terminus", "accession", "tied_with"),
+        [
+            (144.1021, "K", None, 214, 889),  # iTRAQ4plex, not mTRAQ:13C(3)15N(1)
+            (144.1021, "P", "N", 214, 889),
+            (0.9840, "N", None, 7, 621),  # Deamidated, not Asn->Asp
+            (114.0429, "K", None, 121, 1290),  # GG, not Dicarbamidomethyl
+            (57.0215, "K", None, 4, 1263),  # Carbamidomethyl (over-alkylation), not Gly
+            (28.0313, "K", None, 36, 280),  # Dimethyl, not Ethyl
+            (70.0419, "K", None, 1289, 253),  # Butyryl, not Crotonaldehyde
+            (72.0211, "K", None, 2114, 378),  # Lactylation, not Carboxyethyl
+            (98.0732, "K", None, 2121, 1873),  # Hexanoyl, not MesitylOxide
+        ],
+    )
+    def test_isobaric_tie_goes_to_the_preferred_modification(self, mass, residue, terminus, accession, tied_with):
+        """Equal masses at the same site resolve to the modification search engines use, not the lowest accession."""
+        assert UNIMOD_MASS[tied_with] == pytest.approx(UNIMOD_MASS[accession], abs=1e-6)
+        assert mass_to_unimod(mass, residue, terminus) == accession
+
+    def test_preferred_accessions_are_in_this_unimod_release(self):
+        assert _PREFERRED_ON_TIE <= set(UNIMOD_MASS)
+
+    @pytest.mark.parametrize(
+        ("mass", "residue", "terminus"),
+        [
+            (84.0575, "K", None),  # Isovaleryl 2108, 2-methylbutyryl 2109, Pentanoyl 2120
+            (105.0215, "K", None),  # ICPL 365, NIC 697
+            (-17.0265, None, "N"),  # Gln->pyro-Glu 28 on Q, Ammonia-loss 385 on C
+        ],
+    )
+    def test_open_isobaric_tie_is_unresolved(self, mass, residue, terminus):
+        """A tie without a preferred modification gives no accession, so the mass is written."""
+        assert mass_to_unimod(mass, residue, terminus) is None
+        assert mass_tag(mass, residue, terminus) == format_mass_delta(mass)
+
+    def test_openms_custom_entries_are_not_unimod(self):
+        """OpenMS' own ModificationsDB entries (CUSTOM0-9, PhosphoDecoy; record id 99900 and up) are left out."""
+        assert all(accession < 99900 for accession in UNIMOD_MASS)
+        assert 99900 not in UNIMOD_MASS
+        assert 99913 not in UNIMOD_MASS
+        assert mass_to_unimod(1.0078, "K") is None  # CUSTOM0, +1.00784 on every residue
+        assert mass_to_unimod(79.9663, "A") is None  # PhosphoDecoy on A/L/G
+
+    @pytest.mark.parametrize("mass", [float("nan"), float("inf"), float("-inf")])
+    def test_non_finite_mass(self, mass):
+        assert mass_to_unimod(mass) is None
+        assert mass_to_unimod(mass, "K") is None
+
+    def test_mass_without_a_unimod_entry_at_the_site(self):
+        """TMT6plex is not defined on Asp, so the mass stays unresolved there."""
+        assert mass_to_unimod(229.1629, "D") is None
+        assert mass_tag(229.1629, "D") == "+229.1629"
+        assert mass_tag(229.1629, "K") == "UNIMOD:737"
+
+
+class TestLabelledPrecursorMz:
+    """``compute_precursor_mz`` of labelled peptides equals pyopenms ``AASequence`` m/z."""
+
+    @pytest.mark.parametrize(
+        ("accession", "name"),
+        [(737, "TMT6plex"), (2016, "TMTpro"), (214, "iTRAQ4plex"), (730, "iTRAQ8plex"), (888, "mTRAQ")],
+    )
+    @pytest.mark.parametrize("charge", [2, 3])
+    def test_label_mz(self, accession, name, charge):
+        peptidoform = f"[UNIMOD:{accession}]-PEPTIDEK[UNIMOD:{accession}]"
+        expected = oms.AASequence.fromString(f"({name})PEPTIDEK({name})").getMZ(charge)
+        assert compute_precursor_mz(peptidoform, charge) == pytest.approx(expected, abs=1e-4)
 
 
 class TestBuildProforma:

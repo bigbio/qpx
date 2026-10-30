@@ -82,18 +82,68 @@ class TestFragPipeToProforma:
         assert result == "[UNIMOD:1]-PEPTIDEK"
 
     def test_cterm(self):
-        """Preserve a FragPipe C-terminal token and its terminal position."""
+        """Preserve a FragPipe C-terminal token and its terminal position.
+
+        -0.9840 Da on the C-terminus is Unimod's C-terminal amidation (UNIMOD:2).
+        """
         from qpx.converters.fragpipe.constants import to_modifications
 
         peptidoform, modifications = to_modifications("C-term(-0.9840)", "PEPTIDEK")
-        assert peptidoform == "PEPTIDEK-[-0.984]"
+        assert peptidoform == "PEPTIDEK-[UNIMOD:2]"
         assert modifications == [
             {
-                "name": "CHEMMOD:-0.984",
+                "name": "UNIMOD:2",
+                "accession": "UNIMOD:2",
+                "positions": [{"position": 9, "amino_acid": None, "scores": None}],
+            }
+        ]
+
+    def test_cterm_unknown_mass(self):
+        """A C-terminal mass without a Unimod entry keeps its mass and terminal position."""
+        from qpx.converters.fragpipe.constants import to_modifications
+
+        peptidoform, modifications = to_modifications("C-term(-1.2345)", "PEPTIDEK")
+        assert peptidoform == "PEPTIDEK-[-1.2345]"
+        assert modifications == [
+            {
+                "name": "CHEMMOD:-1.2345",
                 "accession": None,
                 "positions": [{"position": 9, "amino_acid": None, "scores": None}],
             }
         ]
+
+    @pytest.mark.parametrize(
+        ("mass", "accession"),
+        [("229.1629", 737), ("304.2071", 2016), ("144.1021", 214), ("304.2054", 730)],
+    )
+    def test_isobaric_labels(self, mass, accession):
+        """TMT6plex, TMTpro, iTRAQ4plex and iTRAQ8plex on the N-terminus and Lys get their own accession.
+
+        The hand-written table returned Cysteinyl (UNIMOD:312) for TMT and
+        Ammonia-loss (UNIMOD:385) for TMTpro and iTRAQ8plex.
+        """
+        from qpx.converters.fragpipe.constants import to_proforma
+
+        result = to_proforma(f"N-term({mass}), 8K({mass})", "PEPTIDEK")
+        assert result == f"[UNIMOD:{accession}]-PEPTIDEK[UNIMOD:{accession}]"
+
+    @pytest.mark.parametrize(
+        ("assigned", "sequence", "expected"),
+        [
+            # Butyryl (UNIMOD:1289) and Crotonaldehyde (UNIMOD:253) weigh the same on Lys
+            ("4K(70.0419)", "PEPK", "PEPK[UNIMOD:1289]"),
+            # Isovaleryl, 2-methylbutyryl and Pentanoyl weigh the same on Lys: no accession
+            ("4K(84.0575)", "PEPK", "PEPK[+84.0575]"),
+            # Unimod has no phosphate on Ala; OpenMS' own PhosphoDecoy (99913) is not Unimod
+            ("1A(79.9663)", "APEPK", "A[+79.9663]PEPK"),
+            # OpenMS' CUSTOM0 (99900) is not Unimod
+            ("2E(1.0078)", "PEPK", "PE[+1.0078]PK"),
+        ],
+    )
+    def test_masses_resolve_to_unimod_accessions_only(self, assigned, sequence, expected):
+        from qpx.converters.fragpipe.constants import to_proforma
+
+        assert to_proforma(assigned, sequence) == expected
 
     def test_multiple_mods(self):
         from qpx.converters.fragpipe.constants import to_proforma
