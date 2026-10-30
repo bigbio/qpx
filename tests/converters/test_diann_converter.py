@@ -236,6 +236,12 @@ class TestDiaNNFeatureConversion:
         errors = FeatureSchema.validate(feature_table)
         assert not errors, f"Schema validation errors: {errors}"
 
+    def test_ion_mobility_is_null_for_data_without_ion_mobility(self, feature_table):
+        """The PXD019909 report has no ion mobility: IM, iIM, Predicted.IM and Predicted.iIM are 0 on every row."""
+        assert feature_table.column("ion_mobility").null_count == feature_table.num_rows
+        cv_names = {entry["cv_name"] for row in feature_table.column("cv_params").to_pylist() for entry in row or []}
+        assert cv_names.isdisjoint({"iim", "predicted_im", "predicted_iim"})
+
     def test_mass_error_ppm_is_null_without_a_measured_mz(self, feature_table):
         """Null only when there is nothing to measure (bigbio/qpx#298).
 
@@ -950,6 +956,36 @@ def test_diann_feature_observed_mz_is_null_without_mz_source(tmp_path):
     rows = pq.read_table(output_path).to_pylist()
     assert len(rows) == 1
     assert rows[0]["observed_mz"] is None, "absent observed_mz must be NULL, not a 0.0 sentinel"
+
+
+def test_diann_feature_ion_mobility_is_null_without_ion_mobility_data(tmp_path):
+    """DIA-NN reports IM, Predicted.IM and Predicted.iIM as 0 for data acquired without IMS.
+
+    DIA-NN 1.8 also writes iIM = 0: all 195,691 PXD036609 features had
+    ion_mobility 0.0 and the three cv values '0'. DIA-NN 2.x keeps a library iIM
+    (0.75 to 1.38 on every row of the plexDIA MSV000093870). A 1/K0 or drift time
+    is never 0: each zero is null or left out, while a library iIM and a measured
+    ion mobility are kept.
+    """
+    zero_im_columns = ("IM", "IM.Start", "IM.Stop", "Predicted.IM", "Predicted.iIM")
+    diann_18, measured = _two_precursor_report_rows()
+    diann_2x = {**measured, "Modified.Sequence": "PEPTIDEA", "Stripped.Sequence": "PEPTIDEA", "Precursor.Id": "PEPTIDEA2"}
+    diann_18.update(dict.fromkeys(zero_im_columns, 0.0), iIM=0.0)
+    diann_2x.update(dict.fromkeys(zero_im_columns, 0.0), iIM=1.05)
+    measured.update({"IM": 0.95, "IM.Start": 0.93, "IM.Stop": 0.97, "iIM": 0.9, "Predicted.IM": 0.96, "Predicted.iIM": 0.91})
+
+    rows = {row["sequence"]: row for row in _feature_rows_single_run(tmp_path, [diann_18, measured, diann_2x])}
+
+    def ion_mobility(row):
+        cv = {entry["cv_name"]: entry["cv_value"] for entry in row["cv_params"] or []}
+        fields = tuple(row[field] for field in ("ion_mobility", "ion_mobility_start", "ion_mobility_stop"))
+        return fields, {name: cv.get(name) for name in ("iim", "predicted_im", "predicted_iim")}
+
+    assert ion_mobility(rows["PEPTIDEK"]) == ((None, None, None), {"iim": None, "predicted_im": None, "predicted_iim": None})
+    assert ion_mobility(rows["PEPTIDEA"]) == ((None, None, None), {"iim": "1.05", "predicted_im": None, "predicted_iim": None})
+    fields, cv = ion_mobility(rows["PEPTIDER"])
+    assert fields == pytest.approx((0.95, 0.93, 0.97))
+    assert cv == {"iim": "0.9", "predicted_im": "0.96", "predicted_iim": "0.91"}
 
 
 def test_diann_feature_warns_on_runs_missing_ms_info(tmp_path, caplog):

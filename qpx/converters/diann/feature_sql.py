@@ -40,6 +40,14 @@ _CV_MAPPINGS = [
     ("iIM", "iim"),
 ]
 
+# Ion mobility fields and cv columns. For data acquired without ion mobility
+# separation, DIA-NN reports IM (IM.Start / IM.Stop), Predicted.IM and
+# Predicted.iIM as 0; DIA-NN 1.8 also writes iIM = 0, while DIA-NN 2.x reports a
+# library iIM. A 1/K0 or drift time is never 0, so each value is checked on its
+# own and a 0 is written as null (or left out of cv_params).
+_ION_MOBILITY_FIELDS = ("ion_mobility", "ion_mobility_start", "ion_mobility_stop")
+_ION_MOBILITY_CV_COLUMNS = frozenset({"Predicted.IM", "Predicted.iIM", "iIM"})
+
 
 _RT_SECONDS_FACTOR = 60.0
 
@@ -189,12 +197,18 @@ def _build_acquisition_select_parts(resolved: dict, report_cols: set[str]) -> li
         else "NULL::FLOAT AS rt"
     )
 
-    ion_mobility_col = resolved.get("ion_mobility")
-    parts.append(
-        f"{_safe_float_sql(ion_mobility_col)} AS ion_mobility"
-        if ion_mobility_col and has_column(ion_mobility_col)
-        else "NULL::FLOAT AS ion_mobility"
-    )
+    parts.extend(_build_ion_mobility_select_parts(resolved, report_cols))
+    return parts
+
+
+def _build_ion_mobility_select_parts(resolved: dict, report_cols: set[str]) -> list[str]:
+    """Build ion mobility expressions: NULL when the column is absent or holds DIA-NN's 0 (no ion mobility data)."""
+    parts: list[str] = []
+    for field in _ION_MOBILITY_FIELDS:
+        column = resolved.get(field)
+        parts.append(
+            f"NULLIF({_safe_float_sql(column)}, 0) AS {field}" if column and column in report_cols else f"NULL::FLOAT AS {field}"
+        )
     return parts
 
 
@@ -281,10 +295,6 @@ def _build_metadata_select_parts(
         if pg_qvalue_col and has_column(pg_qvalue_col)
         else "NULL::DOUBLE AS pg_global_qvalue"
     )
-
-    for field in ("ion_mobility_start", "ion_mobility_stop"):
-        column = resolved.get(field)
-        parts.append(f"{_safe_float_sql(column)} AS {field}" if column and has_column(column) else f"NULL::FLOAT AS {field}")
 
     genes_col = resolved.get("gg_names")
     if genes_col and has_column(genes_col):
@@ -519,6 +529,8 @@ def _build_cv_params_sql(r: dict, _has) -> str:
     for diann_col, cv_name in _CV_MAPPINGS:
         if _has(diann_col):
             chk = f'(r."{diann_col}" IS NOT NULL AND CAST(r."{diann_col}" AS VARCHAR) != \'\')'
+            if diann_col in _ION_MOBILITY_CV_COLUMNS:
+                chk = f'({chk} AND TRY_CAST(r."{diann_col}" AS DOUBLE) IS DISTINCT FROM 0)'
             checks.append(chk)
             entries.append(
                 f"CASE WHEN {chk} THEN STRUCT_PACK(cv_name := '{cv_name}', cv_value := CAST(r.\"{diann_col}\" AS VARCHAR)) END"
