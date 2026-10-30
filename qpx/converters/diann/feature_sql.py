@@ -391,6 +391,7 @@ def _aggregate_channel_rows_sql(row_sql: str, target_schema: pa.Schema) -> str:
         "pg_ids",
         # Producer-specific optional fields not emitted by DIA-NN.
         "modification_candidates",
+        "identified_labels",
         "quantification_unit_id",
         "compensation_voltage",
         "consensus_rt",

@@ -15,9 +15,12 @@ molecule gets the same string, and therefore the same identity, whichever
 tool produced it:
 
 1. **Every modification is written inline**, including fixed modifications
-   (carbamidomethyl cysteine) and isobaric or MS1 labels (TMT, iTRAQ, SILAC,
-   dimethyl), even where the search engine leaves them out of its own
-   sequence column.
+   (carbamidomethyl cysteine), isobaric labels (TMT, iTRAQ) and the MS1 label
+   (SILAC, dimethyl, mTRAQ) of an identified PSM, even where the search engine
+   leaves them out of its own sequence column. A feature that holds a whole
+   MS1-label multiplet carries its lightest partner's peptidoform, since the
+   partners differ only in the label
+   ([MS1 labels](intensities.md#ms1-labels-silac-dimethyl-mtraq)).
 2. **A modification with a Unimod entry is written as `UNIMOD:n`** in upper
    case. Names (`Oxidation`, `GlyGly (K)`) and PSI-MOD accessions are mapped to
    their Unimod accession.

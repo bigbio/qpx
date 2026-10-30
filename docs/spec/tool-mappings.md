@@ -17,7 +17,8 @@ The PSM (Peptide Spectrum Match) view captures spectrum-level identification res
 | QPX Field | MaxQuant | DIA-NN | FragPipe |
 | --- | --- | --- | --- |
 | `sequence` | Sequence | Stripped.Sequence | Peptide |
-| `peptidoform` | Modified sequence | Modified.Sequence | Modified Peptide |
+| `peptidoform` | Modified sequence, plus the SILAC label modifications of the `Labeling state` (summary.txt `Labels<n>`) | Modified.Sequence | Modified Peptide |
+| `label` | Labeling state (SILAC) | --- | --- |
 | `charge` | Charge | Precursor.Charge | Charge |
 | `posterior_error_probability` | PEP | PEP | --- |
 | `is_decoy` | Reverse | --- | --- |
@@ -48,7 +49,8 @@ The Feature view captures quantified peptide features with intensity data. Featu
 | `rt_start` | --- | RT.Start | --- | --- |
 | `rt_stop` | --- | RT.Stop | --- | --- |
 | `predicted_rt` | --- | Predicted.RT | --- | --- |
-| `intensities` | Intensity | Precursor.Quantity | Intensity | Intensity + Channel |
+| `intensities` | Intensity; Intensity L/M/H (SILAC) | Precursor.Quantity | Intensity | Intensity + Channel |
+| `identified_labels` | Labeling State, and msms.txt Labeling state of its MS/MS (SILAC) | --- | --- | --- |
 | `pg_accessions` | Proteins | Protein.Group (`DECOY_`-prefixed on decoy rows) | --- | ProteinName |
 | `anchor_protein` | --- | First Protein.Group accession | --- | First ProteinName accession |
 | `pg_positions` | --- | --- | --- | --- |
@@ -66,11 +68,11 @@ The Protein Group view captures protein-level quantification and inference resul
 | `pg_names` | Protein names | Protein.Names | --- |
 | `gg_accessions` | Gene names | Genes | --- |
 | `run_file_name` | combined | Run | --- |
-| `peptide_counts` | Unique peptides | Unique.Stripped.Peptides | Unique Peptides |
-| `feature_counts` | MS/MS count | Precursor.Quantity | Precursor Ions |
+| `peptide_counts` | Unique peptides [exp], Peptides [exp] | Unique.Stripped.Peptides | Unique Peptides |
+| `feature_counts` | --- | Precursor.Quantity | Precursor Ions |
 | `global_qvalue` | Q-value | Global.PG.Q.Value | --- |
-| `intensities` | Intensity, LFQ intensity | PG.Quantity | --- |
-| `additional_intensities` | LFQ intensity, iBAQ | PG.Normalised, PG.MaxLFQ | --- |
+| `intensities` | Intensity [exp]; Intensity L/M/H [exp] (SILAC); Reporter intensity | PG.Quantity | --- |
+| `additional_intensities` | LFQ intensity, iBAQ, MS/MS count; Ratio X/Y [normalized] [exp] (SILAC) | PG.Normalised, PG.MaxLFQ | --- |
 | `is_decoy` | Reverse | Decoy (`--report-decoys`; accessions prefixed `DECOY_`) | --- |
 | `contaminant` | Potential contaminant | --- | --- |
 

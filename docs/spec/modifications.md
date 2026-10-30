@@ -125,7 +125,7 @@ modification_candidates: array[struct{
 }]
 ```
 
-Example: `PEPS[UNIMOD:21]TK[UNIMOD:259][UNIMOD:1]R` from a SILAC heavy channel, where the phosphate could also be on T5 and the +42 Da on K6 could be trimethyl. The heavy label on K6 is certain and co-occurs with the +42 Da, so it is in no group:
+Example: the PSM `PEPS[UNIMOD:21]TK[UNIMOD:259][UNIMOD:1]R` of a SILAC heavy partner (the feature of its multiplet carries the light partner's peptidoform, see [MS1 labels](intensities.md#ms1-labels-silac-dimethyl-mtraq)), where the phosphate could also be on T5 and the +42 Da on K6 could be trimethyl. The heavy label on K6 is certain and co-occurs with the +42 Da, so it is in no group:
 
 ```json
 [

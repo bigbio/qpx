@@ -213,8 +213,8 @@ The following names are commonly used in `additional_intensities` for the PG vie
 | `total_spectral_count` | FragPipe | Number of PSMs for all peptides (razor + shared) |
 | `genes_maxlfq` | DIA-NN | Gene-group level MaxLFQ quantity |
 | `genes_maxlfq_unique` | DIA-NN | Gene-group MaxLFQ using only proteotypic peptides |
-| `ratio_h_l` | MaxQuant (SILAC) | Heavy-to-light protein ratio |
-| `ratio_h_l_normalized` | MaxQuant (SILAC) | Normalised heavy-to-light ratio |
+| `ratio_h_l` | MaxQuant (SILAC) | Heavy-to-light protein ratio, on the `SILAC heavy` row |
+| `ratio_h_l_normalized` | MaxQuant (SILAC) | Normalised heavy-to-light ratio, on the `SILAC heavy` row |
 | `reporter_intensity` | MaxQuant (TMT/iTRAQ) | Raw reporter-ion intensity |
 | `reporter_intensity_corrected` | MaxQuant (TMT/iTRAQ) | Isotope-purity-corrected reporter intensity |
 
@@ -284,8 +284,9 @@ This section shows how output columns from common search engines and pipelines m
     | `MS/MS count [exp]` | `additional_intensities` → `spectral_count` | PSM count as float; the plex's count on every channel row |
     | `Reporter intensity [channel]` | `intensity` | For TMT/iTRAQ, one **row** per channel (`label` = channel) |
     | `Reporter intensity corrected [channel]` | `additional_intensities` → `reporter_intensity_corrected` | |
-    | `Ratio H/L [exp]` | `additional_intensities` → `ratio_h_l` | SILAC ratio |
-    | `Ratio H/L normalized [exp]` | `additional_intensities` → `ratio_h_l_normalized` | Normalised SILAC ratio |
+    | `Intensity L [exp]`, `Intensity M [exp]`, `Intensity H [exp]` | `intensity` | For SILAC, one **row** per label (`label` = `SILAC light`/`medium`/`heavy`) |
+    | `Ratio H/L [exp]` | `additional_intensities` → `ratio_h_l` | SILAC ratio, on the numerator (`SILAC heavy`) row |
+    | `Ratio H/L normalized [exp]` | `additional_intensities` → `ratio_h_l_normalized` | Normalised SILAC ratio, on the numerator row |
 
 === "Quality"
 

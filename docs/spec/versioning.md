@@ -66,6 +66,12 @@ This version defines all core serialized views (PSM, Feature, PG, MZ), the deriv
       ([Intensities](intensities.md#missing-values)). `psm.observed_mz` is
       nullable. `feature.unique` has one definition: a peptide of a one-protein
       group that maps to no other group.
+    - **MS1 labels.** SILAC, dimethyl and mTRAQ multiplets have a normative
+      encoding ([MS1 labels](intensities.md#ms1-labels-silac-dimethyl-mtraq)):
+      one feature row per multiplet, with the lightest partner's peptidoform
+      and one `intensities` entry per channel label, the optional
+      `feature.identified_labels` and `psm.label`, labelled PSM peptidoforms,
+      and `ratio_<num>_<den>` ratios on the numerator label.
 - **1.2** (backward-compatible): adds the [site](site.md) and
   [proteoform](proteoform.md) views, the optional `modification_candidates` column
   of the PSM and Feature views ([Modifications](modifications.md)) and the optional

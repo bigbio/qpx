@@ -13,6 +13,7 @@ Key schema changes:
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Optional
 
 import pandas as pd
@@ -21,12 +22,16 @@ from qpx.converters.base import resolve_columns
 from qpx.converters.mappings import get_field_mappings
 from qpx.converters.maxquant.base_adapter import MaxQuantBaseAdapter
 from qpx.converters.maxquant.constants import (
+    MQ_LABEL_LETTERS,
+    FixedMods,
     mq_calculated_mz,
     mq_observed_mz,
     parse_phospho_probabilities,
     phospho_candidates,
+    summary_label_mods,
     to_proforma,
 )
+from qpx.converters.maxquant.silac import multiplet_labels
 from qpx.converters.ptm import from_proforma
 from qpx.converters.utils import mass_error_ppm, mq_flag_to_bool, safe_float
 from qpx.writers.psm import PsmWriter
@@ -62,7 +67,8 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
     """Convert MaxQuant ``msms.txt`` to ``psm.parquet``.
 
     ``psm.feature_id`` is filled from ``Evidence ID`` when the feature view's
-    ids are passed to :meth:`convert`.
+    ids are passed to :meth:`convert`. A SILAC PSM carries the label of its
+    ``Labeling state`` and that label's modifications.
 
     Usage::
 
@@ -74,6 +80,8 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
     """
 
     _evidence_feature_ids: dict[int, int] = {}
+    # Raw file -> (label, label modifications) of each SILAC labeling state.
+    _states: dict[str, tuple[tuple[str, FixedMods], ...]] = {}
 
     def convert(
         self,
@@ -109,6 +117,7 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
             for c in self._conn.execute("SELECT column_name FROM information_schema.columns WHERE table_name='msms'").fetchall()
         }
         self._resolved = resolve_columns(_PSM_MAP, actual_cols)
+        self._states = self._labeling_states(msms_path, actual_cols, sdrf_path)
 
         # Step 3: Stream and transform
         self.logger.info("Transforming MaxQuant PSMs ...")
@@ -122,6 +131,35 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
                     writer.write_batch(records)
 
         self.logger.info(f"MaxQuant PSM conversion complete -> {output_path}")
+
+    def _labeling_states(self, msms_path: str, columns: set[str], sdrf_path: Optional[str]) -> dict:
+        """``Raw file`` -> ``(label, label modifications)`` of each SILAC labeling state.
+
+        SILAC ``msms.txt`` has a ``Labeling state`` column; the labels of each
+        state are in the ``summary.txt`` MaxQuant writes beside it.
+        """
+        run_labels, experiment_type, _ = self._load_sdrf(sdrf_path)
+        if "Labeling state" not in columns:
+            if experiment_type == "SILAC":
+                raise ValueError("The SDRF declares SILAC labels, but msms.txt has no Labeling state column")
+            return {}
+        summary_path = Path(msms_path).with_name("summary.txt")
+        label_mods = summary_label_mods(summary_path)
+        if not label_mods:
+            raise ValueError(f"SILAC msms.txt needs MaxQuant's summary.txt beside it for the label definitions: {summary_path}")
+        # A SILAC pair is "L"/"H", a triplet "L"/"M"/"H".
+        letters = {run: "LH" if len(states) == 2 else MQ_LABEL_LETTERS[: len(states)] for run, states in label_mods.items()}
+        labels = multiplet_labels("".join(letters.values()), run_labels, experiment_type)
+        return {
+            run: tuple((labels[letter], mods) for letter, mods in zip(letters[run], states)) for run, states in label_mods.items()
+        }
+
+    def _psm_label(self, row: dict) -> tuple[Optional[str], FixedMods]:
+        """The SILAC label and label modifications of a PSM; none when its labeling state is unknown (-1)."""
+        state = row.get("Labeling state")
+        if not self._states or pd.isna(state) or state < 0:
+            return None, ()
+        return self._states[str(row.get(self._resolved.get("run_file_name", "Raw file")))][int(state)]
 
     # ------------------------------------------------------------------
     # Data loading
@@ -160,7 +198,7 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
         identity = self._psm_identity(row)
         if identity is None:
             return None
-        sequence, peptidoform, modifications, site_scores = identity
+        sequence, peptidoform, modifications, site_scores, label = identity
         charge_raw = row.get(r.get("charge", "Charge"), 0)
         charge = int(charge_raw) if pd.notna(charge_raw) else 0
 
@@ -192,6 +230,7 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
         return {
             **spectrum_fields,
             "feature_id": self._evidence_feature_ids.get(int(evidence_id)) if pd.notna(evidence_id) else None,
+            "label": label,
             "sequence": sequence,
             "peptidoform": peptidoform,
             "modifications": modifications,
@@ -215,7 +254,8 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
         """Parse the peptide identity and phospho localization."""
         r = self._resolved
         sequence = str(row.get(r.get("sequence", "Sequence"), ""))
-        peptidoform = to_proforma(str(row.get(r.get("modified_sequence", "Modified sequence"), "")), self._fixed)
+        label, label_mods = self._psm_label(row)
+        peptidoform = to_proforma(str(row.get(r.get("modified_sequence", "Modified sequence"), "")), self._fixed, label_mods)
 
         # Parse phospho site localization probabilities (if available)
         phospho_raw = row.get("Phospho (STY) Probabilities")
@@ -241,7 +281,7 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
             # "Modified sequence" is skipped rather than aborting the whole view.
             self.logger.debug("Skipping PSM row with empty modified sequence (sequence=%r)", sequence)
             return None
-        return sequence, peptidoform, modifications, site_scores
+        return sequence, peptidoform, modifications, site_scores, label
 
     def _psm_spectrum_fields(self, row: dict, charge: int, peptidoform: str) -> dict:
         """Extract PSM spectrum, m/z, and retention-time fields."""

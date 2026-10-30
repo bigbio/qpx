@@ -27,6 +27,13 @@ from qpx.converters.base import resolve_columns
 from qpx.converters.mappings import get_field_mappings
 from qpx.converters.maxquant.base_adapter import MaxQuantBaseAdapter
 from qpx.converters.maxquant.constants import mq_calculated_mz, mq_observed_mz, to_proforma
+from qpx.converters.maxquant.silac import (
+    identified_labels,
+    identified_states,
+    multiplet_intensities,
+    multiplet_labels,
+    ratio_letters,
+)
 from qpx.converters.ptm import from_proforma
 from qpx.converters.utils import mass_error_ppm, mq_flag_to_bool, safe_float, strip_uniprot_prefix
 from qpx.core.files import run_file_stem
@@ -88,6 +95,8 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         self._run_labels: dict[str, set[str]] = {}
         # evidence.txt ``id`` -> feature_id, filled when ``convert`` links evidence.
         self.evidence_feature_ids: dict[int, int] = {}
+        # SILAC: evidence ``id`` -> labeling states identified by MS/MS.
+        self._states_by_evidence: dict[int, list[int]] = {}
 
     def convert(
         self,
@@ -100,6 +109,9 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         link_evidence: bool = False,
     ) -> None:
         """Run the evidence.txt -> feature.parquet conversion.
+
+        For SILAC, the ``msms.txt`` beside *evidence_path* gives the labeling
+        state of every MS/MS for ``identified_labels``.
 
         Args:
             evidence_path: Path to MaxQuant ``evidence.txt``.
@@ -129,14 +141,8 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         }
         self._resolved = resolve_columns(_FEATURE_MAP, actual_cols)
 
-        # Step 3: Load the experiment type, isobaric channels and fixed modifications
-        self._run_labels, _, channels = self._load_sdrf(sdrf_path)
-        self._fixed = self._fixed_mods(sdrf_path, evidence_path)
-        if not channels and any(column.startswith("Reporter intensity") for column in actual_cols):
-            logger.warning(
-                "evidence.txt has reporter intensity columns but no SDRF declares the channels; "
-                "features carry the MS1 intensity only"
-            )
+        # Step 3: Load the experiment type, isobaric channels, SILAC labels and fixed modifications
+        channels = self._load_labels(sdrf_path, evidence_path, actual_cols)
 
         # Step 3b: Build lookup maps from proteinGroups.txt
         pg_maps = self._build_protein_group_maps(protein_groups_path)
@@ -162,6 +168,19 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
 
         self.logger.info(f"MaxQuant feature conversion complete -> {output_path}")
 
+    def _load_labels(self, sdrf_path: Optional[str], evidence_path: str, columns: set[str]) -> list[tuple[str, int]]:
+        """Load the SDRF run labels, SILAC labels and fixed modifications; return the isobaric channels."""
+        self._run_labels, experiment_type, channels = self._load_sdrf(sdrf_path)
+        self._multiplet = multiplet_labels(ratio_letters(columns), self._run_labels, experiment_type)
+        self._states_by_evidence = identified_states(self._conn, columns, evidence_path) if self._multiplet else {}
+        self._fixed = self._fixed_mods(sdrf_path, evidence_path)
+        if not channels and any(column.startswith("Reporter intensity") for column in columns):
+            logger.warning(
+                "evidence.txt has reporter intensity columns but no SDRF declares the channels; "
+                "features carry the MS1 intensity only"
+            )
+        return channels
+
     def _link_evidence(self, df: pd.DataFrame, feature_ids: list[int]) -> None:
         """Map every evidence ``id`` behind the batch's features, collapsed duplicates included."""
         if _EVIDENCE_IDS in df.columns:
@@ -174,6 +193,13 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
             for evidence_id in evidence_ids:
                 if evidence_id is not None and pd.notna(evidence_id):
                     self.evidence_feature_ids[int(evidence_id)] = feature_id
+
+    def _identified_labels(self, row: dict) -> Optional[list[str]]:
+        """Labels of the SILAC partners identified by MS/MS; ``None`` outside SILAC."""
+        if not self._multiplet:
+            return None
+        evidence_ids = row[_EVIDENCE_IDS] if _EVIDENCE_IDS in row else [row.get("id")]
+        return identified_labels(evidence_ids, row.get("Labeling State"), self._multiplet, self._states_by_evidence)
 
     def _deduplicated_evidence_query(self, actual_cols: set[str]) -> str:
         """Collapse rows that share the feature identity, preferring identified evidence.
@@ -476,6 +502,7 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
             "cv_params": None,
             "intensities": intensities or None,
             "additional_intensities": additional_intensities,
+            "identified_labels": self._identified_labels(row),
             "pg_accessions": pg_accessions,
             "anchor_protein": anchor_protein,
             "unique": unique,
@@ -501,6 +528,8 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         if channels:
             intensities, additional_intensities = self._reporter_intensities(row, run_file_name, channels, ri_offset)
             return intensities, additional_intensities or None
+        if self._multiplet:
+            return multiplet_intensities(row, self._multiplet, self._run_labels.get(run_file_stem(run_file_name)))
         # LFQ: prefer MaxQuant-normalised "LFQ intensity" when available,
         # fall back to raw "Intensity" (e.g. for datasets without LFQ algo).
         lfq_val = safe_float(row.get("LFQ intensity"))

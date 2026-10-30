@@ -23,6 +23,7 @@ from qpx.converters.base import resolve_columns
 from qpx.converters.channel_labels import experiment_runs_from_sdrf
 from qpx.converters.mappings import get_field_mappings
 from qpx.converters.maxquant.base_adapter import MaxQuantBaseAdapter
+from qpx.converters.maxquant.silac import multiplet_labels, ratio_entries, ratio_letters
 from qpx.converters.utils import mq_flag_to_bool, safe_float
 from qpx.core.files import run_file_stem
 from qpx.writers.pg import PgWriter
@@ -98,24 +99,14 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
         }
         self._resolved = resolve_columns(_PG_MAP, actual_cols)
 
-        # Step 3: Load SDRF mapping
-        self._run_labels, _, channels = self._load_sdrf(sdrf_path)
+        # Step 3: Load SDRF mapping and the SILAC labels
+        self._run_labels, experiment_type, channels = self._load_sdrf(sdrf_path)
+        self._multiplet = multiplet_labels(ratio_letters(actual_cols), self._run_labels, experiment_type)
 
-        # Step 4: Detect intensity columns in the data
+        # Step 4: Detect intensity columns in the data, and require every
+        # Experiment to resolve to raw files (evidence.txt first, then SDRF).
         intensity_cols = self._detect_intensity_columns(bool(channels))
         self._validate_experiment_run_mappings(intensity_cols)
-
-        # Step 4b: Require every detected Experiment to resolve to raw files
-        # (evidence.txt first, then SDRF) — fail early with the full list rather
-        # than letting the per-row guard silently drop unmapped protein groups.
-        missing = sorted(exp for exp in self._detect_experiments(intensity_cols) if self._lookup_runs(exp) is None)
-        if missing:
-            raise ValueError(
-                "Cannot build grouped_runs for MaxQuant Experiment(s) "
-                + ", ".join(repr(m) for m in missing)
-                + ": no Experiment->runs mapping. Provide evidence.txt (evidence_path) "
-                "or an SDRF (sdrf_path) whose 'source name' matches the Experiment(s)."
-            )
 
         # Step 5: Stream and transform
         self.logger.info("Transforming MaxQuant protein groups ...")
@@ -227,9 +218,12 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
     def _detect_experiments(self, intensity_cols: dict[str, list[str]]) -> set[str]:
         """The Experiment tokens embedded in the detected intensity columns.
 
-        TMT/iTRAQ: ``Reporter intensity N <exp>``; LFQ: ``Intensity <exp>``. This
-        is the set every emitted pg row will need a ``grouped_runs`` mapping for.
+        TMT/iTRAQ: ``Reporter intensity N <exp>``; SILAC: ``Intensity H <exp>``;
+        LFQ: ``Intensity <exp>``. This is the set every emitted pg row will need a
+        ``grouped_runs`` mapping for.
         """
+        if intensity_cols.get("multiplet"):
+            return set(intensity_cols["multiplet"])
         reporter_cols = intensity_cols.get("reporter", [])
         if reporter_cols:
             experiments = set()
@@ -249,6 +243,8 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
 
         # Find Intensity <sample> columns (LFQ-style)
         intensity_cols = [c for c in col_names if c.startswith("Intensity ") and c != "Intensity"]
+        # SILAC experiments take precedence over "Intensity <experiment>", the sum over their labels.
+        multiplet = self._multiplet_experiments(intensity_cols)
         lfq_cols = [c for c in col_names if c.startswith("LFQ intensity ")]
         ibaq_cols = [c for c in col_names if c.startswith("iBAQ ") and c != "iBAQ"]
 
@@ -266,22 +262,32 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
             "lfq": lfq_cols,
             "ibaq": ibaq_cols,
             "reporter": reporter_cols,
+            "multiplet": multiplet,
         }
 
+    def _multiplet_experiments(self, intensity_cols: list[str]) -> list[str]:
+        """The experiments of the SILAC ``Intensity <letter> <experiment>`` columns; empty without SILAC."""
+        if not self._multiplet:
+            return []
+        pattern = re.compile(rf"Intensity [{''.join(self._multiplet)}] (.+)")
+        return sorted({match.group(1) for column in intensity_cols if (match := pattern.fullmatch(column))})
+
     def _validate_experiment_run_mappings(self, intensity_cols: dict[str, list[str]]) -> None:
-        """Fail before writing when an intensity experiment cannot resolve to runs."""
-        experiments = {column.removeprefix("Intensity ") for column in intensity_cols.get("intensity", [])}
-        for column in intensity_cols.get("reporter", []):
-            match = re.match(r"Reporter intensity \d+ (.+)", column)
-            if match:
-                experiments.add(match.group(1))
+        """Fail before writing, listing every intensity experiment that cannot resolve to runs."""
+        experiments = self._detect_experiments(intensity_cols)
         if not experiments:
             raise ValueError(
                 "proteinGroups.txt has no per-experiment intensity columns; "
                 "the total Intensity cannot be assigned to grouped_runs"
             )
-        for experiment in sorted(experiments):
-            self._runs_for(experiment)
+        missing = sorted(exp for exp in experiments if self._lookup_runs(exp) is None)
+        if missing:
+            raise ValueError(
+                "Cannot build grouped_runs for MaxQuant Experiment(s) "
+                + ", ".join(repr(m) for m in missing)
+                + ": no Experiment->runs mapping. Provide evidence.txt (evidence_path) "
+                "or an SDRF (sdrf_path) whose 'source name' matches the Experiment(s)."
+            )
 
     # ------------------------------------------------------------------
     # Transform
@@ -362,6 +368,8 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
         reporter_cols = intensity_cols.get("reporter", [])
         if reporter_cols:
             return self._tmt_records(row, reporter_cols, channels, _make_rec)
+        if intensity_cols.get("multiplet"):
+            return self._multiplet_records(row, intensity_cols["multiplet"], _make_rec)
         return self._lfq_records(row, intensity_cols, _make_rec)
 
     @staticmethod
@@ -543,6 +551,27 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
                 row, exp, ch_cols, channels, ri_offset
             )
             self._warn_dropped_tmt_channels(exp, dropped_channels)
+            if intensities:
+                records.append(make_rec(exp, intensities, additional_intensities))
+        return records
+
+    def _multiplet_records(self, row, experiments: list[str], make_rec) -> list[dict]:
+        """Expand a protein group over SILAC experiments: one label per SDRF sample, with its ratios as numerator."""
+        records: list[dict] = []
+        for exp in experiments:
+            identified = (safe_float(row.get(f"MS/MS count {exp}")) or 0) > 0
+            intensities: list[dict] = []
+            additional_intensities: list[dict] = []
+            for letter, label in self._multiplet.items():
+                if self._run_labels and not self._has_sample(exp, label):
+                    continue
+                value = safe_float(row.get(f"Intensity {letter} {exp}")) or 0.0
+                if value <= 0 and not identified:
+                    continue
+                intensities.append({"label": label, "intensity": value if value > 0 else None})
+                ratios = ratio_entries(row, self._multiplet, letter, exp)
+                if ratios:
+                    additional_intensities.append({"label": label, "intensities": ratios})
             if intensities:
                 records.append(make_rec(exp, intensities, additional_intensities))
         return records

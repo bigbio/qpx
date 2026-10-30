@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import re
 from functools import lru_cache
 from typing import Optional
@@ -80,6 +81,17 @@ def sdrf_fixed_mods(entries: Optional[list[dict]]) -> FixedMods:
     return tuple(fixed)
 
 
+def _named_fixed_mods(names: str) -> FixedMods:
+    """``(site, "UNIMOD:n")`` pairs of a MaxQuant modification list such as ``Carbamidomethyl (C);Oxidation (M)``."""
+    fixed: list[tuple[str, str]] = []
+    for name in names.strip().split(";"):
+        match = re.match(r"(.+?)\s+\(([^()]*)\)$", name.strip())
+        uid = unimod_from_name(name) if match else None
+        if uid is not None:
+            fixed.extend((site, f"UNIMOD:{uid}") for site in _site_list(match.group(2)))
+    return tuple(fixed)
+
+
 def parameters_fixed_mods(parameters_path) -> FixedMods:
     """Fixed modifications from the ``Fixed modifications`` row of MaxQuant's ``parameters.txt``."""
     try:
@@ -87,15 +99,56 @@ def parameters_fixed_mods(parameters_path) -> FixedMods:
             row = next((line for line in handle if line.startswith("Fixed modifications\t")), None)
     except FileNotFoundError:
         return ()
-    if row is None:
-        return ()
-    fixed: list[tuple[str, str]] = []
-    for name in row.split("\t", 1)[1].strip().split(";"):
-        match = re.match(r"(.+?)\s+\(([^()]*)\)$", name.strip())
-        uid = unimod_from_name(name) if match else None
-        if uid is not None:
-            fixed.extend((site, f"UNIMOD:{uid}") for site in _site_list(match.group(2)))
-    return tuple(fixed)
+    return _named_fixed_mods(row.split("\t", 1)[1]) if row is not None else ()
+
+
+# MaxQuant SILAC labels, as named in summary.txt ``Labels<n>``: (residue, UNIMOD accession).
+MQ_SILAC_LABELS: dict[str, tuple[str, int]] = {
+    "Arg6": ("R", 188),
+    "Arg10": ("R", 267),
+    "Lys4": ("K", 481),
+    "Lys6": ("K", 188),
+    "Lys8": ("K", 259),
+}
+
+# Multiplet letters of MaxQuant's column names (``Intensity H``), lightest first.
+MQ_LABEL_LETTERS = "LMH"
+
+
+def _summary_runs(summary_path) -> list[dict]:
+    """The per-raw-file rows of MaxQuant's ``summary.txt``; empty when the file is absent."""
+    try:
+        with open(summary_path, encoding="utf-8", newline="") as handle:
+            rows = list(csv.DictReader(handle, delimiter="\t"))
+    except FileNotFoundError:
+        return []
+    # The closing "Total" row has no multiplicity.
+    return [row for row in rows if (row.get("Multiplicity") or "").isdigit()]
+
+
+def summary_fixed_mods(summary_path) -> FixedMods:
+    """Fixed modifications from MaxQuant's ``summary.txt``; MaxQuant 2 leaves them out of ``parameters.txt``."""
+    names = next((row["Fixed modifications"] for row in _summary_runs(summary_path) if row.get("Fixed modifications")), "")
+    return _named_fixed_mods(names)
+
+
+def summary_label_mods(summary_path) -> dict[str, tuple[FixedMods, ...]]:
+    """Label modifications of each labeling state, per raw file, from MaxQuant's ``summary.txt``.
+
+    ``Labels<n>`` names the labels of state *n* (``Arg6;Lys6``); a state without
+    labels has none. Empty when ``summary.txt`` is absent.
+    """
+    states: dict[str, tuple[FixedMods, ...]] = {}
+    for row in _summary_runs(summary_path):
+        per_state = []
+        for state in range(int(row["Multiplicity"])):
+            names = [name for name in (row.get(f"Labels{state}") or "").split(";") if name]
+            unknown = [name for name in names if name not in MQ_SILAC_LABELS]
+            if unknown:
+                raise ValueError(f"{summary_path}: unsupported MaxQuant label(s) {', '.join(unknown)}")
+            per_state.append(tuple((MQ_SILAC_LABELS[name][0], f"UNIMOD:{MQ_SILAC_LABELS[name][1]}") for name in names))
+        states[row["Raw file"]] = tuple(per_state)
+    return states
 
 
 def _with_fixed_mods(sequence: str, mods: list[tuple[int, str]], fixed_mods: FixedMods) -> list[tuple[int, str]]:
@@ -116,7 +169,7 @@ def _with_fixed_mods(sequence: str, mods: list[tuple[int, str]], fixed_mods: Fix
 
 
 @lru_cache(maxsize=8192)
-def to_proforma(modified_sequence: Optional[str], fixed_mods: FixedMods = ()) -> str:
+def to_proforma(modified_sequence: Optional[str], fixed_mods: FixedMods = (), label_mods: FixedMods = ()) -> str:
     """Convert a MaxQuant Modified sequence to ProForma notation.
 
     MaxQuant wraps sequences in underscores and uses parenthetical
@@ -127,7 +180,9 @@ def to_proforma(modified_sequence: Optional[str], fixed_mods: FixedMods = ()) ->
         _(ac)PEPTIDEK_                      -> [UNIMOD:1]-PEPTIDEK
 
     *fixed_mods* (``(site, tag)`` pairs) are written inline, since MaxQuant
-    omits fixed modifications and isobaric labels from the sequence.
+    omits fixed modifications and isobaric labels from the sequence. The SILAC
+    *label_mods* of a labelled PSM go on every matching residue, beside any
+    other modification there.
     """
     if not isinstance(modified_sequence, str) or not modified_sequence:
         return ""
@@ -164,7 +219,8 @@ def to_proforma(modified_sequence: Optional[str], fixed_mods: FixedMods = ()) ->
             i += 1
 
     plain_seq = "".join(plain_chars)
-    return build_proforma(plain_seq, _with_fixed_mods(plain_seq, mods, fixed_mods))
+    labels = [(position, tag) for position, aa in enumerate(plain_seq, start=1) for site, tag in label_mods if site == aa]
+    return build_proforma(plain_seq, labels + _with_fixed_mods(plain_seq, mods, fixed_mods))
 
 
 def mq_calculated_mz(peptidoform: Optional[str], charge: int, neutral_mass: Optional[float]) -> Optional[float]:

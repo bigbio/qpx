@@ -58,6 +58,41 @@ In a label-free quantification experiment, each feature row has a single intensi
 ]
 ```
 
+### MS1 labels (SILAC, dimethyl, mTRAQ)
+
+Partners of an MS1-label multiplet are the same peptide with different isotope
+labels, quantified side by side in one run. QPX encodes them as follows:
+
+- **One feature row per multiplet per run.** `intensities` has one entry per
+  channel label, using the canonical labels of the sdrf-pipelines channel map
+  (`SILAC light`, `SILAC medium`, `SILAC heavy`, `DIMETHYL0`…`DIMETHYL8`,
+  `MTRAQ0`/`MTRAQ4`/`MTRAQ8`), and each label resolves to its sample through
+  `run.samples`.
+- **The feature peptidoform is the lightest partner's**: no SILAC label, the
+  lightest dimethyl or mTRAQ label inline. The identity composite is unchanged
+  and one multiplet has one `feature_id`. `calculated_mz`, `observed_mz` and
+  `mass_error_ppm` describe that partner, as MaxQuant reports them.
+- **`feature.identified_labels`** lists the labels whose partner was identified
+  by MS/MS (MaxQuant `Labeling state`); the others were quantified by their
+  isotope pattern only.
+- **A PSM is the identified partner.** `psm.peptidoform` carries its label
+  modifications, `psm.label` names its channel, and `psm.feature_id` links it to
+  the multiplet's feature row (the peptidoforms differ by design).
+- **Ratios** go on the numerator label's entry as `ratio_<num>_<den>`, with
+  `<num>` and `<den>` the lower-case channel suffixes (`l`, `m`, `h` for SILAC,
+  the mass offset for dimethyl and mTRAQ): `ratio_h_l` and
+  `ratio_h_l_normalized` on the `SILAC heavy` entry. The denominator label is
+  the reference.
+- **One sample may carry several labels** (pulsed SILAC, spike-in standards);
+  the labels stay separate entries, and consumers must not sum them.
+
+```json
+[
+  {"label": "SILAC light", "intensity": 107210000.0},
+  {"label": "SILAC heavy", "intensity": 95337000.0}
+]
+```
+
 ### Missing values
 
 An entry with a null `intensity` marks a label the feature was identified in but not quantified,

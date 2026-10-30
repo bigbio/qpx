@@ -109,6 +109,11 @@ fields:
   additional_intensities:
     type: "list<additional_intensity>"
     doc: "Tool-provided intensities (normalized, LFQ, iBAQ) read from upstream output"
+  identified_labels:
+    type: "list<string>"
+    optional: true
+    nullable: true
+    doc: "MS1-label multiplets (SILAC, dimethyl, mTRAQ): the labels whose partner was identified by MS/MS. Null when not reported or for a feature that is not a multiplet."
 
   # Protein mapping
   pg_accessions:

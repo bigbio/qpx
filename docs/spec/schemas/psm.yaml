@@ -115,6 +115,12 @@ fields:
     optional: true
     doc: "Fragment ion mobility values"
 
+  label:
+    type: string
+    optional: true
+    nullable: true
+    doc: "MS1-labelled experiments (SILAC, dimethyl, mTRAQ): the channel label of the identified precursor, whose label modifications the peptidoform carries. Null otherwise."
+
   # Optional cross-reference
   feature_id:
     type: int64

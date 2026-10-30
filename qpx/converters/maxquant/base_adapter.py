@@ -14,7 +14,7 @@ import pandas as pd
 
 from qpx.converters.base import BaseConverter
 from qpx.converters.channel_labels import label_unimod, normalize_label, read_sdrf_labels, resolve_channel_labels
-from qpx.converters.maxquant.constants import FixedMods, parameters_fixed_mods, sdrf_fixed_mods
+from qpx.converters.maxquant.constants import FixedMods, parameters_fixed_mods, sdrf_fixed_mods, summary_fixed_mods
 from qpx.converters.ptm import NTERM
 from qpx.converters.utils import strip_uniprot_prefix
 from qpx.core.files import run_file_stem
@@ -29,6 +29,8 @@ class MaxQuantBaseAdapter(BaseConverter):
 
     # Fixed modifications written into peptidoforms; set by ``convert``.
     _fixed: FixedMods = ()
+    # SILAC multiplet letter -> label, lightest first; set by ``convert``.
+    _multiplet: dict[str, str] = {}
 
     @staticmethod
     def _norm_uniprot_id(pid: str) -> str:
@@ -48,8 +50,9 @@ class MaxQuantBaseAdapter(BaseConverter):
 
         MaxQuant leaves fixed modifications and isobaric labels out of
         ``Modified sequence``. They are read from the SDRF ``MT=fixed`` entries,
-        else from the ``parameters.txt`` MaxQuant writes next to *source_path*;
-        an isobaric label neither lists is added from the SDRF channel labels.
+        else from the ``parameters.txt`` or ``summary.txt`` MaxQuant writes next
+        to *source_path*; an isobaric label none lists is added from the SDRF
+        channel labels.
         """
         fixed: FixedMods = ()
         if sdrf_path:
@@ -57,7 +60,12 @@ class MaxQuantBaseAdapter(BaseConverter):
             from qpx.core.sdrf import SDRFHandler
 
             fixed = sdrf_fixed_mods(SdrfConverter.parse_modification_params(SDRFHandler(sdrf_path).sdrf_table))
-        fixed = fixed or parameters_fixed_mods(Path(source_path).with_name("parameters.txt"))
+        folder = Path(source_path)
+        fixed = (
+            fixed
+            or parameters_fixed_mods(folder.with_name("parameters.txt"))
+            or summary_fixed_mods(folder.with_name("summary.txt"))
+        )
         label = label_unimod(read_sdrf_labels(sdrf_path))
         if label is not None and all(tag != f"UNIMOD:{label}" for _, tag in fixed):
             fixed += ((NTERM, f"UNIMOD:{label}"), ("K", f"UNIMOD:{label}"))
