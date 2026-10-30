@@ -1,4 +1,4 @@
-"""Quantification units, labels and analyte keys of Dataset.intensity() and design_matrix()."""
+"""Quantification units, labels and analyte keys of Dataset.intensity(), design_matrix() and MuData."""
 
 import logging
 
@@ -6,8 +6,9 @@ import pyarrow.parquet as pq
 import pytest
 
 from qpx.dataset import Dataset
-from qpx.writers import FeatureWriter, PgWriter, RunWriter
-from tests.conftest import make_feature_record, make_pg_record, make_run_record
+from qpx.mudata import build_mudata
+from qpx.writers import FeatureWriter, PgWriter, RunWriter, SampleWriter
+from tests.conftest import make_feature_record, make_pg_record, make_run_record, make_sample_record
 
 
 def _run(name, samples):
@@ -153,3 +154,86 @@ def test_unmatched_labels_of_a_single_sample_run_do_not_add_up(tmp_path):
     with Dataset(_write(tmp_path, runs, features=[pair, lone])) as ds:
         rows = ds.intensity("peptide").to_df()
     assert rows[["feature_id", "intensity"]].values.tolist() == [["ANOTHERK", 5.0]]
+
+
+def _lfq(name, intensity):
+    return {"label": name, "intensities": [{"intensity_name": "lfq", "intensity_value": intensity}]}
+
+
+@pytest.fixture(name="fractionated")
+def _fractionated(tmp_path):
+    """S1 in fractions f1 and f2 (one unit), with a decoy, two groups led by P1 and an LFQ intensity."""
+    runs = [_run("f1", [("S1", "LFQ", 1)]), _run("f2", [("S1", "LFQ", 1)])]
+    pgs = [_pg(["P1"], ["f2", "f1"], "LFQ", 100.0), _pg(["P2", "P1"], ["f1", "f2"], "LFQ", 40.0)]
+    pgs[1]["anchor_protein"] = "P1"
+    pgs[0]["additional_intensities"] = [_lfq("LFQ", 90.0)]
+    decoy = _pg(["REV__P9"], ["f1", "f2"], "LFQ", 7.0)
+    decoy["is_decoy"] = True
+    features = []
+    for run, peptide, members, intensity in (
+        ("f1", "ONLYK", ["P1"], 10.0),
+        ("f1", "ONLYK", ["P1"], 5.0),
+        ("f2", "SHAREDK", ["P1", "P2"], 3.0),
+    ):
+        feature = make_feature_record(
+            run_file_name=run,
+            sequence=peptide,
+            peptidoform=peptide,
+            anchor_protein="P1",
+            intensities=[{"label": "LFQ", "intensity": intensity}],
+        )
+        feature["pg_accessions"] = [{"accession": accession, "start": None, "end": None} for accession in members]
+        feature["additional_intensities"] = [_lfq("LFQ", intensity / 2)]
+        features.append(feature)
+    unquantified = make_feature_record(
+        run_file_name="f2", sequence="NOQUANTK", peptidoform="NOQUANTK", intensities=[{"label": "LFQ", "intensity": None}]
+    )
+    decoy_feature = make_feature_record(run_file_name="f1", sequence="KEDITPEP", peptidoform="KEDITPEP")
+    decoy_feature["is_decoy"] = True
+    _write(tmp_path, runs, [*pgs, decoy], [*features, unquantified, decoy_feature])
+    with SampleWriter(tmp_path / "x.sample.parquet") as writer:
+        writer.write_batch([make_sample_record("S1")])
+    return tmp_path
+
+
+def test_mudata_proteins_observe_units_and_groups(fractionated):
+    """One observation per unit with its runs, one variable per group, no decoys, additional intensities as layers."""
+    with Dataset(fractionated) as ds:
+        proteins = build_mudata(ds, modalities=["proteins"], all_intensity_labels=True).mod["proteins"]
+    assert list(proteins.obs.index) == ["f1|LFQ"]
+    assert proteins.obs.loc["f1|LFQ", ["unit", "runs", "sample_accession", "organism"]].tolist() == [
+        "f1",
+        "f1;f2",
+        "S1",
+        "Homo sapiens",
+    ]
+    assert list(proteins.var.index) == ["P1", "P1;P2"]
+    assert proteins.var["anchor_protein"].tolist() == ["P1", "P1"]
+    assert proteins.X.toarray().tolist() == [[100.0, 40.0]]
+    assert proteins.layers["lfq"].toarray().tolist() == [[90.0, 0.0]]
+
+
+def test_mudata_precursors_sum_features_and_skip_decoys(fractionated):
+    """Features of one precursor in one run add up; decoys and unquantified entries are not cells."""
+    with Dataset(fractionated) as ds:
+        mdata = build_mudata(ds, modalities=["precursors", "proteins"])
+    precursors = mdata.mod["precursors"]
+    assert list(precursors.var.index) == ["ONLYK|2", "SHAREDK|2"]
+    assert precursors.X.toarray().tolist() == [[15.0, 0.0], [0.0, 3.0]]
+    assert precursors.X.nnz == 2
+    assert precursors.layers["lfq"].toarray().tolist() == [[7.5, 0.0], [0.0, 1.5]]
+    assert set(precursors.obs["organism"]) == {"Homo sapiens"}
+    mapping = mdata.varp["feature_mapping"].toarray()
+    names = list(mdata.var_names)
+    assert mapping[names.index("ONLYK|2"), names.index("P1")]
+    assert mapping[names.index("SHAREDK|2"), names.index("P1;P2")]
+    assert not mapping[names.index("SHAREDK|2"), names.index("P1")]
+
+
+def test_design_matrix_pivots_an_additional_intensity(fractionated):
+    """value_col names an additional intensity; an unknown name lists the available ones."""
+    with Dataset(fractionated) as ds:
+        assert ds.design_matrix("protein", value_col="lfq").loc["S1"].to_dict() == {"P1": 90.0}
+        assert ds.design_matrix("peptide", value_col="lfq").loc["S1"].to_dict() == {"ONLYK": 7.5, "SHAREDK": 1.5}
+        with pytest.raises(ValueError, match=r"\['lfq'\]"):
+            ds.design_matrix("protein", value_col="ibaq")

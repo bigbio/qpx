@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from qpx.core.convert import QueryResult
+from qpx.core.query import _escape_sql_string
 from qpx.core.sample_resolution import RUN_SAMPLES_SQL, feature_samples_sql
 from qpx.core.sql import escape_path, sql_build
 
@@ -26,6 +27,34 @@ _PEPTIDE_KEYS = {
 _UNIT_AGGREGATES = {"mean": "avg", "median": "median", "sum": "sum", "min": "min", "max": "max"}
 # The row keys of design_matrix.
 _MATRIX_ROWS = {"sample": ("sample_accession",), "unit": ("sample_accession", "label", "unit")}
+# pg and feature with an additional intensity ($name) in place of the primary one.
+# A pg row carries the additional intensities of its own label.
+_PG_ADDITIONAL_SQL = """(
+    SELECT p.* REPLACE (x.intensity_value AS intensity)
+    FROM pg p
+    CROSS JOIN UNNEST(p.additional_intensities) AS _a(a)
+    CROSS JOIN UNNEST(a.intensities) AS _x(x)
+    WHERE a.label = p.label AND x.intensity_name = '$name'
+)"""
+_FEATURE_ADDITIONAL_SQL = """(
+    SELECT * REPLACE (
+        list_filter(
+            list_transform(additional_intensities, lambda a: {
+                'label': a.label,
+                'intensity': list_filter(a.intensities, lambda x: x.intensity_name = '$name')[1].intensity_value
+            }),
+            lambda e: e.intensity IS NOT NULL
+        ) AS intensities
+    )
+    FROM feature
+)"""
+_ADDITIONAL_NAMES_SQL = """
+    SELECT DISTINCT x.intensity_name
+    FROM $table
+    CROSS JOIN UNNEST(additional_intensities) AS _a(a)
+    CROSS JOIN UNNEST(a.intensities) AS _x(x)
+    ORDER BY 1
+"""
 
 
 class _DatasetQueryMixin:
@@ -258,12 +287,14 @@ class _DatasetQueryMixin:
 
     # --- Analysis helpers ---
 
-    def _abundance_sql(self, level: str, key: str | None = None) -> str:
+    def _abundance_sql(self, level: str, key: str | None = None, value_col: str = "intensity") -> str:
         """Long-form abundance SQL: sample_accession, label, unit, feature_id, intensity.
 
         A row holds the quantity of one feature in one sample and label of one
-        quantification unit; the fractions of the unit are summed.
+        quantification unit; the fractions of the unit are summed. *value_col*
+        names the quantity: the primary ``intensity`` or an additional intensity.
         """
+        name = None if value_col == "intensity" else _escape_sql_string(value_col)
         if level == "protein":
             if key is not None:
                 raise ValueError("key applies to level='peptide'; proteins are keyed by their group membership")
@@ -280,12 +311,13 @@ class _DatasetQueryMixin:
             SELECT rs.sample_accession, rs.label, rs.unit,
                    array_to_string(list_sort(p.pg_accessions), ';') AS feature_id,
                    sum(p.intensity) AS intensity
-            FROM pg p
+            FROM $source p
             JOIN run_samples rs ON rs.run_file_name = p.grouped_runs[1] AND rs.label = p.label
             WHERE p.is_decoy = false
             GROUP BY ALL
             """,
                 run_samples=RUN_SAMPLES_SQL,
+                source="pg" if name is None else sql_build(_PG_ADDITIONAL_SQL, name=name),
             )
         if level == "peptide":
             expression = _PEPTIDE_KEYS.get(key or "peptidoform")
@@ -301,7 +333,10 @@ class _DatasetQueryMixin:
             GROUP BY ALL
             """,
                 key=expression,
-                feature_samples=feature_samples_sql("feature", ("sequence", "peptidoform", "charge", "is_decoy")),
+                feature_samples=feature_samples_sql(
+                    "feature" if name is None else sql_build(_FEATURE_ADDITIONAL_SQL, name=name),
+                    ("sequence", "peptidoform", "charge", "is_decoy"),
+                ),
             )
         raise ValueError(f"level must be 'protein' or 'peptide', got '{level}'")
 
@@ -340,6 +375,12 @@ class _DatasetQueryMixin:
         """
         sql = self._abundance_sql(level, key)
         return QueryResult(self._engine.connection, sql)
+
+    def _additional_intensity_names(self, level: str) -> list[str]:
+        """Names of the additional intensities of the level's table."""
+        table = "pg" if level == "protein" else "feature"
+        rows = self._engine.execute(sql_build(_ADDITIONAL_NAMES_SQL, table=table)).fetchall()
+        return [row[0] for row in rows]
 
     def _warn_multilabel_samples(self, agg: str) -> None:
         """Warn when a sample carries several labels in one unit, which by='sample' combines."""
@@ -394,8 +435,8 @@ class _DatasetQueryMixin:
         level : str
             "protein" (uses pg + run) or "peptide" (uses feature + run).
         value_col : str
-            Intensity column to pivot. Only ``"intensity"`` (the primary
-            quantity) is supported; any other value raises ``ValueError``.
+            The quantity to pivot: ``"intensity"`` (the primary quantity) or the
+            ``intensity_name`` of an additional intensity, such as ``"lfq"``.
         fillna : float | None
             Value to fill missing cells; *None* (the default) keeps NaN, so a
             quantity that was not measured is not read as zero.
@@ -419,14 +460,16 @@ class _DatasetQueryMixin:
         """
         import pandas as pd
 
-        if value_col != "intensity":
-            raise ValueError(f"value_col must be 'intensity', got {value_col!r}")
         rows = _MATRIX_ROWS.get(by)
         if rows is None:
             raise ValueError(f"by must be one of {sorted(_MATRIX_ROWS)}, got {by!r}")
         if agg not in _UNIT_AGGREGATES:
             raise ValueError(f"agg must be one of {sorted(_UNIT_AGGREGATES)}, got {agg!r}")
-        sql = self._abundance_sql(level, key)
+        sql = self._abundance_sql(level, key, value_col)
+        if value_col != "intensity":
+            names = self._additional_intensity_names(level)
+            if value_col not in names:
+                raise ValueError(f"value_col must be 'intensity' or an additional intensity {names}, got {value_col!r}")
         if by == "sample":
             self._warn_multilabel_samples(agg)
 

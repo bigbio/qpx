@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import pandas as pd
 
 from qpx.core.files import run_file_stem
-from qpx.core.sql import sql_build
+from qpx.core.sql import sql_build, validate_identifier
 
 if TYPE_CHECKING:
     from qpx.core.engine import DuckDBEngine
@@ -20,9 +20,24 @@ _RUN_OBS_SQL = """
                        rs.label,
                        rs.biological_replicate,
                        rs.technical_replicate,
-                       $optional
-                FROM run r, UNNEST(r.samples) AS _t(rs)
+                       $optional$characteristics
+                FROM run r
+                CROSS JOIN UNNEST(r.samples) AS _t(rs)
+                $sample_join
                 """
+
+
+def _sample_characteristics(engine: DuckDBEngine) -> tuple[str, str]:
+    """Select list and join adding the sample.parquet characteristics, when the dataset has one."""
+    if not _has_view(engine, "sample"):
+        return "", ""
+    columns = [
+        name
+        for name, column_type, *_ in engine.execute("DESCRIBE sample").fetchall()
+        if column_type == "VARCHAR" and name != "sample_accession"
+    ]
+    select = "".join(f", s.{validate_identifier(name)}" for name in columns)
+    return select, "LEFT JOIN sample s ON s.sample_accession = rs.sample_accession"
 
 
 def _has_view(engine: DuckDBEngine, name: str) -> bool:
@@ -61,10 +76,13 @@ def _load_run_obs(
     if _has_view(engine, "run"):
         # fraction and instrument are optional run columns: an absent one reads as null.
         optional = engine.optional_columns("run", "r", ("fraction", "instrument"))
+        characteristics, sample_join = _sample_characteristics(engine)
         df = engine.execute(
             sql_build(
                 _RUN_OBS_SQL,
                 optional=optional,
+                characteristics=characteristics,
+                sample_join=sample_join,
             )
         ).fetchdf()
     else:

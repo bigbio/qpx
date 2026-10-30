@@ -206,7 +206,8 @@ def _write_quant_bundle(tmp_path, prefix, feature_intensities, protein_intensiti
     with FeatureWriter(tmp_path / f"{prefix}.feature.parquet") as writer:
         writer.write_batch([make_feature_record(intensities=feature_intensities)])
     with PgWriter(tmp_path / f"{prefix}.pg.parquet") as writer:
-        writer.write_batch([make_pg_record(intensities=protein_intensities)])
+        # The group of the feature's default pg_accessions, so the two link.
+        writer.write_batch([make_pg_record(intensities=protein_intensities, pg_accessions=["P12345"])])
 
     run = make_run_record()
     run["samples"] = [

@@ -179,60 +179,127 @@ _MULTIPLEXED_QUERIES: dict[str, str] = {
 }
 
 
+# Long rows of the precursors modality. The pivot sums the rows of one cell: the
+# features of one precursor in one run and label, as MaxQuant sums the evidence
+# rows of a peptide in a run. Decoys and entries without a quantity are left out,
+# so an absent cell is not quantified. $label selects one label or every label.
+# UNNEST stays in the select list: a lateral CROSS JOIN UNNEST plans ~25x slower.
 _PRECURSOR_QUERY = """
-    SELECT run_file_name, precursor_id, i.intensity
+    SELECT run_file_name, CAST(i.label AS VARCHAR) AS intensity_label, precursor_id, i.intensity
     FROM (
         SELECT f.run_file_name,
                f.peptidoform || '|' || CAST(f.charge AS VARCHAR) AS precursor_id,
                UNNEST(f.intensities) AS i
         FROM feature f
+        WHERE NOT f.is_decoy
     )
-    WHERE i.label = '$label'
+    WHERE i.intensity IS NOT NULL AND $label
     """
 
-_PRECURSOR_ALL_QUERY = """
-    SELECT run_file_name,
-           CAST(i.label AS VARCHAR) AS intensity_label,
-           precursor_id, i.intensity
+# One row per additional intensity (normalized, LFQ, iBAQ), which become layers.
+_PRECURSOR_LAYER_QUERY = """
+    SELECT run_file_name, CAST(a.label AS VARCHAR) AS intensity_label, precursor_id,
+           x.intensity_name, x.intensity_value AS intensity
     FROM (
-        SELECT f.run_file_name,
-               f.peptidoform || '|' || CAST(f.charge AS VARCHAR) AS precursor_id,
-               UNNEST(f.intensities) AS i
-        FROM feature f
+        SELECT run_file_name, precursor_id, a, UNNEST(a.intensities) AS x
+        FROM (
+            SELECT f.run_file_name,
+                   f.peptidoform || '|' || CAST(f.charge AS VARCHAR) AS precursor_id,
+                   UNNEST(f.additional_intensities) AS a
+            FROM feature f
+            WHERE NOT f.is_decoy
+        )
     )
-    WHERE i.label IS NOT NULL
+    WHERE x.intensity_value IS NOT NULL AND $label
     """
 
-# A protein group's quantification is reported once for a group of runs. Explode
-# grouped_runs so EVERY member run receives the group's intensity, rather than
-# only the first element (the old ``grouped_runs[1]``, which silently dropped all
-# but one run of a genuine multi-run group).
-# Since QPX 1.1 the pg view is flattened: scalar ``label`` / ``intensity`` columns,
-# one row per label, so there is no intensities list to UNNEST. grouped_runs is
-# exploded through ``list_distinct`` so a member run counts once even if a producer
-# repeated it. ID-only rows (null label) are excluded by the label predicate.
-_PROTEIN_QUERY = """
-    SELECT UNNEST(list_distinct(pg.grouped_runs)) AS run_file_name,
-           pg.anchor_protein,
-           pg.intensity AS intensity
-    FROM pg
-    WHERE pg.label = '$label'
+# A protein group is quantified once for its unit, the runs in grouped_runs (the
+# fractions of one sample or plex), so an observation of the proteins modality is
+# a unit, named after its first run. Variables are groups keyed by their sorted
+# membership, since two groups can be led by the same protein. The pg view is
+# flattened: one row per label, scalar label and intensity.
+_UNIT_SQL = "list_sort(list_distinct(p.grouped_runs))[1]"
+_GROUP_SQL = "array_to_string(list_sort(p.pg_accessions), ';')"
+
+_PROTEIN_QUERY = f"""
+    SELECT {_UNIT_SQL} AS run_file_name,
+           CAST(p.label AS VARCHAR) AS intensity_label,
+           {_GROUP_SQL} AS protein_group,
+           p.intensity
+    FROM pg p
+    WHERE NOT p.is_decoy AND p.intensity IS NOT NULL AND $label
     """
 
-_PROTEIN_ALL_QUERY = """
-    SELECT UNNEST(list_distinct(pg.grouped_runs)) AS run_file_name,
-           CAST(pg.label AS VARCHAR) AS intensity_label,
-           pg.anchor_protein,
-           pg.intensity AS intensity
-    FROM pg
-    WHERE pg.label IS NOT NULL
+_PROTEIN_LAYER_QUERY = f"""
+    SELECT run_file_name, intensity_label, protein_group, x.intensity_name, x.intensity_value AS intensity
+    FROM (
+        SELECT run_file_name, intensity_label, protein_group, UNNEST(a.intensities) AS x
+        FROM (
+            SELECT {_UNIT_SQL} AS run_file_name,
+                   CAST(p.label AS VARCHAR) AS intensity_label,
+                   {_GROUP_SQL} AS protein_group,
+                   UNNEST(p.additional_intensities) AS a
+            FROM pg p
+            WHERE NOT p.is_decoy AND $label
+        )
+        WHERE a.label = intensity_label
+    )
+    WHERE x.intensity_value IS NOT NULL
     """
+
+_PROTEIN_VAR_QUERY = f"""
+    SELECT {_GROUP_SQL} AS protein_group,
+           min(p.anchor_protein) AS anchor_protein,
+           min(p.gg_names[1]) AS gene_name
+    FROM pg p
+    WHERE NOT p.is_decoy
+    GROUP BY ALL
+    """
+
+_UNIT_RUNS_QUERY = f"""
+    SELECT {_UNIT_SQL} AS unit,
+           array_to_string(list_sort(list_distinct(flatten(list(p.grouped_runs)))), ';') AS runs
+    FROM pg p
+    WHERE NOT p.is_decoy
+    GROUP BY ALL
+    """
+
+# Columns of a run, not of the unit the proteins modality observes.
+_RUN_ONLY_OBS_COLUMNS = ["run_accession", "fraction"]
+
+
+def _label_condition(column: str, intensity_label: str | None) -> str:
+    """SQL predicate selecting *intensity_label* in *column*, or every label when it is None."""
+    if intensity_label is None:
+        return f"{column} IS NOT NULL"
+    return f"{column} = '{_escape_sql_string(intensity_label)}'"
+
+
+def _query_arrow(engine: DuckDBEngine, query: str, label_column: str, intensity_label: str | None):
+    """Run one of the modality queries for the selected labels as an Arrow table."""
+    sql = sql_build(query, label=_label_condition(label_column, intensity_label))
+    return engine.connection.sql(sql).to_arrow_table()
 
 
 def _detect_intensity_label(engine: DuckDBEngine, table: str = "feature") -> str | None:
     """Return the first intensity label of the given table, or None when it has none."""
     rows = engine.execute(_LABEL_QUERIES[table]).fetchall()
     return rows[0][0] if rows else None
+
+
+def _with_observation_id(table):
+    """Append ``observation_id`` (``run|label``) to an Arrow table of every label."""
+    import pyarrow as pa
+    import pyarrow.compute as pc
+
+    runs = _combine_chunks(table.column("run_file_name"))
+    labels = _combine_chunks(table.column("intensity_label"))
+    observation_id = pc.binary_join_element_wise(
+        pc.cast(runs, pa.large_string()),
+        pc.cast(labels, pa.large_string()),
+        pa.scalar("|", pa.large_string()),
+    )
+    return table.append_column("observation_id", observation_id)
 
 
 def _prepare_observations_arrow(
@@ -247,18 +314,8 @@ def _prepare_observations_arrow(
     concatenated two object columns for every row, which on a large experiment is
     hundreds of millions of throwaway Python strings.
     """
-    import pyarrow as pa
-    import pyarrow.compute as pc
-
     if intensity_label is None:
-        runs = _combine_chunks(table.column("run_file_name"))
-        labels = _combine_chunks(table.column("intensity_label"))
-        observation_id = pc.binary_join_element_wise(
-            pc.cast(runs, pa.large_string()),
-            pc.cast(labels, pa.large_string()),
-            pa.scalar("|", pa.large_string()),
-        )
-        table = table.append_column("observation_id", observation_id)
+        table = _with_observation_id(table)
         obs_index = _sorted_unique(table, "observation_id")
         # Reduce to one row per observation in Arrow *before* touching pandas -
         # the distinct set is the number of run/label pairs, not the row count.
@@ -314,6 +371,30 @@ def _attach_uns_metadata(engine: DuckDBEngine, mdata) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _additional_layers(
+    engine: DuckDBEngine,
+    query: str,
+    label_column: str,
+    intensity_label: str | None,
+    var_col: str,
+    observations: pd.Index,
+    variables: pd.Index,
+) -> dict[str, sparse.csr_matrix]:
+    """One layer per additional intensity name, on the observations and variables of X."""
+    import pyarrow.compute as pc
+
+    table = _query_arrow(engine, query, label_column, intensity_label)
+    row_col = "run_file_name"
+    if intensity_label is None:
+        table = _with_observation_id(table)
+        row_col = "observation_id"
+    layers = {}
+    for name in sorted(table.column("intensity_name").unique().to_pylist()):
+        rows = table.filter(pc.field("intensity_name") == name)
+        layers[name] = _pivot_arrow_to_sparse(rows, row_col, var_col, "intensity", observations, variables)
+    return layers
+
+
 def _build_precursor_adata(
     engine: DuckDBEngine,
     intensity_label: str | None,
@@ -321,16 +402,12 @@ def _build_precursor_adata(
     """Build AnnData from feature.parquet.
 
     obs = runs (one label) or run/label pairs (all labels),
-    var = peptidoform|charge, X = sparse intensity matrix.
+    var = peptidoform|charge, X = sparse intensity matrix,
+    layers = the additional intensities by name.
     """
     import anndata as ad
 
-    if intensity_label is None:
-        table = engine.connection.sql(_PRECURSOR_ALL_QUERY).to_arrow_table()
-    else:
-        sql = sql_build(_PRECURSOR_QUERY, label=_escape_sql_string(intensity_label))
-        table = engine.connection.sql(sql).to_arrow_table()
-
+    table = _query_arrow(engine, _PRECURSOR_QUERY, "i.label", intensity_label)
     if table.num_rows == 0:
         return ad.AnnData()
 
@@ -338,11 +415,25 @@ def _build_precursor_adata(
     precursors = _sorted_unique(table, "precursor_id")
 
     intensity_matrix = _pivot_arrow_to_sparse(table, row_col, "precursor_id", "intensity", observations, precursors)
+    layers = _additional_layers(
+        engine, _PRECURSOR_LAYER_QUERY, "a.label", intensity_label, "precursor_id", observations, precursors
+    )
 
     obs = _load_run_obs(engine, observation_keys, all_labels=intensity_label is None)
     var = pd.DataFrame(index=precursors)
 
-    return ad.AnnData(X=intensity_matrix, obs=obs, var=var)
+    return ad.AnnData(X=intensity_matrix, obs=obs, var=var, layers=layers)
+
+
+def _unit_obs(engine: DuckDBEngine, obs: pd.DataFrame, all_labels: bool) -> pd.DataFrame:
+    """Turn the run metadata of each unit's first run into the unit's metadata."""
+    obs = obs.drop(columns=[column for column in _RUN_ONLY_OBS_COLUMNS if column in obs.columns])
+    units = obs["run_file_name"] if all_labels else obs.index.to_series()
+    runs = engine.execute(_UNIT_RUNS_QUERY).fetchdf().set_index("unit")["runs"]
+    obs.insert(1 if all_labels else 0, "runs", units.map(runs).fillna("").values)
+    if all_labels:
+        obs = obs.rename(columns={"run_file_name": "unit"})
+    return obs
 
 
 def _build_protein_adata(
@@ -351,52 +442,39 @@ def _build_protein_adata(
 ):
     """Build AnnData from pg.parquet.
 
-    obs = runs (one label) or run/label pairs (all labels),
-    var = anchor_protein, X = sparse intensity matrix.
-    var includes gene_name column.
+    obs = quantification units (one label) or unit/label pairs (all labels), with
+    their member runs in ``runs``; var = protein groups (sorted ``pg_accessions``
+    joined by ``;``) with ``anchor_protein`` and ``gene_name``; X = sparse
+    intensity matrix; layers = the additional intensities by name.
     """
     import anndata as ad
 
-    if intensity_label is None:
-        table = engine.connection.sql(_PROTEIN_ALL_QUERY).to_arrow_table()
-    else:
-        sql = sql_build(_PROTEIN_QUERY, label=_escape_sql_string(intensity_label))
-        table = engine.connection.sql(sql).to_arrow_table()
-
+    table = _query_arrow(engine, _PROTEIN_QUERY, "p.label", intensity_label)
     if table.num_rows == 0:
         return ad.AnnData()
 
     table, row_col, observations, observation_keys = _prepare_observations_arrow(table, intensity_label)
-    proteins = _sorted_unique(table, "anchor_protein")
+    groups = _sorted_unique(table, "protein_group")
 
-    intensity_matrix = _pivot_arrow_to_sparse(table, row_col, "anchor_protein", "intensity", observations, proteins)
+    intensity_matrix = _pivot_arrow_to_sparse(table, row_col, "protein_group", "intensity", observations, groups)
+    layers = _additional_layers(engine, _PROTEIN_LAYER_QUERY, "p.label", intensity_label, "protein_group", observations, groups)
 
     obs = _load_run_obs(engine, observation_keys, all_labels=intensity_label is None)
-
-    # Gene names
-    gene_sql = """
-    SELECT DISTINCT pg.anchor_protein,
-           pg.gg_names[1] AS gene_name
-    FROM pg
-    """
-    gene_df = engine.execute(gene_sql).fetchdf()
-    gene_df = gene_df.drop_duplicates(subset="anchor_protein", keep="first")
-    gene_df = gene_df.set_index("anchor_protein").reindex(proteins)
+    obs = _unit_obs(engine, obs, all_labels=intensity_label is None)
 
     # A missing gene must still serialise as a string. When every protein lacks a
     # gene the column comes back float64 (all NaN) and h5py refuses to write var
     # ("Can't implicitly convert non-string objects to strings"). That is the norm
     # for TMT datasets whose consensusXML carries no GN= descriptions, so gg_names
     # is NULL on every row. Same reason _load_run_obs fills its string columns.
-    gene_names = gene_df["gene_name"].fillna("").astype(str)
+    var = engine.execute(_PROTEIN_VAR_QUERY).fetchdf().set_index("protein_group").reindex(groups)
+    var = var.fillna("").astype(str)
 
-    var = pd.DataFrame({"gene_name": gene_names.values}, index=proteins)
-
-    return ad.AnnData(X=intensity_matrix, obs=obs, var=var)
+    return ad.AnnData(X=intensity_matrix, obs=obs, var=var, layers=layers)
 
 
 def _build_feature_mapping(engine: DuckDBEngine, mdata) -> sparse.csr_matrix:
-    """Build boolean sparse adjacency linking precursor IDs to protein IDs.
+    """Build boolean sparse adjacency linking precursor IDs to protein groups.
 
     Returns a symmetric CSR matrix of shape (N, N) where N is ``mdata.n_vars``
     — the total number of var_names across **all** modalities present, in their
@@ -405,7 +483,8 @@ def _build_feature_mapping(engine: DuckDBEngine, mdata) -> sparse.csr_matrix:
     precursor and protein blocks are positioned by their per-modality offset on
     the global var axis (not by a global name lookup), so a protein accession
     that also appears as an expression var is never mislocated. Non-zero entries
-    indicate a precursor-protein relationship.
+    indicate that a feature of the precursor belongs to the group
+    (``feature.pg_accessions``).
     """
     if "precursors" not in mdata.mod or "proteins" not in mdata.mod:
         raise ValueError("Both 'precursors' and 'proteins' modalities are required for feature mapping.")
@@ -427,8 +506,9 @@ def _build_feature_mapping(engine: DuckDBEngine, mdata) -> sparse.csr_matrix:
     sql = """
     SELECT DISTINCT
            f.peptidoform || '|' || CAST(f.charge AS VARCHAR) AS precursor_id,
-           f.anchor_protein
+           array_to_string(list_sort(list_transform(f.pg_accessions, lambda x: x.accession)), ';') AS protein_group
     FROM feature f
+    WHERE NOT f.is_decoy
     """
     df = engine.execute(sql).fetchdf()
 
@@ -436,7 +516,7 @@ def _build_feature_mapping(engine: DuckDBEngine, mdata) -> sparse.csr_matrix:
         return sparse.csr_matrix((n, n), dtype=bool)
 
     precursor_local = precursor_names.get_indexer(df["precursor_id"])
-    protein_local = protein_names.get_indexer(df["anchor_protein"])
+    protein_local = protein_names.get_indexer(df["protein_group"])
 
     mask = (precursor_local >= 0) & (protein_local >= 0)
     precursor_pos = precursor_local[mask] + offsets["precursors"]

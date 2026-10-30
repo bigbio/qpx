@@ -115,15 +115,22 @@ Converters that produce expression output also emit a single combined **MuData**
 | Modality (`mdata.mod[...]`) | `obs` (rows) | `var` (columns) | `X` |
 |---|---|---|---|
 | `precursors` | run (`run_file_name`, joined to sample metadata) | precursor identity `peptidoform\|charge` | sparse precursor intensity matrix |
-| `proteins` | run (`run_file_name`) | `anchor_protein` (with `gene_name` carried in `var`) | sparse protein-group intensity matrix |
+| `proteins` | quantification unit (`unit`, the first of its runs, listed in `runs`; joined to sample metadata) | protein group, its sorted `pg_accessions` joined by `;` (with `anchor_protein` and `gene_name` in `var`) | sparse protein-group intensity matrix |
 | `expression` | Absolute Expression observations | AE variables | Absolute Expression matrix (loaded from the AE view when present) |
 | `differential` | Differential Expression observations | DE variables | Differential Expression matrix (loaded from the DE view when present) |
 
 A modality is included only when its source data is available, so a given `.h5mu` may carry a subset of these four.
 
+Converters write every label as its own observation (`run|label`, or `unit|label` for proteins). `build_mudata()` keeps label-free data at one observation per run (or unit) unless `all_intensity_labels=True`.
+
+- **Units.** A protein group is quantified once for the runs in `grouped_runs` (the fractions of one sample or plex), so the `proteins` modality has one observation per unit, not a copy of its value per fraction. Run-level columns (`run_accession`, `fraction`) are left out of its `obs`.
+- **Sample metadata.** `obs` carries the sample of each run and label from `run.samples` and its characteristics from `sample.parquet` (organism, disease, ...), when present.
+- **Cells.** `X` is sparse: a cell that was not quantified is not stored. Decoys are left out. The features of one precursor in one run and label are summed into one cell, as MaxQuant sums the evidence rows of a peptide in a run.
+- **Layers.** `X` holds the primary `intensity`, the tool's unnormalised quantity (MaxQuant `Intensity`, DIA-NN `PG.Quantity`, FragPipe razor `Intensity`; see the tool mappings in [Protein Group](pg.md#recommended-intensity-names) and [Feature](feature.md)). Each additional intensity (`additional_intensities`, such as `maxlfq`, `lfq` or `ibaq`) is a layer named after its `intensity_name`, on the observations and variables of `X`.
+
 ### Cross-modality mapping
 
-`mdata.varp["feature_mapping"]` is a sparse precursor↔protein adjacency matrix over the concatenated `var` axis: each non-zero entry links a `precursors` column to the `proteins` column(s) it belongs to, derived from `feature.anchor_protein`.
+`mdata.varp["feature_mapping"]` is a sparse precursor↔protein adjacency matrix over the concatenated `var` axis: each non-zero entry links a `precursors` column to the `proteins` column(s) of the groups its features belong to, derived from `feature.pg_accessions`.
 
 ### Identity note
 

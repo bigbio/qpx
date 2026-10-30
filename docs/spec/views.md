@@ -152,6 +152,8 @@ pivots it into samples by analytes. Decoys are left out.
   and heavy channels of pulsed SILAC, since those are combined too. `by="unit"` gives
   one row per (`sample_accession`, `label`, `unit`) and keeps them apart.
 - **Missing cells** stay NaN unless `fillna` is given.
+- **Quantity.** `value_col="intensity"` (the default) pivots the primary quantity;
+  the `intensity_name` of an additional intensity, such as `"lfq"`, pivots that one.
 
 ```python
 proteins = ds.design_matrix("protein")                        # samples x groups
