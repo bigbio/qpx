@@ -351,8 +351,8 @@ class TestIntensity:
         with Dataset(dataset_dir) as ds:
             rows = list(ds.intensity(level="protein"))
             assert len(rows) == 2
-            # Each row is a tuple: (sample_accession, feature_id, intensity)
-            assert len(rows[0]) == 3
+            # Each row is a tuple: (sample_accession, label, unit, feature_id, intensity)
+            assert len(rows[0]) == 5
 
     def test_intensity_missing_structure_raises(self, tmp_path):
         """Missing structures raise ValueError."""
@@ -378,17 +378,17 @@ class TestDesignMatrix:
     """Tests for Dataset.design_matrix() — in-memory and out-of-core pivot."""
 
     def test_protein_matrix_shape(self, dataset_dir):
-        """Protein matrix: rows=samples, cols=proteins."""
+        """Protein matrix: rows=samples, cols=protein groups keyed by their membership."""
         with Dataset(dataset_dir) as ds:
             matrix = ds.design_matrix(level="protein")
-            # dataset_dir has 2 proteins (P12345, P67890) and 2 samples
+            # dataset_dir has 2 groups (led by P12345 and P67890) and 2 samples
             assert matrix.shape[0] == 2  # 2 samples
-            assert matrix.shape[1] == 2  # 2 proteins
-            assert "P12345" in matrix.columns
-            assert "P67890" in matrix.columns
+            assert matrix.shape[1] == 2  # 2 groups
+            assert "P12345;P12346" in matrix.columns
+            assert "P12346;P67890" in matrix.columns
 
     def test_peptide_matrix_shape(self, dataset_dir):
-        """Peptide matrix: rows=samples, cols=peptide sequences."""
+        """Peptide matrix: rows=samples, cols=peptidoforms."""
         with Dataset(dataset_dir) as ds:
             matrix = ds.design_matrix(level="peptide")
             # 3 features, 3 unique sequences, across 2 samples
@@ -399,10 +399,10 @@ class TestDesignMatrix:
         """Verify intensity values are placed correctly."""
         with Dataset(dataset_dir) as ds:
             matrix = ds.design_matrix(level="protein")
-            # P12345 in SAMPLE_01 has intensity 5000.0 (from pg)
-            assert matrix.loc["SAMPLE_01", "P12345"] == pytest.approx(5000.0)
-            # P67890 in SAMPLE_02 has intensity 3000.0 (from pg)
-            assert matrix.loc["SAMPLE_02", "P67890"] == pytest.approx(3000.0)
+            # The P12345 group in SAMPLE_01 has intensity 5000.0 (from pg)
+            assert matrix.loc["SAMPLE_01", "P12345;P12346"] == pytest.approx(5000.0)
+            # The P67890 group in SAMPLE_02 has intensity 3000.0 (from pg)
+            assert matrix.loc["SAMPLE_02", "P12346;P67890"] == pytest.approx(3000.0)
 
     def test_missing_structure_raises(self, tmp_path):
         """Requesting protein matrix without pg raises ValueError."""
@@ -412,20 +412,20 @@ class TestDesignMatrix:
             with pytest.raises(ValueError, match="requires"):
                 ds.design_matrix(level="protein")
 
-    def test_fillna_default_is_zero(self, dataset_dir):
-        """Missing values should be filled with 0 by default."""
+    def test_fillna_fills_missing_cells(self, dataset_dir):
+        """fillna replaces the cells of groups a sample did not measure."""
         with Dataset(dataset_dir) as ds:
             matrix = ds.design_matrix(level="protein", fillna=0.0)
-            # SAMPLE_01 has P12345 but not P67890 -> should be 0.0
-            assert matrix.loc["SAMPLE_01", "P67890"] == pytest.approx(0.0)
+            # SAMPLE_01 has the P12345 group but not the P67890 one -> 0.0
+            assert matrix.loc["SAMPLE_01", "P12346;P67890"] == pytest.approx(0.0)
 
-    def test_fillna_nan(self, dataset_dir):
-        """fillna=None should leave NaN in place."""
+    def test_missing_cells_stay_nan_by_default(self, dataset_dir):
+        """A quantity that was not measured is NaN, not zero."""
         import math
 
         with Dataset(dataset_dir) as ds:
-            matrix = ds.design_matrix(level="protein", fillna=None)
-            assert math.isnan(matrix.loc["SAMPLE_01", "P67890"])
+            matrix = ds.design_matrix(level="protein")
+            assert math.isnan(matrix.loc["SAMPLE_01", "P12346;P67890"])
 
     def test_invalid_level_raises(self, dataset_dir):
         """Invalid level parameter raises ValueError."""
@@ -452,7 +452,7 @@ class TestDesignMatrix:
             table = pq.read_table(out)
             assert table.num_rows == 2  # 2 samples
             assert "sample_accession" in table.schema.names
-            assert "P12345" in table.schema.names
+            assert "P12345;P12346" in table.schema.names
 
     def test_output_path_peptide(self, dataset_dir, tmp_path):
         """output_path works for peptide level too."""

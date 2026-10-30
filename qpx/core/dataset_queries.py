@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -12,6 +13,19 @@ from qpx.core.sql import escape_path, sql_build
 
 if TYPE_CHECKING:
     import pandas as pd
+
+logger = logging.getLogger(__name__)
+
+# The analyte a peptide-level abundance is keyed by.
+_PEPTIDE_KEYS = {
+    "peptidoform": "peptidoform",
+    "precursor": "peptidoform || '/' || charge",
+    "sequence": "sequence",
+}
+# How design_matrix(by="sample") combines the units of a sample, as DuckDB aggregates.
+_UNIT_AGGREGATES = {"mean": "avg", "median": "median", "sum": "sum", "min": "min", "max": "max"}
+# The row keys of design_matrix.
+_MATRIX_ROWS = {"sample": ("sample_accession",), "unit": ("sample_accession", "label", "unit")}
 
 
 class _DatasetQueryMixin:
@@ -244,47 +258,54 @@ class _DatasetQueryMixin:
 
     # --- Analysis helpers ---
 
-    def _abundance_sql(self, level: str) -> str:
-        """Build the long-form abundance SQL for a given level.
+    def _abundance_sql(self, level: str, key: str | None = None) -> str:
+        """Long-form abundance SQL: sample_accession, label, unit, feature_id, intensity.
 
-        Returns SQL that produces columns: sample_accession, feature_id, intensity.
+        A row holds the quantity of one feature in one sample and label of one
+        quantification unit; the fractions of the unit are summed.
         """
         if level == "protein":
+            if key is not None:
+                raise ValueError("key applies to level='peptide'; proteins are keyed by their group membership")
             if self.pg is None or self.run is None:
                 raise ValueError("level='protein' requires pg and run structures.")
             # Since QPX 1.1 the pg view is flattened: one row per label with scalar
             # p.label / p.intensity. Any member run of grouped_runs resolves the
             # label to the unit's sample (pg.md), so the first one is joined. ID-only
-            # rows (null label / intensity) never match a sample label.
+            # rows (null label / intensity) never match a sample label. The group,
+            # not its anchor protein, is the analyte: groups can share a leader.
             return sql_build(
                 """
             WITH run_samples AS ($run_samples)
-            SELECT rs.sample_accession,
-                   p.anchor_protein AS feature_id,
-                   p.intensity
+            SELECT rs.sample_accession, rs.label, rs.unit,
+                   array_to_string(list_sort(p.pg_accessions), ';') AS feature_id,
+                   sum(p.intensity) AS intensity
             FROM pg p
             JOIN run_samples rs ON rs.run_file_name = p.grouped_runs[1] AND rs.label = p.label
             WHERE p.is_decoy = false
+            GROUP BY ALL
             """,
                 run_samples=RUN_SAMPLES_SQL,
             )
         if level == "peptide":
+            expression = _PEPTIDE_KEYS.get(key or "peptidoform")
+            if expression is None:
+                raise ValueError(f"key must be one of {sorted(_PEPTIDE_KEYS)}, got {key!r}")
             if self.feature is None or self.run is None:
                 raise ValueError("level='peptide' requires feature and run structures.")
             return sql_build(
                 """
-            SELECT sample_accession,
-                   sequence AS feature_id,
-                   SUM(intensity) AS intensity
+            SELECT sample_accession, label, unit, $key AS feature_id, sum(intensity) AS intensity
             FROM ($feature_samples)
             WHERE is_decoy = false
-            GROUP BY sample_accession, sequence
+            GROUP BY ALL
             """,
-                feature_samples=feature_samples_sql("feature", ("sequence", "is_decoy")),
+                key=expression,
+                feature_samples=feature_samples_sql("feature", ("sequence", "peptidoform", "charge", "is_decoy")),
             )
         raise ValueError(f"level must be 'protein' or 'peptide', got '{level}'")
 
-    def intensity(self, level: str = "protein") -> QueryResult:
+    def intensity(self, level: str = "protein", key: str | None = None) -> QueryResult:
         """Lazy long-form intensity query — scalable for large datasets.
 
         Returns a QueryResult that stays lazy until you materialize it.
@@ -295,36 +316,71 @@ class _DatasetQueryMixin:
         ----------
         level : str
             "protein" (uses pg + run) or "peptide" (uses feature + run).
+        key : str | None
+            The peptide analyte: ``"peptidoform"`` (default), ``"precursor"``
+            (peptidoform and charge) or ``"sequence"``. Proteins are keyed by their
+            group membership, the sorted ``pg_accessions`` joined by ``;``.
 
         Returns
         -------
         QueryResult
-            Long-form table with columns: sample_accession, feature_id, intensity.
+            Long-form table with columns: sample_accession, label, unit,
+            feature_id, intensity. ``unit`` names the quantification unit (the first
+            run of the fractions that hold the same samples), so technical
+            replicates and a bridge sample in several plexes stay separate rows.
             Call .to_df(), .to_arrow(), .to_polars(), or iterate row-by-row.
 
         Examples
         --------
-        Lazy iteration (constant memory):
-            for row in ds.intensity("protein"):
-                sample, protein, intensity = row
-
         Materialize when data fits in memory:
             df = ds.intensity("protein").to_df()
 
-        Write directly to Parquet (out-of-core):
-            ds.intensity("protein").to_arrow()  # Arrow is more compact than pandas
+        Arrow is more compact than pandas:
+            table = ds.intensity("protein").to_arrow()
         """
-        sql = self._abundance_sql(level)
+        sql = self._abundance_sql(level, key)
         return QueryResult(self._engine.connection, sql)
+
+    def _warn_multilabel_samples(self, agg: str) -> None:
+        """Warn when a sample carries several labels in one unit, which by='sample' combines."""
+        count, example = self._engine.execute(
+            sql_build(
+                """
+            WITH run_samples AS ($run_samples)
+            SELECT count(*), any_value(sample_accession)
+            FROM (SELECT unit, sample_accession FROM run_samples GROUP BY ALL HAVING count(DISTINCT label) > 1)
+            """,
+                run_samples=RUN_SAMPLES_SQL,
+            )
+        ).fetchall()[0]
+        if count:
+            logger.warning(
+                "%d sample(s) carry several labels within one unit (e.g. %s); by='sample' combines them with %s, "
+                "by='unit' keeps them apart",
+                count,
+                example,
+                agg,
+            )
 
     def design_matrix(
         self,
         level: str = "protein",
         value_col: str = "intensity",
-        fillna: float | None = 0.0,
+        fillna: float | None = None,
         output_path: str | Path | None = None,
+        *,
+        key: str | None = None,
+        by: str = "sample",
+        agg: str = "mean",
     ) -> "pd.DataFrame | Path":
-        """Pivot intensity data into a samples-by-features matrix.
+        """Pivot intensity data into a matrix of samples (or units) by features.
+
+        Rows are samples. A sample measured in several quantification units —
+        technical replicates, or a bridge channel in several plexes — gets *agg*
+        of its unit values, after the fractions of each unit are summed.
+        ``by="unit"`` keeps one row per (sample_accession, label, unit) instead,
+        which also keeps apart the labels of a sample that one unit carries twice
+        (pulsed SILAC, a heavy standard).
 
         For small-to-medium datasets, returns a pandas DataFrame.
         For large datasets, pass *output_path* to write the pivot directly
@@ -341,12 +397,20 @@ class _DatasetQueryMixin:
             Intensity column to pivot. Only ``"intensity"`` (the primary
             quantity) is supported; any other value raises ``ValueError``.
         fillna : float | None
-            Value to fill missing cells. Use *None* to keep NaN.
+            Value to fill missing cells; *None* (the default) keeps NaN, so a
+            quantity that was not measured is not read as zero.
             Ignored when *output_path* is set.
         output_path : str | Path | None
             If set, writes the pivoted matrix directly to this Parquet path
             using DuckDB PIVOT (out-of-core). Returns the Path instead of a
             DataFrame.
+        key : str | None
+            The peptide analyte (see :meth:`intensity`).
+        by : str
+            ``"sample"`` (default) or ``"unit"``.
+        agg : str
+            How ``by="sample"`` combines the units of a sample: ``"mean"``
+            (default), ``"median"``, ``"sum"``, ``"min"`` or ``"max"``.
 
         Returns
         -------
@@ -357,16 +421,25 @@ class _DatasetQueryMixin:
 
         if value_col != "intensity":
             raise ValueError(f"value_col must be 'intensity', got {value_col!r}")
-        sql = self._abundance_sql(level)
+        rows = _MATRIX_ROWS.get(by)
+        if rows is None:
+            raise ValueError(f"by must be one of {sorted(_MATRIX_ROWS)}, got {by!r}")
+        if agg not in _UNIT_AGGREGATES:
+            raise ValueError(f"agg must be one of {sorted(_UNIT_AGGREGATES)}, got {agg!r}")
+        sql = self._abundance_sql(level, key)
+        if by == "sample":
+            self._warn_multilabel_samples(agg)
 
         if output_path is not None:
             # Out-of-core: DuckDB PIVOT → Parquet, never touches pandas
             output_path = Path(output_path)
             pivot_sql = sql_build(
                 """COPY (
-                PIVOT ($base_sql) ON feature_id USING SUM(intensity)
+                PIVOT ($base_sql) ON feature_id USING $agg(intensity) GROUP BY $rows
             ) TO '$out_path' (FORMAT PARQUET)""",
                 base_sql=sql,
+                agg=_UNIT_AGGREGATES[agg],
+                rows=", ".join(rows),
                 out_path=escape_path(str(output_path)),
             )
             self._engine.execute(pivot_sql)
@@ -378,7 +451,9 @@ class _DatasetQueryMixin:
         if df.empty:
             return pd.DataFrame()
 
-        matrix = df.groupby(["sample_accession", "feature_id"])["intensity"].sum(min_count=1).unstack("feature_id")
+        grouped = df.groupby([*rows, "feature_id"])["intensity"]
+        values = grouped.sum(min_count=1) if agg == "sum" else grouped.agg(agg)
+        matrix = values.unstack("feature_id")
         matrix.columns.name = None
 
         if fillna is not None:

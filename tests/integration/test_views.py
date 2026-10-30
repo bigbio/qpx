@@ -344,7 +344,7 @@ class TestMultiRunGroupedRuns:
 
         assert len(abundance) == 1
         assert abundance.iloc[0]["intensity"] == 5000.0
-        assert matrix.loc["SAMPLE_A", "PROT1"] == 5000.0
+        assert matrix.loc["SAMPLE_A", "P12346;PROT1"] == 5000.0
 
     def test_mudata_proteins_reflect_all_grouped_runs(self, multi_run_dataset_dir):
         """The muData proteins modality has an observation for every grouped run."""

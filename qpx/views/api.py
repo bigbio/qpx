@@ -18,11 +18,18 @@ class ProteinView(BaseView):
     """Protein intensity per sample — joins PG + Run."""
 
     def intensity(self, q_value_threshold: float = 0.01) -> QueryResult:
+        """Group intensity per sample and label.
+
+        ``protein_group`` (the sorted membership joined by ``;``) identifies the
+        analyte; ``protein_accession`` is the group's anchor, a display label that
+        can lead several groups.
+        """
         q_value_threshold = float(q_value_threshold)
         # Any member run of grouped_runs resolves the label to the unit's sample.
         sql = """
         WITH run_samples AS ($run_samples)
         SELECT p.anchor_protein AS protein_accession,
+               array_to_string(list_sort(p.pg_accessions), ';') AS protein_group,
                rs.sample_accession,
                p.label,
                p.intensity,

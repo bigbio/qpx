@@ -33,7 +33,9 @@ def _nullable_dataset(tmp_path, request):
     proteins = []
     for run_name, identifier, intensity in observations:
         intensities = [{"label": "TMT126", "intensity": None if request.param else intensity}]
-        proteins.append(make_pg_record(anchor_protein=identifier, run_file_name=run_name, intensities=intensities))
+        proteins.append(
+            make_pg_record(anchor_protein=identifier, run_file_name=run_name, intensities=intensities, pg_accessions=[identifier])
+        )
     with PgWriter(tmp_path / "nullable.pg.parquet") as writer:
         writer.write_batch(proteins)
 
@@ -63,9 +65,9 @@ def test_missing_intensities_match_parquet(nullable_dataset, fillna):
     pd.testing.assert_frame_equal(matrix, expected, check_dtype=False)
 
 
-def test_missing_intensities_default_to_zero(nullable_dataset):
-    """The default still explicitly fills stored and absent quantities with zero."""
+def test_missing_intensities_stay_nan_by_default(nullable_dataset):
+    """Stored and absent missing quantities are not read as zero unless fillna asks for it."""
     dataset_path, expected = nullable_dataset
     with Dataset(dataset_path) as dataset:
         matrix = dataset.design_matrix()
-    pd.testing.assert_frame_equal(matrix, expected.fillna(0.0), check_dtype=False)
+    pd.testing.assert_frame_equal(matrix, expected, check_dtype=False)

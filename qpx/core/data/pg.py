@@ -28,8 +28,13 @@ class PG(BaseStructure):
         return super().from_file(path, **engine_kwargs)
 
     def by_protein(self, protein: str) -> "PG":
-        """Filter by anchor protein."""
+        """Filter by anchor protein: every group the protein leads, which can be several."""
         return self.filter(f"anchor_protein = '{_escape_sql_string(protein)}'")
+
+    def by_group(self, accessions: list[str]) -> "PG":
+        """Filter to the protein group whose membership is exactly ``accessions``, in any order."""
+        members = ", ".join(f"'{_escape_sql_string(accession)}'" for accession in accessions)
+        return self.filter(f"list_sort(pg_accessions) = list_sort([{members}])")
 
     def by_run(self, run_file_name: str) -> "PG":
         """Filter to protein groups whose grouped_runs contains the given run file."""

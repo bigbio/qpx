@@ -34,7 +34,7 @@ API views are computed by joining and aggregating the primary QPX data. For exam
 **Protein-level data** can be derived from the PG view by:
 
 1. Joining `pg.parquet` with `run.parquet` to resolve sample-channel mappings.
-2. Selecting the `anchor_protein` as the representative for each protein group.
+2. Keying each row by its group membership (`pg_accessions`, sorted); `anchor_protein` is only a display label, since one protein can lead several groups.
 3. Reading the per-label intensity directly from the flattened scalar `pg.intensity` (since QPX 1.1 the PG view has one row per label — there is no `intensities` list).
 4. Optionally aggregating peptide/PSM counts, scores, or gene annotations.
 
@@ -45,7 +45,8 @@ WITH run_samples AS (
     FROM 'PXD014414.run.parquet' r
     CROSS JOIN UNNEST(r.samples) AS samples(sc)
 )
-SELECT pg.anchor_protein AS protein_accession,
+SELECT array_to_string(list_sort(pg.pg_accessions), ';') AS protein_group,
+       pg.anchor_protein AS protein_accession,
        rs.sample_accession,
        pg.label,
        pg.intensity AS abundance,
@@ -130,6 +131,38 @@ The Python API provides several pre-built views accessible as properties on the 
 | QC View | `ds.qc_view` | `.metrics()` | Dataset-wide quality control metrics |
 | Protein View | `ds.protein_view` | `.intensity()` | Protein abundance per sample (joins PG + Run) |
 | Peptide View | `ds.peptide_view` | `.intensity()` | Peptide abundance per sample (joins Feature + Run) |
+
+### Abundance matrices
+
+`Dataset.intensity(level)` returns the long-form abundance (`sample_accession`,
+`label`, `unit`, `feature_id`, `intensity`) and `Dataset.design_matrix(level)`
+pivots it into samples by analytes. Decoys are left out.
+
+- **Analyte.** A protein is its group: `feature_id` is the sorted membership joined
+  by `;`, so two groups led by the same protein stay two columns. A peptide is its
+  `peptidoform` by default; `key="precursor"` adds the charge and `key="sequence"`
+  merges the modified forms.
+- **Unit.** The runs that hold the same samples (accession, label and technical
+  replicate) are the fractions of one quantification unit, named after its first
+  run, and their quantities are summed. Technical replicates, and a bridge sample in
+  several plexes, are separate units.
+- **Rows.** `by="sample"` (the default) gives one row per sample, combining its units
+  with `agg` (`"mean"` by default; also `"median"`, `"sum"`, `"min"`, `"max"`). It logs
+  a warning when a unit carries one sample under several labels, such as the light
+  and heavy channels of pulsed SILAC, since those are combined too. `by="unit"` gives
+  one row per (`sample_accession`, `label`, `unit`) and keeps them apart.
+- **Missing cells** stay NaN unless `fillna` is given.
+
+```python
+proteins = ds.design_matrix("protein")                        # samples x groups
+units = ds.design_matrix("peptide", key="precursor", by="unit")
+ds.design_matrix("protein", output_path="matrix.parquet")     # out-of-core pivot
+```
+
+`ds.protein_view.intensity()` reports the same group key as `protein_group` next to
+the anchor `protein_accession`. To select one group, use `ds.pg.by_group([...])` or
+`ds.feature.by_group([...])`; `by_protein()` matches the anchor and so returns every
+group the protein leads.
 
 ### Plotting
 

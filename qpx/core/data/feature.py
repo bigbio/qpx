@@ -37,8 +37,13 @@ class Feature(BaseStructure):
         return [row[0] for row in result.fetchall()]
 
     def by_protein(self, protein: str) -> Feature:
-        """Filter features by anchor protein."""
+        """Filter features by anchor protein: those of every group the protein leads."""
         return self.filter(f"anchor_protein = '{_escape_sql_string(protein)}'")
+
+    def by_group(self, accessions: list[str]) -> Feature:
+        """Filter to the features of the protein group whose membership is exactly ``accessions``, in any order."""
+        members = ", ".join(f"'{_escape_sql_string(accession)}'" for accession in accessions)
+        return self.filter(f"list_sort(list_transform(pg_accessions, lambda x: x.accession)) = list_sort([{members}])")
 
     def by_run(self, run_file_name: str) -> Feature:
         """Filter features by run file."""

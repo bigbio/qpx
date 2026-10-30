@@ -52,6 +52,7 @@ def _write_minimal_qpx(
         ),
         make_feature_record(
             sequence="ANOTHERK",
+            peptidoform="ANOTHERK",
             run_file_name="run_01",
             anchor_protein="P12345",
             charge=3,
