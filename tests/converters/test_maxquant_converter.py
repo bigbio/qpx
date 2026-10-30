@@ -394,23 +394,15 @@ def test_feature_pg_qvalue_and_genes_keyed_on_full_membership(tmp_path):
 
 def test_feature_warns_on_dropped_tmt_channels(caplog):
     """Bug #248 (M): channels with no reporter column must warn, not vanish silently."""
+    from qpx.converters.maxquant.channels import reporter_channels
     from qpx.converters.maxquant.feature_adapter import MaxQuantFeatureAdapter
 
     # evidence has only Reporter intensity 0-7; a 10-plex SDRF adds TMT130C (col 8)
     # and TMT131 (col 9), which have no column and would otherwise be dropped.
     columns = [f"Reporter intensity {i}" for i in range(8)]
-    channels = [
-        "TMT126",
-        "TMT127N",
-        "TMT127C",
-        "TMT128N",
-        "TMT128C",
-        "TMT129N",
-        "TMT129C",
-        "TMT130N",
-        "TMT130C",
-        "TMT131",
-    ]
+    _, channels = reporter_channels(
+        ["TMT126", "TMT127N", "TMT127C", "TMT128N", "TMT128C", "TMT129N", "TMT129C", "TMT130N", "TMT130C", "TMT131"]
+    )
     with MaxQuantFeatureAdapter() as adapter:
         with caplog.at_level("WARNING"):
             adapter._warn_dropped_tmt_channels(columns, "TMT10", channels, ri_offset=0)

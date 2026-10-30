@@ -26,9 +26,9 @@ import pandas as pd
 from qpx.converters.base import resolve_columns
 from qpx.converters.mappings import get_field_mappings
 from qpx.converters.maxquant.base_adapter import MaxQuantBaseAdapter
+from qpx.converters.maxquant.channels import reporter_column_count
 from qpx.converters.maxquant.constants import (
     PROTON_MASS,
-    TMT_LABEL_TO_MQ_COL,
     to_proforma,
 )
 from qpx.converters.ptm import from_proforma
@@ -55,6 +55,11 @@ _EVIDENCE_DEDUP_SQL = """
 # feature.yaml) rather than a single rt. Passed to FeatureWriter so feature_id
 # hashes exactly these columns instead of the schema default.
 _FEATURE_IDENTITY_COMPOSITE = ("peptidoform", "charge", "run_file_name", "rt_start", "rt_stop", "scan")
+
+
+def _reporter_columns(tmt_channels: dict[str, int], ri_offset: int) -> list[tuple[str, str]]:
+    """``(label, evidence.txt column)`` per channel; ``ri_offset`` is the number of the first column."""
+    return [(name, f"Reporter intensity {col_idx + ri_offset}") for name, col_idx in tmt_channels.items()]
 
 
 class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
@@ -139,7 +144,7 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         self._resolved = resolve_columns(_FEATURE_MAP, actual_cols)
 
         # Step 3: Load the experiment type and TMT channels from the SDRF
-        _, experiment_type, tmt_channels = self._load_sdrf(sdrf_path)
+        _, experiment_type, tmt_channels = self._load_sdrf(sdrf_path, reporter_column_count(actual_cols))
         self._fixed_mods = self._load_fixed_modifications(sdrf_path)
 
         # Step 3b: Build lookup maps from proteinGroups.txt
@@ -449,28 +454,19 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
             return 0
         return 1
 
-    def _warn_dropped_tmt_channels(self, columns, experiment_type: str, tmt_channels: list[str], ri_offset: int) -> None:
+    def _warn_dropped_tmt_channels(self, columns, experiment_type: str, tmt_channels: dict[str, int], ri_offset: int) -> None:
         """Warn when the SDRF plex declares channels absent from evidence.txt.
 
-        A ``Reporter intensity N`` column missing for a declared channel means
+        ``tmt_channels`` maps each label to its 0-based reporter column. A
+        ``Reporter intensity N`` column missing for a declared channel means
         that channel is silently dropped from every feature; surface it once.
         """
-        exp_type = re.sub(r"\d+", "", experiment_type or "").upper()
-        if exp_type not in ("TMT", "ITRAQ") or not tmt_channels:
+        if re.sub(r"\d+", "", experiment_type).upper() not in ("TMT", "ITRAQ"):
             return
         col_set = set(columns)
-        dropped: list[tuple[str, str]] = []
-        for seq_idx, channel_name in enumerate(tmt_channels):
-            col_idx = TMT_LABEL_TO_MQ_COL.get(str(channel_name).strip().upper())
-            if col_idx is None:
-                col_idx = seq_idx
-            col_name = f"Reporter intensity {col_idx + ri_offset}"
-            if col_name not in col_set:
-                dropped.append((str(channel_name), col_name))
-        if not dropped:
-            return
-        key = tuple(sorted(ch for ch, _ in dropped))
-        if key in self._warned_tmt_channels:
+        dropped = [(name, column) for name, column in _reporter_columns(tmt_channels, ri_offset) if column not in col_set]
+        key = tuple(sorted(channel_name for channel_name, _ in dropped))
+        if not dropped or key in self._warned_tmt_channels:
             return
         self._warned_tmt_channels.add(key)
         logger.warning(
@@ -484,7 +480,7 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         self,
         df: pd.DataFrame,
         experiment_type: str,
-        tmt_channels: list[str],
+        tmt_channels: dict[str, int],
         pg_maps: dict | None = None,
     ) -> list[dict]:
         """Transform a batch of evidence.txt rows into QPX feature records."""
@@ -513,7 +509,7 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         self,
         row,
         experiment_type: str,
-        tmt_channels: list[str],
+        tmt_channels: dict[str, int],
         pg_maps: dict | None = None,
         ri_offset: int = 0,
     ) -> Optional[dict]:
@@ -571,56 +567,37 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         self,
         row,
         experiment_type: str,
-        tmt_channels: list[str],
+        tmt_channels: dict[str, int],
         ri_offset: int = 0,
     ) -> tuple[list[dict], Optional[list[dict]]]:
         """Build intensities and additional_intensities from evidence row."""
+        if re.sub(r"\d+", "", experiment_type).upper() in ("TMT", "ITRAQ") and tmt_channels:
+            return self._reporter_intensities(row, tmt_channels, ri_offset)
+        return self._lfq_intensities(row), None
+
+    @staticmethod
+    def _reporter_intensities(row, tmt_channels: dict[str, int], ri_offset: int) -> tuple[list[dict], Optional[list[dict]]]:
+        """One intensity per channel with a positive reporter intensity, read from the channel's column.
+
+        ``tmt_channels`` maps each label to its 0-based MaxQuant reporter column
+        (its position in the plex), so N/C isomers and the plexes that share a
+        label at different positions read their own column.
+        """
         intensities: list[dict] = []
         additional_intensities: list[dict] = []
-
-        exp_type = re.sub(r"\d+", "", experiment_type).upper()
-
-        if exp_type in ("TMT", "ITRAQ") and tmt_channels:
-            # TMT/iTRAQ: one intensity per channel.
-            # Use the explicit label→column-index map so that N/C isomer pairs
-            # (e.g. TMT127N at col 1, TMT127C at col 2) are always read from
-            # their correct MaxQuant 0-indexed reporter intensity column,
-            # regardless of how tmt_channels happens to be ordered.
-            for seq_idx, channel_name in enumerate(tmt_channels):
-                col_idx = TMT_LABEL_TO_MQ_COL.get(str(channel_name).strip().upper())
-                if col_idx is None:
-                    # Unknown label (e.g. bare TMT6-plex "TMT128" without N/C suffix).
-                    # Fall back to sequential position within the channel list, which is
-                    # correct for single-mass plexes where no N/C isomers exist.
-                    logger.debug(
-                        "Unknown TMT/iTRAQ channel label %r — using sequential index %d",
-                        channel_name,
-                        seq_idx,
-                    )
-                    col_idx = seq_idx
-                col_name = f"Reporter intensity {col_idx + ri_offset}"
-                val = row.get(col_name)
-                if pd.notna(val) and float(val) > 0:
-                    intensities.append({"label": channel_name, "intensity": float(val)})
-
-                    # Corrected intensity
-                    corr_col = col_name.replace("Reporter intensity", "Reporter intensity corrected")
-                    corr_val = row.get(corr_col)
-                    if pd.notna(corr_val):
-                        additional_intensities.append(
-                            {
-                                "label": channel_name,
-                                "intensities": [
-                                    {
-                                        "intensity_name": "corrected_reporter_intensity",
-                                        "intensity_value": float(corr_val),
-                                    }
-                                ],
-                            }
-                        )
-        else:
-            intensities = self._lfq_intensities(row)
-
+        for channel_name, col_name in _reporter_columns(tmt_channels, ri_offset):
+            val = safe_float(row.get(col_name))
+            if not val or val <= 0:
+                continue
+            intensities.append({"label": channel_name, "intensity": val})
+            corr_val = safe_float(row.get(col_name.replace("Reporter intensity", "Reporter intensity corrected")))
+            if corr_val is not None:
+                additional_intensities.append(
+                    {
+                        "label": channel_name,
+                        "intensities": [{"intensity_name": "corrected_reporter_intensity", "intensity_value": corr_val}],
+                    }
+                )
         return intensities, additional_intensities or None
 
     @staticmethod

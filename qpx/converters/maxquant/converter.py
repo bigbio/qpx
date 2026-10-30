@@ -4,7 +4,9 @@ import logging
 from pathlib import Path
 
 from qpx._version import __version__
+from qpx.converters.channel_labels import read_sdrf_labels
 from qpx.converters.mappings import get_tool_meta
+from qpx.converters.maxquant.channels import reporter_channels
 from qpx.converters.maxquant.feature_adapter import MaxQuantFeatureAdapter
 from qpx.converters.maxquant.pg_adapter import MaxQuantPgAdapter
 from qpx.converters.maxquant.psm_adapter import MaxQuantPsmAdapter
@@ -17,6 +19,17 @@ logger = logging.getLogger(__name__)
 
 # Rows per batch read from each MaxQuant table.
 _BATCH_SIZE = 100_000
+
+
+def _views_with_input(msms_file, evidence_file, protein_groups_file) -> list[str]:
+    """The views whose MaxQuant input file was given."""
+    inputs = ((PSM, msms_file), (FEATURE, evidence_file), (PG, protein_groups_file))
+    return [view for view, path in inputs if path]
+
+
+def _reads_reporter_columns(structures, evidence_file, protein_groups_file) -> bool:
+    """Whether a view that maps SDRF labels to reporter columns (feature, pg) will be written."""
+    return bool({FEATURE, PG} & set(structures) & set(_views_with_input(None, evidence_file, protein_groups_file)))
 
 
 class MaxQuantConverter(BaseOrchestrator):
@@ -45,20 +58,12 @@ class MaxQuantConverter(BaseOrchestrator):
         prefix = output_prefix or "maxquant"
 
         if structures is None:
-            structures = []
-            if msms_file:
-                structures.append(PSM)
-            if evidence_file:
-                structures.append(FEATURE)
-            if protein_groups_file:
-                structures.append(PG)
+            structures = _views_with_input(msms_file, evidence_file, protein_groups_file)
 
         ontology_entries: list[dict] = []
 
-        # Convert SDRF for sample/run metadata (if SDRF has required columns)
-        if sdrf_file:
-            if convert_sdrf_views(str(sdrf_file), output_folder, prefix, ontology_entries):
-                logger.info("SDRF conversion complete")
+        check_labels = _reads_reporter_columns(structures, evidence_file, protein_groups_file)
+        self._write_sdrf_views(sdrf_file, output_folder, prefix, ontology_entries, check_labels)
 
         if PSM in structures and msms_file:
             self._convert_psms(msms_file, sdrf_file, output_folder / f"{prefix}.psm.parquet", spectral_data, ontology_entries)
@@ -77,6 +82,22 @@ class MaxQuantConverter(BaseOrchestrator):
             logger.info("MaxQuant PG conversion complete")
 
         self._write_conversion_metadata(output_folder, prefix, structures, project_accession, ontology_entries)
+
+    @staticmethod
+    def _write_sdrf_views(sdrf_file, output_folder: Path, prefix: str, ontology_entries: list[dict], check_labels: bool) -> None:
+        """Write sample/run metadata from the SDRF (if it has the required columns).
+
+        With ``check_labels`` (a feature or pg view will be written), labels the
+        adapters cannot map to reporter columns (SILAC, labels of no known
+        plex) fail here, before any view is written. The PSM view reads no
+        reporter columns, so a PSM-only conversion does not check them.
+        """
+        if not sdrf_file:
+            return
+        if check_labels:
+            reporter_channels(read_sdrf_labels(str(sdrf_file)))
+        if convert_sdrf_views(str(sdrf_file), output_folder, prefix, ontology_entries):
+            logger.info("SDRF conversion complete")
 
     def _write_provenance(self, output_folder: Path, prefix: str, structures: list[str]) -> None:
         """Write provenance.parquet with MaxQuant + QPX conversion steps."""

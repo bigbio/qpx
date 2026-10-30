@@ -13,6 +13,7 @@ from typing import Optional
 import pandas as pd
 
 from qpx.converters.base import BaseConverter
+from qpx.converters.maxquant.channels import channel_label, reporter_channels
 from qpx.converters.maxquant.constants import FixedModification
 from qpx.converters.utils import strip_uniprot_prefix
 
@@ -73,42 +74,40 @@ class MaxQuantBaseAdapter(BaseConverter):
             return cls._norm_uniprot_id(str(majority_cell).split(";", maxsplit=1)[0])
         return accessions[0] if accessions else ""
 
-    def _load_sdrf(self, sdrf_path: Optional[str]) -> tuple[dict, str, list]:
-        """Load SDRF and return ``(sample_map, experiment_type, tmt_channels)``.
+    def _load_sdrf(self, sdrf_path: Optional[str], reporter_columns: int = 0) -> tuple[dict, str, dict[str, int]]:
+        """Load SDRF and return ``(sample_map, experiment_type, channels)``.
 
-        When *sdrf_path* is ``None`` the method returns sensible LFQ defaults.
+        When *sdrf_path* is ``None`` the method returns LFQ defaults, and warns
+        when the MaxQuant table has reporter columns that nothing maps.
 
         Args:
             sdrf_path: Filesystem path to the SDRF file, or ``None``.
+            reporter_columns: Number of reporter channels in the MaxQuant table
+                (:func:`~qpx.converters.maxquant.channels.reporter_column_count`).
 
         Returns:
             A 3-tuple of:
-              - *sample_map*: ``{run_file -> sample_accession}``
+              - *sample_map*: ``{"<run stem>-<label>" -> sample_accession}``, with
+                the label spelled as the *channels* keys (``{run stem -> ...}`` for LFQ)
               - *experiment_type*: e.g. ``"LFQ"``, ``"TMT11"``
-              - *tmt_channels*: sorted list of TMT channel labels (empty for LFQ)
+              - *channels*: ``{label: 0-based reporter column}`` in column
+                order (empty for LFQ); see
+                :func:`~qpx.converters.maxquant.channels.reporter_channels`
         """
         if not sdrf_path:
-            return {}, "LFQ", []
+            if reporter_columns:
+                self.logger.warning(
+                    "The MaxQuant table has %d reporter intensity columns, but without an SDRF no channel maps "
+                    "to them; they are not converted and the MS1 intensity is written as LFQ",
+                    reporter_columns,
+                )
+            return {}, "LFQ", {}
 
         from qpx.core.sdrf import SDRFHandler
 
         handler = SDRFHandler(sdrf_path)
-        sample_map = handler.get_sample_map_run()
-        experiment_type = handler.get_experiment_type_from_sdrf()
-
-        tmt_channels: list[str] = []
-        if experiment_type and ("TMT" in experiment_type.upper() or "ITRAQ" in experiment_type.upper()):
-            labels = handler.sdrf_table.get("comment[label]")
-            if labels is not None:
-                from qpx.converters.maxquant.constants import TMT_LABEL_TO_MQ_COL
-
-                # Normalize to canonical uppercase form so TMT_LABEL_TO_MQ_COL lookups
-                # are robust to inconsistent SDRF casing / leading-trailing whitespace.
-                raw_labels = [str(lbl).strip().upper() for lbl in labels.unique() if lbl and str(lbl).strip()]
-                _MAX_IDX = max(TMT_LABEL_TO_MQ_COL.values()) + 1
-                tmt_channels = sorted(raw_labels, key=lambda lbl: TMT_LABEL_TO_MQ_COL.get(lbl, _MAX_IDX))
-
-        return sample_map, experiment_type or "LFQ", tmt_channels
+        experiment_type, channels = reporter_channels(handler.sdrf_table.get("comment[label]"), reporter_columns)
+        return handler.get_sample_map_run(label_key=channel_label), experiment_type, channels
 
     def _load_fixed_modifications(self, sdrf_path: Optional[str]) -> tuple[FixedModification, ...]:
         """The SDRF's fixed modifications (``MT=fixed``), as :func:`to_proforma` takes them.

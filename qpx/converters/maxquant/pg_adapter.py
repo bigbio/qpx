@@ -23,7 +23,7 @@ from qpx.converters.base import resolve_columns
 from qpx.converters.channel_labels import experiment_runs_from_sdrf
 from qpx.converters.mappings import get_field_mappings
 from qpx.converters.maxquant.base_adapter import MaxQuantBaseAdapter
-from qpx.converters.maxquant.constants import TMT_LABEL_TO_MQ_COL
+from qpx.converters.maxquant.channels import reporter_column_count
 from qpx.converters.utils import mq_flag_to_bool, safe_float
 from qpx.core.files import run_file_stem
 from qpx.writers.pg import PgWriter
@@ -106,7 +106,7 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
         self._resolved = resolve_columns(_PG_MAP, actual_cols)
 
         # Step 3: Load SDRF mapping
-        sample_map, experiment_type, tmt_channels = self._load_sdrf(sdrf_path)
+        sample_map, experiment_type, tmt_channels = self._load_sdrf(sdrf_path, reporter_column_count(actual_cols))
         self._sample_keys = {key.upper() for key in sample_map}
 
         # Step 4: Detect intensity columns in the data
@@ -296,11 +296,11 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
         self,
         df: pd.DataFrame,
         intensity_cols: dict[str, list[str]],
-        tmt_channels: list[str] | None = None,
+        tmt_channels: dict[str, int] | None = None,
     ) -> list[dict]:
         records: list[dict] = []
         for row in df.to_dict("records"):
-            recs = self._transform_row(row, intensity_cols, tmt_channels or [])
+            recs = self._transform_row(row, intensity_cols, tmt_channels or {})
             records.extend(recs)
         return records
 
@@ -340,7 +340,7 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
         self,
         row,
         intensity_cols: dict[str, list[str]],
-        tmt_channels: list[str] | None = None,
+        tmt_channels: dict[str, int] | None = None,
     ) -> list[dict]:
         """Transform a single proteinGroups.txt row.
 
@@ -464,39 +464,43 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
             peptide_count_unique,
         )
 
-    def _reporter_quantities(self, row, exp, ch_cols, tmt_channels, ri_offset) -> tuple:
-        """Collect one plex's primary and corrected reporter quantities."""
+    def _reporter_quantities(self, row, exp, ch_cols, tmt_channels: dict[str, int], ri_offset) -> tuple:
+        """Collect one plex's primary and corrected reporter quantities.
+
+        ``tmt_channels`` maps each label to its 0-based reporter column (its
+        position in the plex); ``ch_cols`` maps this experiment's column
+        numbers to its column names.
+        """
         intensities: list[dict] = []
         additional_intensities: list[dict] = []
-        identified = (safe_float(row.get(f"MS/MS count {exp}")) or 0) > 0
-        channels = tmt_channels or []
         dropped_channels: list[str] = []
-        for seq_idx, channel_name in enumerate(channels):
-            col_idx = TMT_LABEL_TO_MQ_COL.get(str(channel_name).strip().upper())
-            if col_idx is None:
-                col_idx = seq_idx
-            mq_col_num = col_idx + ri_offset
-            col_name = ch_cols.get(mq_col_num)
+        identified = (safe_float(row.get(f"MS/MS count {exp}")) or 0) > 0
+        for channel_name, col_idx in (tmt_channels or {}).items():
+            col_name = ch_cols.get(col_idx + ri_offset)
             if not col_name:
-                dropped_channels.append(str(channel_name))
+                dropped_channels.append(channel_name)
                 continue
-            val = safe_float(row.get(col_name)) or 0.0
+            val = _positive(row.get(col_name))
             # A plex-level identification covers only the channels the SDRF assigns there.
-            if val > 0 or (identified and self._has_sample(exp, channel_name)):
-                intensities.append({"label": channel_name, "intensity": val if val > 0 else None})
-                corr_col = col_name.replace("Reporter intensity", "Reporter intensity corrected")
-                corr_val = safe_float(row.get(corr_col))
-                # Beside a missing reporter intensity, a zero is MaxQuant's sentinel.
-                if corr_val is not None and (val > 0 or corr_val != 0):
-                    additional_intensities.append(
-                        {
-                            "label": channel_name,
-                            "intensities": [
-                                {"intensity_name": "corrected_reporter_intensity", "intensity_value": float(corr_val)}
-                            ],
-                        }
-                    )
+            if val is None and not (identified and self._has_sample(exp, channel_name)):
+                continue
+            intensities.append({"label": channel_name, "intensity": val})
+            additional_intensities.extend(self._corrected_reporter(row, col_name, channel_name, val))
         return intensities, additional_intensities, dropped_channels
+
+    @staticmethod
+    def _corrected_reporter(row, col_name: str, channel_name: str, val: Optional[float]) -> list[dict]:
+        """The channel's corrected reporter intensity, as an ``additional_intensities`` entry."""
+        corr_val = safe_float(row.get(col_name.replace("Reporter intensity", "Reporter intensity corrected")))
+        # Beside a missing reporter intensity, a zero is MaxQuant's sentinel.
+        if corr_val is None or (val is None and corr_val == 0):
+            return []
+        return [
+            {
+                "label": channel_name,
+                "intensities": [{"intensity_name": "corrected_reporter_intensity", "intensity_value": corr_val}],
+            }
+        ]
 
     def _tmt_records(self, row, reporter_cols, tmt_channels, make_rec) -> list[dict]:
         """Expand a protein group over reporter experiments."""
