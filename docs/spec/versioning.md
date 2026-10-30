@@ -61,6 +61,11 @@ This version defines all core serialized views (PSM, Feature, PG, MZ), the deriv
       peptidoform, so they change wherever a 1.2 producer left fixed
       modifications out (MaxQuant) or spelled a modification differently.
       Re-convert from the source files.
+    - **Missing values.** An `intensities` entry may have a null `intensity`:
+      the feature was identified in that label but not quantified
+      ([Intensities](intensities.md#missing-values)). `psm.observed_mz` is
+      nullable. `feature.unique` has one definition: a peptide of a one-protein
+      group that maps to no other group.
 - **1.2** (backward-compatible): adds the [site](site.md) and
   [proteoform](proteoform.md) views, the optional `modification_candidates` column
   of the PSM and Feature views ([Modifications](modifications.md)) and the optional

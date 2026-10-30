@@ -18,7 +18,7 @@ from typing import Optional
 from qpx.converters.channel_labels import normalize_label
 from qpx.converters.openms_consensus.modifications import localization_scores, to_modifications
 from qpx.converters.openms_consensus.protein_groups import ProteinGroupIndex, identification_identifier
-from qpx.converters.utils import safe_float
+from qpx.converters.utils import mass_error_ppm, safe_float
 from qpx.core.cleavage import count_missed_cleavages
 from qpx.core.files import run_file_stem as _run_stem
 
@@ -39,27 +39,6 @@ _QVALUE_META_KEYS = ("q-value", "MS:1001491")
 
 # SearchParameters flag PercolatorAdapter records when its q-values are peptide-level.
 _PEPTIDE_LEVEL_FDR_KEY = "Percolator:peptide_level_fdrs"
-
-
-def mass_error_ppm(calculated_mz, observed_mz) -> float | None:
-    """Relative precursor mass error in ppm, or ``None`` when it is not measurable.
-
-    ``None`` is reserved for values that are absent or not measurable. Both m/z
-    values must be positive: ``feature_records_for_cf`` substitutes 0.0 when the
-    ConsensusFeature carries no m/z, and treating that as a measurement would
-    report roughly -1e6 ppm instead of "not measured".
-
-    An exact match returns ``0.0``, not ``None``. The OpenMS adapters are this
-    helper's only callers and their ``observed_mz`` is a real measurement, so a
-    zero error is a genuine result and must not be suppressed. (A producer that
-    echoed the theoretical m/z back would report a constant 0.0 ppm — but no such
-    producer reaches this function, and the guard cost real measurements.)
-    """
-    if calculated_mz is None or observed_mz is None:
-        return None
-    if calculated_mz <= 0 or observed_mz <= 0:
-        return None
-    return float((observed_mz - calculated_mz) / calculated_mz * 1e6)
 
 
 def sdrf_enzyme(sdrf_path) -> str | None:

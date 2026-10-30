@@ -38,7 +38,7 @@ step in `provenance.parquet`.
 | `posterior_error_probability` | Posterior error probability (PEP) for the peptide-spectrum match — the probability that the PSM is incorrect. **Lower values indicate higher confidence** (lower is better). Ranges from 0.0 (confident) to 1.0 (likely incorrect) | float64, null | no |
 | `is_decoy` | Whether the PSM is a decoy match (`true`) or a target match (`false`); use `false` when no target-decoy search was used. A peptide that matches both target and decoy proteins (OpenMS `target_decoy = target+decoy`) is a target match | bool | yes |
 | `calculated_mz` | Theoretical peptide mass-to-charge ratio based on identified sequence and modifications; null when it cannot be calculated | float32, null | yes |
-| `observed_mz` | Experimental observed peptide mass-to-charge ratio | float32 | yes |
+| `observed_mz` | Experimental observed peptide mass-to-charge ratio; null when the producer reports no measured precursor m/z | float32, null | yes |
 | `mass_error_ppm` | Mass error in ppm: 1e6 × (observed_mz − calculated_mz) / calculated_mz | float32, null | no |
 | `missed_cleavages` | Number of missed enzymatic cleavages | int16, null | no |
 | `rt` | MS2 scan's retention time (in seconds) | float32, null | no |

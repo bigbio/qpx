@@ -144,7 +144,7 @@ mzIdentML produces no feature view.
 | `posterior_error_probability` | `PEP`. Null for match-between-runs rows (`Type` `MULTI-MATCH`), which have no MS/MS. | 1 − `PeptideProphet Probability` of the matching PSM (see below). | `EG.PEP`, when exported. | Not provided: `.psm` files report MS-GF+ scores and q-values, not a PEP. | Not provided: the MSstats input has no identification scores. |
 | `peptide_qvalue` | Not provided: `evidence.txt` reports a PEP, not a peptide q-value. | Not implemented. | Not implemented: the precursor-level `EG.Qvalue` is stored as `qvalue` in `additional_scores`. | Not implemented: the best `PepQvalue` is stored as `peptide_level_qvalue` in `additional_scores`. | Not provided. |
 | `calculated_mz` / `observed_mz` | Filled. | Filled. | Filled. | Filled. | `calculated_mz`: not implemented, although it can be calculated from the peptidoform and charge. `observed_mz`: not provided. |
-| `mass_error_ppm` | `Mass error [ppm]`, which MaxQuant leaves blank for `Type` `MSMS` rows. | From the matching PSM. | Not implemented: the report's mass-accuracy columns (`F.*MassAccuracy (PPM)`) are fragment-level. | Filled. | Not provided. |
+| `mass_error_ppm` | From the experimental and calculated m/z; null for `Type` `MSMS` rows, where MaxQuant reports no mass error. | From the matching PSM. | Not implemented: the report's mass-accuracy columns (`F.*MassAccuracy (PPM)`) are fragment-level. | Filled. | Not provided. |
 | `additional_scores` | `Score` and `Delta score`. Null for match-between-runs rows. | Not implemented. | Spectronaut q-values and C-scores, when exported. | Filled. | Not provided. |
 | `predicted_rt` | Not provided. | Not implemented. | `EG.RTPredicted`, when exported. | Not provided. | Not provided. |
 | `quantification_unit_id` | Not implemented. | The FragPipe experiment. | Not implemented. | Not implemented. | Not implemented. |
@@ -178,7 +178,7 @@ Spectronaut and QuantMS MSstats produce no PSM view.
 | Field | MaxQuant | FragPipe | CDAP | mzIdentML |
 | ------- | ---------- | ---------- | ------ | ----------- |
 | `posterior_error_probability` | Filled from `PEP`. | Filled: 1 − `PeptideProphet Probability`. | Not provided. | A PSI-MS PEP term (`MS:1001493`, `MS:1002352`) on the identification item, when present. |
-| `mass_error_ppm` | `Mass error [ppm]`, which MaxQuant leaves blank for `Type` `MSMS` rows. | Filled. | Filled. | From the experimental and calculated m/z. Null when the file omits the calculated m/z. |
+| `mass_error_ppm` | From the experimental and calculated m/z; null for `Type` `MSMS` rows, where MaxQuant reports no mass error. | Filled. | Filled. | From the experimental and calculated m/z. Null when the file omits the calculated m/z. |
 | `additional_scores` | Filled. | Filled. | Filled. | Score terms on the identification item. Null when it has none. |
 | `rt` | Filled. | Filled. | Filled. | The `scan start time` of the spectrum result. Null when the file omits it. |
 | `ion_mobility` | `1/K0`, when present. | `Ion Mobility`, when present. | Not provided. | Not implemented. |

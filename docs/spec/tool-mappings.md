@@ -21,8 +21,8 @@ The PSM (Peptide Spectrum Match) view captures spectrum-level identification res
 | `charge` | Charge | Precursor.Charge | Charge |
 | `posterior_error_probability` | PEP | PEP | --- |
 | `is_decoy` | Reverse | --- | --- |
-| `calculated_mz` | --- | --- | Calculated M/Z |
-| `observed_mz` | m/z | --- | Observed M/Z |
+| `calculated_mz` | From the peptidoform (`Mass` when a modification has no known mass) | --- | Calculated M/Z |
+| `observed_mz` | m/z × (1 + Mass error [ppm] × 10⁻⁶); MaxQuant's `m/z` is theoretical | --- | Observed M/Z |
 | `protein_accessions` | Proteins | Protein.Group | Protein |
 | `run_file_name` | Raw file | Run | Spectrum File |
 | `scan` | Scan number | --- | Scan |
@@ -42,8 +42,8 @@ The Feature view captures quantified peptide features with intensity data. Featu
 | `charge` | Charge | Precursor.Charge | --- | Charge / PrecursorCharge |
 | `is_decoy` | Reverse | Decoy (`--report-decoys`), else accession prefix | --- | ProteinName prefix |
 | `peptide_qvalue` | --- | --- | --- | --- |
-| `calculated_mz` | --- | --- | Calculated M/Z | --- |
-| `observed_mz` | m/z | --- | --- | --- |
+| `calculated_mz` | From the peptidoform (`Mass` when a modification has no known mass) | --- | Calculated M/Z | --- |
+| `observed_mz` | m/z × (1 + Mass error [ppm] × 10⁻⁶); MaxQuant's `m/z` is theoretical | --- | --- | --- |
 | `rt` | Retention time | RT | --- | RetentionTime |
 | `rt_start` | --- | RT.Start | --- | --- |
 | `rt_stop` | --- | RT.Stop | --- | --- |

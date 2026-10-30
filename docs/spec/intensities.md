@@ -30,7 +30,7 @@ The `intensities` field is an array of structs. Each element represents one inte
 ```text
 intensities: array[struct{
     label:          string,  -- Label identifier (e.g. "LFQ", "TMT126", "iTRAQ114")
-    intensity:      float    -- Raw intensity value
+    intensity:      float    -- Raw intensity value; null when identified but not quantified
 }]
 ```
 
@@ -58,8 +58,18 @@ In a label-free quantification experiment, each feature row has a single intensi
 ]
 ```
 
+### Missing values
+
+An entry with a null `intensity` marks a label the feature was identified in but not quantified,
+such as a MaxQuant MS/MS-only evidence row or an empty reporter channel of an identified plex.
+A label with no entry was not identified or has no sample in the run, and a feature with no
+entry at all has a null `intensities` list. A `0` entry is a measured zero: converters write the
+zeros a tool uses as a "not quantified" sentinel as null instead. `NaN`, infinite and negative
+values are not valid intensities. The protein-group view follows the same rule with one row per
+label (see [Protein Group](pg.md)).
+
 !!! note
-    For LFQ experiments, each feature row corresponds to one MS run and one sample, so the `intensities` array always has a single element. For multiplexed experiments (TMT, iTRAQ), the array contains one element per label.
+    For LFQ experiments, each feature row corresponds to one MS run and one sample, so the `intensities` array has at most one element. For multiplexed experiments (TMT, iTRAQ), the array contains one element per measured label.
 
 ## Additional intensities
 

@@ -5,11 +5,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-import numpy as np
-import pyarrow as pa
-
-from qpx.core.data import FeatureSchema
-from qpx.core.data.identity import derive_id
+from qpx.writers.feature import derive_feature_ids
 
 _log = logging.getLogger(__name__)
 
@@ -19,22 +15,9 @@ _PROTEIN_FIELDS = ("anchor_protein", "pg_accessions", "unique", "gg_accessions",
 _EVIDENCE_FIELDS = ("scan", "id_run_file_name", "pg_positions", "posterior_error_probability", "peptide_qvalue", *_PROTEIN_FIELDS)
 
 
-# Composite fields FeatureWriter persists as float32; the others keep their Python values.
-_FLOAT32_FIELDS = frozenset(
-    name for name in FEATURE_IDENTITY_COMPOSITE if FeatureSchema.get_arrow_schema().field(name).type == pa.float32()
-)
-
-
-def _persisted(name: str, value):
-    """*value* as FeatureWriter persists composite field *name*."""
-    if value is None or name not in _FLOAT32_FIELDS:
-        return value
-    return float(np.float32(value))
-
-
 def feature_ids(records: list[dict]) -> list[int]:
     """Derive IDs from exactly the values persisted by FeatureWriter."""
-    return [derive_id([_persisted(name, rec.get(name)) for name in FEATURE_IDENTITY_COMPOSITE]) for rec in records]
+    return derive_feature_ids(records, FEATURE_IDENTITY_COMPOSITE)
 
 
 def _merge_evidence(target: dict, source: dict) -> None:

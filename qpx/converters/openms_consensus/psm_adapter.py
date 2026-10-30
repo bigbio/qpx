@@ -29,15 +29,13 @@ from qpx.converters.openms_consensus.feature_adapter import (
     to_proforma,
 )
 from qpx.converters.openms_consensus.feature_adapter import (
-    mass_error_ppm as _mass_error_ppm,
-)
-from qpx.converters.openms_consensus.feature_adapter import (
     pep_of as _pep_of,
 )
 from qpx.converters.openms_consensus.feature_adapter import (
     qvalue_meta_of as _qvalue_meta_of,
 )
 from qpx.converters.openms_consensus.protein_groups import identification_identifier
+from qpx.converters.utils import mass_error_ppm as _mass_error_ppm
 from qpx.converters.utils import safe_float
 from qpx.core.cleavage import count_missed_cleavages
 from qpx.core.scan import scan_format_from_native_id, scan_from_native_id

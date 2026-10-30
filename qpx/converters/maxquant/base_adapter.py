@@ -6,14 +6,18 @@ Provides common data-loading helpers used by
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Optional
 
+import pandas as pd
+
 from qpx.converters.base import BaseConverter
-from qpx.converters.channel_labels import label_unimod, read_sdrf_labels
+from qpx.converters.channel_labels import label_unimod, normalize_label, read_sdrf_labels, resolve_channel_labels
 from qpx.converters.maxquant.constants import FixedMods, parameters_fixed_mods, sdrf_fixed_mods
 from qpx.converters.ptm import NTERM
 from qpx.converters.utils import strip_uniprot_prefix
+from qpx.core.files import run_file_stem
 
 
 class MaxQuantBaseAdapter(BaseConverter):
@@ -59,19 +63,21 @@ class MaxQuantBaseAdapter(BaseConverter):
             fixed += ((NTERM, f"UNIMOD:{label}"), ("K", f"UNIMOD:{label}"))
         return fixed
 
-    def _load_sdrf(self, sdrf_path: Optional[str]) -> tuple[dict, str, list]:
-        """Load SDRF and return ``(sample_map, experiment_type, tmt_channels)``.
+    @staticmethod
+    def _load_sdrf(sdrf_path: Optional[str]) -> tuple[dict[str, set[str]], str, list[tuple[str, int]]]:
+        """Load SDRF and return ``(run_labels, experiment_type, channels)``.
 
-        When *sdrf_path* is ``None`` the method returns sensible LFQ defaults.
+        When *sdrf_path* is ``None`` the method returns LFQ defaults.
 
         Args:
             sdrf_path: Filesystem path to the SDRF file, or ``None``.
 
         Returns:
             A 3-tuple of:
-              - *sample_map*: ``{run_file -> sample_accession}``
+              - *run_labels*: ``{run file stem -> canonical labels the SDRF assigns a sample}``
               - *experiment_type*: e.g. ``"LFQ"``, ``"TMT11"``
-              - *tmt_channels*: sorted list of TMT channel labels (empty for LFQ)
+              - *channels*: ``(canonical label, 0-based reporter index)`` per declared
+                isobaric channel, in plex order (empty for LFQ)
         """
         if not sdrf_path:
             return {}, "LFQ", []
@@ -79,19 +85,18 @@ class MaxQuantBaseAdapter(BaseConverter):
         from qpx.core.sdrf import SDRFHandler
 
         handler = SDRFHandler(sdrf_path)
-        sample_map = handler.get_sample_map_run()
         experiment_type = handler.get_experiment_type_from_sdrf()
+        table = handler.sdrf_table
+        run_labels: dict[str, set[str]] = {}
+        for data_file, label in zip(table["comment[data file]"], table["comment[label]"]):
+            if pd.notna(data_file) and pd.notna(label):
+                run_labels.setdefault(run_file_stem(str(data_file)), set()).add(normalize_label(str(label)))
 
-        tmt_channels: list[str] = []
-        if experiment_type and ("TMT" in experiment_type.upper() or "ITRAQ" in experiment_type.upper()):
-            labels = handler.sdrf_table.get("comment[label]")
-            if labels is not None:
-                from qpx.converters.maxquant.constants import TMT_LABEL_TO_MQ_COL
-
-                # Normalize to canonical uppercase form so TMT_LABEL_TO_MQ_COL lookups
-                # are robust to inconsistent SDRF casing / leading-trailing whitespace.
-                raw_labels = [str(lbl).strip().upper() for lbl in labels.unique() if lbl and str(lbl).strip()]
-                _MAX_IDX = max(TMT_LABEL_TO_MQ_COL.values()) + 1
-                tmt_channels = sorted(raw_labels, key=lambda lbl: TMT_LABEL_TO_MQ_COL.get(lbl, _MAX_IDX))
-
-        return sample_map, experiment_type or "LFQ", tmt_channels
+        channels: list[tuple[str, int]] = []
+        family = {"TMT": "TMT", "ITRAQ": "iTRAQ"}.get(re.sub(r"\d+", "", experiment_type))
+        if family:
+            labels = set().union(*run_labels.values())
+            # MaxQuant numbers reporter columns by plex position, N-isomer before C-isomer.
+            index = {label: position - 1 for position, label in resolve_channel_labels(family, labels).items()}
+            channels = sorted(((label, index[label]) for label in labels), key=lambda channel: channel[1])
+        return run_labels, experiment_type, channels

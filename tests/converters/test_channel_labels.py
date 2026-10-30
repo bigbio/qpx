@@ -90,6 +90,28 @@ def test_multi_dot_run_names_match_sdrf_conversion(tmp_path):
     assert pq.read_table(run_output).column("run_file_name").to_pylist() == grouped
 
 
+@pytest.mark.parametrize(
+    ("labels", "expected"),
+    [
+        (["TMT126", "TMT134C", "TMT135N"], "TMT18"),
+        (["TMT126", "TMT127N", "TMT131"], "TMT10"),
+        (["ITRAQ114", "ITRAQ117"], "ITRAQ4"),
+        (["SILAC light", "SILAC heavy"], "SILAC"),
+        (["label free sample"], "LFQ"),
+    ],
+)
+def test_sdrf_experiment_type_follows_the_plex_not_the_label_count(tmp_path, labels, expected):
+    """Partial plexes and TMTpro-18 resolve to their plex instead of failing a label-count gate."""
+    from qpx.core.sdrf import SDRFHandler
+
+    sdrf = tmp_path / "design.sdrf.tsv"
+    sdrf.write_text(
+        "source name\tcomment[data file]\tcomment[label]\n"
+        + "".join(f"S{i}\trun1.raw\t{label}\n" for i, label in enumerate(labels))
+    )
+    assert SDRFHandler(sdrf).get_experiment_type_from_sdrf() == expected
+
+
 @pytest.mark.parametrize("data_file", ["", "   "], ids=["missing", "blank"])
 def test_sdrf_run_paths_reject_missing_data_files(tmp_path, data_file):
     """Missing run filenames must fail before producing mappings or output."""

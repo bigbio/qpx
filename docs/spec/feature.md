@@ -57,7 +57,7 @@ These fields are shared with the PSM view and describe the peptide identificatio
 | `peptide_qvalue` | Peptide-level q-value; null when the search engine does not provide one | float64, null | optional |
 | `is_decoy` | Whether the peptide is a decoy match (`true`) or a target match (`false`); use `false` when no target-decoy search was used. A peptide that matches both target and decoy proteins (OpenMS `target_decoy = target+decoy`) is a target match | bool | yes |
 | `calculated_mz` | Theoretical peptide mass-to-charge ratio based on identified sequence and modifications; null when it cannot be calculated | float32, null | yes |
-| `observed_mz` | Experimental observed peptide mass-to-charge ratio | float32 | yes |
+| `observed_mz` | Experimental observed peptide mass-to-charge ratio; null when the producer reports no measured precursor m/z | float32, null | yes |
 | `mass_error_ppm` | Mass error in ppm: 1e6 × (observed_mz − calculated_mz) / calculated_mz | float32, null | no |
 | `missed_cleavages` | Number of missed enzymatic cleavages | int16, null | no |
 | `rt` | Precursor retention time (in seconds) | float32, null | no |
@@ -88,9 +88,9 @@ These fields are shared with the PSM view and describe the peptide identificatio
 
 | Field | Description | Type | Required |
 |-------|-------------|------|----------|
-| `pg_accessions` | Protein group accessions of all proteins that the peptide maps to | array[string], null | no |
+| `pg_accessions` | Full membership of the peptide's protein group; for a peptide shared by several groups, the group the producer assigned it to (e.g. MaxQuant's razor group) | array[struct], null | no |
 | `anchor_protein` | One protein accession that represents the protein group; null when no protein mapping was performed (converters normalize blank/whitespace to null) | string, null | yes |
-| `unique` | Whether the peptide maps uniquely to a single protein group | bool, null | no |
+| `unique` | True when the peptide's protein group has exactly one protein and the peptide maps to no other group; false when the group has several members or the peptide is shared with other groups; null when the group is unresolved | bool, null | no |
 | `pg_positions` | Peptide start and end positions within each protein in the protein group | array[struct], null | optional |
 | `pg_global_qvalue` | Global q-value of the protein group at the experiment level | float64, null | optional |
 | `gg_accessions` | Gene accessions associated with the protein group | array[string], null | optional |
@@ -105,7 +105,7 @@ Each entry in `pg_positions` contains:
 | `end` | 1-based end position of the peptide in the protein sequence (inclusive) | `int` |
 
 !!! note "Gene and protein inference data"
-    Gene accessions, gene names, and unique peptide indicators are optionally included in the feature file for convenience. Protein-level scores are stored in the [Protein Group View](pg.md). When `pg_ids` is populated, join it directly to `pg.pg_id`. Otherwise use the semantic protein mapping (for example, `anchor_protein`) and require `feature.run_file_name` to be a member of `pg.grouped_runs`.
+    Gene accessions, gene names, and unique peptide indicators are optionally included in the feature file for convenience. Protein-level scores are stored in the [Protein Group View](pg.md). When `pg_ids` is populated, join it directly to `pg.pg_id`. Otherwise join on the group membership (`pg_accessions` compared as a set with `pg.pg_accessions`), require `feature.run_file_name` to be a member of `pg.grouped_runs`, and match `pg.label` to a label in `feature.intensities` (`Dataset.link_feature_pg()`).
 
 !!! info "Optional vs nullable"
     `pg_global_qvalue` and `peptide_qvalue` are **optional** — the column may be absent from the file entirely if the search engine does not provide that q-value. When present, individual values may be null.

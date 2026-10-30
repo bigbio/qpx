@@ -258,7 +258,7 @@ This section shows how output columns from common search engines and pipelines m
     | `Majority protein IDs` | `anchor_protein` | First accession of majority IDs |
     | `Protein names` | `pg_names` | Semicolon-separated → array |
     | `Gene names` | `gg_names` | Semicolon-separated → array |
-    | `Sequence coverage [%]` | `sequence_coverage` | |
+    | `Sequence coverage [exp] [%]` | `sequence_coverage` | Coverage in the experiment |
     | `Mol. weight [kDa]` | `molecular_weight` | |
     | `Reverse` | `is_decoy` | `"+"` → `true`, else `false` |
     | `Potential contaminant` | `contaminant` | `"+"` → `true`, else `false` |
@@ -269,9 +269,10 @@ This section shows how output columns from common search engines and pipelines m
 
     | MaxQuant column | QPX field | Notes |
     |---|---|---|
-    | `Unique peptides` | `peptide_counts.unique_sequences` | Peptides exclusive to this PG |
-    | `Peptides` or `Razor + unique peptides` | `peptide_counts.total_sequences` | Total assigned peptides |
-    | `Peptide counts (all)` | `peptides` | Per-protein peptide counts |
+    | `Unique peptides [exp]` | `peptide_counts.unique_sequences` | Peptides exclusive to this PG in the experiment |
+    | `Peptides [exp]` | `peptide_counts.total_sequences` | Peptides of this PG identified in the experiment |
+    | `Peptide counts (all)` | `peptides` | Per-protein peptide counts, aligned with `Protein IDs` |
+    | --- | `feature_counts` | Not reported by MaxQuant; null |
 
 === "Quantification"
 
@@ -280,7 +281,7 @@ This section shows how output columns from common search engines and pipelines m
     | `Intensity [exp]` | `intensity` | Primary raw intensity; scalar per row (one row per label) |
     | `LFQ intensity [exp]` | `additional_intensities` → `lfq` | MaxLFQ normalised |
     | `iBAQ [exp]` | `additional_intensities` → `ibaq` | Intensity-based absolute quantification |
-    | `MS/MS count [exp]` | `additional_intensities` → `spectral_count` | PSM count as float |
+    | `MS/MS count [exp]` | `additional_intensities` → `spectral_count` | PSM count as float; the plex's count on every channel row |
     | `Reporter intensity [channel]` | `intensity` | For TMT/iTRAQ, one **row** per channel (`label` = channel) |
     | `Reporter intensity corrected [channel]` | `additional_intensities` → `reporter_intensity_corrected` | |
     | `Ratio H/L [exp]` | `additional_intensities` → `ratio_h_l` | SILAC ratio |

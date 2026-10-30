@@ -664,9 +664,9 @@ class TestMaxQuantMassErrorPpm:
         lines = [self._EVIDENCE_HEADER]
         for i, err in enumerate(mass_errors):
             lines.append(
-                f"PEPTIDEK\t_PEPTIDEK_\t2\trun1\t\t{100 + i}\t450.25\t30.0\t"
+                f"PEPTIDEK\t_PEPTIDEK_\t2\trun1\t\t{100 + i}\t464.734729\t30.0\t"
                 f"29.5\t30.5\t0.001\tsp|P12345|TEST\tsp|P12345|TEST\tGENE1\t"
-                f"1000000.0\t150.0\t50.0\t898.5\t{err}"
+                f"1000000.0\t150.0\t50.0\t927.454904\t{err}"
             )
         ev.write_text("\n".join(lines) + "\n")
         return str(ev)

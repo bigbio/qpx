@@ -26,15 +26,12 @@ import pandas as pd
 from qpx.converters.base import resolve_columns
 from qpx.converters.mappings import get_field_mappings
 from qpx.converters.maxquant.base_adapter import MaxQuantBaseAdapter
-from qpx.converters.maxquant.constants import (
-    TMT_LABEL_TO_MQ_COL,
-    mq_calculated_mz,
-    to_proforma,
-)
+from qpx.converters.maxquant.constants import mq_calculated_mz, mq_observed_mz, to_proforma
 from qpx.converters.ptm import from_proforma
-from qpx.converters.utils import mq_flag_to_bool, safe_float, strip_uniprot_prefix
+from qpx.converters.utils import mass_error_ppm, mq_flag_to_bool, safe_float, strip_uniprot_prefix
+from qpx.core.files import run_file_stem
 from qpx.core.sql import sql_build, validate_identifier
-from qpx.writers.feature import FeatureWriter
+from qpx.writers.feature import FeatureWriter, derive_feature_ids
 
 logger = logging.getLogger(__name__)
 
@@ -42,13 +39,16 @@ logger = logging.getLogger(__name__)
 _FEATURE_MAP = get_field_mappings("maxquant", "feature")
 
 _EVIDENCE_DEDUP_SQL = """
-            SELECT *
+            SELECT *$evidence_ids
             FROM evidence
             QUALIFY ROW_NUMBER() OVER (
                 PARTITION BY $partition_by
                 ORDER BY $order_by
             ) = 1
             """
+
+# Evidence ids collapsed into each kept evidence row.
+_EVIDENCE_IDS = "__evidence_ids"
 
 # Producer-specific feature identity composite (bigbio/qpx#229). MaxQuant reports
 # an RT window per feature, so its measured key uses rt_start/rt_stop (both in
@@ -84,6 +84,10 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
             compression=compression,
         )
         self._warned_tmt_channels: set[str] = set()
+        # Canonical labels the SDRF assigns a sample, per run file stem.
+        self._run_labels: dict[str, set[str]] = {}
+        # evidence.txt ``id`` -> feature_id, filled when ``convert`` links evidence.
+        self.evidence_feature_ids: dict[int, int] = {}
 
     def convert(
         self,
@@ -93,6 +97,7 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         protein_groups_path: Optional[str] = None,
         chunksize: int = 500_000,
         creator: str = "maxquant",
+        link_evidence: bool = False,
     ) -> None:
         """Run the evidence.txt -> feature.parquet conversion.
 
@@ -104,7 +109,10 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
                 populating ``pg_global_qvalue`` and gene names on features.
             chunksize: Rows per batch.
             creator: Creator tag in Parquet metadata.
+            link_evidence: Record each evidence ``id``'s feature_id in
+                :attr:`evidence_feature_ids`, for linking msms.txt PSMs.
         """
+        self.evidence_feature_ids.clear()
         # Track which dropped-TMT-channel warnings have already been emitted so
         # the message is logged once, not once per batch.
         self._warned_tmt_channels.clear()
@@ -121,9 +129,14 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         }
         self._resolved = resolve_columns(_FEATURE_MAP, actual_cols)
 
-        # Step 3: Load the experiment type, TMT channels and fixed modifications
-        _, experiment_type, tmt_channels = self._load_sdrf(sdrf_path)
+        # Step 3: Load the experiment type, isobaric channels and fixed modifications
+        self._run_labels, _, channels = self._load_sdrf(sdrf_path)
         self._fixed = self._fixed_mods(sdrf_path, evidence_path)
+        if not channels and any(column.startswith("Reporter intensity") for column in actual_cols):
+            logger.warning(
+                "evidence.txt has reporter intensity columns but no SDRF declares the channels; "
+                "features carry the MS1 intensity only"
+            )
 
         # Step 3b: Build lookup maps from proteinGroups.txt
         pg_maps = self._build_protein_group_maps(protein_groups_path)
@@ -140,12 +153,27 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         ) as writer:
             for batch in self._query_batched(evidence_query, chunksize):
                 df = batch.to_pandas()
-                records = self._transform_batch(df, experiment_type, tmt_channels, pg_maps)
+                records = self._transform_batch(df, channels, pg_maps)
                 if records:
                     self._track_scores(records)
                     writer.write_batch(records)
+                    if link_evidence:
+                        self._link_evidence(df, derive_feature_ids(records, _FEATURE_IDENTITY_COMPOSITE))
 
         self.logger.info(f"MaxQuant feature conversion complete -> {output_path}")
+
+    def _link_evidence(self, df: pd.DataFrame, feature_ids: list[int]) -> None:
+        """Map every evidence ``id`` behind the batch's features, collapsed duplicates included."""
+        if _EVIDENCE_IDS in df.columns:
+            id_lists = df[_EVIDENCE_IDS]
+        elif "id" in df.columns:
+            id_lists = [[value] for value in df["id"]]
+        else:
+            return
+        for evidence_ids, feature_id in zip(id_lists, feature_ids):
+            for evidence_id in evidence_ids:
+                if evidence_id is not None and pd.notna(evidence_id):
+                    self.evidence_feature_ids[int(evidence_id)] = feature_id
 
     def _deduplicated_evidence_query(self, actual_cols: set[str]) -> str:
         """Collapse rows that share the feature identity, preferring identified evidence.
@@ -204,8 +232,15 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
             # No preference columns present; keep an arbitrary-but-stable row.
             order_by.append("1")
 
+        # Every evidence id a kept row stands for, so msms ``Evidence ID`` can resolve to the feature.
+        evidence_ids = (
+            f", LIST(TRY_CAST({validate_identifier('id')} AS BIGINT)) OVER (PARTITION BY {partition_by}) AS {_EVIDENCE_IDS}"
+            if "id" in actual_cols
+            else ""
+        )
         return sql_build(
             _EVIDENCE_DEDUP_SQL,
+            evidence_ids=evidence_ids,
             partition_by=partition_by,
             order_by=", ".join(order_by),
         )
@@ -230,7 +265,9 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
     def _build_protein_group_maps(self, protein_groups_path: Optional[str]) -> dict:
         """Build protein-group lookup maps from proteinGroups.txt.
 
-        Returns a dict with two sub-maps:
+        Returns a dict with three sub-maps:
+            ``by_id``: proteinGroups.txt ``id`` -> ``{"accessions", "qvalue",
+                "genes"}``, resolving the evidence ``Protein group IDs``.
             ``by_group``: full protein-group membership (a ``frozenset`` of
                 normalised accessions) -> ``{"qvalue", "genes"}``. This is the
                 primary key, consistent with the pg identity fix which keys on
@@ -241,7 +278,7 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
                 so a feature cannot inherit another group's q-value/genes via
                 its leader.
         """
-        empty = {"by_group": {}, "by_accession": {}}
+        empty = {"by_id": {}, "by_group": {}, "by_accession": {}}
         if not protein_groups_path:
             return empty
         df = self._conn.execute(
@@ -253,7 +290,8 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
             raise ValueError(f"{protein_groups_path} has no 'Protein IDs' or 'Majority protein IDs' column")
         maps = self._build_pg_lookup(df, acc_col, qval_col, gene_col)
         self.logger.info(
-            "Built protein group maps: %d group(s), %d unambiguous accession(s)",
+            "Built protein group maps: %d group id(s), %d group(s), %d unambiguous accession(s)",
+            len(maps["by_id"]),
             len(maps["by_group"]),
             len(maps["by_accession"]),
         )
@@ -286,23 +324,27 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         return genes
 
     def _build_pg_lookup(self, df: pd.DataFrame, acc_col: str, qval_col: Optional[str], gene_col: Optional[str]) -> dict:
-        """Build the ``by_group``/``by_accession`` lookup maps (see caller)."""
+        """Build the ``by_id``/``by_group``/``by_accession`` lookup maps (see caller)."""
+        by_id: dict[int, dict] = {}
         by_group: dict[frozenset, dict] = {}
         acc_to_groups: dict[str, set] = {}
         acc_value: dict[str, dict] = {}
 
+        def values(column: Optional[str]) -> list:
+            return df[column].tolist() if column and column in df.columns else [None] * len(df)
+
         acc_vals = df[acc_col].astype(str).tolist()
         qval_vals = pd.to_numeric(df[qval_col], errors="coerce").tolist() if qval_col else [None] * len(df)
-        gene_vals = df[gene_col].tolist() if (gene_col and gene_col in df.columns) else [None] * len(df)
-        fasta_vals = df["Fasta headers"].tolist() if "Fasta headers" in df.columns else [None] * len(df)
 
-        for acc_raw, qval, gene_raw, fasta_raw in zip(acc_vals, qval_vals, gene_vals, fasta_vals):
+        for acc_raw, qval, gene_raw, fasta_raw, group_id in zip(
+            acc_vals, qval_vals, values(gene_col), values("Fasta headers"), values("id")
+        ):
             accs = [strip_uniprot_prefix(a.strip()) for a in acc_raw.split(";") if a.strip()]
             if not accs:
                 continue
-            qvalue = float(qval) if qval is not None and pd.notna(qval) else None
-            genes = self._parse_genes(gene_raw, fasta_raw)
-            value = {"qvalue": qvalue, "genes": genes}
+            value = {"qvalue": safe_float(qval), "genes": self._parse_genes(gene_raw, fasta_raw)}
+            if pd.notna(group_id):
+                by_id[int(group_id)] = {**value, "accessions": accs}
             key = self._canonical_group_key(accs)
             by_group.setdefault(key, value)
             for acc in accs:
@@ -312,7 +354,7 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         # Keep only accessions that map to a single protein group for the
         # leader fallback; ambiguous accessions would otherwise collide.
         by_accession = {acc: acc_value[acc] for acc, keys in acc_to_groups.items() if len(keys) == 1}
-        return {"by_group": by_group, "by_accession": by_accession}
+        return {"by_id": by_id, "by_group": by_group, "by_accession": by_accession}
 
     def _lookup_pg_metadata(self, pg_maps: Optional[dict], pg_acc_list: list[str], anchor_protein: str) -> tuple:
         """Resolve ``(pg_global_qvalue, genes)`` for a feature's protein group.
@@ -343,24 +385,18 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
             return 0
         return 1
 
-    def _warn_dropped_tmt_channels(self, columns, experiment_type: str, tmt_channels: list[str], ri_offset: int) -> None:
+    def _warn_dropped_tmt_channels(self, columns, channels: list[tuple[str, int]], ri_offset: int) -> None:
         """Warn when the SDRF plex declares channels absent from evidence.txt.
 
         A ``Reporter intensity N`` column missing for a declared channel means
         that channel is silently dropped from every feature; surface it once.
         """
-        exp_type = re.sub(r"\d+", "", experiment_type or "").upper()
-        if exp_type not in ("TMT", "ITRAQ") or not tmt_channels:
-            return
         col_set = set(columns)
-        dropped: list[tuple[str, str]] = []
-        for seq_idx, channel_name in enumerate(tmt_channels):
-            col_idx = TMT_LABEL_TO_MQ_COL.get(str(channel_name).strip().upper())
-            if col_idx is None:
-                col_idx = seq_idx
-            col_name = f"Reporter intensity {col_idx + ri_offset}"
-            if col_name not in col_set:
-                dropped.append((str(channel_name), col_name))
+        dropped = [
+            (label, f"Reporter intensity {index + ri_offset}")
+            for label, index in channels
+            if f"Reporter intensity {index + ri_offset}" not in col_set
+        ]
         if not dropped:
             return
         key = tuple(sorted(ch for ch, _ in dropped))
@@ -377,8 +413,7 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
     def _transform_batch(
         self,
         df: pd.DataFrame,
-        experiment_type: str,
-        tmt_channels: list[str],
+        channels: list[tuple[str, int]],
         pg_maps: dict | None = None,
     ) -> list[dict]:
         """Transform a batch of evidence.txt rows into QPX feature records."""
@@ -386,19 +421,13 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         # Detect reporter intensity column indexing once per batch
         ri_offset = self._detect_ri_offset(df.columns)
         # Warn (once) about SDRF channels with no reporter column in evidence.txt
-        self._warn_dropped_tmt_channels(df.columns, experiment_type, tmt_channels, ri_offset)
+        self._warn_dropped_tmt_channels(df.columns, channels, ri_offset)
         # Pre-extract column arrays for faster per-row access than to_dict("records")
         col_arrays = {col: df[col].values for col in df.columns}
         n_rows = len(df)
         for i in range(n_rows):
             row = {col: vals[i] for col, vals in col_arrays.items()}
-            rec = self._transform_row(
-                row,
-                experiment_type,
-                tmt_channels,
-                pg_maps,
-                ri_offset,
-            )
+            rec = self._transform_row(row, channels, pg_maps, ri_offset)
             if rec:
                 records.append(rec)
         return records
@@ -406,8 +435,7 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
     def _transform_row(
         self,
         row,
-        experiment_type: str,
-        tmt_channels: list[str],
+        channels: list[tuple[str, int]],
         pg_maps: dict | None = None,
         ri_offset: int = 0,
     ) -> Optional[dict]:
@@ -430,7 +458,7 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         match_fields = self._evidence_match_fields(row, run_file_name)
 
         # Build intensities (new schema: {label, intensity})
-        intensities, additional_intensities = self._build_intensities(row, experiment_type, tmt_channels, ri_offset)
+        intensities, additional_intensities = self._build_intensities(row, run_file_name, channels, ri_offset)
 
         additional_scores = self._evidence_scores(row)
 
@@ -461,64 +489,48 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
     def _build_intensities(
         self,
         row,
-        experiment_type: str,
-        tmt_channels: list[str],
+        run_file_name: str,
+        channels: list[tuple[str, int]],
         ri_offset: int = 0,
     ) -> tuple[list[dict], Optional[list[dict]]]:
-        """Build intensities and additional_intensities from evidence row."""
+        """Build intensities and additional_intensities from evidence row.
+
+        Every evidence row is an identification, so a label without a quantity
+        is kept with a null intensity; MaxQuant writes a missing quantity as 0.
+        """
+        if channels:
+            intensities, additional_intensities = self._reporter_intensities(row, run_file_name, channels, ri_offset)
+            return intensities, additional_intensities or None
+        # LFQ: prefer MaxQuant-normalised "LFQ intensity" when available,
+        # fall back to raw "Intensity" (e.g. for datasets without LFQ algo).
+        lfq_val = safe_float(row.get("LFQ intensity"))
+        raw_val = safe_float(row.get(_FEATURE_MAP["intensity"][0]))
+        intensity_val = lfq_val if (lfq_val is not None and lfq_val > 0) else raw_val
+        quantified = intensity_val is not None and intensity_val > 0
+        return [{"label": "LFQ", "intensity": intensity_val if quantified else None}], None
+
+    def _reporter_intensities(self, row, run_file_name: str, channels: list[tuple[str, int]], ri_offset: int) -> tuple:
+        """One intensity per channel the SDRF assigns in this run, read from its plex position."""
         intensities: list[dict] = []
         additional_intensities: list[dict] = []
-
-        exp_type = re.sub(r"\d+", "", experiment_type).upper()
-
-        if exp_type in ("TMT", "ITRAQ") and tmt_channels:
-            # TMT/iTRAQ: one intensity per channel.
-            # Use the explicit label→column-index map so that N/C isomer pairs
-            # (e.g. TMT127N at col 1, TMT127C at col 2) are always read from
-            # their correct MaxQuant 0-indexed reporter intensity column,
-            # regardless of how tmt_channels happens to be ordered.
-            for seq_idx, channel_name in enumerate(tmt_channels):
-                col_idx = TMT_LABEL_TO_MQ_COL.get(str(channel_name).strip().upper())
-                if col_idx is None:
-                    # Unknown label (e.g. bare TMT6-plex "TMT128" without N/C suffix).
-                    # Fall back to sequential position within the channel list, which is
-                    # correct for single-mass plexes where no N/C isomers exist.
-                    logger.debug(
-                        "Unknown TMT/iTRAQ channel label %r — using sequential index %d",
-                        channel_name,
-                        seq_idx,
-                    )
-                    col_idx = seq_idx
-                col_name = f"Reporter intensity {col_idx + ri_offset}"
-                val = row.get(col_name)
-                if pd.notna(val) and float(val) > 0:
-                    intensities.append({"label": channel_name, "intensity": float(val)})
-
-                    # Corrected intensity
-                    corr_col = col_name.replace("Reporter intensity", "Reporter intensity corrected")
-                    corr_val = row.get(corr_col)
-                    if pd.notna(corr_val):
-                        additional_intensities.append(
-                            {
-                                "label": channel_name,
-                                "intensities": [
-                                    {
-                                        "intensity_name": "corrected_reporter_intensity",
-                                        "intensity_value": float(corr_val),
-                                    }
-                                ],
-                            }
-                        )
-        else:
-            # LFQ: prefer MaxQuant-normalised "LFQ intensity" when available,
-            # fall back to raw "Intensity" (e.g. for datasets without LFQ algo).
-            lfq_val = safe_float(row.get("LFQ intensity"))
-            raw_val = safe_float(row.get(_FEATURE_MAP["intensity"][0]))
-            intensity_val = lfq_val if (lfq_val is not None and lfq_val > 0) else (raw_val or 0.0)
-            label = "LFQ"
-            intensities.append({"label": label, "intensity": float(intensity_val)})
-
-        return intensities, additional_intensities or None
+        run_labels = self._run_labels.get(run_file_stem(run_file_name))
+        for label, index in channels:
+            col_name = f"Reporter intensity {index + ri_offset}"
+            if col_name not in row or (run_labels is not None and label not in run_labels):
+                continue
+            val = safe_float(row.get(col_name))
+            quantified = val is not None and val > 0
+            intensities.append({"label": label, "intensity": val if quantified else None})
+            corr_val = safe_float(row.get(col_name.replace("Reporter intensity", "Reporter intensity corrected")))
+            # Beside a missing reporter intensity, a zero is MaxQuant's sentinel.
+            if corr_val is not None and (quantified or corr_val != 0):
+                additional_intensities.append(
+                    {
+                        "label": label,
+                        "intensities": [{"intensity_name": "reporter_intensity_corrected", "intensity_value": corr_val}],
+                    }
+                )
+        return intensities, additional_intensities
 
     @staticmethod
     def _genes_from_headers(fasta_raw: str) -> Optional[list[str]]:
@@ -544,9 +556,9 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
                 pass
 
         calculated_mz = mq_calculated_mz(peptidoform, charge, safe_float(row.get(r.get("mass", "Mass"))))
-
-        # m/z
-        observed_mz = safe_float(row.get(r.get("observed_mz", "m/z")))
+        observed_mz = mq_observed_mz(
+            safe_float(row.get(r.get("observed_mz", "m/z"))), safe_float(row.get(r.get("mass_error_ppm", "Mass error [ppm]")))
+        )
 
         # RT (minutes → seconds)
         rt = safe_float(row.get(r.get("rt", "Calibrated retention time")))
@@ -568,6 +580,7 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
             "scan": scan,
             "calculated_mz": calculated_mz,
             "observed_mz": observed_mz,
+            "mass_error_ppm": mass_error_ppm(calculated_mz, observed_mz),
             "rt": rt,
             "rt_start": rt_start,
             "rt_stop": rt_stop,
@@ -575,22 +588,37 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
             "ion_mobility": ion_mobility,
         }
 
+    @staticmethod
+    def _group_ids(value) -> list[int]:
+        """Parse an evidence ``Protein group IDs`` cell (``"12"`` or ``"12;40"``)."""
+        if value is None or (not isinstance(value, str) and pd.isna(value)):
+            return []
+        text = value if isinstance(value, str) else str(int(value))
+        return [int(part) for part in text.split(";") if part.strip()]
+
+    def _assigned_group(self, row: dict, pg_maps: dict | None, razor: str) -> tuple[Optional[dict], bool]:
+        """The proteinGroups.txt entry MaxQuant assigns an evidence row, and whether its peptide is shared.
+
+        A peptide in one group belongs to it; a peptide shared by several groups
+        is assigned to the group of its leading razor protein. ``None`` when the
+        groups are not in proteinGroups.txt or no group holds the razor protein.
+        """
+        by_id = (pg_maps or {}).get("by_id")
+        ids = self._group_ids(row.get("Protein group IDs")) if by_id else []
+        groups = [by_id[group_id] for group_id in ids if group_id in by_id]
+        if len(ids) == 1:
+            return (groups[0] if groups else None), False
+        return next((group for group in groups if razor in group["accessions"]), None), len(ids) > 1
+
     def _evidence_protein_fields(self, row: dict, pg_maps: dict | None) -> tuple:
         """Resolve protein membership, group confidence, and genes."""
         r = self._resolved
-        # Protein accessions (list of pg_protein structs)
-        pg_acc_raw = str(row.get(r.get("pg_accessions", "Leading proteins"), ""))
-        pg_acc_list = [self._norm_uniprot_id(a) for a in pg_acc_raw.split(";")] if pg_acc_raw else []
         anchor_protein = self._norm_uniprot_id(str(row.get(r.get("anchor_protein", "Leading razor protein"), "")))
-        if not anchor_protein and pg_acc_list:
-            anchor_protein = pg_acc_list[0]
+        if (pg_maps or {}).get("by_id") and "Protein group IDs" in row:
+            pg_acc_list, anchor_protein, unique, pg_qvalue, pg_genes = self._assigned_group_fields(row, pg_maps, anchor_protein)
+        else:
+            pg_acc_list, anchor_protein, unique, pg_qvalue, pg_genes = self._leading_protein_fields(row, pg_maps, anchor_protein)
         pg_accessions = [{"accession": acc, "start": None, "end": None, "pre": None, "post": None} for acc in pg_acc_list] or None
-
-        # Unique peptide indicator
-        unique = len(pg_acc_list) <= 1
-
-        # Protein-group q-value and genes, keyed on the full membership.
-        pg_qvalue, pg_genes = self._lookup_pg_metadata(pg_maps, pg_acc_list, anchor_protein)
 
         # Gene names
         gg_raw = row.get(r.get("gg_names", "Gene names"))
@@ -598,6 +626,30 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         if not gg_names:
             gg_names = pg_genes
         return pg_accessions, anchor_protein, unique, pg_qvalue, gg_names
+
+    def _assigned_group_fields(self, row: dict, pg_maps: dict, razor: str) -> tuple:
+        """``(members, anchor, unique, qvalue, genes)`` of the group MaxQuant assigns the evidence row."""
+        group, shared = self._assigned_group(row, pg_maps, razor)
+        if group is None:
+            return [], None, None, None, None
+        members = group["accessions"]
+        anchor = razor if razor in members else members[0]
+        return members, anchor, len(members) == 1 and not shared, group["qvalue"], group["genes"]
+
+    def _leading_protein_fields(self, row: dict, pg_maps: dict | None, anchor: str) -> tuple:
+        """``(members, anchor, unique, qvalue, genes)`` without proteinGroups.txt group ids.
+
+        The group membership is unknown, so the evidence's leading proteins stand in for it.
+        """
+        pg_acc_raw = str(row.get(self._resolved.get("pg_accessions", "Leading proteins"), ""))
+        members = [self._norm_uniprot_id(a) for a in pg_acc_raw.split(";")] if pg_acc_raw else []
+        if not anchor and members:
+            anchor = members[0]
+        proteins = row.get("Proteins")
+        unique = len(proteins.split(";")) == 1 if isinstance(proteins, str) else len(members) <= 1
+        # Protein-group q-value and genes, keyed on the full membership.
+        qvalue, genes = self._lookup_pg_metadata(pg_maps, members, anchor)
+        return members, anchor, unique, qvalue, genes
 
     def _evidence_scores(self, row: dict) -> list[dict]:
         """Collect Andromeda score fields from an evidence row."""
@@ -625,11 +677,8 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         return additional_scores
 
     def _evidence_match_fields(self, row: dict, run_file_name: str) -> dict:
-        """Extract mass error, cleavage count, and identification source."""
+        """Extract cleavage count and identification source."""
         r = self._resolved
-        # Mass error (ppm) — direct column from evidence.txt
-        mass_error_ppm = safe_float(row.get(r.get("mass_error_ppm", "Mass error [ppm]")))
-
         # Missed cleavages (dedicated field from evidence.txt)
         mc_raw = row.get(r.get("missed_cleavages", "Missed cleavages"))
         missed_cleavages = int(mc_raw) if pd.notna(mc_raw) else None
@@ -638,7 +687,6 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         evidence_type = str(row.get("Type", "")).strip().upper()
         id_run_file_name = None if evidence_type == "MULTI-MATCH" else run_file_name
         return {
-            "mass_error_ppm": mass_error_ppm,
             "missed_cleavages": missed_cleavages,
             "id_run_file_name": id_run_file_name,
         }

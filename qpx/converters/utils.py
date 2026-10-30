@@ -104,3 +104,17 @@ def pg_accessions_array(pg_groups: pa.ChunkedArray, pg_acc_type: pa.ListType) ->
         fields=list(struct_type),
     )
     return pa.ListArray.from_arrays(split.offsets, structs, type=pg_acc_type, mask=split.is_null())
+
+
+def mass_error_ppm(calculated_mz, observed_mz) -> float | None:
+    """Relative precursor mass error in ppm, or ``None`` when it is not measurable.
+
+    Both m/z values must be positive: a producer that writes 0.0 for a missing
+    m/z would otherwise report roughly -1e6 ppm instead of "not measured". An
+    exact match returns ``0.0``, a genuine result.
+    """
+    if calculated_mz is None or observed_mz is None:
+        return None
+    if calculated_mz <= 0 or observed_mz <= 0:
+        return None
+    return float((observed_mz - calculated_mz) / calculated_mz * 1e6)

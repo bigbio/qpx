@@ -27,7 +27,7 @@ modification:
 intensity:
   fields:
     label: {type: string}
-    intensity: {type: float32}
+    intensity: {type: float32, nullable: true}
 
 intensity_pair:
   fields:

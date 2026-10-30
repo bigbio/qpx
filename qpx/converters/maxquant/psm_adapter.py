@@ -20,9 +20,15 @@ import pandas as pd
 from qpx.converters.base import resolve_columns
 from qpx.converters.mappings import get_field_mappings
 from qpx.converters.maxquant.base_adapter import MaxQuantBaseAdapter
-from qpx.converters.maxquant.constants import mq_calculated_mz, parse_phospho_probabilities, phospho_candidates, to_proforma
+from qpx.converters.maxquant.constants import (
+    mq_calculated_mz,
+    mq_observed_mz,
+    parse_phospho_probabilities,
+    phospho_candidates,
+    to_proforma,
+)
 from qpx.converters.ptm import from_proforma
-from qpx.converters.utils import mq_flag_to_bool, safe_float
+from qpx.converters.utils import mass_error_ppm, mq_flag_to_bool, safe_float
 from qpx.writers.psm import PsmWriter
 
 logger = logging.getLogger(__name__)
@@ -55,6 +61,9 @@ _MQ_PSM_SPECTRAL_COLS = [
 class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
     """Convert MaxQuant ``msms.txt`` to ``psm.parquet``.
 
+    ``psm.feature_id`` is filled from ``Evidence ID`` when the feature view's
+    ids are passed to :meth:`convert`.
+
     Usage::
 
         with MaxQuantPsmAdapter() as adapter:
@@ -64,6 +73,8 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
             )
     """
 
+    _evidence_feature_ids: dict[int, int] = {}
+
     def convert(
         self,
         msms_path: str,
@@ -72,6 +83,7 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
         spectral_data: bool = False,
         creator: str = "maxquant",
         sdrf_path: Optional[str] = None,
+        evidence_feature_ids: Optional[dict[int, int]] = None,
     ) -> None:
         """Run the msms.txt -> psm.parquet conversion.
 
@@ -82,8 +94,12 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
             spectral_data: Whether to include spectral arrays.
             creator: Creator tag in Parquet metadata.
             sdrf_path: Optional SDRF file declaring fixed modifications and labels.
+            evidence_feature_ids: evidence.txt ``id`` -> feature_id of the
+                feature view written alongside, linking each PSM through its
+                ``Evidence ID``.
         """
         self._fixed = self._fixed_mods(sdrf_path, msms_path)
+        self._evidence_feature_ids = evidence_feature_ids or {}
         # Step 1: Load msms.txt into DuckDB
         self._load_msms(msms_path)
 
@@ -161,9 +177,6 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
             else []
         )
 
-        # Mass error (ppm) — direct column from msms.txt
-        mass_error_ppm = safe_float(row.get(r.get("mass_error_ppm", "Mass error [ppm]")))
-
         # Ion mobility
         ion_mobility = safe_float(row.get("1/K0"))
 
@@ -175,15 +188,16 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
 
         mz_array, intensity_array = self._spectral_arrays(row, spectral_data)
 
+        evidence_id = row.get("Evidence ID")
         return {
             **spectrum_fields,
+            "feature_id": self._evidence_feature_ids.get(int(evidence_id)) if pd.notna(evidence_id) else None,
             "sequence": sequence,
             "peptidoform": peptidoform,
             "modifications": modifications,
             "modification_candidates": phospho_candidates(site_scores, sequence, modifications),
             "charge": charge,
             "is_decoy": is_decoy,
-            "mass_error_ppm": mass_error_ppm,
             "additional_scores": additional_scores or None,
             "predicted_rt": None,
             "cv_params": cv_params or None,
@@ -244,10 +258,10 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
         # Run file name (strip extension)
         run_file_name = str(row.get(r.get("run_file_name", "Raw file"), ""))
 
-        # m/z values
-        observed_mz = safe_float(row.get(r.get("observed_mz", "m/z"))) or 0.0
-
         calculated_mz = mq_calculated_mz(peptidoform, charge, safe_float(row.get("Mass")))
+        observed_mz = mq_observed_mz(
+            safe_float(row.get(r.get("observed_mz", "m/z"))), safe_float(row.get(r.get("mass_error_ppm", "Mass error [ppm]")))
+        )
 
         # RT (minutes → seconds)
         rt = safe_float(row.get(r.get("rt", "Retention time")))
@@ -261,6 +275,7 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
             "run_file_name": run_file_name,
             "observed_mz": observed_mz,
             "calculated_mz": calculated_mz,
+            "mass_error_ppm": mass_error_ppm(calculated_mz, observed_mz),
             "rt": rt,
             "posterior_error_probability": pep,
         }

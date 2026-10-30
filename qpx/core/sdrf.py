@@ -116,7 +116,7 @@ class SDRFHandler:
     def get_experiment_type_from_sdrf(self):
         """
         Using the SDRF file label column, we will try to extract the experiment type of an SDRF.
-        The three possible values supported in SDRF are lfq, tmt and itraq.
+        Returns ``LFQ``, ``SILAC``, or ``TMT<n>`` / ``ITRAQ<n>`` with the channel count of the plex.
         """
         if self.LABELING not in self.sdrf_table.columns:
             raise ValueError("The SDRF file provided does not contain the comment[label] column")
@@ -125,18 +125,21 @@ class SDRFHandler:
         if len(labeling_values) == 0:
             raise ValueError("The SDRF file provided does not contain any comment[label] value")
 
-        labeling_values = [i.upper() for i in labeling_values]
-
-        if any("LABEL FREE" in i for i in labeling_values):
+        if any("LABEL FREE" in i.upper() for i in labeling_values):
             return "LFQ"
-        if any("TMT" in i for i in labeling_values):
-            if len(labeling_values) in (6, 10, 11, 16):
-                return f"TMT{len(labeling_values)}"
-            raise ValueError("The SDRF file provided does not contain a supported TMT comment[label] value")
-        if any("ITRAQ" in i for i in labeling_values):
-            if len(labeling_values) in (4, 8):
-                return f"ITRAQ{len(labeling_values)}"
-            raise ValueError("The SDRF file provided does not contain a supported iTRAQ comment[label] value")
+
+        from qpx.converters.channel_labels import experiment_type_from_labels, resolve_channel_labels
+
+        labels = set(labeling_values)
+        family = experiment_type_from_labels(labels)
+        if family == "SILAC":
+            return family
+        if family in ("TMT", "iTRAQ"):
+            # The plex is the smallest one holding every declared label, so partial plexes resolve too.
+            plex = resolve_channel_labels(family, labels)
+            if not plex:
+                raise ValueError(f"The SDRF {family} labels {sorted(labels)} match no {family} plex")
+            return f"{family.upper()}{len(plex)}"
         raise ValueError("The SDRF file provided does not contain any supported comment[label] value")
 
     def get_sample_map_run(self):

@@ -3,11 +3,35 @@
 import logging
 from collections.abc import Sequence
 
+import numpy as np
+import pyarrow as pa
+
 from qpx.core.data import FeatureSchema
 from qpx.core.data.identity import derive_id
 from qpx.writers.base import BaseWriter
 
 _log = logging.getLogger(__name__)
+
+# Composite fields FeatureWriter persists as float32; the others keep their Python values.
+_FLOAT32_FIELDS = frozenset(field.name for field in FeatureSchema.get_arrow_schema() if field.type == pa.float32())
+
+
+def derive_feature_ids(records: list[dict], composite: Sequence[str]) -> list[int]:
+    """The ``feature_id`` FeatureWriter derives for each identified record from *composite*.
+
+    Values are hashed as persisted, so a float32 field is rounded to float32 first.
+    """
+    unordered = tuple(index for index, name in enumerate(composite) if name in ("grouped_runs", "pg_accessions"))
+    return [
+        derive_id(
+            [
+                float(np.float32(rec.get(name))) if name in _FLOAT32_FIELDS and rec.get(name) is not None else rec.get(name)
+                for name in composite
+            ],
+            unordered_list_indices=unordered,
+        )
+        for rec in records
+    ]
 
 
 class FeatureWriter(BaseWriter):
