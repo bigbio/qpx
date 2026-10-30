@@ -125,12 +125,20 @@ The Python API provides several pre-built views accessible as properties on the 
 
 | View | Property | Data Method | Description |
 |------|----------|-------------|-------------|
-| Identification Summary | `ds.identification_summary` | `.summary()` | Per-run protein, peptide, and feature counts |
-| Run Summary | `ds.run_summary` | `.summary()` | Per-run statistics (cached) |
+| Identification Summary | `ds.identification_summary` | `.summary()` | Per-run protein group, peptide, and feature counts |
+| Run Summary | `ds.run_summary` | `.summary()` | The same per-run counts, cached |
 | Modification View | `ds.modification_view` | `.frequency()` | Modification frequency across PSMs |
 | QC View | `ds.qc_view` | `.metrics()` | Dataset-wide quality control metrics |
-| Protein View | `ds.protein_view` | `.intensity()` | Protein abundance per sample (joins PG + Run) |
+| Sample Summary | `ds.sample_summary` | `.peptides_per_run()`, `.peptides_per_sample()`, `.proteins_per_sample()` | Peptide and protein group counts per run and sample |
+| Protein View | `ds.protein_view` | `.intensity(q_value_threshold=None)` | Protein group abundance per sample (joins PG + Run) |
 | Peptide View | `ds.peptide_view` | `.intensity()` | Peptide abundance per sample (joins Feature + Run) |
+
+All of them leave decoys out and count protein groups by their membership, not by
+`anchor_protein`. A sample is resolved through the label of each quantity, so in a
+multiplexed run a peptide counts for the channels that carry it, not for every
+sample of the run. `protein_view.intensity()` applies no q-value filter unless
+`q_value_threshold` is given. A view over a structure the dataset lacks raises a
+`ValueError` naming it.
 
 ### Abundance matrices
 
@@ -168,7 +176,7 @@ group the protein leads.
 
 ### Plotting
 
-Each summary view has a `.plot()` method that returns a `matplotlib.Figure` for quick visualization. Matplotlib is imported lazily -- it is only required when `.plot()` is called.
+Each summary view has a `.plot()` method that returns a `plotly` `Figure` for quick visualization. Plotly is imported lazily -- it is only required when `.plot()` is called (`pip install qpx[plotting]`).
 
 ```python
 import qpx
@@ -177,23 +185,23 @@ ds = qpx.open_dataset("PXD014414/")
 
 # Identification summary bar chart
 fig = ds.identification_summary.plot()
-fig.savefig("identifications.png")
+fig.write_html("identifications.html")
 
 # Run summary grouped bar chart
-fig = ds.run_summary.plot(figsize=(14, 7))
-fig.savefig("run_summary.png")
+fig = ds.run_summary.plot()
 
 # QC metrics overview
 fig = ds.qc_view.plot()
-fig.savefig("qc_overview.png")
 
 # Modification frequency (top 20 by PSM count)
 fig = ds.modification_view.plot(top_n=20)
-fig.savefig("modifications.png")
+
+# Peptides or protein groups per sample
+fig = ds.sample_summary.plot(metric="proteins_per_sample")
 ```
 
 !!! tip "Customization"
-    Each `.plot()` method accepts a `figsize` tuple. The `ModificationView.plot()` also accepts `top_n` to control how many modifications are shown. For more advanced customization, retrieve the data with `.summary().to_df()` and build your own plots.
+    `ModificationView.plot()` takes `top_n`, the number of modifications shown, and `SampleSummaryView.plot()` takes `metric`. Change the returned figure with plotly's own API (`fig.update_layout(width=1400)`), or retrieve the data with `.summary().to_df()` and build your own plots. Saving as an image (`fig.write_image`) needs the `kaleido` package.
 
 ## Dataset Collections
 
