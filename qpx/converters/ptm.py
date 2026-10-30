@@ -4,13 +4,15 @@ This flat module consolidates shared logic previously spread across
 ``qpx.converters.ptm.unimod``, ``qpx.converters.ptm.proforma``,
 ``qpx.converters.ptm.modifications``, and ``qpx.converters.ptm.__init__``.
 
-Unimod accessions and masses come from pyopenms' ``ModificationsDB`` (the Unimod
-release pyopenms ships), not from a hand-written table. Tool-specific parsing
-(MaxQuant short names such as ``ox``) stays in the converter's ``constants.py``.
+Unimod accessions, names and masses come from pyopenms' ``ModificationsDB``
+(the Unimod release pyopenms ships), not from hand-written tables. Tool-specific
+parsing (MaxQuant short names such as ``ox``) stays in the converter's
+``constants.py``.
 """
 
 from __future__ import annotations
 
+import logging
 import math
 import re
 from bisect import bisect_left, bisect_right
@@ -21,6 +23,8 @@ from typing import NamedTuple, Optional, Tuple
 # ---------------------------------------------------------------------------
 # Unimod lookups (pyopenms ModificationsDB)
 # ---------------------------------------------------------------------------
+
+logger = logging.getLogger(__name__)
 
 _MASS_TOL = 0.01
 
@@ -43,6 +47,20 @@ _OPENMS_CUSTOM_RECORD_ID = 99900
 # (Carboxyethyl 378) and Hexanoyl 2121 (MesitylOxide 1873).
 _PREFERRED_ON_TIE = frozenset({1, 2, 4, 5, 6, 7, 34, 35, 36, 37, 58, 121, 122, 214, 888, 1289, 1848, 2114, 2121})
 
+# Vendor modification names that are neither Unimod names nor ModificationsDB synonyms.
+_NAME_ALIASES: dict[str, str] = {
+    "glygly": "GG",
+    "tmt10plex": "TMT6plex",
+    "tmt11plex": "TMT6plex",
+    "tmt16plex": "TMTpro",
+    "tmt18plex": "TMTpro",
+}
+
+# MaxQuant/Spectronaut "Name (Sites)" suffix, e.g. " (STY)" or " (Protein N-term)".
+_SITE_SUFFIX_RE = re.compile(r"\s+\([^()]*\)$")
+_ACCESSION_RE = re.compile(r"(?i)unimod:(\d+)")
+_SIGNED_MASS_RE = re.compile(r"[+-]\d+(?:\.\d+)?")
+
 
 class _UnimodSite(NamedTuple):
     """One site of a Unimod modification: ``residue`` is ``"X"`` for any residue, ``terminus`` "N", "C" or None."""
@@ -53,8 +71,15 @@ class _UnimodSite(NamedTuple):
     terminus: Optional[str]
 
 
+def _modification_names(mod) -> set[str]:
+    """Lower-cased names of a ``ResidueModification``: Unimod title, full id, full name and synonyms."""
+    names = {mod.getId(), mod.getFullId(), mod.getFullName()}
+    names.update(name.decode() if isinstance(name, bytes) else name for name in mod.getSynonyms())
+    return {name.lower() for name in names if name}
+
+
 class _UnimodIndex:
-    """The Unimod entries of pyopenms' ``ModificationsDB``, sorted by delta mass.
+    """The Unimod entries of pyopenms' ``ModificationsDB``, sorted by delta mass and keyed by name.
 
     ModificationsDB holds one entry per Unimod accession and site, read from the
     Unimod release that pyopenms ships. Entries without a Unimod accession (from
@@ -69,11 +94,14 @@ class _UnimodIndex:
         termini = {int(spec.N_TERM): "N", int(spec.PROTEIN_N_TERM): "N", int(spec.C_TERM): "C", int(spec.PROTEIN_C_TERM): "C"}
         db = oms.ModificationsDB()
         sites = []
+        self.by_name: dict[str, list[_UnimodSite]] = {}
         for index in range(db.getNumberOfModifications()):
             mod = db.getModification(index)
             if 0 < mod.getUniModRecordId() < _OPENMS_CUSTOM_RECORD_ID:
                 terminus = termini.get(int(mod.getTermSpecificity()))
                 sites.append(_UnimodSite(mod.getUniModRecordId(), mod.getDiffMonoMass(), mod.getOrigin(), terminus))
+                for name in _modification_names(mod):
+                    self.by_name.setdefault(name, []).append(sites[-1])
         sites.sort(key=lambda site: site.mass)
         self.sites = sites
         self.masses = [site.mass for site in sites]
@@ -173,6 +201,95 @@ def mass_tag(mass: float, residue: Optional[str] = None, terminus: Optional[str]
     return f"UNIMOD:{accession}" if accession is not None else format_mass_delta(mass)
 
 
+def _name_keys(name: str) -> list[str]:
+    """Lookup keys for a modification name: as given, without a vendor site suffix, and its alias."""
+    key = name.strip().lower()
+    base = _SITE_SUFFIX_RE.sub("", key)
+    keys = [key, base]
+    if base in _NAME_ALIASES:
+        keys.append(_NAME_ALIASES[base].lower())
+    return keys
+
+
+@lru_cache(maxsize=4096)
+def name_to_unimod(name: str, residue: Optional[str] = None, terminus: Optional[str] = None) -> Optional[int]:
+    """Find the Unimod accession of a modification name.
+
+    Accepts the Unimod names and synonyms ModificationsDB knows (``Phospho``,
+    ``Deamidation``, ``Pyro-glu from E``), the vendor form with a site suffix
+    (MaxQuant and Spectronaut ``Phospho (STY)``, ``Acetyl (Protein N-term)``) and
+    the vendor names in ``_NAME_ALIASES`` (``GlyGly``, ``TMT10plex``,
+    ``TMT16plex``). When a name has several accessions, those with a site fitting
+    *residue* / *terminus* (see :func:`mass_to_unimod`) win, then the lowest.
+    Returns ``None`` for an unknown name.
+    """
+    by_name = _unimod_index().by_name
+    for key in _name_keys(name):
+        sites = by_name.get(key)
+        if sites:
+            ranked = [(_site_rank(site, residue, terminus), site.accession) for site in sites]
+            fitting = [entry for entry in ranked if entry[0] is not None]
+            return min(fitting)[1] if fitting else min(site.accession for site in sites)
+    return None
+
+
+@lru_cache(maxsize=4096)
+def modification_tag(name: str, residue: Optional[str] = None, terminus: Optional[str] = None) -> str:
+    """ProForma tag for a vendor modification name at *residue* / *terminus*.
+
+    ``UNIMOD:n`` for a Unimod accession (``UniMod:35``) or name (see
+    :func:`name_to_unimod`); a signed mass (``+15.9949``) is resolved like a
+    FragPipe mass (see :func:`mass_tag`). Any other name is kept, with square
+    brackets replaced by parentheses so it cannot end the ProForma tag early,
+    and logged once.
+    """
+    match = _ACCESSION_RE.fullmatch(name.strip())
+    if match:
+        return f"UNIMOD:{int(match.group(1))}"
+    accession = name_to_unimod(name, residue, terminus)
+    if accession is not None:
+        return f"UNIMOD:{accession}"
+    if _SIGNED_MASS_RE.fullmatch(name.strip()):
+        return mass_tag(float(name), residue, terminus)
+    logger.warning("Modification %r has no Unimod entry; it is kept as a name in the peptidoform", name)
+    return name.replace("[", "(").replace("]", ")")
+
+
+def _group_end(text: str, start: int, open_char: str, close_char: str) -> Optional[int]:
+    """Index after the delimiter closing the one at *start*, counting nested pairs; ``None`` if unclosed."""
+    depth = 0
+    for index in range(start, len(text)):
+        if text[index] == open_char:
+            depth += 1
+        elif text[index] == close_char:
+            depth -= 1
+            if depth == 0:
+                return index + 1
+    return None
+
+
+def split_modified_sequence(modified: str, open_char: str = "(", close_char: str = ")") -> tuple[str, list[tuple[int, str]]]:
+    """Split a vendor modified sequence into its residues and ``(position, modification)`` pairs.
+
+    A modification gets the position of the residue before it, or 0 before the
+    first residue (the :func:`build_proforma` convention). Delimiters nest, so
+    MaxQuant ``M(Oxidation (M))`` gives ``Oxidation (M)``; an unclosed
+    delimiter takes the rest of the string.
+    """
+    residues: list[str] = []
+    mods: list[tuple[int, str]] = []
+    i = 0
+    while i < len(modified):
+        if modified[i] != open_char:
+            residues.append(modified[i])
+            i += 1
+            continue
+        end = _group_end(modified, i, open_char, close_char) or len(modified) + 1
+        mods.append((len(residues), modified[i + 1 : end - 1]))
+        i = end
+    return "".join(residues), mods
+
+
 def position_site(sequence: str, position: int) -> tuple[Optional[str], Optional[str]]:
     """Residue and terminus of a :func:`build_proforma` position in *sequence*.
 
@@ -184,6 +301,22 @@ def position_site(sequence: str, position: int) -> tuple[Optional[str], Optional
     if position > len(sequence):
         return (sequence[-1:] or None), "C"
     return sequence[position - 1], None
+
+
+def vendor_position(name: str, position: int, sequence: str) -> int:
+    """:func:`build_proforma` position of a MaxQuant or Spectronaut modification called *name*.
+
+    Both tools name the site (``Acetyl (Protein N-term)``, ``Amidated (C-term)``)
+    and write a C-terminal modification after the last residue, where
+    :func:`split_modified_sequence` gives it that residue's position. A name
+    for the N-terminus gets position 0, one for the C-terminus
+    ``len(sequence) + 1``; any other name keeps *position*.
+    """
+    if "N-term" in name:
+        return 0
+    if "C-term" in name:
+        return len(sequence) + 1
+    return position
 
 
 # Monoisotopic amino acid residue masses (Da)
@@ -545,6 +678,10 @@ __all__ = [
     "from_proforma",
     "mass_tag",
     "mass_to_unimod",
+    "modification_tag",
+    "name_to_unimod",
     "parse_unimod_delta",
     "position_site",
+    "split_modified_sequence",
+    "vendor_position",
 ]

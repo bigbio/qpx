@@ -13,6 +13,8 @@ from qpx.converters.ptm import (
     from_proforma,
     mass_tag,
     mass_to_unimod,
+    modification_tag,
+    name_to_unimod,
 )
 
 
@@ -135,6 +137,8 @@ class TestMassToUnimod:
         assert 99913 not in UNIMOD_MASS
         assert mass_to_unimod(1.0078, "K") is None  # CUSTOM0, +1.00784 on every residue
         assert mass_to_unimod(79.9663, "A") is None  # PhosphoDecoy on A/L/G
+        assert name_to_unimod("CUSTOM0") is None
+        assert name_to_unimod("PhosphoDecoy", "A") is None
 
     @pytest.mark.parametrize("mass", [float("nan"), float("inf"), float("-inf")])
     def test_non_finite_mass(self, mass):
@@ -146,6 +150,54 @@ class TestMassToUnimod:
         assert mass_to_unimod(229.1629, "D") is None
         assert mass_tag(229.1629, "D") == "+229.1629"
         assert mass_tag(229.1629, "K") == "UNIMOD:737"
+
+
+class TestNameToUnimod:
+    """Vendor modification names resolve through ModificationsDB names and synonyms."""
+
+    @pytest.mark.parametrize(
+        ("name", "residue", "terminus", "accession"),
+        [
+            ("Phospho (STY)", "S", None, 21),
+            ("Phospho", "T", None, 21),
+            ("Oxidation (M)", "M", None, 35),
+            ("Carbamidomethyl (C)", "C", None, 4),
+            ("Acetyl (Protein N-term)", "M", "N", 1),
+            ("Deamidation (NQ)", "N", None, 7),
+            ("Deamidated (NQ)", "Q", None, 7),
+            ("GlyGly (K)", "K", None, 121),
+            ("GG (K)", "K", None, 121),
+            ("Gln->pyro-Glu", "Q", "N", 28),
+            ("Glu->pyro-Glu", "E", "N", 27),
+            ("Pyro-glu from E", "E", "N", 27),
+            ("TMT6plex (K)", "K", None, 737),
+            ("TMT10plex (N-term)", "P", "N", 737),
+            ("TMTpro (K)", "K", None, 2016),
+            ("TMT16plex (K)", "K", None, 2016),
+            ("iTRAQ4plex (K)", "K", None, 214),
+            ("iTRAQ8plex (N-term)", "P", "N", 730),
+            ("Label:13C(6)15N(2) (K)", "K", None, 259),
+            ("Hex(5)HexNAc(2)", "N", None, 137),
+        ],
+    )
+    def test_accession(self, name, residue, terminus, accession):
+        assert name_to_unimod(name, residue, terminus) == accession
+
+    def test_unknown_name(self):
+        assert name_to_unimod("SomeNewMod (K)", "K") is None
+
+
+class TestModificationTag:
+    def test_accession_tags_are_normalised(self):
+        assert modification_tag("UniMod:35") == "UNIMOD:35"
+        assert modification_tag("unimod:21", "S") == "UNIMOD:21"
+
+    def test_signed_mass(self):
+        assert modification_tag("+15.9949", "M") == "UNIMOD:35"
+        assert modification_tag("-1.2345", "M") == "-1.2345"
+
+    def test_unknown_name_has_no_square_brackets(self):
+        assert modification_tag("Odd [mod]") == "Odd (mod)"
 
 
 class TestLabelledPrecursorMz:
