@@ -1,19 +1,21 @@
 """Cross-view checks of Dataset.validate() that resolve rows through the run view.
 
 The pg label -> sample check resolves each distinct (grouped runs, label) unit
-through ``run.samples``, once per unit rather than once per pg row.
+through ``run.samples``, once per unit rather than once per pg row. feature, psm
+and mz rows must name a run of the run view.
 """
 
 import contextlib
 
 import duckdb
+import pyarrow.parquet as pq
 import pytest
 
 from qpx.core.data.schema import ValidationResult
 from qpx.core.dataset_validation import _GROUPED_RUN_SAMPLE_MAPPING_SQL, _skipped_check_reason
 from qpx.dataset import Dataset
-from qpx.writers import DatasetWriter, PgWriter, RunWriter
-from tests.conftest import make_dataset_record, make_pg_record, make_run_record
+from qpx.writers import DatasetWriter, FeatureWriter, MzWriter, PgWriter, PsmWriter, RunWriter
+from tests.conftest import make_dataset_record, make_feature_record, make_pg_record, make_psm_record, make_run_record
 
 TMT = ("TMT126", "TMT127N", "TMT127C", "TMT128N")
 
@@ -193,3 +195,139 @@ def test_sample_mapping_check_that_runs_out_of_memory_says_so(tmp_path, monkeypa
 def test_skipped_check_reason_names_the_failure(exc, reason):
     """Only binder and catalog errors point at the data's schema."""
     assert reason in _skipped_check_reason(exc)
+
+
+# ---------------------------------------------------------------------------
+# feature / psm / mz run_file_name -> run.run_file_name
+# ---------------------------------------------------------------------------
+
+
+def _mz_record(scan: int, run_file_name: str) -> dict:
+    return {
+        "id": f"spectrum_{scan}",
+        "run_file_name": run_file_name,
+        "scan": [scan],
+        "ms_level": 2,
+        "centroid": True,
+        "scan_start_time": 1.0,
+        "inverse_ion_mobility": None,
+        "ion_injection_time": None,
+        "total_ion_current": 10.0,
+        "precursors": None,
+        "mz": [100.0],
+        "intensity": [5.0],
+        "cv_params": None,
+    }
+
+
+def _write_run_keyed_dataset(ds_dir, *, feature_runs, psm_runs, mz_runs, with_run=True):
+    """A one-plex TMT dataset whose feature, psm and mz rows name the given runs."""
+    ds_dir.mkdir(parents=True, exist_ok=True)
+    if with_run:
+        with RunWriter(ds_dir / "exp.run.parquet") as writer:
+            writer.write_batch(_tmt_runs(1, 2))
+    features = []
+    for i, run in enumerate(feature_runs):
+        feature = make_feature_record(sequence=f"PEPTIDE{i}K", peptidoform=f"PEPTIDE{i}K", run_file_name=run)
+        feature["intensities"] = [{"label": label, "intensity": 100.0} for label in TMT]
+        features.append(feature)
+    with FeatureWriter(ds_dir / "exp.feature.parquet") as writer:
+        writer.write_batch(features)
+    with PsmWriter(ds_dir / "exp.psm.parquet") as writer:
+        writer.write_batch([make_psm_record(run_file_name=run, scan=[i]) for i, run in enumerate(psm_runs)])
+    with MzWriter(ds_dir / "exp.mz.parquet") as writer:
+        writer.write_batch([_mz_record(i, run) for i, run in enumerate(mz_runs)])
+    with DatasetWriter(ds_dir / "exp.dataset.parquet") as writer:
+        writer.write_batch([make_dataset_record()])
+    return ds_dir
+
+
+@pytest.mark.parametrize("strict", [False, True])
+def test_feature_psm_and_mz_rows_naming_an_unknown_run_are_errors(tmp_path, strict):
+    """A row whose run_file_name is not a run resolves to no run metadata or sample."""
+    known = _run_name(0, 0)
+    ds_dir = _write_run_keyed_dataset(
+        tmp_path / "dangling",
+        feature_runs=[known, "NOT_A_RUN", "NOT_A_RUN"],
+        psm_runs=[known, "GHOST_RUN"],
+        mz_runs=["GHOST_RUN", known, "OTHER_RUN"],
+    )
+    with Dataset(ds_dir) as ds:
+        results = ds.validate(structures=["feature", "psm", "mz"], strict=strict)
+
+    expected = {
+        "feature": "2 feature row(s) name 1 run_file_name value(s) that are not in run.parquet ('NOT_A_RUN')",
+        "psm": "1 psm row(s) name 1 run_file_name value(s) that are not in run.parquet ('GHOST_RUN')",
+        "mz": "2 mz row(s) name 2 run_file_name value(s) that are not in run.parquet ('GHOST_RUN', 'OTHER_RUN')",
+    }
+    for view, message in expected.items():
+        dangling = _issues(results[view], "dangling_run_file_name")
+        assert len(dangling) == 1, view
+        assert dangling[0].severity == "error"
+        assert dangling[0].column == "run_file_name"
+        assert dangling[0].message.startswith(message)
+        assert not results[view].is_valid
+
+
+@pytest.mark.parametrize("strict", [False, True])
+def test_rows_naming_known_runs_pass_the_run_check(tmp_path, strict):
+    runs = [_run_name(0, 0), _run_name(0, 1)]
+    ds_dir = _write_run_keyed_dataset(tmp_path / "known", feature_runs=runs, psm_runs=runs, mz_runs=runs)
+    with Dataset(ds_dir) as ds:
+        results = ds.validate(structures=["feature", "psm", "mz"], strict=strict)
+
+    for view in ("feature", "psm", "mz"):
+        assert not _issues(results[view], "dangling_run_file_name")
+        assert not [issue for issue in results[view].issues if issue.check.endswith("check_skipped")]
+
+
+def test_dangling_run_message_counts_every_run_but_lists_five(tmp_path):
+    known = _run_name(0, 0)
+    ds_dir = _write_run_keyed_dataset(
+        tmp_path / "many", feature_runs=[f"exp{i}" for i in range(7)], psm_runs=[known], mz_runs=[known]
+    )
+    with Dataset(ds_dir) as ds:
+        feature = ds.validate(structures=["feature"])["feature"]
+
+    (dangling,) = _issues(feature, "dangling_run_file_name")
+    assert "7 feature row(s) name 7 run_file_name value(s)" in dangling.message
+    assert "('exp0', 'exp1', 'exp2', 'exp3', 'exp4', ...)" in dangling.message
+
+
+def test_mz_without_run_file_name_is_not_run_checked(tmp_path):
+    """mz.run_file_name is optional: leaving it out is neither dangling nor a skipped check."""
+    known = _run_name(0, 0)
+    ds_dir = _write_run_keyed_dataset(tmp_path / "mz-no-run", feature_runs=[known], psm_runs=[known], mz_runs=["GHOST_RUN"])
+    mz_path = ds_dir / "exp.mz.parquet"
+    pq.write_table(pq.read_table(mz_path).drop_columns(["run_file_name"]), mz_path)
+    with Dataset(ds_dir) as ds:
+        mz = ds.validate(structures=["mz"], strict=True)["mz"]
+
+    assert not _issues(mz, "dangling_run_file_name")
+    assert not [issue for issue in mz.issues if issue.check.endswith("check_skipped")]
+
+
+def test_run_check_needs_a_run_view(tmp_path):
+    """Without run.parquet there is nothing to resolve run names against."""
+    ds_dir = _write_run_keyed_dataset(
+        tmp_path / "no-run", feature_runs=["NOT_A_RUN"], psm_runs=["NOT_A_RUN"], mz_runs=["NOT_A_RUN"], with_run=False
+    )
+    with Dataset(ds_dir) as ds:
+        results = ds.validate(strict=True)
+
+    assert not [issue for result in results.values() for issue in result.issues if issue.check == "dangling_run_file_name"]
+
+
+@pytest.mark.parametrize(("strict", "severity"), [(False, "warning"), (True, "error")])
+def test_run_check_that_cannot_run_is_reported(tmp_path, strict, severity):
+    """A run view without run_file_name makes the check fail explicitly instead of passing."""
+    known = _run_name(0, 0)
+    ds_dir = _write_run_keyed_dataset(tmp_path / "drift", feature_runs=[known], psm_runs=[known], mz_runs=[known])
+    with Dataset(ds_dir) as ds:
+        ds._engine.execute("CREATE OR REPLACE VIEW run AS SELECT 1 AS wrong_column")
+        psm = ds.validate(structures=["psm"], strict=strict)["psm"]
+
+    skipped = _issues(psm, "referential_check_skipped")
+    assert len(skipped) == 1
+    assert skipped[0].severity == severity
+    assert "psm run_file_name referential check could not run (possible schema drift)" in skipped[0].message

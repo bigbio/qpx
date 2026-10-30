@@ -132,6 +132,18 @@ The validator performs the following checks on each structure:
 | **Null values** | Non-nullable columns must not contain null values |
 | **Primary key uniqueness** | Primary key columns must have unique values |
 
+### Cross-view checks
+
+When a dataset has a run view, rows are also resolved through it. A row that names no run, or a label that names no single sample, drops out of every per-sample view or is counted twice, so these findings are errors with or without strict validation:
+
+| Check | View | Description |
+|-------|------|-------------|
+| `dangling_grouped_run` | pg | Every `grouped_runs` element must be a `run.run_file_name` |
+| `ambiguous_grouped_run_sample` | pg | Each `label` must match the channel of exactly one sample across the row's grouped runs; reported once per distinct (grouped runs, label) unit |
+| `dangling_run_file_name` | feature, psm, mz | `run_file_name` must be a `run.run_file_name` (skipped for an mz view without the optional column) |
+
+A cross-view check that cannot run is reported as `*_check_skipped` with the reason (DuckDB out of memory or temp space, an I/O error, a missing or retyped column, or another query error). It is an error under strict validation, which `qpxc validate` always uses, and a warning otherwise.
+
 ## Programmatic Validation
 
 You can also validate from Python:

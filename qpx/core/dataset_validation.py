@@ -8,7 +8,7 @@ from pathlib import Path
 import duckdb
 
 from qpx.core.data.schema import ValidationIssue, ValidationResult
-from qpx.core.data.validation import _LINK_CONTEXT_MESSAGE, _LINK_MEMBERSHIP_MESSAGE, _LINK_SQL
+from qpx.core.data.validation import _LINK_CONTEXT_MESSAGE, _LINK_MEMBERSHIP_MESSAGE, _LINK_SQL, _issue
 from qpx.core.files import sha256_file
 from qpx.core.sql import sql_build
 
@@ -117,6 +117,53 @@ _GROUPED_RUN_SAMPLE_MAPPING_SQL = sql_build(
                 """,
     run_channels=_RUN_CHANNELS_SQL,
 )
+
+
+# Views whose rows name the acquisition run they were measured in.
+_RUN_KEYED_VIEWS = ("feature", "psm", "mz")
+
+# Per view: the distinct run_file_name values that run.parquet does not list,
+# with the number of rows that carry each. The view is reduced to its distinct
+# values before the anti-join, so memory follows the number of runs.
+_DANGLING_RUN_FILE_NAME_SQL = {
+    view: sql_build(
+        """
+                WITH view_runs AS (
+                    SELECT run_file_name, COUNT(*) AS n_rows
+                    FROM $view
+                    WHERE run_file_name IS NOT NULL
+                    GROUP BY run_file_name
+                )
+                SELECT v.run_file_name, v.n_rows
+                FROM view_runs v
+                WHERE NOT EXISTS (SELECT 1 FROM run r WHERE r.run_file_name = v.run_file_name)
+                ORDER BY v.run_file_name
+                """,
+        view=view,
+    )
+    for view in _RUN_KEYED_VIEWS
+}
+
+# How many example values an aggregated issue message lists.
+_MAX_EXAMPLES = 5
+
+
+def _examples(items: list[str]) -> str:
+    """The first few of the formatted *items*, for an issue message that counts them all."""
+    shown = ", ".join(items[:_MAX_EXAMPLES])
+    return f"{shown}, ..." if len(items) > _MAX_EXAMPLES else shown
+
+
+def _view_columns(engine, view: str) -> set[str]:
+    """Column names of a registered view."""
+    return {row[0] for row in engine.execute(sql_build('DESCRIBE "$view"', view=view)).fetchall()}
+
+
+def _skipped_issue(structure: str, check: str, what: str, exc: duckdb.Error, *, strict: bool) -> ValidationIssue:
+    """The issue for a cross-structure check that could not run: an error under strict validation."""
+    reason = _skipped_check_reason(exc)
+    _log.warning("%s could not run (%s): %s", what, reason, exc)
+    return _issue(structure, check, "error" if strict else "warning", None, f"{what} could not run ({reason}): {exc}")
 
 
 def _skipped_check_reason(exc: duckdb.Error) -> str:
@@ -340,33 +387,50 @@ class _DatasetValidationMixin:
             Mapping of structure name to its validation result.
         """
         targets = structures or self.available_structures
-        results: dict[str, ValidationResult] = {}
-        for name in targets:
-            struct = self._structures.get(name)
-            if struct is None:
-                result = ValidationResult(structure=name)
-                result.issues.append(
-                    ValidationIssue(
-                        structure=name,
-                        check="missing_structure",
-                        severity="error",
-                        column=None,
-                        message=f"Structure '{name}' not found in dataset at {self.path}",
-                    )
-                )
-                results[name] = result
-            else:
-                results[name] = struct.validate(strict=strict)
-
+        results = {name: self._validate_structure(name, strict=strict) for name in targets}
         present = {name for name in results if self._structures.get(name) is not None}
+        self._check_run_resolution(results, present, strict=strict)
+        self._check_cross_references(results, present, strict=strict)
+        return results
 
-        # Cross-structure invariant: every pg.grouped_runs element must be a
-        # real run.run_file_name. A grouped run that names no acquisition run is
-        # dropped by every sample-joined view, so flag it as an error on pg.
-        if "pg" in present and self.run is not None:
+    def _validate_structure(self, name: str, *, strict: bool) -> ValidationResult:
+        """Validate one registered structure, or report it missing."""
+        struct = self._structures.get(name)
+        if struct is not None:
+            return struct.validate(strict=strict)
+        result = ValidationResult(structure=name)
+        result.issues.append(
+            ValidationIssue(
+                structure=name,
+                check="missing_structure",
+                severity="error",
+                column=None,
+                message=f"Structure '{name}' not found in dataset at {self.path}",
+            )
+        )
+        return result
+
+    def _check_run_resolution(self, results: dict[str, ValidationResult], present: set[str], *, strict: bool) -> None:
+        """Cross-structure checks that resolve rows through the run view.
+
+        A row that names no acquisition run, or a label that names no single
+        sample of its runs, is dropped (or counted twice) by every sample-joined
+        view, so these findings are errors.
+        """
+        if self.run is None:
+            return
+        # Every pg.grouped_runs element must be a real run.run_file_name, and each
+        # pg label must name exactly one sample across its grouped runs.
+        if "pg" in present:
             self._check_grouped_runs_referential(results["pg"], strict=strict)
             self._check_grouped_runs_sample_mapping(results["pg"], strict=strict)
+        # feature, psm and mz rows each name the run they were measured in.
+        for view in _RUN_KEYED_VIEWS:
+            if view in present:
+                self._check_run_file_names(view, results[view], strict=strict)
 
+    def _check_cross_references(self, results: dict[str, ValidationResult], present: set[str], *, strict: bool) -> None:
+        """Cross-structure checks of the id links between views."""
         # Cross-structure invariant: the optional feature<->psm cross-references
         # must resolve. Every non-null psm.feature_id must name a real
         # feature.feature_id, and every feature.psm_ids element a real psm.psm_id.
@@ -386,7 +450,33 @@ class _DatasetValidationMixin:
             if view in present:
                 self._check_pg_link(view, results[view], strict=strict)
 
-        return results
+    def _check_run_file_names(self, view: str, result: ValidationResult, *, strict: bool) -> None:
+        """Flag ``run_file_name`` values of *view* that are not in run.run_file_name.
+
+        Each distinct value is looked up once. The check is skipped when the view
+        has no ``run_file_name`` column: it is optional in mz, and a missing
+        required column is already reported by the schema check.
+        """
+        try:
+            if "run_file_name" not in _view_columns(self._engine, view):
+                return
+            rows = self._engine.execute(_DANGLING_RUN_FILE_NAME_SQL[view]).fetchall()
+        except duckdb.Error as exc:
+            what = f"{view} run_file_name referential check"
+            result.issues.append(_skipped_issue(view, "referential_check_skipped", what, exc, strict=strict))
+            return
+        if not rows:
+            return
+        result.issues.append(
+            _issue(
+                view,
+                "dangling_run_file_name",
+                "error",
+                "run_file_name",
+                f"{sum(n for _, n in rows)} {view} row(s) name {len(rows)} run_file_name value(s) that are not "
+                f"in run.parquet ({_examples([repr(name) for name, _ in rows])}); these rows resolve to no run or sample",
+            )
+        )
 
     def _check_pg_link(self, view: str, result: ValidationResult, *, strict: bool = False) -> None:
         """Flag site/proteoform links that do not resolve, or resolve to another context.
