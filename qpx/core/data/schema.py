@@ -245,9 +245,9 @@ def _pg_referential_issues(
     if not {"pg_accessions", "grouped_runs", "label"} <= names or len(table) == 0:
         return []
 
-    import duckdb
+    from qpx.core.engine import create_connection
 
-    con = duckdb.connect()
+    con = create_connection()
     try:
         con.register("pg_validate", table)
         return _query_pg_referential_issues(con, structure, severity)
@@ -261,9 +261,9 @@ def pg_referential_issues_from_parquet(
     severity: str,
 ) -> list[ValidationIssue]:
     """Validate PG referential invariants against a file-backed Parquet relation."""
-    import duckdb
+    from qpx.core.engine import create_connection
 
-    con = duckdb.connect()
+    con = create_connection()
     try:
         relation = con.read_parquet(path)
         if not {"pg_accessions", "grouped_runs", "label"} <= set(relation.columns):

@@ -7,6 +7,8 @@ from pathlib import Path
 
 import click
 
+from qpx.cli.resources import convert_resource_options
+
 from .options import (
     _compression_option,
     _dataset_metadata_options,
@@ -95,6 +97,7 @@ def _consensusxml_list(ctx, param, value) -> tuple[Path, ...]:
     ),
 )
 @_compression_option
+@convert_resource_options
 @_fasta_option
 @_mudata_option
 @_dataset_metadata_options

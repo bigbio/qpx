@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import re
@@ -28,12 +29,48 @@ def _validate_set_value(value: str, name: str) -> str:
     return value
 
 
-def _set_resources(conn: duckdb.DuckDBPyConnection, memory_limit: str | None, threads: int | None) -> None:
-    """Apply the given memory limit and thread count; ``None`` keeps DuckDB's default.
+# Resource settings of the running command (see duckdb_defaults), used by every
+# connection that does not set its own.
+_command_resources: dict[str, str | int | Path | None] = {}
+
+
+@contextlib.contextmanager
+def duckdb_defaults(
+    memory_limit: str | None = None,
+    threads: int | None = None,
+    temp_directory: str | Path | None = None,
+):
+    """Apply these resource settings to the DuckDB connections opened inside the block that do not set their own.
+
+    The settings are process-wide for the duration of the block, so they also reach
+    connections that a command opens in helpers and post-processing steps.
+    """
+    previous = dict(_command_resources)
+    _command_resources.update(memory_limit=memory_limit, threads=threads, temp_directory=temp_directory)
+    try:
+        yield
+    finally:
+        _command_resources.clear()
+        _command_resources.update(previous)
+
+
+def _set_resources(
+    conn: duckdb.DuckDBPyConnection,
+    memory_limit: str | None,
+    threads: int | None,
+    temp_directory: str | Path | None = None,
+) -> None:
+    """Apply the given memory limit, thread count and spill directory; ``None`` keeps the command's or DuckDB's default.
 
     DuckDB defaults to 80% of RAM and one thread per CPU, both capped by a cgroup
-    limit such as a container's CPU or memory quota.
+    limit such as a container's CPU or memory quota, and spills an in-memory
+    database to ``.tmp`` in the working directory.
     """
+    memory_limit = memory_limit or _command_resources.get("memory_limit")
+    threads = threads or _command_resources.get("threads")
+    temp_directory = temp_directory or _command_resources.get("temp_directory")
+    if temp_directory:
+        conn.execute(sql_build("SET temp_directory='$path'", path=escape_path(str(temp_directory))))
     if memory_limit is not None:
         conn.execute(
             sql_build(
@@ -65,15 +102,7 @@ class DuckDBEngine:
         temp_directory: str | None = None,
         s3_config: dict | None = None,
     ):
-        self._conn = duckdb.connect(":memory:")
-        _set_resources(self._conn, memory_limit, threads)
-        if temp_directory:
-            self._conn.execute(
-                sql_build(
-                    "SET temp_directory='$val'",
-                    val=_validate_set_value(temp_directory, "temp_directory"),
-                )
-            )
+        self._conn = create_connection(memory_limit, threads, temp_directory)
         self._conn.execute("SET enable_progress_bar=true")
         if s3_config is not None:
             self._setup_s3(s3_config)
@@ -207,6 +236,17 @@ def create_engine(**kwargs) -> DuckDBEngine:
     return DuckDBEngine(**kwargs)
 
 
+def create_connection(
+    memory_limit: str | None = None,
+    threads: int | None = None,
+    temp_directory: str | Path | None = None,
+) -> duckdb.DuckDBPyConnection:
+    """Create an in-memory DuckDB connection with validated resource settings."""
+    conn = duckdb.connect(":memory:")
+    _set_resources(conn, memory_limit, threads, temp_directory)
+    return conn
+
+
 def create_converter_connection(
     memory_limit: str | None = None,
     threads: int | None = None,
@@ -217,15 +257,7 @@ def create_converter_connection(
     Unifies DuckDB configuration across converters. Uses the same validation
     as DuckDBEngine to prevent injection via SET values.
     """
-    conn = duckdb.connect(":memory:")
-    _set_resources(conn, memory_limit, threads)
+    conn = create_connection(memory_limit, threads, temp_directory)
     conn.execute("SET enable_progress_bar=true")
     conn.execute("SET preserve_insertion_order=false")
-    if temp_directory:
-        conn.execute(
-            sql_build(
-                "SET temp_directory='$val'",
-                val=_validate_set_value(temp_directory, "temp_directory"),
-            )
-        )
     return conn

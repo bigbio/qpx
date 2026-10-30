@@ -279,7 +279,7 @@ qpxc convert sdrf \
 
 **Solutions**:
 
-1. Use `--duckdb-memory` to increase DuckDB memory (query commands):
+1. Use `--duckdb-memory` to increase DuckDB memory (`validate`, `query sql` and the `transform gene-map`/`protein-properties` commands):
 
    ```bash
    qpxc query sql \
@@ -298,9 +298,18 @@ qpxc convert sdrf \
        --max-memory 32GB
    ```
 
-2. Use `--limit` or SQL `LIMIT` to restrict results
+2. DuckDB writes what does not fit in memory to disk. Convert commands, and transform commands given `--output-folder`, put these spill files in `.tmp` in the output folder; the other commands use `.tmp` in the working directory. When that disk is small or read-only, point `--temp-dir` at one with free space:
 
-3. Export large results directly to Parquet:
+   ```bash
+   qpxc validate \
+       --dataset-path ./PXD014414 \
+       --duckdb-memory 8GB \
+       --temp-dir /scratch/qpx_spill
+   ```
+
+3. Use `--limit` or SQL `LIMIT` to restrict results
+
+4. Export large results directly to Parquet:
 
    ```bash
    qpxc query sql \

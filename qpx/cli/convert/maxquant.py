@@ -7,6 +7,8 @@ from pathlib import Path
 
 import click
 
+from qpx.cli.resources import convert_resource_options
+
 from .options import (
     _compression_option,
     _dataset_metadata_options,
@@ -72,6 +74,7 @@ def _maxquant_structures(structures, msms_file, evidence_file, protein_groups_fi
 )
 @_max_cpus_option
 @_max_memory_option
+@convert_resource_options
 @click.option(
     "--spectral-data",
     help="Include spectral data fields in PSM output",

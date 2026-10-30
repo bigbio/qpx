@@ -7,6 +7,8 @@ from pathlib import Path
 
 import click
 
+from qpx.cli.resources import convert_resource_options
+
 from .options import (
     _compression_option,
     _dataset_metadata_options,
@@ -41,6 +43,7 @@ from .postprocess import _finish_conversion
     help="Maximum number of DuckDB threads",
     type=int,
 )
+@convert_resource_options
 @_compression_option
 @_verbose_option
 @_dataset_metadata_options

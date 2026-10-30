@@ -10,13 +10,13 @@ import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Sequence
 
-import duckdb
 import pyarrow as pa
 import pyarrow.parquet as pq
 
 from qpx._version import __version__
 from qpx.core.data.identity import derive_id
 from qpx.core.data.schema import pg_referential_issues_from_parquet
+from qpx.core.engine import create_connection
 from qpx.core.sql import sql_build, validate_identifier
 from qpx.version import QPX_SPEC_VERSION
 
@@ -651,7 +651,7 @@ class BaseWriter:
             """,
             id_field=quoted_id,
         )
-        connection = duckdb.connect()
+        connection = create_connection()
         try:
             total_count, unique_count, null_count = connection.execute(query, [str(self._validation_path)]).fetchall()[0]
         finally:

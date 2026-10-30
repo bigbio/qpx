@@ -89,6 +89,7 @@ class Dataset(_DatasetValidationMixin, _DatasetQueryMixin, _DatasetWriteMixin):
         duckdb_threads: int | None = None,
         s3_config: dict | None = None,
         file_prefix: str | None = None,
+        duckdb_temp_dir: str | Path | None = None,
     ):
         self._is_s3 = isinstance(path, str) and path.startswith("s3://")
         self.path = path if self._is_s3 else Path(path)
@@ -96,6 +97,7 @@ class Dataset(_DatasetValidationMixin, _DatasetQueryMixin, _DatasetWriteMixin):
         self._engine = DuckDBEngine(
             memory_limit=duckdb_memory,
             threads=duckdb_threads,
+            temp_directory=duckdb_temp_dir,
             s3_config=s3_config if self._is_s3 else None,
         )
 

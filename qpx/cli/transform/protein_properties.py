@@ -6,6 +6,8 @@ from typing import Optional
 
 import click
 
+from qpx.cli.resources import duckdb_resource_options
+
 from .dataset import _copy_dataset_files, _gene_map_dataset_prefix, _stage_dataset_integrity
 
 
@@ -106,6 +108,7 @@ def _echo_protein_properties_report(report) -> None:
     help="Write an annotated copy here (must be empty and outside the dataset)",
     type=click.Path(file_okay=False, path_type=Path),
 )
+@duckdb_resource_options
 @click.option("--verbose", help="Enable verbose logging", is_flag=True)
 def transform_protein_properties_cmd(dataset: Path, fasta: Path, in_place: bool, output_folder: Optional[Path], verbose: bool):
     """Fill protein properties the producer did not record, from a FASTA.

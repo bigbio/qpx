@@ -7,6 +7,8 @@ from pathlib import Path
 
 import click
 
+from qpx.cli.resources import convert_resource_options
+
 from .options import _compression_option, _dataset_metadata_options, _output_folder_option, _verbose_option
 from .postprocess import _finish_conversion
 
@@ -40,6 +42,7 @@ from .postprocess import _finish_conversion
     help="PRIDE / ProteomeXchange accession (e.g. PXD054720)",
 )
 @_compression_option
+@convert_resource_options
 @_verbose_option
 @_dataset_metadata_options
 def convert_mzidentml_cmd(**kwargs):

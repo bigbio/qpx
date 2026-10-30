@@ -32,11 +32,13 @@ class DatasetCollection:
         datasets: list[Dataset],
         duckdb_memory: str | None = None,
         duckdb_threads: int | None = None,
+        duckdb_temp_dir: str | Path | None = None,
     ):
         self.datasets = datasets
         self._engine = DuckDBEngine(
             memory_limit=duckdb_memory,
             threads=duckdb_threads,
+            temp_directory=duckdb_temp_dir,
         )
         self._register_all()
 

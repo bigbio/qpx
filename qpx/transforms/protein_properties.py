@@ -252,10 +252,10 @@ def _peptide_protein_candidates(
     84.3% OpenMS recorded, since actin peptides are mostly shared with other
     actins. Positions do not use these candidates; they stay tied to the group.
     """
-    import duckdb
+    from qpx.core.engine import create_connection
 
     candidates: dict[str, set[str]] = defaultdict(set)
-    con = duckdb.connect()
+    con = create_connection()
     try:
         for view, source in (("feature", feature_path), ("psm", psm_path)):
             if source is None or ("*" not in str(source) and not Path(source).is_file()):

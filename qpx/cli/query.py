@@ -17,6 +17,7 @@ from typing import Optional
 
 import click
 
+from qpx.cli.resources import duckdb_resource_options
 from qpx.dataset import Dataset
 
 logger = logging.getLogger("qpx.cli.query")
@@ -75,15 +76,7 @@ def query_cmd():
     "--structures",
     help="Comma-separated list of structures to load (default: all found)",
 )
-@click.option(
-    "--duckdb-memory",
-    help="DuckDB memory limit (e.g., '16GB')",
-)
-@click.option(
-    "--duckdb-threads",
-    help="DuckDB thread count",
-    type=int,
-)
+@duckdb_resource_options
 @click.option("--verbose", help="Enable verbose logging", is_flag=True)
 def query_sql_cmd(**kwargs):
     """Run an arbitrary SQL query against a QPX dataset.
@@ -116,8 +109,6 @@ def query_sql_cmd(**kwargs):
     output = kwargs["output"]
     output_format = kwargs["output_format"]
     structures = kwargs["structures"]
-    duckdb_memory = kwargs["duckdb_memory"]
-    duckdb_threads = kwargs["duckdb_threads"]
     verbose = kwargs["verbose"]
 
     if verbose:
@@ -127,12 +118,7 @@ def query_sql_cmd(**kwargs):
 
     structure_list = [s.strip() for s in structures.split(",")] if structures else None
 
-    with qpx.open_dataset(
-        dataset_path,
-        structures=structure_list,
-        duckdb_memory=duckdb_memory,
-        duckdb_threads=duckdb_threads,
-    ) as ds:
+    with qpx.open_dataset(dataset_path, structures=structure_list) as ds:
         logger.info(f"Opened dataset: {ds}")
         logger.info(f"Executing SQL: {sql_query}")
 

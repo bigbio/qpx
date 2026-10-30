@@ -7,7 +7,7 @@ import pyarrow as pa
 import pytest
 
 from qpx.core.convert import QueryResult
-from qpx.core.engine import DuckDBEngine, create_engine
+from qpx.core.engine import DuckDBEngine, create_connection, create_engine, duckdb_defaults
 from qpx.core.parquet_io import (
     parquet_row_count,
     read_parquet_metadata,
@@ -89,6 +89,26 @@ def test_default_threads_follow_cpu_affinity(monkeypatch):
         assert engine.execute("SELECT current_setting('threads')").fetchall()[0][0] == 1
     finally:
         engine.close()
+
+
+def test_command_resources_reach_connections_opened_in_the_block(tmp_path):
+    """duckdb_defaults sets memory, threads and the spill folder of connections without their own, until the block ends."""
+    spill = tmp_path / "spill dir"
+    settings = "SELECT current_setting('memory_limit'), current_setting('threads'), current_setting('temp_directory')"
+    with duckdb_defaults(memory_limit="1GiB", threads=1, temp_directory=spill):
+        engine = DuckDBEngine()
+        own = create_connection(threads=2)
+    try:
+        assert engine.execute(settings).fetchall()[0] == ("1.0 GiB", 1, str(spill))
+        assert own.execute("SELECT current_setting('threads')").fetchall()[0][0] == 2
+    finally:
+        engine.close()
+        own.close()
+    after = create_connection()
+    try:
+        assert after.execute("SELECT current_setting('temp_directory')").fetchall()[0][0] == ".tmp"
+    finally:
+        after.close()
 
 
 def test_lazy_query(feature_parquet):

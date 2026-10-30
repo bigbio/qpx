@@ -17,6 +17,7 @@ from typing import Optional
 
 import click
 
+from qpx.cli.resources import duckdb_resource_options
 from qpx.dataset import Dataset
 
 logger = logging.getLogger("qpx.cli.validate")
@@ -51,6 +52,7 @@ _VALID_STRUCTURES = Dataset.structure_names()
     "modification positions and calculated/observed m/z",
     is_flag=True,
 )
+@duckdb_resource_options
 @click.option("--verbose", help="Enable verbose logging", is_flag=True)
 def validate_cmd(
     dataset_path: Optional[Path],

@@ -7,6 +7,8 @@ from pathlib import Path
 
 import click
 
+from qpx.cli.resources import convert_resource_options
+
 from .options import (
     _compression_option,
     _dataset_metadata_options,
@@ -44,6 +46,7 @@ from .postprocess import _finish_conversion
 @_compression_option
 @_max_memory_option
 @_max_cpus_option
+@convert_resource_options
 @_verbose_option
 @_dataset_metadata_options
 def convert_cdap_cmd(**kwargs):

@@ -7,6 +7,8 @@ from pathlib import Path
 
 import click
 
+from qpx.cli.resources import convert_resource_options
+
 
 @click.command("pdc2qpx")
 @click.option(
@@ -46,6 +48,7 @@ import click
 )
 @click.option("--max-cpus", type=int, help="Threads for the CDAP conversion")
 @click.option("--max-memory", help="Memory limit for the CDAP conversion")
+@convert_resource_options
 @click.option(
     "--download-threads",
     default=24,

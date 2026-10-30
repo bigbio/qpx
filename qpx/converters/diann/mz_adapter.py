@@ -13,6 +13,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 
 from qpx.converters.diann.feature_adapter import _ms_info_scans
+from qpx.core.engine import create_connection
 from qpx.core.sql import escape_path, sql_build
 from qpx.writers.mz import MzWriter
 
@@ -156,7 +157,7 @@ class DiannMzAdapter:
             for run, scan in matched_scans:
                 scans_by_run[run].add(scan)
 
-        con = duckdb.connect()
+        con = create_connection()
 
         pending: list[dict] = []
         written = 0
