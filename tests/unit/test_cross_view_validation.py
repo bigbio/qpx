@@ -140,17 +140,19 @@ def test_pg_label_without_a_sample_is_an_error(tmp_path, strict):
 
 
 @pytest.mark.parametrize("strict", [False, True])
-def test_sample_mapping_check_runs_in_bounded_memory(large_tmt_dir, strict):
-    """The check resolves the 8 units, not the 32,000 rows, so 32 MB without spill is enough.
+@pytest.mark.parametrize("check", ["_check_grouped_runs_referential", "_check_grouped_runs_sample_mapping"])
+def test_pg_run_checks_run_in_bounded_memory(large_tmt_dir, check, strict):
+    """The checks read pg once and resolve its 24 runs and 8 units, so 32 MB without spill is enough.
 
-    Joining every pg row to its 12 runs and their 4 channels (1.5 million rows)
-    ran out of memory here under DuckDB 1.5 and 2.0; resolving the units needs
-    less than half of the limit.
+    Unnesting every pg row into its 12 runs (384,000 rows, each looked up in
+    run) or joining them to their 4 channels (1.5 million rows) ran out of
+    memory here under DuckDB 1.5 and 2.0; resolving the distinct runs and
+    units needs less than half of the limit.
     """
     with _low_memory(large_tmt_dir) as ds:
         assert ds.pg.count() == 32_000
         result = ValidationResult(structure="pg")
-        ds._check_grouped_runs_sample_mapping(result, strict=strict)
+        getattr(ds, check)(result, strict=strict)
 
     assert result.issues == []
 

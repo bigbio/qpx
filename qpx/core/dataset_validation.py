@@ -49,6 +49,21 @@ _FEATURE_PSM_INVERSE_DESYNC_SQL = """
                     ORDER BY f.feature_id, p.psm_id
                     """
 
+# The distinct pg.grouped_runs elements that run.parquet does not list. pg is
+# reduced to its distinct runs before the anti-join: a lateral UNNEST per pg row
+# with a correlated lookup each ran out of memory on a fractionated TMT pg.
+_DANGLING_GROUPED_RUN_SQL = """
+                WITH pg_runs AS (
+                    SELECT DISTINCT grouped_run
+                    FROM (SELECT UNNEST(grouped_runs) AS grouped_run FROM pg)
+                    WHERE grouped_run IS NOT NULL
+                )
+                SELECT g.grouped_run
+                FROM pg_runs g
+                WHERE NOT EXISTS (SELECT 1 FROM run r WHERE r.run_file_name = g.grouped_run)
+                ORDER BY g.grouped_run
+                """
+
 # run.samples as one row per (run, channel). It is unnested in the select list of
 # its own subquery: an UNNEST(r.samples) placed after a join to run is evaluated
 # for every joined row, and under DuckDB 2.0 that made the pg sample-mapping check
@@ -508,19 +523,12 @@ class _DatasetValidationMixin:
         """Flag pg.grouped_runs values that are not present in run.run_file_name.
 
         Appends an ``error`` issue to *pg_result* for each dangling grouped-run
-        token. Any query failure (e.g. missing columns) is swallowed so schema
-        validation is never masked by this referential check.
+        token; each distinct token is looked up once. A query failure (e.g. a
+        missing column) does not mask schema validation: it is reported as
+        ``referential_check_skipped``.
         """
         try:
-            rows = self._engine.execute(
-                """
-                SELECT DISTINCT gr AS grouped_run
-                FROM pg, UNNEST(pg.grouped_runs) AS _g(gr)
-                WHERE gr IS NOT NULL
-                  AND NOT EXISTS (SELECT 1 FROM run r WHERE r.run_file_name = gr)
-                ORDER BY grouped_run
-                """
-            ).fetchall()
+            rows = self._engine.execute(_DANGLING_GROUPED_RUN_SQL).fetchall()
         except duckdb.Error as exc:
             # Do not fail silently: a query error here can mean genuine schema
             # drift (a referenced pg/run column was removed/renamed), which is how
