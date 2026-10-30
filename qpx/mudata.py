@@ -183,7 +183,7 @@ _MULTIPLEXED_QUERIES: dict[str, str] = {
 # features of one precursor in one run and label, as MaxQuant sums the evidence
 # rows of a peptide in a run. Decoys and entries without a quantity are left out,
 # so an absent cell is not quantified. $label selects one label or every label.
-# UNNEST stays in the select list: a lateral CROSS JOIN UNNEST plans ~25x slower.
+# UNNEST stays in the select list: a filter on a lateral CROSS JOIN UNNEST runs ~30x slower.
 _PRECURSOR_QUERY = """
     SELECT run_file_name, CAST(i.label AS VARCHAR) AS intensity_label, precursor_id, i.intensity
     FROM (

@@ -33,14 +33,17 @@ RUN_SAMPLES_SQL = """
 # resolves to that sample whatever its label, since label-free converters write
 # a generic label (DIA-NN's 'raw') where run.samples carries 'LFQ'; several
 # labels in such a run (a heavy standard, pulsed SILAC) stay unresolved rather
-# than adding up. The exact match and the fallback are two equi-joins.
+# than adding up. The exact match and the fallback are two equi-joins. The
+# intensities are unnested in the select list: a lateral CROSS JOIN UNNEST runs
+# ~10x slower once a filter (is_decoy) is pushed into it.
 _FEATURE_SAMPLES_SQL = """
     WITH run_samples AS ($run_samples),
     feature_intensities AS (
-        SELECT $columns, f.run_file_name, i.label AS intensity_label, i.intensity,
-               len(f.intensities) = 1 AS single_intensity
-        FROM $source f
-        CROSS JOIN UNNEST(f.intensities) AS _i(i)
+        SELECT * EXCLUDE (i), i.label AS intensity_label, i.intensity
+        FROM (
+            SELECT $columns, f.run_file_name, UNNEST(f.intensities) AS i, len(f.intensities) = 1 AS single_intensity
+            FROM $source f
+        )
     )
     SELECT fi.* EXCLUDE (intensity_label, single_intensity),
            rs.unit, rs.sample_accession, rs.label, rs.biological_replicate
