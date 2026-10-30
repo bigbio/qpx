@@ -57,7 +57,7 @@ _DANGLING_RUN_SQL = """
 _DUPLICATE_LABEL_SQL = """
                 SELECT count(*)
                 FROM feature
-                WHERE len(intensities) <> len(list_distinct(list_transform(intensities, entry -> entry.label)))
+                WHERE len(intensities) <> len(list_distinct(list_transform(intensities, lambda entry: entry.label)))
                 """
 
 # Each (run, label) of the feature intensities that does not match exactly one

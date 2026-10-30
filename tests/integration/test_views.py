@@ -393,7 +393,8 @@ class TestMultiRunGroupedRuns:
         """Feature intensities reach their samples through equi-joins; UNNEST(run.samples) per joined row planned a product."""
         with Dataset(multi_run_dataset_dir) as ds:
             plan = ds.sql("EXPLAIN " + feature_samples_sql("feature", ("sequence",))).fetchall()
-        text = "\n".join(row[1] for row in plan)
+        # DuckDB 1.x names the operators HASH_JOIN, DuckDB 2.0 Hash Join.
+        text = "\n".join(row[1] for row in plan).upper().replace(" ", "_")
         assert "HASH_JOIN" in text
         assert "CROSS_PRODUCT" not in text
         assert "NESTED_LOOP_JOIN" not in text
