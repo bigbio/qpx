@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Scores whose direction the PSI-MS term does not declare were written with `higher_better = true`, including e-values and q-values (Mascot expectation value, PSM-level/Percolator/MS-GF q-values, Comet and X!Tandem e-values), so a best-PSM picker chose the worst match. E-values, q-values, p-values, PEP and FDR are now lower-is-better, engine match scores higher-is-better, and an unknown direction is `null`.
 - The Unimod mass table had wrong entries: 214 (iTRAQ4plex) was −18.01, 312 and 385 carried TMT6plex and TMTpro masses, and TMTpro was mapped to 730 (iTRAQ8plex). FragPipe TMT became Cysteinyl, TMTpro and iTRAQ8plex became Ammonia-loss, MaxQuant/CDAP TMTpro became iTRAQ8plex, Spectronaut TMTpro became TMT6plex, and CDAP iTRAQ4 `calculated_mz` was 162 Da per label too low. Equal-mass candidates (Gln→pyro-Glu vs Ammonia-loss) are now told apart by site, or written as the mass.
 - The ProForma normaliser rewrote parentheses inside bracketed tags, turning MaxQuant/Spectronaut names such as `GlyGly (K)` into nested brackets (`K[GlyGly [K]]`) with bogus extra modifications and shifted positions; names outside the old MaxQuant/Spectronaut tables (`GlyGly (K)`, `Acetyl (K)`) now resolve to Unimod.
 

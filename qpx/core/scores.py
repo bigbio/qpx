@@ -366,12 +366,15 @@ def _lookup_from_obo(normalized_name: str) -> Optional[dict]:
     if term is None:
         return None
 
+    higher_better = term["higher_better"]
+    if higher_better is None:
+        higher_better = _direction_from_name(normalize_score_name(term["name"]))
     return {
         "ontology_name": term["name"],
         "ontology_accession": term["accession"],
         "ontology_source": term["source"],
         "description": term["definition"],
-        "higher_better": (term["higher_better"] if term["higher_better"] is not None else True),
+        "higher_better": higher_better,
     }
 
 
@@ -409,16 +412,33 @@ def lookup_score(normalized_name: str) -> Optional[dict]:
 # ---------------------------------------------------------------------------
 
 
-def is_higher_better(normalized_name: str) -> bool:
+# Most PSI-MS score terms carry no has_order relation. Error rates and
+# probabilities of being wrong are lower-is-better whatever the engine.
+_LOWER_IS_BETTER = re.compile(r"e_?value|expect|q_?value|p_?value|fdr|posterior_error|(?:^|_)pep(?:_|$)")
+# Engine match scores and probabilities of being right are higher-is-better.
+_HIGHER_IS_BETTER = re.compile(r"score$|xcorr|probability$")
+
+
+def _direction_from_name(normalized_name: str) -> Optional[bool]:
+    """Score direction implied by a score's name, ``None`` when the name does not tell."""
+    if _LOWER_IS_BETTER.search(normalized_name):
+        return False
+    if _HIGHER_IS_BETTER.search(normalized_name):
+        return True
+    return None
+
+
+def is_higher_better(normalized_name: str) -> Optional[bool]:
     """Return whether the score with *normalized_name* is higher-is-better.
 
-    Checks built-in cache, then OBO registry. Falls back to ``True``
-    (higher is better) for completely unknown scores.
+    Checks built-in cache, then OBO registry. A score whose direction neither
+    declares is lower-is-better when it is an e-value, q-value, p-value, PEP
+    or FDR, and ``None`` (unknown) otherwise; a consumer must not guess.
     """
     info = lookup_score(normalized_name)
-    if info is not None:
+    if info is not None and info["higher_better"] is not None:
         return info["higher_better"]
-    return True
+    return _direction_from_name(normalized_name)
 
 
 # ---------------------------------------------------------------------------
