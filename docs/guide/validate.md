@@ -132,6 +132,17 @@ The validator performs the following checks on each structure:
 | **Null values** | Non-nullable columns must not contain null values |
 | **Primary key uniqueness** | Primary key columns must have unique values |
 
+When a dataset holds several views, it also checks the references between them:
+
+| Check | Severity | Description |
+|-------|----------|-------------|
+| **Run references** | error | Every `run_file_name` of feature, psm and mz, and every member of `pg.grouped_runs`, is a run in `run.parquet` |
+| **Label → sample** | error | Each `(run, label)` of `feature.intensities` and each `(grouped_runs, label)` of pg resolves to exactly one `run.samples` entry, and a feature row lists each label once. A feature label that matches no sample of a single-sample run is only a warning, because the query helpers fall back to that sample |
+| **PSM label** | warning, error with `--strict` | `psm.label` is one of the `identified_labels` of the feature it links to |
+| **ID references** | warning, error with `--strict` | `psm.feature_id`, `feature.psm_ids`, `feature.pg_ids` and the site/proteoform `pg_id`/`best_psm_id` links name existing rows |
+
+A cross-view check whose query fails is reported as skipped, with the reason (I/O error, out of memory or possible schema drift), and fails strict validation.
+
 ## Programmatic Validation
 
 You can also validate from Python:

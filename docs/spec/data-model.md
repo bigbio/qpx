@@ -240,26 +240,32 @@ The invariant that keeps this sound:
     `run.samples[].label` is the **canonical** channel name. It MUST match
     `feature.intensities[].label` and `pg.label` exactly. A quantity whose `label`
     has no matching `sample_channel` in the run cannot be resolved to a sample.
+    `qpxc validate` reports a `(run, label)` pair, or a pg `(grouped_runs, label)`
+    unit, that resolves to no sample or to several as an error.
 
-Worked example (unnest the run, match the label):
+Worked example (flatten the run samples, match the label):
 
 ```sql
 -- protein abundance per sample, from the flattened pg + run
-SELECT DISTINCT
-       pg.anchor_protein   AS protein_accession,
-       sc.sample_accession,
+WITH run_samples AS (
+    SELECT r.run_file_name, sc.label, sc.sample_accession
+    FROM 'PXD.run.parquet' r
+    CROSS JOIN UNNEST(r.samples) AS s(sc)
+)
+SELECT pg.anchor_protein   AS protein_accession,
+       rs.sample_accession,
        pg.label,
        pg.intensity        AS abundance
 FROM 'PXD.pg.parquet' pg
-CROSS JOIN UNNEST(pg.grouped_runs) AS g(run_file_name)
-JOIN 'PXD.run.parquet' r USING (run_file_name)
-CROSS JOIN UNNEST(r.samples) AS s(sc)
-WHERE sc.label = pg.label;     -- flattened: scalar pg.label, no intensities list
+JOIN run_samples rs
+  ON rs.run_file_name = pg.grouped_runs[1]
+ AND rs.label = pg.label;      -- flattened: scalar pg.label, no intensities list
 ```
 
-`DISTINCT` is required because several member runs can be fractions of the same
-sample; the quantity is already aggregated across those fractions and must be
-returned once per sample and label.
+Any member run of `grouped_runs` resolves the label to the unit's sample, so the
+first one is enough and the quantity comes back once per sample and label.
+Unnesting every member run against every sample instead multiplies a
+fractionated multiplex pg by fractions × channels before the label filter.
 
 ## Where each concept lives (cheat sheet)
 

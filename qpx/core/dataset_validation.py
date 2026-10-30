@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from functools import partial
 from pathlib import Path
 
 import duckdb
@@ -10,6 +11,13 @@ import duckdb
 from qpx.core.data.schema import ValidationIssue, ValidationResult
 from qpx.core.data.validation import _LINK_CONTEXT_MESSAGE, _LINK_MEMBERSHIP_MESSAGE, _LINK_SQL
 from qpx.core.files import sha256_file
+from qpx.core.label_validation import (
+    dangling_run_issues,
+    feature_label_issues,
+    grouped_run_sample_issues,
+    psm_label_issues,
+    skipped_check_reason,
+)
 
 _log = logging.getLogger("qpx.dataset")
 
@@ -47,61 +55,6 @@ _FEATURE_PSM_INVERSE_DESYNC_SQL = """
                       AND p.feature_id <> f.feature_id
                     ORDER BY f.feature_id, p.psm_id
                     """
-
-_GROUPED_RUN_SAMPLE_MAPPING_SQL = """
-                WITH numbered_pg AS MATERIALIZED (
-                    SELECT ROW_NUMBER() OVER () AS pg_row_id, *
-                    FROM pg
-                ),
-                pg_labels AS (
-                    -- pg is flattened since 1.1: scalar p.label (no intensities
-                    -- list). ID-only rows (null label) have no sample to resolve.
-                    SELECT p.pg_row_id,
-                           p.anchor_protein,
-                           p.grouped_runs,
-                           p.label
-                    FROM numbered_pg p
-                    WHERE p.label IS NOT NULL
-                ),
-                sample_matches AS (
-                    SELECT pl.pg_row_id,
-                           pl.label,
-                           rs.sample_accession
-                    FROM pg_labels pl
-                    CROSS JOIN UNNEST(list_distinct(pl.grouped_runs)) AS _g(run_file_name)
-                    JOIN run r USING (run_file_name)
-                    CROSS JOIN UNNEST(r.samples) AS _s(rs)
-                    WHERE rs.label = pl.label
-                )
-                SELECT pl.anchor_protein,
-                       pl.grouped_runs,
-                       pl.label,
-                       COUNT(DISTINCT sm.sample_accession) AS sample_count,
-                       LIST(DISTINCT sm.sample_accession)
-                           FILTER (WHERE sm.sample_accession IS NOT NULL) AS samples
-                FROM pg_labels pl
-                LEFT JOIN sample_matches sm
-                  ON pl.pg_row_id = sm.pg_row_id
-                 AND pl.label = sm.label
-                GROUP BY pl.pg_row_id,
-                         pl.anchor_protein,
-                         pl.grouped_runs,
-                         pl.label
-                HAVING COUNT(DISTINCT sm.sample_accession) != 1
-                ORDER BY pl.anchor_protein, pl.label
-                """
-
-
-def _skipped_check_reason(exc: duckdb.Error) -> str:
-    """Why a cross-structure check could not run, for its skipped issue.
-
-    An I/O failure says nothing about the data: DuckDB spills large queries to
-    its temp directory (``.tmp`` under the working directory by default), so a
-    read-only working directory fails the query (bigbio/qpx#300).
-    """
-    if isinstance(exc, duckdb.IOException):
-        return "I/O error; if DuckDB could not create its temp directory, run from a writable directory"
-    return "possible schema drift"
 
 
 def _feature_psm_references(engine):
@@ -343,6 +296,10 @@ class _DatasetValidationMixin:
         if {"feature", "pg"} <= present:
             self._check_feature_pg_referential(results["feature"], strict=strict)
 
+        # Every run a view names exists, each feature label resolves to one
+        # sample, and a PSM's label is one its feature was identified in.
+        self._check_runs_and_labels(results, present, strict=strict)
+
         # site/proteoform links: pg_id names one pg row of the row's run (and, for a
         # proteoform, label) context; best_psm_id names a psm row.
         for view in ("site", "proteoform"):
@@ -350,6 +307,38 @@ class _DatasetValidationMixin:
                 self._check_pg_link(view, results[view], strict=strict)
 
         return results
+
+    def _check_runs_and_labels(self, results: dict[str, ValidationResult], present: set[str], *, strict: bool) -> None:
+        """Flag rows naming unknown runs, feature labels that resolve to no or several samples, and stray PSM labels."""
+        if self.run is not None:
+            for view in ("feature", "psm", "mz"):
+                if view in present:
+                    self._cross_view_issues(
+                        results[view], "run reference", partial(dangling_run_issues, self._engine, view), strict
+                    )
+            if "feature" in present:
+                self._cross_view_issues(results["feature"], "label-sample", partial(feature_label_issues, self._engine), strict)
+        if {"feature", "psm"} <= present:
+            severity = "error" if strict else "warning"
+            self._cross_view_issues(results["psm"], "psm label", partial(psm_label_issues, self._engine, severity), strict)
+
+    @staticmethod
+    def _cross_view_issues(result: ValidationResult, check: str, issues, strict: bool) -> None:
+        """Add the issues of the *issues* callable, or a skipped-check issue when its query fails."""
+        try:
+            result.issues.extend(issues())
+        except duckdb.Error as exc:
+            reason = skipped_check_reason(exc)
+            _log.warning("%s %s check could not run (%s): %s", result.structure, check, reason, exc)
+            result.issues.append(
+                ValidationIssue(
+                    structure=result.structure,
+                    check="referential_check_skipped",
+                    severity="error" if strict else "warning",
+                    column=None,
+                    message=f"{result.structure} {check} check could not run ({reason}): {exc}",
+                )
+            )
 
     def _check_pg_link(self, view: str, result: ValidationResult, *, strict: bool = False) -> None:
         """Flag site/proteoform links that do not resolve, or resolve to another context.
@@ -381,7 +370,7 @@ class _DatasetValidationMixin:
             try:
                 count = self._engine.execute(sql).fetchall()[0][0]
             except duckdb.Error as exc:
-                reason = _skipped_check_reason(exc)
+                reason = skipped_check_reason(exc)
                 _log.warning("%s link check could not run (%s): %s", view, reason, exc)
                 result.issues.append(
                     ValidationIssue(
@@ -417,7 +406,7 @@ class _DatasetValidationMixin:
                 """
             ).fetchall()
         except duckdb.Error as exc:
-            reason = _skipped_check_reason(exc)
+            reason = skipped_check_reason(exc)
             _log.warning("feature->pg referential check could not run (%s): %s", reason, exc)
             feature_result.issues.append(
                 ValidationIssue(
@@ -467,7 +456,7 @@ class _DatasetValidationMixin:
         try:
             dangling_feature_ids, dangling_psm_ids, desync, inverse_desync = _feature_psm_references(self._engine)
         except duckdb.Error as exc:
-            reason = _skipped_check_reason(exc)
+            reason = skipped_check_reason(exc)
             _log.warning("feature<->psm referential check could not run (%s): %s", reason, exc)
             skipped = ValidationIssue(
                 structure="psm",
@@ -503,7 +492,7 @@ class _DatasetValidationMixin:
             # Do not fail silently: a query error here can mean genuine schema
             # drift (a referenced pg/run column was removed/renamed), which is how
             # the last release's bug hid. Surface it in the validation result.
-            reason = _skipped_check_reason(exc)
+            reason = skipped_check_reason(exc)
             _log.warning("pg grouped_runs referential check could not run (%s): %s", reason, exc)
             pg_result.issues.append(
                 ValidationIssue(
@@ -534,10 +523,10 @@ class _DatasetValidationMixin:
     def _check_grouped_runs_sample_mapping(self, pg_result: ValidationResult, *, strict: bool) -> None:
         """Require each PG intensity label to resolve to exactly one sample."""
         try:
-            rows = self._engine.execute(_GROUPED_RUN_SAMPLE_MAPPING_SQL).fetchall()
+            pg_result.issues.extend(grouped_run_sample_issues(self._engine))
         except duckdb.Error as exc:
             # Do not fail silently on drift (see _check_grouped_runs_referential).
-            reason = _skipped_check_reason(exc)
+            reason = skipped_check_reason(exc)
             _log.warning("pg grouped_runs sample-mapping check could not run (%s): %s", reason, exc)
             pg_result.issues.append(
                 ValidationIssue(
@@ -546,23 +535,6 @@ class _DatasetValidationMixin:
                     severity="error" if strict else "warning",
                     column=None,
                     message=f"grouped_runs sample-mapping check could not run ({reason}): {exc}",
-                )
-            )
-            return
-
-        for anchor_protein, grouped_runs, label, sample_count, samples in rows:
-            pg_result.issues.append(
-                ValidationIssue(
-                    structure="pg",
-                    check="ambiguous_grouped_run_sample",
-                    severity="error",
-                    column="grouped_runs",
-                    message=(
-                        f"PG {anchor_protein!r} label {label!r} across "
-                        f"grouped_runs={grouped_runs!r} resolves to "
-                        f"{sample_count} samples ({samples or []!r}); exactly "
-                        "one sample is required"
-                    ),
                 )
             )
 

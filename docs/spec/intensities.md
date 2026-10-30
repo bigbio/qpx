@@ -77,7 +77,8 @@ labels, quantified side by side in one run. QPX encodes them as follows:
   isotope pattern only.
 - **A PSM is the identified partner.** `psm.peptidoform` carries its label
   modifications, `psm.label` names its channel, and `psm.feature_id` links it to
-  the multiplet's feature row (the peptidoforms differ by design).
+  the multiplet's feature row (the peptidoforms differ by design). The PSM label
+  is one of the feature's `identified_labels`.
 - **Ratios** go on the numerator label's entry as `ratio_<num>_<den>`, with
   `<num>` and `<den>` the lower-case channel suffixes (`l`, `m`, `h` for SILAC,
   the mass offset for dimethyl and mTRAQ): `ratio_h_l` and

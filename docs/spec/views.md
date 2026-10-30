@@ -40,23 +40,26 @@ API views are computed by joining and aggregating the primary QPX data. For exam
 
 ```sql
 -- Example: deriving protein abundance per sample from pg + run
-SELECT DISTINCT
-       pg.anchor_protein AS protein_accession,
+WITH run_samples AS (
+    SELECT r.run_file_name, sc.label, sc.sample_accession
+    FROM 'PXD014414.run.parquet' r
+    CROSS JOIN UNNEST(r.samples) AS samples(sc)
+)
+SELECT pg.anchor_protein AS protein_accession,
        rs.sample_accession,
        pg.label,
        pg.intensity AS abundance,
        pg.global_qvalue,
        pg.gg_names
 FROM 'PXD014414.pg.parquet' pg
-CROSS JOIN UNNEST(pg.grouped_runs) AS grouped(run_file_name)
-JOIN 'PXD014414.run.parquet' r USING (run_file_name)
-CROSS JOIN UNNEST(r.samples) AS samples(rs)
-WHERE pg.label = rs.label;   -- flattened: scalar pg.label/pg.intensity, no intensities list
+JOIN run_samples rs
+  ON rs.run_file_name = pg.grouped_runs[1]
+ AND rs.label = pg.label;   -- flattened: scalar pg.label/pg.intensity, no intensities list
 ```
 
-`DISTINCT` is required because several member runs can be fractions of the
-same sample. The protein-group quantity is already aggregated across those
-fractions and must be returned only once per sample and label.
+Any member run of `grouped_runs` resolves the label to the unit's sample, so
+joining on the first one returns the protein-group quantity once per sample and
+label, without unnesting every fraction against every channel.
 
 **Peptide-level data** can be derived from the Feature view by:
 
