@@ -8,7 +8,7 @@ This page lists which QPX data views each converter produces and explains the so
 | ----------- | :---: | :-------: | :--: | :------: | :------: | :---: | :-------: | :--------: | :----------: | :--: |
 | **MaxQuant** | Yes | Yes | Yes | No | If SDRF | If SDRF | Yes | If terms | Yes | No |
 | **FragPipe** | Yes | Yes | Yes | No | If SDRF | If SDRF | Yes | If terms | Yes | No |
-| **DIA-NN** | No | Yes | Yes | No | Yes | Yes | Yes | If terms | Yes | If MS2 info |
+| **DIA-NN** | No | Yes | Yes | Yes | Yes | Yes | Yes | If terms | Yes | If MS2 info |
 | **Spectronaut** | No | Yes | Yes | No | If SDRF | If SDRF | Yes | Yes | Yes | No |
 | **OpenMS native QPX** | Yes | Yes | Yes | No | Yes | Yes | Yes | Yes | Yes | No |
 | **OpenMS consensusXML** | Yes | Yes | Yes | No | If SDRF | If SDRF | Yes | If terms | Yes | No |
@@ -73,6 +73,10 @@ Further DIA-NN feature fields:
 - **`unique`.** True when `Protein.Group` and `Protein.Ids` both name one protein.
   `Proteotypic` follows DIA-NN's protein-grouping level (genes by default) and
   stays in `cv_params`.
+- **Pepmap.** `feature.pg_accessions` holds the peptide's protein group
+  (`Protein.Group`); the pepmap view lists every protein in `Protein.Ids` for each
+  converted target peptidoform, without positions. Decoy rows, which carry their
+  target's sequence, are left out.
 - **plexDIA.** A report with a `Channel` column gives one row per multiplet, with
   one `intensities` entry per channel. With an SDRF, a channel matches the
   `comment[label]` of the same name or the plexDIA label DIA-NN calls by that

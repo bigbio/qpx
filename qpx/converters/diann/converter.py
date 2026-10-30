@@ -13,7 +13,7 @@ from qpx.converters.diann.pg_adapter import DiannPgAdapter
 from qpx.converters.mappings import get_field_mappings, get_tool_meta
 from qpx.converters.orchestrator import BaseOrchestrator
 from qpx.converters.sdrf import convert_sdrf_views
-from qpx.core.constants import FEATURE, MZ, ONTOLOGY, PG, RUN, SAMPLE
+from qpx.core.constants import FEATURE, MZ, ONTOLOGY, PEPMAP, PG, RUN, SAMPLE
 from qpx.core.scores import field_ontology_entries, score_ontology_entries
 
 logger = logging.getLogger(__name__)
@@ -84,7 +84,9 @@ class DiaNNConverter(BaseOrchestrator):
             self._ontology_entries.extend(score_ontology_entries(adapter.get_discovered_scores(), view=FEATURE))
             cols = adapter.get_table_columns("report")
             self._resolved_mappings_by_view[FEATURE] = resolve_columns(get_field_mappings("diann", "feature"), cols)
-        self._written_views.append(FEATURE)
+            self._written_views.append(FEATURE)
+            if adapter.write_pepmap(str(output_folder / f"{prefix}.pepmap.parquet")):
+                self._written_views.append(PEPMAP)
         logger.info("DIA-NN feature conversion complete")
 
     def convert_pg(
@@ -229,7 +231,7 @@ class DiaNNConverter(BaseOrchestrator):
                 "tool_uri": None,
                 "parameters": None,
                 "config": None,
-                "output_views": [view for view in self._written_views if view in (FEATURE, PG)],
+                "output_views": [view for view in self._written_views if view in (FEATURE, PG, PEPMAP)],
             },
             {
                 "step_order": 2,

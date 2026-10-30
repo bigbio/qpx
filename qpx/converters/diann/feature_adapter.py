@@ -25,13 +25,14 @@ import pyarrow.parquet as pq
 from qpx.converters.base import resolve_columns
 from qpx.converters.diann.base_adapter import BATCH_ROWS, DiaNNBaseAdapter, run_name_sql
 from qpx.converters.diann.constants import to_modifications, to_proforma
-from qpx.converters.diann.feature_sql import _SCORE_MAPPINGS, _build_batch_sql
+from qpx.converters.diann.feature_sql import _SCORE_MAPPINGS, _build_batch_sql, build_pepmap_sql
 from qpx.converters.mappings import get_field_mappings
 from qpx.converters.utils import pg_accessions_array
 from qpx.core.query import _escape_sql_string
 from qpx.core.scan import scan_from_native_id
 from qpx.core.sql import sql_build, validate_identifier
 from qpx.writers.feature import FeatureWriter
+from qpx.writers.pepmap import PepMapWriter
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,9 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
                 sdrf_path="sdrf.tsv",
             )
     """
+
+    # Pepmap query of the converted runs, run by write_pepmap().
+    _pepmap_query: str | None = None
 
     def convert(
         self,
@@ -147,6 +151,7 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
 
         # 8. Discover runs
         run_names = self._discover_runs(mzml_info_folder)
+        self._pepmap_query = self._fill_runs(build_pepmap_sql(self._resolved, report_cols, qvalue_threshold), run_names)
 
         # 9. Process in batches → Arrow tables → write directly
         with FeatureWriter(
@@ -159,6 +164,36 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
                 writer.write_table(table)
 
         self.logger.info(f"DIA-NN feature conversion complete -> {output_path}")
+
+    def write_pepmap(self, output_path: str, creator: str = "diann") -> bool:
+        """Write the proteins each converted peptidoform maps to (``Protein.Ids``) as the pepmap view.
+
+        ``pg_accessions`` of the feature view holds the peptide's protein group;
+        ``Protein.Ids`` lists every protein the peptide maps to. Returns whether a
+        file was written: not for a report without ``Protein.Ids`` or features.
+        """
+        rows = self._conn.execute(self._pepmap_query).fetchall() if self._pepmap_query else []
+        if not rows:
+            return False
+        records = [
+            {
+                "sequence": sequence,
+                "peptidoform": peptidoform,
+                "pg_accessions": [{"accession": acc, "start": None, "end": None, "pre": None, "post": None} for acc in accessions]
+                or None,
+                "is_unique": len(accessions) == 1 if accessions else None,
+            }
+            for peptidoform, sequence, accessions in rows
+        ]
+        with PepMapWriter(output_path, creator=creator, compression=self._compression) as writer:
+            writer.write_batch(records)
+        self.logger.info("Wrote %d pepmap entries to %s", len(records), output_path)
+        return True
+
+    def _fill_runs(self, sql: str | None, run_names: list[str]) -> str | None:
+        """*sql* restricted to the report runs of *run_names*; None without SQL or runs."""
+        runs = self._report_runs(run_names) if sql else []
+        return sql.replace("{run_placeholders}", ", ".join(f"'{_escape_sql_string(run)}'" for run in runs)) if runs else None
 
     def _feature_batches(
         self,

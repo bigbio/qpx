@@ -193,6 +193,47 @@ def _build_acquisition_select_parts(resolved: dict, report_cols: set[str]) -> li
     return parts
 
 
+# The proteins each target peptidoform maps to. A DIA-NN decoy precursor has
+# its target's sequence, so decoy rows are left out.
+_PEPMAP_SQL = """
+    SELECT lk.peptidoform,
+           any_value(lk.sequence) AS sequence,
+           list_sort(list_distinct(list_filter(
+               list_transform(flatten(list(string_split(r.$ids_col, ';'))), lambda x: trim(x)),
+               lambda x: x <> ''
+           ))) AS accessions
+    FROM report r
+    JOIN precursor_lookup lk
+        ON r.$mod_col = lk.modified_sequence
+        AND r.$seq_col = lk.sequence
+        AND r.$chg_col = lk.charge
+    WHERE r.$run_col IN ({run_placeholders})
+      $qvalue_filter
+      $target_filter
+      AND r.$pg_col IS NOT NULL
+    GROUP BY lk.peptidoform
+    """
+
+
+def build_pepmap_sql(resolved: dict, report_cols: set[str], qvalue_threshold: Optional[float]) -> str | None:
+    """The pepmap query over the feature rows: each peptidoform with its ``Protein.Ids``; None without that column."""
+    ids_col = resolved.get("mp_accessions")
+    if ids_col not in report_cols:
+        return None
+    decoy_col = resolved.get("decoy")
+    return sql_build(
+        _PEPMAP_SQL,
+        ids_col=validate_identifier(ids_col),
+        mod_col=validate_identifier(resolved["modified_sequence"]),
+        seq_col=validate_identifier(resolved["sequence"]),
+        chg_col=validate_identifier(resolved["charge"]),
+        run_col=validate_identifier(resolved["run_file_name"]),
+        qvalue_filter=_qvalue_filter_sql(qvalue_threshold, resolved.get("precursor_qvalue")),
+        target_filter=f'AND CAST(r."{decoy_col}" AS BOOLEAN) IS NOT TRUE' if decoy_col in report_cols else "",
+        pg_col=validate_identifier(resolved["pg_accessions"]),
+    )
+
+
 def _qvalue_filter_sql(qvalue_threshold: Optional[float], qv_col: str | None) -> str:
     """Build the opt-in precursor q-value filter."""
     qvalue_filter = ""

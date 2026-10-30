@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `qpx.converters.ptm.normalize_peptidoform()` rewrites a peptidoform into the canonical form, and `unimod_from_name()` / `canonical_mod_tag()` resolve modification names, accessions and masses to Unimod.
 - `PG.by_group()` and `Feature.by_group()` select one protein group by its membership, and `protein_view.intensity()` reports the group as `protein_group`. `by_protein()` matches the anchor protein, which can lead several groups.
 - `design_matrix(value_col=...)` pivots an additional intensity, such as `lfq` or `maxlfq`, by its `intensity_name`, and the MuData modalities carry each additional intensity as a layer; only the primary intensity, the tool's unnormalised quantity, was available before. MuData `obs` also carries the sample characteristics from `sample.parquet`.
+- `qpxc convert diann` writes the pepmap view: every protein in `Protein.Ids` for each converted target peptidoform. Only the protein group (`Protein.Group`) was kept, so the other proteins a peptide maps to were lost (451 of 27,314 peptidoforms on PXD026600).
 - `qpxc validate` warns when the labelled rows of a pg view have no positive intensity, as an all-zero DIA-NN channel pg did while validating clean.
 - `QueryResult.filter(condition)` narrows a query result in SQL, which DuckDB pushes into the scans: looking up one group in `protein_view.intensity()` no longer reads every row into pandas first.
 

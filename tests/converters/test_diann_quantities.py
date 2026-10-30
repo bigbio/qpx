@@ -272,3 +272,27 @@ def test_quantify_reads_numeric_plexdia_labels(tmp_path):
     mapping = _quantify_sdrf_mapping(path)
 
     assert mapping["_label_key"].tolist() == ["0", "4", "8"]
+
+
+def test_pepmap_lists_every_protein_of_the_converted_peptidoforms(tmp_path):
+    """Protein.Ids reaches the pepmap view: all mapped proteins, target rows within the q-value cut only."""
+    rows = [
+        _row(**{"Protein.Group": "P1", "Protein.Ids": "P1;P9"}),
+        _row(**{"Run": "run_B.raw", "Protein.Group": "P1", "Protein.Ids": "P1;P8"}),
+        _row(**{"Modified.Sequence": "SAMPLER", "Stripped.Sequence": "SAMPLER", "Protein.Ids": "P2", "Protein.Group": "P2"}),
+        _row(**{"Modified.Sequence": "LATER", "Stripped.Sequence": "LATER", "Q.Value": 0.2}),
+        _row(**{"Decoy": 1, "Protein.Ids": "P7"}),
+    ]
+    rows = [{"Decoy": 0, **row} for row in rows]
+    report = tmp_path / "report.tsv"
+    pd.DataFrame(rows).to_csv(report, sep="\t", index=False)
+    pepmap = tmp_path / "out.pepmap.parquet"
+    with DiannFeatureAdapter() as adapter:
+        adapter.convert(diann_report=str(report), output_path=str(tmp_path / "out.feature.parquet"), qvalue_threshold=0.01)
+        assert adapter.write_pepmap(str(pepmap))
+
+    entries = {
+        row["peptidoform"]: ([protein["accession"] for protein in row["pg_accessions"]], row["is_unique"])
+        for row in pq.read_table(pepmap).to_pylist()
+    }
+    assert entries == {"PEPTIDEK": (["P1", "P8", "P9"], False), "SAMPLER": (["P2"], True)}

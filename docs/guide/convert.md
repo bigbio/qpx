@@ -186,6 +186,7 @@ Output files generated:
 
 - **Feature**: `{output-prefix}-{uuid}.feature.parquet` (always produced)
 - **Protein Group**: `{output-prefix}-{uuid}.pg.parquet` (always produced)
+- **Peptide-protein map**: `{output-prefix}.pepmap.parquet` (every protein in `Protein.Ids` for each converted peptidoform)
 - **Mass spectra**: `{output-prefix}.mz.parquet` (produced when `--mzml-info-folder` contains `*_ms2_info.parquet`; feature-matched MS2 spectra only)
 - **MuData**: `{output-prefix}.h5mu` (written by default; `--no-mudata` skips it)
 
