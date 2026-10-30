@@ -153,6 +153,21 @@ When a dataset holds several views, it also checks the references between them:
 
 A cross-view check whose query fails is reported as skipped, with the reason (I/O error, out of memory or possible schema drift), as a strict issue.
 
+### Semantic checks
+
+`--semantic` (`validate(semantic=True)` in Python) also checks what the PSM and feature values mean. It parses each distinct peptidoform, so it takes longer on large views:
+
+| Check | Severity | Description |
+|-------|----------|-------------|
+| **Peptidoform syntax** | strict | The peptidoform is [canonical ProForma](../spec/peptidoform.md#canonical-form) |
+| **Peptidoform sequence** | strict | The peptidoform without its modifications is `sequence` |
+| **Modification accessions** | strict | Every tag is a known `UNIMOD:n` accession, a signed mass shift or a name (other accession namespaces are not canonical) |
+| **Modification positions** | strict | `modifications` positions lie in the peptide (0 to length + 1) and name its residue |
+| **calculated_mz** | strict | Within 20 ppm of the theoretical m/z of the peptidoform at its charge, when every modification has a known mass |
+| **Mass error** | warning | `observed_mz` within 50 ppm of `calculated_mz`; not checked for MS1-label multiplets (`identified_labels` set) |
+
+Cross-linked PSMs (`cross_links` set) carry the partner peptide's mass and skip both m/z checks.
+
 ## Programmatic Validation
 
 You can also validate from Python:

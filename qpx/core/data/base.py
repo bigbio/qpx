@@ -147,12 +147,14 @@ class BaseStructure:
             yield batch_values, df
 
     # --- Validation ---
-    def validate(self, *, strict: bool = False) -> ValidationResult:
+    def validate(self, *, strict: bool = False, semantic: bool = False) -> ValidationResult:
         """Validate this structure's data against its schema.
 
         ``strict=True`` (used by ``qpxc validate``) promotes duplicate-PK and
         required-null issues to errors; the default is lenient. Rows are read in
         batches; only the primary-key columns are held for the whole view.
+        ``semantic=True`` also checks PSM and feature peptidoforms, modification
+        positions and m/z values.
         """
         view = self._schema_class
         severity = "error" if strict else "warning"
@@ -184,7 +186,12 @@ class BaseStructure:
         batches = self._engine.connection.sql(
             sql_build("SELECT $columns FROM ($query)", columns=columns, query=query)
         ).to_arrow_reader(_VALIDATE_BATCH_ROWS)
-        return view.validate_batches(schema, batches, keys, referential, strict=strict)
+        result = view.validate_batches(schema, batches, keys, referential, strict=strict)
+        if semantic:
+            from qpx.core.semantic_validation import semantic_issues
+
+            result.issues.extend(semantic_issues(self._engine, query, schema.names, view.view_name, severity))
+        return result
 
     # --- Parquet metadata (delegates to core.parquet_io) ---
     @property

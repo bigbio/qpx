@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Specification 1.3: MS1-label multiplets.** SILAC, dimethyl and mTRAQ data have a normative encoding: one feature row per multiplet with one `intensities` entry per channel label and the lightest partner's peptidoform, the new optional `feature.identified_labels` (the partners identified by MS/MS) and `psm.label`, PSM peptidoforms that carry their partner's label, and ratios named `ratio_<num>_<den>` on the numerator label. See [MS1 labels](docs/spec/intensities.md#ms1-labels-silac-dimethyl-mtraq).
+- `qpxc validate --semantic` (`validate(semantic=True)`) checks PSM and feature peptidoforms (canonical ProForma, the sequence, Unimod accessions), modification positions, `calculated_mz` against the peptidoform's theoretical m/z and `observed_mz` against `calculated_mz`. Malformed ProForma, unknown accessions, a peptidoform that contradicts its sequence, a modification at position 42 of a 16-mer and a `calculated_mz` 50 Da off all passed before.
 - `qpx.converters.ptm.normalize_peptidoform()` rewrites a peptidoform into the canonical form, and `unimod_from_name()` / `canonical_mod_tag()` resolve modification names, accessions and masses to Unimod.
 
 ### Changed

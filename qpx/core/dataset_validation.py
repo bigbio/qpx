@@ -243,13 +243,19 @@ class _DatasetValidationMixin:
     """Validate registered structures, cross-references and file integrity."""
 
     # --- Validation ---
-    def validate(self, structures: list[str] | None = None, *, strict: bool = False) -> dict[str, ValidationResult]:
+    def validate(
+        self, structures: list[str] | None = None, *, strict: bool = False, semantic: bool = False
+    ) -> dict[str, ValidationResult]:
         """Validate the dataset or specific structures against their schemas.
 
         Parameters
         ----------
         structures : list[str] | None
             Structure names to validate.  If *None*, validates all available.
+        strict : bool
+            Report the issues that are warnings by default as errors.
+        semantic : bool
+            Also check PSM and feature peptidoforms, modification positions and m/z values.
 
         Returns
         -------
@@ -273,7 +279,7 @@ class _DatasetValidationMixin:
                 )
                 results[name] = result
             else:
-                results[name] = struct.validate(strict=strict)
+                results[name] = struct.validate(strict=strict, semantic=semantic)
 
         present = {name for name in results if self._structures.get(name) is not None}
 

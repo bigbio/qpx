@@ -468,7 +468,21 @@ class TestValidateCLI:
     def test_validate_help_renders(self):
         runner = CliRunner()
         result = runner.invoke(qpx_main, ["validate", "--help"])
-        _assert_help(result, "--dataset-path", "--file", "--structure")
+        _assert_help(result, "--dataset-path", "--file", "--structure", "--semantic")
+
+    def test_validate_semantic_fails_a_wrong_calculated_mz(self, tmp_path):
+        """--semantic checks calculated_mz against the peptidoform; the default run does not."""
+        from qpx.writers import FeatureWriter
+        from tests.conftest import make_feature_record
+
+        path = tmp_path / "a.feature.parquet"
+        with FeatureWriter(path) as w:
+            w.write_batch([make_feature_record(calculated_mz=500.0, observed_mz=500.0)])
+        runner = CliRunner()
+        assert runner.invoke(qpx_main, ["validate", "--file", str(path)]).exit_code == 0
+        result = runner.invoke(qpx_main, ["validate", "--file", str(path), "--semantic"])
+        assert result.exit_code == 1
+        assert "calculated_mz" in result.output
 
 
 # ---------------------------------------------------------------------------

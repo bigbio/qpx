@@ -45,17 +45,24 @@ _VALID_STRUCTURES = Dataset.structure_names()
     type=click.Choice(_VALID_STRUCTURES, case_sensitive=False),
     multiple=True,
 )
+@click.option(
+    "--semantic",
+    help="Also check PSM and feature peptidoforms (ProForma syntax, sequence, Unimod accessions), "
+    "modification positions and calculated/observed m/z",
+    is_flag=True,
+)
 @click.option("--verbose", help="Enable verbose logging", is_flag=True)
 def validate_cmd(
     dataset_path: Optional[Path],
     file_path: Optional[Path],
     structures: tuple[str, ...],
+    semantic: bool,
     verbose: bool,
 ):
     """Validate a QPX dataset or structure against the canonical schema.
 
-    Checks column presence, type matching, null values in required columns,
-    and primary key uniqueness.
+    Checks the columns, values and footer of each structure, and the
+    references between structures.
 
     \b
     Examples:
@@ -68,29 +75,32 @@ def validate_cmd(
 
         # Validate a single Parquet file
         qpxc validate --file ./data.feature.parquet
+
+        # Also check peptidoforms, modification positions and m/z
+        qpxc validate --dataset-path ./PXD014414 --semantic
     """
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
     if file_path:
-        _validate_single_file(file_path)
+        _validate_single_file(file_path, semantic)
         return
 
     if dataset_path:
-        _validate_dataset(dataset_path, list(structures) if structures else None)
+        _validate_dataset(dataset_path, list(structures) if structures else None, semantic)
         return
 
     raise click.ClickException("Provide --dataset-path or --file.")
 
 
-def _validate_single_file(file_path: Path):
+def _validate_single_file(file_path: Path, semantic: bool):
     """Validate a single Parquet file by inferring its structure type."""
     from qpx.dataset import Dataset
 
     for _, (cls, suffix) in Dataset._STRUCTURE_REGISTRY.items():
         if file_path.name.endswith(suffix):
             struct = cls.from_file(file_path)
-            result = struct.validate(strict=True)
+            result = struct.validate(strict=True, semantic=semantic)
             _print_result(result)
             sys.exit(0 if result.is_valid else 1)
 
@@ -100,12 +110,12 @@ def _validate_single_file(file_path: Path):
     )
 
 
-def _validate_dataset(dataset_path: Path, structures: list[str] | None):
+def _validate_dataset(dataset_path: Path, structures: list[str] | None, semantic: bool):
     """Validate a dataset directory."""
     import qpx
 
     with qpx.open_dataset(dataset_path) as ds:
-        results = ds.validate(structures=structures, strict=True)
+        results = ds.validate(structures=structures, strict=True, semantic=semantic)
 
     all_valid = True
     for _, result in results.items():
