@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`convert diann` zero quantities** — DIA-NN writes 0 for a quantity it did not compute: QuantUMS (DIA-NN 2.x) reports `PG.MaxLFQ` = 0 for an identified protein group it could not quantify and leaves the group's `pg_matrix` cell empty, and an unquantified precursor or channel gets `Precursor.Quantity` = 0 or `Ms1.Area` = 0. qpx stored these as measured zeros. On PXD049692 (DIA-NN 2.5.1, no `PG.Quantity`) 3,285 of 19,468 pg rows (16.9 %) had `intensity` 0.0 and 3,731 of 64,396 features a `maxlfq` of 0.0; on PXD036609 (DIA-NN 1.8) 18 features had an `LFQ` intensity of 0.0 and 20,450 an `ms1_area` of 0.0; on the plexDIA MSV000093870 13.2 % of the channel rows carry `Precursor.Quantity` = 0. Zero, negative and NaN quantities now all count as missing (the pg fallback already skipped a NaN, while a NaN feature quantity was written as 0.0): the pg intensity is the first positive value of `PG.Quantity`, `PG.MaxLFQ` and the label-free PG matrix, with `quantification_method` naming the source, and a group without any positive quantity keeps its `label` with `intensity` = null and no `quantification_method`, as pg.md requires. A zero `maxlfq`, `precursor_normalised` or `ms1_area` is left out of `additional_intensities`. The feature intensity struct cannot hold a null, so an unquantified channel has no entry and a feature without any quantity keeps its row with `intensities` = null; it carries no label for the feature→pg softlink. A pg group with no quantity at all (no `PG.Quantity`, `PG.MaxLFQ` or PG matrix value) was written with a null `label`, and in channel mode such a channel had no row beside a quantified one; both now get a row with their label, so these rows have a new `pg_id`. None of the measured datasets has such a group, and all other ids are unchanged.
+
 ## [1.2.0] - 2026-10-30
 
 ### Added

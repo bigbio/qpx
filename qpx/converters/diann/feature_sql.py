@@ -58,6 +58,17 @@ _BATCH_SQL = """
     """
 
 
+# Per-channel nested columns collected into one feature row, and the channel
+# rows each one keeps: an unquantified channel has a null intensity and no entry.
+# Every channel row keeps its labelled entry so that the deduplication below can
+# partition on intensities[1].label. With a plain label column there, DuckDB
+# rewrites ROW_NUMBER() = 1 into an arg_min aggregate over the whole wide row,
+# which made the plexDIA feature step about 20 % slower.
+_CHANNEL_LIST_FILTERS = {
+    "intensities": "intensities[1].intensity IS NOT NULL",
+    "additional_intensities": "additional_intensities IS NOT NULL",
+}
+
 _CHANNEL_ROWS_SQL = """
         WITH channel_rows AS (
             $row_sql
@@ -94,6 +105,18 @@ def _safe_float_sql(column: str) -> str:
 def _safe_double_sql(column: str) -> str:
     """Build a SQL expression that converts a finite value to DOUBLE."""
     return f'CASE WHEN r."{column}" IS NOT NULL AND NOT isnan(CAST(r."{column}" AS DOUBLE)) THEN CAST(r."{column}" AS DOUBLE) END'
+
+
+def _quantity_sql(column: str) -> str:
+    """Build a SQL expression that keeps a positive quantity as FLOAT, NULL otherwise.
+
+    DIA-NN writes 0 for a quantity it did not measure (an unquantified channel's
+    ``Precursor.Quantity``, an ``Ms1.Area`` without MS1 signal, QuantUMS's
+    ``PG.MaxLFQ``); a tool's zero sentinel is not a measured zero. DuckDB orders
+    NaN above every number, so NaN is excluded explicitly.
+    """
+    value = f'CAST(r."{column}" AS DOUBLE)'
+    return f'CASE WHEN {value} > 0 AND NOT isnan({value}) THEN CAST(r."{column}" AS FLOAT) END'
 
 
 def _build_mass_select_parts(resolved: dict, report_cols: set[str]) -> list[str]:
@@ -319,10 +342,7 @@ def _build_batch_sql(
 
     # --- Nested: intensities ---
     label_expr, channel_helper_parts, channel_join = _build_channel_sql_parts(channel_col, qv_col)
-    int_col = r["intensity"]
-    parts.append(
-        f"[STRUCT_PACK(label := {label_expr}, intensity := COALESCE({_safe_float_sql(int_col)}, 0.0::FLOAT))] AS intensities"
-    )
+    parts.append(_build_intensities_sql(r["intensity"], label_expr, bool(channel_col)))
 
     # --- Nested columns built by helpers ---
     parts.append(_build_additional_intensities_sql(r, has_column, label_expr))
@@ -403,14 +423,9 @@ def _aggregate_channel_rows_sql(row_sql: str, target_schema: pa.Schema) -> str:
             continue
         if name in group_fields:
             select_parts.append(quoted)
-        elif name == "intensities":
-            select_parts.append("LIST(intensities[1] ORDER BY intensities[1].label) AS intensities")
-        elif name == "additional_intensities":
+        elif name in _CHANNEL_LIST_FILTERS:
             select_parts.append(
-                "LIST(additional_intensities[1] "
-                "ORDER BY intensities[1].label) "
-                "FILTER (WHERE additional_intensities IS NOT NULL) "
-                "AS additional_intensities"
+                f"LIST({quoted}[1] ORDER BY intensities[1].label) FILTER (WHERE {_CHANNEL_LIST_FILTERS[name]}) AS {quoted}"
             )
         else:
             select_parts.append(f"FIRST({quoted} ORDER BY _qvalue NULLS LAST) AS {quoted}")
@@ -422,6 +437,22 @@ def _aggregate_channel_rows_sql(row_sql: str, target_schema: pa.Schema) -> str:
         row_sql=row_sql,
         select_clause=select_clause,
     )
+
+
+def _build_intensities_sql(intensity_col: str, label_expr: str, channel_rows: bool) -> str:
+    """Build SQL for the intensities nested column: no entry for an unquantified precursor.
+
+    The intensity struct cannot hold a null, so a feature DIA-NN identified
+    without a quantity keeps its row with ``intensities = null``. A channel row
+    keeps its labelled entry, because the per-channel deduplication partitions on
+    ``intensities[1].label``; ``_aggregate_channel_rows_sql`` then drops the
+    entries without a quantity.
+    """
+    quantity = _quantity_sql(intensity_col)
+    entry = f"[STRUCT_PACK(label := {label_expr}, intensity := {quantity})]"
+    if channel_rows:
+        return f"{entry} AS intensities"
+    return f"CASE WHEN {quantity} IS NOT NULL THEN {entry} END AS intensities"
 
 
 def _build_additional_intensities_sql(r: dict, _has, label_expr: str = "'LFQ'") -> str:
@@ -436,11 +467,10 @@ def _build_additional_intensities_sql(r: dict, _has, label_expr: str = "'LFQ'") 
     entries, checks = [], []
     for col, name in candidates:
         if _has(col):
-            chk = f'(r."{col}" IS NOT NULL AND NOT isnan(CAST(r."{col}" AS DOUBLE)))'
+            quantity = _quantity_sql(col)
+            chk = f"({quantity} IS NOT NULL)"
             checks.append(chk)
-            entries.append(
-                f"CASE WHEN {chk} THEN STRUCT_PACK(intensity_name := '{name}', intensity_value := CAST(r.\"{col}\" AS FLOAT)) END"
-            )
+            entries.append(f"CASE WHEN {chk} THEN STRUCT_PACK(intensity_name := '{name}', intensity_value := {quantity}) END")
     if not entries:
         return "NULL AS additional_intensities"
     ai_list = ", ".join(entries)

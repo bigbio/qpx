@@ -1385,6 +1385,137 @@ def test_diann_pg_quantification_method_names_the_maxlfq_fallback(tmp_path):
     assert out[0]["cv_params"] == [{"cv_name": "quantification_method", "cv_value": "PG.MaxLFQ"}]
 
 
+# ---------------------------------------------------------------------------
+# Zero sentinels: DIA-NN writes 0 for a quantity it did not compute
+# ---------------------------------------------------------------------------
+
+
+def _single_group_matrix(value: float) -> list[dict]:
+    return [{"Protein.Group": "P1", "Protein.Names": "N1", "Genes": "G1", "run_A": value}]
+
+
+@pytest.mark.parametrize(
+    ("maxlfq", "matrix_value"),
+    [(0.0, float("nan")), (-1.0, float("nan")), (float("nan"), float("nan")), (float("nan"), 0.0), (float("nan"), -5.0)],
+)
+def test_diann_pg_unquantified_group_keeps_its_label_with_null_intensity(tmp_path, maxlfq, matrix_value):
+    """QuantUMS (DIA-NN 2.x) writes PG.MaxLFQ = 0 for an identified group it did not quantify.
+
+    Without PG.Quantity in the report, the 0 became intensity 0.0 (3,285 of 19,468
+    PXD049692 pg rows), and a group without any quantity lost its label. DIA-NN
+    leaves the group's pg_matrix cell empty; pg.md keeps the identified group's
+    label with a null intensity.
+    """
+    row = _diann_row(**{"PG.MaxLFQ": maxlfq})
+    del row["PG.Quantity"]
+
+    out = _pg_rows_single_run(tmp_path, [row], matrix_rows=_single_group_matrix(matrix_value))
+
+    assert len(out) == 1
+    assert (out[0]["label"], out[0]["intensity"], out[0]["cv_params"]) == ("LFQ", None, None)
+    assert out[0]["additional_intensities"] is None
+
+
+def test_diann_pg_zero_maxlfq_is_left_out_of_additional_intensities(tmp_path):
+    out = _pg_rows_single_run(tmp_path, [_diann_row(**{"PG.MaxLFQ": 0.0})], matrix_rows=_single_group_matrix(float("nan")))
+
+    assert out[0]["intensity"] == 1000.0
+    assert out[0]["additional_intensities"] is None
+
+
+def test_diann_pg_zero_quantity_falls_back_to_maxlfq_like_a_missing_one(tmp_path):
+    out = _pg_rows_single_run(tmp_path, [_diann_row(**{"PG.Quantity": 0.0, "PG.MaxLFQ": 900.0})])
+
+    assert out[0]["intensity"] == 900.0
+    assert out[0]["cv_params"] == [{"cv_name": "quantification_method", "cv_value": "PG.MaxLFQ"}]
+
+
+@pytest.mark.parametrize(
+    ("h_quantities", "expected"),
+    [
+        ({"PG.Quantity": None, "PG.MaxLFQ": 0.0}, {"L": 900.0, "H": None}),
+        ({"PG.Quantity": float("nan"), "PG.MaxLFQ": float("nan")}, {"L": 1000.0, "H": None}),
+    ],
+)
+def test_plexdia_pg_unquantified_channel_keeps_its_label(tmp_path, h_quantities, expected):
+    """An identified channel without a quantity keeps its own row, label and null intensity.
+
+    With a 0 PG.MaxLFQ the channel was written with intensity 0.0; with no value
+    at all it had no row. Both are now a row with intensity = null (pg.md).
+    """
+    from qpx.converters.diann.pg_adapter import DiannPgAdapter
+
+    report_path, matrix_path, sdrf_path = _write_plexdia_inputs(tmp_path)
+    report = pd.read_csv(report_path, sep="\t")
+    for column, value in h_quantities.items():
+        if value is None:
+            report = report.drop(columns=column)
+        else:
+            report.loc[report["Channel"] == "H", column] = value
+    report.to_csv(report_path, sep="\t", index=False)
+    output_path = tmp_path / "plexdia.pg.parquet"
+    with DiannPgAdapter() as adapter:
+        adapter.convert(
+            diann_report=str(report_path),
+            pg_matrix_path=str(matrix_path),
+            output_path=str(output_path),
+            sdrf_path=str(sdrf_path),
+        )
+
+    rows = pq.read_table(output_path).to_pylist()
+    assert {row["label"]: row["intensity"] for row in rows} == expected
+
+
+@pytest.mark.parametrize("missing_quantity", [0.0, float("nan")])
+def test_diann_feature_zero_quantities_are_not_measured_zeros(tmp_path, missing_quantity):
+    """PXD036609 has 18 features with Precursor.Quantity = 0 and 20,450 with Ms1.Area = 0.
+
+    They were written as measured 0.0 values, and a NaN Precursor.Quantity as 0.0
+    too. The intensity struct cannot hold a null, so the identified feature keeps
+    its row with ``intensities = null``, and a zero additional intensity is left out.
+    """
+    quantified, unquantified = _two_precursor_report_rows()
+    quantified.update({"Precursor.Normalised": 110.0, "Ms1.Area": 0.0, "PG.MaxLFQ": 0.0})
+    unquantified.update({"Precursor.Quantity": missing_quantity, "Precursor.Normalised": 0.0, "Ms1.Area": 50.0})
+
+    rows = {row["sequence"]: row for row in _feature_rows_single_run(tmp_path, [quantified, unquantified])}
+
+    assert rows["PEPTIDEK"]["intensities"] == [{"label": "LFQ", "intensity": 100.0}]
+    assert rows["PEPTIDEK"]["additional_intensities"] == [
+        {"label": "LFQ", "intensities": [{"intensity_name": "precursor_normalised", "intensity_value": 110.0}]}
+    ]
+    assert rows["PEPTIDER"]["intensities"] is None
+    assert rows["PEPTIDER"]["additional_intensities"] == [
+        {
+            "label": "LFQ",
+            "intensities": [
+                {"intensity_name": "maxlfq", "intensity_value": 900.0},
+                {"intensity_name": "ms1_area", "intensity_value": 50.0},
+            ],
+        }
+    ]
+
+
+@pytest.mark.parametrize(("zero_channels", "expected"), [(["H"], {"L": 100.0}), (["L", "H"], None)])
+def test_plexdia_feature_unquantified_channel_has_no_intensity_entry(tmp_path, zero_channels, expected):
+    """MSV000093870 (plexDIA) reports Precursor.Quantity = 0 on 13.2 % of its channel rows."""
+    from qpx.converters.diann.feature_adapter import DiannFeatureAdapter
+
+    report_path, _, sdrf_path = _write_plexdia_inputs(tmp_path)
+    report = pd.read_csv(report_path, sep="\t")
+    report.loc[report["Channel"].isin(zero_channels), "Precursor.Quantity"] = 0.0
+    report.to_csv(report_path, sep="\t", index=False)
+    output_path = tmp_path / "plexdia.feature.parquet"
+    with DiannFeatureAdapter() as adapter:
+        adapter.convert(diann_report=str(report_path), output_path=str(output_path), sdrf_path=str(sdrf_path))
+
+    rows = pq.read_table(output_path).to_pylist()
+    assert len(rows) == 1
+    intensities = rows[0]["intensities"]
+    by_label = None if intensities is None else {entry["label"]: entry["intensity"] for entry in intensities}
+    assert by_label == expected
+
+
 def test_protein_properties_from_fasta_on_bare_diann_accessions(converted_output, tmp_path):
     """DIA-NN reports bare accessions (``P12345``) and no protein sequence at all.
 
