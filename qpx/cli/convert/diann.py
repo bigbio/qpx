@@ -39,13 +39,12 @@ def _write_diann_views(converter, options: dict, prefix: str) -> None:
         output_folder=output_folder,
         output_prefix=output_prefix,
     )
-    if pg_matrix_path:
-        converter.convert_pg(
-            pg_matrix_path=pg_matrix_path,
-            output_folder=output_folder,
-            output_prefix=output_prefix,
-            qvalue_threshold=qvalue_threshold,
-        )
+    converter.convert_pg(
+        pg_matrix_path=pg_matrix_path,
+        output_folder=output_folder,
+        output_prefix=output_prefix,
+        qvalue_threshold=qvalue_threshold,
+    )
 
     converter.convert_mz(
         mzml_statistics_folder=mzml_info_folder,
@@ -91,7 +90,10 @@ def _write_diann_views(converter, options: dict, prefix: str) -> None:
 @_output_prefix_option
 @click.option(
     "--pg-matrix-path",
-    help="DIA-NN protein quantities matrix file (enables PG conversion)",
+    help=(
+        "DIA-NN protein-group matrix (optional). The pg view comes from the report; the matrix fills "
+        "a label-free group's MaxLFQ when the report lacks it."
+    ),
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
 )
 @_max_memory_option
@@ -111,20 +113,19 @@ def _write_diann_views(converter, options: dict, prefix: str) -> None:
 def convert_diann_cmd(**kwargs):
     """Convert DIA-NN report to QPX format.
 
-    Reads a DIA-NN report.tsv file and converts feature-level quantification
-    data into QPX Parquet format. When --pg-matrix-path is provided, also
-    produces protein group output.
+    Reads a DIA-NN report.tsv file and converts its precursor and protein-group
+    quantification data into QPX Parquet format.
 
     \b
     Examples:
-        # Feature conversion
+        # Feature and protein-group conversion
         qpxc convert diann \\
             --report-path report.tsv \\
             --sdrf-file data.sdrf.tsv \\
             --mzml-info-folder ./mzml_info \\
             --output-folder ./qpx_output
 
-        # Feature + protein groups
+        # With the protein-group matrix
         qpxc convert diann \\
             --report-path report.tsv \\
             --sdrf-file data.sdrf.tsv \\

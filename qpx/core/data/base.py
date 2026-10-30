@@ -11,7 +11,7 @@ import pyarrow.parquet as pq
 
 from qpx.core.convert import QueryResult
 from qpx.core.data.footer_validation import duplicate_composite_issues, footer_issues
-from qpx.core.data.schema import ValidationResult, pg_referential_issues_from_query
+from qpx.core.data.schema import ValidationResult, pg_quantity_issues, pg_referential_issues_from_query
 from qpx.core.engine import DuckDBEngine, create_engine
 from qpx.core.parquet_io import read_parquet_metadata
 from qpx.core.query import LazyQuery, _escape_sql_string
@@ -178,8 +178,8 @@ class BaseStructure:
             ).to_arrow_table()
         referential = footer_issues(view, footers, severity)
         referential += duplicate_composite_issues(self._engine, query, view, schema.names, footers, severity)
-        if view.view_name == "pg" and {"pg_accessions", "grouped_runs", "label"} <= set(schema.names):
-            referential += pg_referential_issues_from_query(self._engine, query, view.view_name, severity)
+        if view.view_name == "pg":
+            referential += self._pg_view_issues(query, set(schema.names), severity)
         # Only the columns the row checks read are streamed; the constant keeps the
         # select valid for a view that has none of them.
         columns = ", ".join(["1 AS _validation_row", *map(validate_identifier, view.validation_columns(schema))])
@@ -192,6 +192,15 @@ class BaseStructure:
 
             result.issues.extend(semantic_issues(self._engine, query, schema.names, view.view_name, severity))
         return result
+
+    def _pg_view_issues(self, query: str, names: set[str], severity: str) -> list:
+        """Whole-view pg checks: referential invariants and the presence of a quantity."""
+        issues = []
+        if {"pg_accessions", "grouped_runs", "label"} <= names:
+            issues += pg_referential_issues_from_query(self._engine, query, "pg", severity)
+        if {"label", "intensity"} <= names:
+            issues += pg_quantity_issues(self._engine, query, "pg")
+        return issues
 
     # --- Parquet metadata (delegates to core.parquet_io) ---
     @property

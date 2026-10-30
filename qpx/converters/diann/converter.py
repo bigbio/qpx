@@ -18,6 +18,21 @@ from qpx.core.scores import field_ontology_entries, score_ontology_entries
 
 logger = logging.getLogger(__name__)
 
+# --fixed-mod / --var-mod NAME,MASS,SITES[,label] on the logged command line.
+_DIANN_MOD_RE = re.compile(r"--(?:fixed-mod|var-mod)\s+([^,\s]+),([-+]?[\d.]+)")
+
+
+def parse_diann_mod_masses(log_path: str | None) -> tuple[tuple[str, float], ...]:
+    """The ``(name, mass delta)`` modifications declared on the logged DIA-NN command line."""
+    if not log_path:
+        return ()
+    try:
+        with open(log_path, encoding="utf-8", errors="replace") as fh:
+            return tuple(dict.fromkeys((name, float(mass)) for line in fh for name, mass in _DIANN_MOD_RE.findall(line)))
+    except OSError:
+        logger.debug("Could not read DIA-NN log: %s", log_path)
+    return ()
+
 
 class DiaNNConverter(BaseOrchestrator):
     """Orchestrate full DIA-NN conversion to QPX format."""
@@ -38,7 +53,7 @@ class DiaNNConverter(BaseOrchestrator):
         self._memory = max_memory
         self._threads = max_cpus
         self._compression = compression
-        self._diann_version = self._parse_diann_version(diann_log)
+        self._diann_log = diann_log
         self._ontology_entries: list[dict] = []
         self._resolved_mappings_by_view: dict[str, dict] = {}
         # Views written by this run, in write order; provenance lists only these.
@@ -64,6 +79,7 @@ class DiaNNConverter(BaseOrchestrator):
                 mzml_info_folder=str(mzml_info_folder) if mzml_info_folder else None,
                 sdrf_path=self.sdrf_path,
                 qvalue_threshold=qvalue_threshold,
+                mod_masses=parse_diann_mod_masses(self._diann_log),
             )
             self._ontology_entries.extend(score_ontology_entries(adapter.get_discovered_scores(), view=FEATURE))
             cols = adapter.get_table_columns("report")
@@ -73,7 +89,7 @@ class DiaNNConverter(BaseOrchestrator):
 
     def convert_pg(
         self,
-        pg_matrix_path,
+        pg_matrix_path=None,
         output_folder=".",
         output_prefix=None,
         qvalue_threshold=None,
@@ -87,7 +103,7 @@ class DiaNNConverter(BaseOrchestrator):
         ) as adapter:
             adapter.convert(
                 diann_report=self.report_path,
-                pg_matrix_path=str(pg_matrix_path),
+                pg_matrix_path=str(pg_matrix_path) if pg_matrix_path else None,
                 sdrf_path=self.sdrf_path,
                 output_path=str(output_folder / f"{prefix}.pg.parquet"),
                 qvalue_threshold=qvalue_threshold,
@@ -245,6 +261,11 @@ class DiaNNConverter(BaseOrchestrator):
             software_name="DIA-NN",
             software_version=self._diann_version,
         )
+
+    @property
+    def _diann_version(self) -> str | None:
+        """The DIA-NN version named in the summary log."""
+        return self._parse_diann_version(self._diann_log)
 
     @classmethod
     def _parse_diann_version(cls, log_path: str | None) -> str | None:

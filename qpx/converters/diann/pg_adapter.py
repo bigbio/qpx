@@ -1,8 +1,8 @@
-"""DIA-NN PG adapter -- report.tsv + pg_matrix.tsv to pg.parquet.
+"""DIA-NN PG adapter -- report.tsv (+ optional pg_matrix.tsv) to pg.parquet.
 
 Loads a DIA-NN ``report.tsv`` and optionally the ``pg_matrix.tsv`` into
-DuckDB, aggregates protein-group intensities via SQL, and writes
-through ``PgWriter``.
+DuckDB, aggregates protein-group quantities and scores per group, run and
+channel, and writes through ``PgWriter``.
 
 Key schema changes:
     - ``reference_file_name`` -> ``run_file_name``
@@ -52,6 +52,15 @@ _PG_EXTRA_COLS = [
     # MaxLFQ matrix number duplicated under the "LFQ" label.
     ('"PG.Quantity"', "pg_quantity_raw"),
     ('"PG.PEP"', "pg_pep"),
+    ('"PG.Normalised"', "pg_normalised"),
+    ('"PG.TopN"', "pg_topn"),
+    ('"Genes.MaxLFQ"', "genes_maxlfq"),
+    ('"Genes.MaxLFQ.Unique"', "genes_maxlfq_unique"),
+    ('"Genes.TopN"', "genes_topn"),
+    ('"PG.MaxLFQ.Quality"', "pg_maxlfq_quality"),
+    ('"Genes.MaxLFQ.Quality"', "genes_maxlfq_quality"),
+    ('"Lib.PG.Q.Value"', "lib_pg_qvalue"),
+    ('"Protein.Q.Value"', "protein_qvalue"),
 ]
 
 # Precursor q-value column filtered by ``qvalue_threshold``, as in the feature view.
@@ -66,15 +75,36 @@ _DECOY_PREFIXES = ("DECOY_", "decoy_", "rev_", "REV_")
 # Proteotypic flags as they appear after ``astype(str)`` for int, float and bool columns.
 _PROTEOTYPIC_VALUES = ("1", "1.0", "True")
 
-# Protein-group scores DIA-NN repeats on every precursor row of a group; the
-# first row of a (group, run) supplies them. Older reports may omit any of them.
-_FIRST_ROW_SCORES = ("global_qvalue", "pg_qvalue", "gg_qvalue", "pg_pep")
+# Protein-group scores DIA-NN repeats on every precursor row of a group and
+# channel, with whether higher is better. A plexDIA report gives each channel its
+# own. Older reports may omit any of them.
+_CHANNEL_SCORES = {
+    "global_qvalue": False,
+    "pg_qvalue": False,
+    "gg_qvalue": False,
+    "pg_pep": False,
+    "lib_pg_qvalue": False,
+    "protein_qvalue": False,
+    "pg_maxlfq_quality": True,
+    "genes_maxlfq_quality": True,
+}
 
-# Protein-group scores carried in additional_scores (all lower is better).
-_ADDITIONAL_SCORES = ("pg_qvalue", "pg_pep")
+# Protein-group scores carried in additional_scores (pg.md).
+_ADDITIONAL_SCORES = ("pg_qvalue", "pg_pep", "lib_pg_qvalue", "protein_qvalue", "pg_maxlfq_quality", "genes_maxlfq_quality")
+
+# Additional protein-group quantities and their intensity names (pg.md). PG.MaxLFQ
+# ("lfq") is the primary intensity instead when the report has no PG.Quantity.
+_ADDITIONAL_QUANTITIES = (
+    ("lfq", "maxlfq"),
+    ("pg_normalised", "normalize_intensity"),
+    ("pg_topn", "topn"),
+    ("genes_maxlfq", "genes_maxlfq"),
+    ("genes_maxlfq_unique", "genes_maxlfq_unique"),
+    ("genes_topn", "genes_topn"),
+)
 
 # Protein-group quantities, aggregated per (group, run, channel).
-_QUANTITY_COLUMNS = ("pg_quantity_raw", "lfq")
+_QUANTITY_COLUMNS = ("pg_quantity_raw", *(alias for alias, _ in _ADDITIONAL_QUANTITIES))
 
 _GROUP_KEYS = ["pg_membership_key", "run_file_name"]
 
@@ -96,6 +126,12 @@ def _numeric(series: pd.Series) -> pd.Series:
     return pd.to_numeric(series, errors="coerce").astype("float64")
 
 
+def _measured(series: pd.Series) -> pd.Series:
+    """Quantities as float64, NaN where missing or not positive: DIA-NN writes 0 for a quantity it has not estimated."""
+    values = _numeric(series)
+    return values.where(values > 0)
+
+
 def _optional(value: float) -> float | None:
     """Map a NaN from a float64 column to None."""
     return None if math.isnan(value) else value
@@ -107,7 +143,7 @@ def _split_annotation(value) -> list[str] | None:
 
 
 def _aggregate_groups(frame: pd.DataFrame) -> pd.DataFrame:
-    """Aggregate one value per (protein group, run) for every non-quantity field.
+    """Aggregate one value per (protein group, run) for the fields shared by its channels.
 
     The leader is taken from the smallest producer representation so it does not
     depend on row order. Names and genes take the first non-empty value, so
@@ -140,9 +176,6 @@ def _aggregate_groups(frame: pd.DataFrame) -> pd.DataFrame:
         )
     )
     groups["leader_source"] = np.asarray(leader_sources)[groups.pop("leader_code").to_numpy()]
-    first_rows = frame.drop_duplicates(_GROUP_KEYS).set_index(_GROUP_KEYS)
-    for column in _FIRST_ROW_SCORES:
-        groups[column] = _numeric(first_rows[column]) if column in first_rows.columns else float("nan")
     return groups
 
 
@@ -159,58 +192,27 @@ def _matrix_fallback(groups: pd.DataFrame, pg_matrix_indexed: pd.DataFrame) -> l
     return [None if math.isnan(value) or value == 0 else value for value in values.tolist()]
 
 
-def _quantity_entries(label: str, raw_quantity: float | None, maxlfq: float | None) -> tuple[dict | None, dict | None]:
+def _channel_quantities(label: str, values: dict[str, float | None]) -> tuple[dict, dict | None]:
     """Build one channel's intensity and additional-intensity entries.
 
     Raw PG.Quantity is preferred for the primary value. Reports that omit it use
     MaxLFQ as a compatibility fallback; the experimental channel remains the
     label, while "maxlfq" is recorded as the algorithm name in
-    additional_intensities.
+    additional_intensities. A channel with no quantity keeps its label with a
+    null intensity, since the group was identified in the run.
     """
+    raw_quantity, maxlfq = values["pg_quantity_raw"], values["lfq"]
     primary = raw_quantity if raw_quantity is not None else maxlfq
-    intensity = None
+    intensity = {"label": label, "intensity": primary, "cv_params": None}
     if primary is not None:
-        intensity = {
-            "label": label,
-            "intensity": float(primary),
-            "cv_params": [
-                {
-                    "cv_name": "quantification_method",
-                    "cv_value": "PG.Quantity" if raw_quantity is not None else "PG.MaxLFQ",
-                }
-            ],
-        }
-    additional = None
-    if maxlfq is not None and raw_quantity is not None:
-        additional = {
-            "label": label,
-            "intensities": [{"intensity_name": "maxlfq", "intensity_value": float(maxlfq)}],
-        }
-    return intensity, additional
-
-
-def _group_quantities(
-    labels: list,
-    raw_quantities: list[float],
-    maxlfq_values: list[float],
-    matrix_quantity: float | None,
-) -> tuple[list[dict], list[dict]]:
-    """Build one group's intensities and additional intensities, one entry per label.
-
-    *matrix_quantity* is the label-free PG matrix fallback for a missing MaxLFQ.
-    """
-    intensities: list[dict] = []
-    additional_intensities: list[dict] = []
-    for label, raw_quantity, maxlfq in zip(labels, raw_quantities, maxlfq_values):
-        maxlfq = _optional(maxlfq)
-        if maxlfq is None:
-            maxlfq = matrix_quantity
-        intensity, additional = _quantity_entries(str(label), _optional(raw_quantity), maxlfq)
-        if intensity is not None:
-            intensities.append(intensity)
-        if additional is not None:
-            additional_intensities.append(additional)
-    return intensities, additional_intensities
+        method = "PG.Quantity" if raw_quantity is not None else "PG.MaxLFQ"
+        intensity["cv_params"] = [{"cv_name": "quantification_method", "cv_value": method}]
+    entries = [
+        {"intensity_name": name, "intensity_value": values[alias]}
+        for alias, name in _ADDITIONAL_QUANTITIES
+        if values[alias] is not None and not (alias == "lfq" and raw_quantity is None)
+    ]
+    return intensity, {"label": label, "intensities": entries} if entries else None
 
 
 def _membership_fields(key: str) -> tuple[list[str], bool, bool]:
@@ -228,13 +230,14 @@ def _membership_fields(key: str) -> tuple[list[str], bool, bool]:
 
 def _pg_record(
     row,
+    channel,
     membership: tuple[list[str], bool, bool],
-    quantities: tuple[list[dict], list[dict]],
+    quantities: tuple[dict, dict | None],
     additional_scores: list[dict] | None,
 ) -> dict:
-    """Build one natural pg record from an aggregated (protein group, run) row."""
+    """Build one natural pg record from an aggregated (protein group, run) row and one of its channels."""
     pg_accessions, is_decoy, contaminant = membership
-    intensities, additional_intensities = quantities
+    intensity, additional = quantities
     gg_accessions = _split_annotation(row.gg_accessions)
     peptide_count = max(row.total_sequences, 1)
     return {
@@ -242,13 +245,13 @@ def _pg_record(
         "pg_names": _split_annotation(row.pg_names),
         "gg_accessions": gg_accessions,
         "gg_names": gg_accessions,  # Gene symbols serve as both accession and name
-        "gg_qvalue": _optional(row.gg_qvalue),
+        "gg_qvalue": _optional(channel.gg_qvalue),
         "anchor_protein": row.leader_source.split(";", 1)[0].strip() or pg_accessions[0],
         "grouped_runs": [row.run_file_name],
-        "global_qvalue": _optional(row.global_qvalue),
-        "pg_qvalue": _optional(row.pg_qvalue),
-        "intensities": intensities or None,
-        "additional_intensities": additional_intensities or None,
+        "global_qvalue": _optional(channel.global_qvalue),
+        "pg_qvalue": _optional(channel.pg_qvalue),
+        "intensities": [intensity],
+        "additional_intensities": [additional] if additional else None,
         "is_decoy": is_decoy,
         "contaminant": contaminant,
         "peptides": [{"protein_name": acc, "peptide_count": peptide_count} for acc in pg_accessions],
@@ -284,7 +287,7 @@ class DiannPgAdapter(DiaNNBaseAdapter):
     def convert(
         self,
         diann_report: str,
-        pg_matrix_path: str,
+        pg_matrix_path: Optional[str],
         output_path: str,
         sdrf_path: Optional[str] = None,
         file_num: int = 20,
@@ -295,7 +298,10 @@ class DiannPgAdapter(DiaNNBaseAdapter):
 
         Args:
             diann_report: Path to the DIA-NN ``report.tsv``.
-            pg_matrix_path: Path to the DIA-NN ``pg_matrix.tsv``.
+            pg_matrix_path: Optional DIA-NN ``pg_matrix.tsv``. A label-free group
+                without PG.MaxLFQ in the report takes the matrix value; the
+                report alone gives the pg view, and DIA-NN writes no matrix for
+                a channel (plexDIA) report.
             output_path: Destination Parquet path.
             sdrf_path: Optional SDRF file for sample mapping.
             file_num: Number of runs to process per batch.
@@ -311,8 +317,7 @@ class DiannPgAdapter(DiaNNBaseAdapter):
         self._load_diann_report(diann_report)
 
         # Step 2: Load PG matrix and pre-index for O(1) lookups
-        pg_matrix = self._load_pg_matrix(pg_matrix_path)
-        pg_matrix_indexed = pg_matrix.set_index("pg_accessions")
+        pg_matrix_indexed = self._load_pg_matrix(pg_matrix_path).set_index("pg_accessions") if pg_matrix_path else None
 
         # Step 3: Cache report columns and resolve mappings (once, not per batch)
         report_cols = {
@@ -325,6 +330,7 @@ class DiannPgAdapter(DiaNNBaseAdapter):
         # Step 4: Get unique runs and process in batches
         runs = self._get_unique_runs()
 
+        quantified = 0
         with PgWriter(output_path, creator=creator, compression=self._compression) as writer:
             for i in range(0, len(runs), file_num):
                 batch_runs = runs[i : i + file_num]
@@ -337,8 +343,14 @@ class DiannPgAdapter(DiaNNBaseAdapter):
                     qvalue_threshold=qvalue_threshold,
                 )
                 if records:
+                    quantified += sum(record["intensities"][0]["intensity"] is not None for record in records)
                     writer.write_batch(records)
 
+        if runs and not quantified:
+            self.logger.warning(
+                "No DIA-NN protein group has a quantity: the report carries no positive PG.Quantity or PG.MaxLFQ, "
+                "so every pg intensity is null"
+            )
         self.logger.info(f"DIA-NN PG conversion complete -> {output_path}")
 
     # ------------------------------------------------------------------
@@ -472,7 +484,7 @@ class DiannPgAdapter(DiaNNBaseAdapter):
     def _process_batch(
         self,
         runs: list[str],
-        pg_matrix_indexed: pd.DataFrame,
+        pg_matrix_indexed: pd.DataFrame | None,
         actual_report_cols: set[str],
         channel_col: str | None = None,
         qvalue_threshold: Optional[float] = None,
@@ -500,35 +512,43 @@ class DiannPgAdapter(DiaNNBaseAdapter):
         # collide on pg_id. Names/genes are instead derived within the group
         # (first non-null), so annotation noise no longer splits a group.
         groups = _aggregate_groups(report_df)
-        quantities = self._aggregate_quantities(report_df, groups.index)
-        fallback = None if "channel_label" in report_df.columns else _matrix_fallback(groups, pg_matrix_indexed)
-        return self._build_pg_records(groups, quantities, fallback)
+        channels = self._aggregate_channels(report_df, groups.index)
+        fallback = None
+        if pg_matrix_indexed is not None and "channel_label" not in report_df.columns:
+            fallback = _matrix_fallback(groups, pg_matrix_indexed)
+        return self._build_pg_records(groups, channels, fallback)
 
-    def _aggregate_quantities(self, frame: pd.DataFrame, group_index: pd.MultiIndex) -> pd.DataFrame:
-        """Collapse each (group, run, channel) quantity to the max of its finite values.
+    def _aggregate_channels(self, frame: pd.DataFrame, group_index: pd.MultiIndex) -> pd.DataFrame:
+        """Collapse each (group, run, channel) to one quantity and one value per score.
 
         PG.Quantity / PG.MaxLFQ are protein-group-level values that DIA-NN repeats
-        identically on every precursor row of a group within a run, so a group's
-        rows should agree. When annotation noise merges rows that disagree on the
-        quantity, picking the "first" row makes the emitted intensity
-        depend on SQL row order, which is undefined. The max of the finite values
-        is deterministic, order-independent, and equal to the shared value in the
-        normal (consistent) case; a warning keeps a real disagreement visible.
-        Rows are indexed by the group's position in *group_index* and the label.
+        identically on every precursor row of a group within a run and channel,
+        so a group's rows should agree. When annotation noise merges rows that
+        disagree on the quantity, picking the "first" row makes the emitted
+        intensity depend on SQL row order, which is undefined. The max of the
+        measured values is deterministic, order-independent, and equal to the
+        shared value in the normal (consistent) case; a warning keeps a real
+        disagreement visible. A score takes its best value. Rows are indexed by
+        the group's position in *group_index* and the label.
         """
         present = [column for column in _QUANTITY_COLUMNS if column in frame.columns]
-        values = pd.DataFrame({column: _numeric(frame[column]) for column in present}, index=frame.index)
+        values = pd.DataFrame({column: _measured(frame[column]) for column in present}, index=frame.index)
+        for column in _CHANNEL_SCORES:
+            values[column] = _numeric(frame[column]) if column in frame.columns else float("nan")
         values["group"] = frame.groupby(_GROUP_KEYS, sort=True, dropna=False).ngroup()
         values["label"] = frame["channel_label"] if "channel_label" in frame.columns else "LFQ"
         grouped = values.groupby(["group", "label"], sort=True)
-        quantities = pd.DataFrame(index=grouped.size().index)
-        conflicting = np.zeros(len(quantities), dtype=bool)
-        for column in present:
-            quantities[column] = grouped[column].max()
-            conflicting |= (grouped[column].nunique() > 1).to_numpy()
+        channels = pd.DataFrame(index=grouped.size().index)
+        conflicting = np.zeros(len(channels), dtype=bool)
+        for column in _QUANTITY_COLUMNS:
+            channels[column] = grouped[column].max() if column in present else float("nan")
+            if column in present:
+                conflicting |= (grouped[column].nunique() > 1).to_numpy()
+        for column, higher_better in _CHANNEL_SCORES.items():
+            channels[column] = grouped[column].max() if higher_better else grouped[column].min()
         if conflicting.any():
-            self._warn_conflicting_quantities(values, quantities.index[conflicting], present, group_index)
-        return quantities
+            self._warn_conflicting_quantities(values, channels.index[conflicting], present, group_index)
+        return channels
 
     def _warn_conflicting_quantities(
         self,
@@ -556,35 +576,34 @@ class DiannPgAdapter(DiaNNBaseAdapter):
     def _build_pg_records(
         self,
         groups: pd.DataFrame,
-        quantities: pd.DataFrame,
+        channels: pd.DataFrame,
         fallback: list[float | None] | None,
     ) -> list[dict]:
-        """Build one natural pg record per (protein group, run) row of *groups*."""
-        nan_column = [float("nan")] * len(quantities)
-        labels = quantities.index.get_level_values("label").tolist()
-        raw = quantities["pg_quantity_raw"].tolist() if "pg_quantity_raw" in quantities else nan_column
-        lfq = quantities["lfq"].tolist() if "lfq" in quantities else nan_column
-        bounds = np.searchsorted(quantities.index.get_level_values("group").to_numpy(), np.arange(len(groups) + 1)).tolist()
-        membership = {key: _membership_fields(key) for key in groups.index.unique("pg_membership_key")}
+        """Build one natural pg record per channel of each (protein group, run) row of *groups*.
 
+        *fallback* holds the label-free PG matrix quantity of each group, used for
+        a missing MaxLFQ.
+        """
+        group_rows = list(groups.reset_index().itertuples(index=False))
+        membership = {key: _membership_fields(key) for key in groups.index.unique("pg_membership_key")}
         records: list[dict] = []
-        for position, row in enumerate(groups.reset_index().itertuples(index=False)):
-            channels = slice(bounds[position], bounds[position + 1])
-            group_quantities = _group_quantities(
-                labels[channels],
-                raw[channels],
-                lfq[channels],
-                fallback[position] if fallback is not None else None,
+        for channel in channels.reset_index().itertuples(index=False):
+            row = group_rows[channel.group]
+            values = {column: _optional(getattr(channel, column)) for column in _QUANTITY_COLUMNS}
+            if values["lfq"] is None and fallback is not None:
+                values["lfq"] = fallback[channel.group]
+            quantities = _channel_quantities(str(channel.label), values)
+            records.append(
+                _pg_record(row, channel, membership[row.pg_membership_key], quantities, self._additional_scores(channel))
             )
-            records.append(_pg_record(row, membership[row.pg_membership_key], group_quantities, self._additional_scores(row)))
         return records
 
-    def _additional_scores(self, row) -> list[dict] | None:
+    def _additional_scores(self, channel) -> list[dict] | None:
         """Return the PG scores without a dedicated pg column, tracking their names."""
         scores = []
         for name in _ADDITIONAL_SCORES:
-            value = _optional(getattr(row, name))
+            value = _optional(getattr(channel, name))
             if value is not None:
                 self._discovered_scores.add(name)
-                scores.append({"score_name": name, "score_value": value, "higher_better": False})
+                scores.append({"score_name": name, "score_value": value, "higher_better": _CHANNEL_SCORES[name]})
         return scores or None

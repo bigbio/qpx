@@ -283,6 +283,25 @@ def pg_referential_issues_from_query(con, query: str, structure: str, severity: 
         con.execute("DROP VIEW pg_validate")
 
 
+def pg_quantity_issues(con, query: str, structure: str) -> list[ValidationIssue]:
+    """Warn when the labelled (quantification) rows of a pg view carry no positive intensity.
+
+    A converter that finds no protein quantity in its source writes every
+    intensity null (or, before QPX 1.3, 0); the view is valid but holds no
+    abundance. Identification-only rows have no label and are not counted.
+    """
+    labelled, quantified = con.execute(
+        sql_build(
+            "SELECT count(label), count(*) FILTER (WHERE isfinite(intensity) AND intensity > 0) FROM ($query)",
+            query=query,
+        )
+    ).fetchall()[0]
+    if not labelled or quantified:
+        return []
+    message = f"none of the {labelled} labelled pg row(s) has a positive intensity; the source carried no protein quantity"
+    return [_issue(structure, "no_pg_quantity", "warning", "intensity", message)]
+
+
 def _primary_key_issues(
     keys: pa.Table | None,
     primary_key: tuple[str, ...],

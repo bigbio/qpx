@@ -164,9 +164,10 @@ qpxc convert diann \
     --verbose
 ```
 
-#### Protein Groups from PG Matrix {#diann-example-pg}
+#### Protein Groups with the PG Matrix {#diann-example-pg}
 
-Convert DIA-NN protein groups using the pg_matrix file:
+The pg view comes from the report. The pg_matrix file is optional: it fills the
+MaxLFQ quantity of a label-free group the report has none for.
 
 ```bash
 qpxc convert diann \
@@ -184,7 +185,7 @@ qpxc convert diann \
 Output files generated:
 
 - **Feature**: `{output-prefix}-{uuid}.feature.parquet` (always produced)
-- **Protein Group**: `{output-prefix}-{uuid}.pg.parquet` (produced when `--pg-matrix-path` is provided)
+- **Protein Group**: `{output-prefix}-{uuid}.pg.parquet` (always produced)
 - **Mass spectra**: `{output-prefix}.mz.parquet` (produced when `--mzml-info-folder` contains `*_ms2_info.parquet`; feature-matched MS2 spectra only)
 - **MuData**: `{output-prefix}.h5mu` (written by default; `--no-mudata` skips it)
 
@@ -208,7 +209,7 @@ Output files generated:
 - Enable partitioning for large datasets to improve memory usage
 - Use verbose mode during initial testing to diagnose issues
 - Ensure SDRF file correctly matches sample names in DIA-NN report
-- For protein groups, ensure both report and pg_matrix files are from the same DIA-NN run
+- When passing a pg_matrix, ensure it comes from the same DIA-NN run as the report
 
 ---
 

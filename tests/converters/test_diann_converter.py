@@ -1500,7 +1500,7 @@ def test_nearest_ms2_picks_the_precursor_window_among_spectra_sharing_a_time():
             "_matched_mz": [412.5, 437.5, 462.5, 437.5],
         }
     )
-    left = pd.DataFrame({"_merge_row": [0, 1, 2], "rt": [100.0, 100.0, 100.02], "observed_mz": [440.1, 410.0, None]})
+    left = pd.DataFrame({"_merge_row": [0, 1, 2], "rt": [100.0, 100.0, 100.02], "precursor_mz": [440.1, 410.0, None]})
 
     nearest = _nearest_ms2(left, right).set_index("_merge_row")["_matched_scan"]
 

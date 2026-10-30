@@ -141,6 +141,7 @@ The validator performs the following checks on each structure:
 | **Single row** | error | `dataset.parquet` has exactly one row |
 | **Footer** | error, strict | `qpx_version` has the reader's major version, `file_type` names the view, and `identity_composite` and `primary_key` name fields of the view (errors); a missing key is a strict issue, and a newer minor version a warning |
 | **Score names** | warning | `additional_scores` names are `snake_case` |
+| **PG quantity** | warning | When a pg view has labelled rows, at least one has a positive `intensity`; otherwise the source carried no protein quantity |
 
 When a dataset holds several views, it also checks the references between them:
 

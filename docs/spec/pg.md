@@ -298,7 +298,7 @@ This section shows how output columns from common search engines and pipelines m
 
 ### DIA-NN (main report)
 
-DIA-NN's main report is precursor-level. PG-level columns (`PG.*`, `Genes.*`) are repeated for every precursor in the group within a run. Deduplicate by `Protein.Group` + `Run` to produce one `pg.parquet` row. `Global.PG.Q.Value`, `PG.Q.Value` and `PG.PEP` are carried for every protein group and never used as a cutoff; `--qvalue-threshold` filters precursors on `Q.Value`.
+DIA-NN's main report is precursor-level. PG-level columns (`PG.*`, `Genes.*`) are repeated for every precursor in the group within a run. Deduplicate by `Protein.Group` + `Run`, and `Channel` in a plexDIA report, to produce one `pg.parquet` row per label; each channel keeps its own quantities and scores. The `pg_matrix` is optional and only fills a label-free MaxLFQ the report lacks; DIA-NN writes none for a plexDIA report. A quantity of `0` is DIA-NN's mark for a group it identified but did not quantify, written as a null `intensity` (or no `additional_intensities` entry). `Global.PG.Q.Value`, `PG.Q.Value` and `PG.PEP` are carried for every protein group and never used as a cutoff; `--qvalue-threshold` filters precursors on `Q.Value`.
 
 === "Identity"
 
@@ -314,8 +314,8 @@ DIA-NN's main report is precursor-level. PG-level columns (`PG.*`, `Genes.*`) ar
 
     | DIA-NN column | QPX field | Notes |
     |---|---|---|
-    | `PG.Quantity` | `intensity` | Non-normalised protein group quantity (scalar; DIA `label` = `LFQ`) |
-    | `PG.MaxLFQ` | `additional_intensities` → `maxlfq` | QuantUMS/MaxLFQ normalised |
+    | `PG.Quantity` | `intensity` | Non-normalised protein group quantity (scalar; `label` = `LFQ`, or the plexDIA channel's label) |
+    | `PG.MaxLFQ` | `additional_intensities` → `maxlfq` | QuantUMS/MaxLFQ normalised; the `intensity` itself when the report has no `PG.Quantity` (DIA-NN 2.x) |
     | `PG.Normalised` | `additional_intensities` → `normalize_intensity` | Normalised PG quantity |
     | `PG.TopN` | `additional_intensities` → `topn` | Top-N normalised quantity |
     | `Genes.MaxLFQ` | `additional_intensities` → `genes_maxlfq` | Gene-group MaxLFQ |
@@ -330,7 +330,7 @@ DIA-NN's main report is precursor-level. PG-level columns (`PG.*`, `Genes.*`) ar
     | `PG.Q.Value` | `pg_qvalue` | Run-level PG FDR |
     | `PG.PEP` | `additional_scores` → `pg_pep` | |
     | `PG.MaxLFQ.Quality` | `additional_scores` → `pg_maxlfq_quality` | QuantUMS quality metric |
-    | `GG.Q.Value` | `additional_scores` → `gg_qvalue` | Gene group q-value |
+    | `GG.Q.Value` | `gg_qvalue` | Gene group q-value |
     | `Lib.PG.Q.Value` | `additional_scores` → `lib_pg_qvalue` | Library PG q-value |
     | `Protein.Q.Value` | `additional_scores` → `protein_qvalue` | Unique protein q-value |
     | `Genes.MaxLFQ.Quality` | `additional_scores` → `genes_maxlfq_quality` | |

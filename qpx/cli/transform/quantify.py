@@ -117,7 +117,8 @@ def _quantify_sdrf_mapping(sdrf_path: Path):
     from qpx.core.files import run_file_stem
     from qpx.core.sdrf import validate_sdrf_data_files
 
-    sdrf = pd.read_csv(sdrf_path, sep="\t", header=0)
+    # Read as text: plexDIA labels such as 0/4/8 would otherwise become numbers.
+    sdrf = pd.read_csv(sdrf_path, sep="\t", header=0, dtype=str)
     sdrf.columns = sdrf.columns.str.lower()
     validate_sdrf_data_files(sdrf)
 

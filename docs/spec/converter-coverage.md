@@ -8,7 +8,7 @@ This page lists which QPX data views each converter produces and explains the so
 | ----------- | :---: | :-------: | :--: | :------: | :------: | :---: | :-------: | :--------: | :----------: | :--: |
 | **MaxQuant** | Yes | Yes | Yes | No | If SDRF | If SDRF | Yes | If terms | Yes | No |
 | **FragPipe** | Yes | Yes | Yes | No | If SDRF | If SDRF | Yes | If terms | Yes | No |
-| **DIA-NN** | No | Yes | If PG matrix | No | Yes | Yes | Yes | If terms | Yes | If MS2 info |
+| **DIA-NN** | No | Yes | Yes | No | Yes | Yes | Yes | If terms | Yes | If MS2 info |
 | **Spectronaut** | No | Yes | Yes | No | If SDRF | If SDRF | Yes | Yes | Yes | No |
 | **OpenMS native QPX** | Yes | Yes | Yes | No | Yes | Yes | Yes | Yes | Yes | No |
 | **OpenMS consensusXML** | Yes | Yes | Yes | No | If SDRF | If SDRF | Yes | If terms | Yes | No |
@@ -22,7 +22,6 @@ This page lists which QPX data views each converter produces and explains the so
 - **If SDRF** — the view is produced only when an SDRF file is provided. Whether SDRF is optional or required depends on the converter; see its CLI contract below.
 - **If terms** — the view is produced when the converter discovers resolvable ontology entries.
 - **If in file** — the view is produced only when the input contains the source section (mzIdentML: a `ProteinDetectionList`).
-- **If PG matrix** — the view is produced only when `--pg-matrix-path` is provided.
 - **If MS2 info** — the view is produced only when `--mzml-info-folder` contains `*_ms2_info.parquet` files (quantms-utils mzML statistics run with `--ms2_file`) and the generated feature view can be read. It holds the MS2 spectra matched to features; if no spectrum matches, no file is written.
 - **If PDC** — CPTAC/PDC studies ship no SDRF, and CDAP `.psm` files carry no sample metadata. When run through `qpxc pdc2qpx` (default), the sample/run views are built from PDC GraphQL metadata, which also recovers the TMT/iTRAQ channel → biological-sample mapping. Disable with `--no-metadata`.
 
@@ -61,6 +60,31 @@ quantification while the ambiguous protein-group fields remain null. See the
 the evidence-selection rules, and [Feature confidence](feature.md#protein-group-fields)
 for q-value semantics.
 
+Further DIA-NN feature fields:
+
+- **`observed_mz` / `mass_error_ppm`.** DIA-NN's `Precursor.Mz` is the theoretical
+  m/z. The measured one is `Precursor.Mz` + `Ms1.Apex.Mz.Delta` (DIA-NN 2.x), and
+  `mass_error_ppm` compares it with `calculated_mz`. Both are null when the offset
+  is `0`, which marks a precursor without a measured MS1 apex, and for reports
+  without the offset (DIA-NN 1.8 and 1.9).
+- **Zeros.** A `Precursor.Quantity` of `0` is an `intensities` entry with a null
+  `intensity`; an `IM`, `IM.Start`, `IM.Stop`, `iIM` or predicted ion mobility of
+  `0` (data acquired without ion mobility) is null or left out of `cv_params`.
+- **`unique`.** True when `Protein.Group` and `Protein.Ids` both name one protein.
+  `Proteotypic` follows DIA-NN's protein-grouping level (genes by default) and
+  stays in `cv_params`.
+- **plexDIA.** A report with a `Channel` column gives one row per multiplet, with
+  one `intensities` entry per channel. With an SDRF, a channel matches the
+  `comment[label]` of the same name or the plexDIA label DIA-NN calls by that
+  channel name (`MTRAQ4` for `4`, `SILAC heavy` for `H`), from the sdrf-pipelines
+  plexDIA registry. The peptidoform is the lightest partner's: mTRAQ and dimethyl
+  tags become their Unimod accessions and the SILAC tag is dropped. `observed_mz`
+  and `mass_error_ppm` come from the lightest channel, and the other scalar fields
+  from the channel with the best `Q.Value`, ties broken by label.
+- **Modification names.** With `--original-mods`, DIA-NN reports modifications by
+  name. Names Unimod knows become their accessions; with `--diann-log`, a name
+  declared by `--fixed-mod` or `--var-mod` takes its declared mass.
+
 ### Protein group fields
 
 | Field | DIA-NN | OpenMS consensusXML |
@@ -70,10 +94,10 @@ for q-value semantics.
 | `global_qvalue` | Read from `Global.PG.Q.Value`, when present. | The lowest available member-protein q-value, only when the source protein score is declared to be a q-value/FDR. Null if no member has such a score. |
 | `pg_qvalue` | Read from run-level `PG.Q.Value`, when present. | Null: no separate run-level protein-group q-value is reported by this path. The experiment-level value belongs in `global_qvalue`. |
 | `gg_qvalue` | Read from `GG.Q.Value`, when present. | Null: this path has no gene-group q-value. Protein-level confidence is not a gene-level q-value. |
-| `additional_scores` | Includes `PG.Q.Value` as `pg_qvalue` and `PG.PEP` as `pg_pep` when available. | The existing `anchor_protein`'s `Posterior Probability_score`, stored as `posterior_probability` with `higher_better: true`. Null if absent, invalid or conflicting for that anchor. |
+| `additional_scores` | Includes `PG.Q.Value` as `pg_qvalue`, `PG.PEP` as `pg_pep`, `Lib.PG.Q.Value` as `lib_pg_qvalue`, `Protein.Q.Value` as `protein_qvalue` and the QuantUMS `PG.MaxLFQ.Quality` / `Genes.MaxLFQ.Quality` as `pg_maxlfq_quality` / `genes_maxlfq_quality`, when available; in a plexDIA report each channel's row carries that channel's values. | The existing `anchor_protein`'s `Posterior Probability_score`, stored as `posterior_probability` with `higher_better: true`. Null if absent, invalid or conflicting for that anchor. |
 | `sequence_coverage` | Not populated from the report. Filled from a FASTA with `--fasta` or `qpxc transform protein-properties`: percent of the anchor covered by the dataset's target peptides whose evidence names it. | The existing anchor's recorded `ProteinHit.coverage` in percent. Unknown values, missing annotations and conflicting coverage values for that anchor remain null. Other group members are not substitutes. |
 | `molecular_weight` | Not populated from the report. Filled from a FASTA with `--fasta` or `qpxc transform protein-properties`: anchor average mass in kDa. | The theoretical average molecular weight of the existing anchor's complete, unmodified `ProteinHit.sequence`, in kDa. Null for missing, ambiguous, modified or conflicting sequences; other group members are not substitutes. |
-| `cv_params` | Each quantified row records whether its primary intensity came from `PG.Quantity` or the `PG.MaxLFQ` fallback. | Each quantified row records `unnormalized_unique_peptide_sum`, or the corresponding top-N method selected by `--pg-top`. Null when the row has no quantity. |
+| `cv_params` | Each quantified row records whether its primary intensity came from `PG.Quantity` or the `PG.MaxLFQ` fallback. Null when the row has no quantity: DIA-NN's `0` for a group it identified but did not quantify is written as a null `intensity`. | Each quantified row records `unnormalized_unique_peptide_sum`, or the corresponding top-N method selected by `--pg-top`. Null when the row has no quantity. |
 
 For either converter, a FASTA fills these three fields **only where they are null and only on target rows**; a value
 from the producer is never overwritten, and proteins absent from the FASTA (such as DIA-NN's internal decoys) stay null.

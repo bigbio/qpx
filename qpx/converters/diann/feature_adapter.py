@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterator
+from functools import partial
 from pathlib import Path
 from typing import Optional
 
@@ -55,13 +56,13 @@ def _nearest_ms2(left: pd.DataFrame, right: pd.DataFrame) -> pd.DataFrame:
     """Nearest MS2 entry by RT for each feature row.
 
     DIA spectra acquired together (the windows of one diaPASEF frame) share one
-    time; among them the window centre nearest the precursor m/z is the feature's
-    fragment spectrum.
+    time; among them the window centre nearest the precursor m/z
+    (``precursor_mz``) is the feature's fragment spectrum.
     """
     times = right[["_ms_rt"]].drop_duplicates()
     nearest = pd.merge_asof(left, times, left_on="rt", right_on="_ms_rt", direction="nearest")
     nearest = nearest.merge(right, on="_ms_rt", how="left")
-    gap = (nearest["_matched_mz"] - nearest["observed_mz"].where(nearest["observed_mz"] > 0)).abs()
+    gap = (nearest["_matched_mz"] - nearest["precursor_mz"].where(nearest["precursor_mz"] > 0)).abs()
     nearest = nearest.assign(_gap=gap).sort_values(["_merge_row", "_gap"], kind="stable", na_position="last")
     return nearest.drop_duplicates("_merge_row").drop(columns="_gap")
 
@@ -89,6 +90,7 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
         qvalue_threshold: Optional[float] = None,
         file_num: int = 100,  # VIEW-based lazy IO reduces per-batch memory
         creator: str = "diann",
+        mod_masses: tuple[tuple[str, float], ...] = (),
     ) -> None:
         """Run the DIA-NN report -> feature.parquet conversion.
 
@@ -98,6 +100,8 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
         ``global_qvalue``, ``diann_lib_qvalue``, ``diann_translated_qvalue`` …)
         are carried through unconditionally for downstream filtering. When a
         threshold is provided, the precursor ``Q.Value`` filter is applied.
+        ``mod_masses`` holds the ``(name, mass delta)`` modifications declared in
+        the DIA-NN log, which resolve modifications the report names.
         """
         # 1. Create VIEW over report (lazy — no data loaded into memory)
         self._load_diann_report(diann_report)
@@ -115,7 +119,12 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
         channel_col = self._register_channel_labels(report_cols, sdrf_path)
 
         # 4. Pre-compute precursors: DuckDB temp table + Python modifications dict
-        mods_lookup = self._register_precursor_lookup(self._resolved, enzyme_name, to_proforma, to_modifications)
+        mods_lookup = self._register_precursor_lookup(
+            self._resolved,
+            enzyme_name,
+            partial(to_proforma, mod_masses=mod_masses),
+            partial(to_modifications, mod_masses=mod_masses),
+        )
 
         # 5. Get target Arrow schema
         target_schema = FeatureWriter._schema_class.get_arrow_schema()
@@ -281,7 +290,7 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
         Only the columns the merge reads go through pandas; the merged ``scan``
         column replaces the table's, with rows grouped by run.
         """
-        df = table.select(["run_file_name", "rt", "observed_mz", "scan", "_ms2_index"]).to_pandas()
+        df = table.select(["run_file_name", "rt", "calculated_mz", "observed_mz", "scan", "_ms2_index"]).to_pandas()
         rows: list[np.ndarray] = []
         scans: list = []
 
@@ -305,15 +314,21 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
         A DIA-NN 1.8 ``MS2.Scan`` position selects that run's MS2 spectrum in
         acquisition order. Rows without one take the nearest MS2 entry by RT (by
         window among entries sharing that time), never past the measured
-        acquisition range. The table's precursor m/z is an isolation-window centre
-        for DIA spectra, so it never stands in for a feature's observed m/z.
+        acquisition range. The window is chosen by the theoretical m/z, or the
+        measured one when the peptidoform has no computable mass. The table's
+        precursor m/z is an isolation-window centre for DIA spectra, so it never
+        stands in for a feature's observed m/z.
         """
         columns = [name for name in ("rt", "scan", "precursor_mz", "ms_level") if name in pq.read_schema(ms_info_path).names]
         target = pd.read_parquet(ms_info_path, columns=columns)
         run_data = run_data.copy()
         run_data["_merge_row"] = range(len(run_data))
         run_data["rt"] = run_data["rt"].astype("float64")
-        run_data["observed_mz"] = pd.to_numeric(run_data["observed_mz"], errors="coerce").astype("float64")
+        run_data["precursor_mz"] = (
+            pd.to_numeric(run_data["calculated_mz"], errors="coerce")
+            .fillna(pd.to_numeric(run_data["observed_mz"], errors="coerce"))
+            .astype("float64")
+        )
         target["scan"] = _ms_info_scans(target["scan"])
         target["precursor_mz"] = pd.to_numeric(target["precursor_mz"], errors="coerce")
         target["rt"] = target["rt"].astype("float64")
@@ -327,7 +342,7 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
         missing_scan = ~has_index & run_data["rt"].notna()
         rt_target = target.dropna(subset=["rt", "scan", "precursor_mz"]).sort_values("rt")
         if missing_scan.any() and not rt_target.empty:
-            left = run_data.loc[missing_scan, ["_merge_row", "rt", "observed_mz"]].sort_values("rt")
+            left = run_data.loc[missing_scan, ["_merge_row", "rt", "precursor_mz"]].sort_values("rt")
             right = rt_target[["rt", "scan", "precursor_mz"]].rename(
                 columns={"rt": "_ms_rt", "scan": "_matched_scan", "precursor_mz": "_matched_mz"}
             )
@@ -339,4 +354,4 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
             has_match = matched_scan.notna()
             run_data.loc[has_match, "scan"] = matched_scan[has_match].map(lambda value: [int(value)])
 
-        return run_data.drop(columns="_merge_row")
+        return run_data.drop(columns=["_merge_row", "precursor_mz"])

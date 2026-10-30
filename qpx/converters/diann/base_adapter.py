@@ -11,6 +11,7 @@ import re
 
 import duckdb
 import pandas as pd
+from sdrf_pipelines.converters.diann.constants import PLEXDIA_REGISTRY
 
 from qpx.converters.base import BaseConverter
 from qpx.converters.channel_labels import normalize_label, read_sdrf_labels
@@ -57,6 +58,16 @@ def _parse_duckdb_size(value: str) -> int | None:
     return int(float(match.group(1)) * _SIZE_UNITS.get((match.group(2) or "B").upper(), 1))
 
 
+# DIA-NN channel name and mass offset of each canonical plexDIA label, from the
+# sdrf-pipelines registry that builds DIA-NN's --channels (MTRAQ4 -> "4", SILAC
+# heavy -> "H"), and the mass offset of each channel name.
+_PLEXDIA_CHANNELS = {
+    label: (channel["channel_name"], channel["masses"][0])
+    for registry in PLEXDIA_REGISTRY.values()
+    for label, channel in registry["channels"].items()
+}
+_CHANNEL_MASSES = dict(_PLEXDIA_CHANNELS.values())
+
 # Raw-file extensions stripped from a report ``Run`` to give ``run_file_name``.
 RUN_EXTENSIONS = "mzML|raw|d|wiff|htrms"
 
@@ -89,30 +100,49 @@ def _populated_channel_values(raw_channels: list[object], channel_col: str) -> l
     return populated
 
 
-def _channel_label_rows(raw_channels: list[object], declared_labels: set[str] | None) -> list[tuple[str, str]]:
-    """Resolve report channels to distinct canonical SDRF labels."""
+def _declared_channel_label(raw_text: str, normalized: str, declared_by_key: dict[str, str]) -> str:
+    """The SDRF label of a report channel: the label itself, or the plexDIA label DIA-NN names by that channel."""
+    key = normalized.casefold()
+    if key in declared_by_key:
+        return declared_by_key[key]
+    aliases = [
+        label
+        for label in declared_by_key.values()
+        if label in _PLEXDIA_CHANNELS and _PLEXDIA_CHANNELS[label][0].casefold() == key
+    ]
+    if len(aliases) == 1:
+        return aliases[0]
+    raise ValueError(
+        f"DIA-NN channel {raw_text!r} is not declared in SDRF comment[label]"
+        + (f" (it names {', '.join(sorted(aliases))})" if aliases else "")
+        + "; channel identifiers must match so intensities can resolve to run samples"
+    )
+
+
+def _channel_label_rows(raw_channels: list[object], declared_labels: set[str] | None) -> list[tuple[str, str, float | None]]:
+    """Resolve report channels to distinct canonical SDRF labels and their mass offsets.
+
+    A channel matches an SDRF label of the same name, or the declared plexDIA
+    label DIA-NN calls by that channel name (``MTRAQ4`` for ``4``, ``SILAC heavy``
+    for ``H``). The mass offset orders the partners of a multiplet; it is null
+    for a channel outside the plexDIA labels.
+    """
     declared_by_key = {normalize_label(label).casefold(): normalize_label(label) for label in declared_labels or ()}
-    rows: list[tuple[str, str]] = []
+    rows: list[tuple[str, str, float | None]] = []
     canonical_to_raw: dict[str, str] = {}
     for raw_channel in raw_channels:
         raw_text = str(raw_channel).strip()
         normalized = normalize_label(raw_text)
         if declared_by_key:
-            key = normalized.casefold()
-            if key not in declared_by_key:
-                raise ValueError(
-                    f"DIA-NN channel {raw_text!r} is not declared in SDRF "
-                    "comment[label]; channel identifiers must match so "
-                    "intensities can resolve to run samples"
-                )
-            normalized = declared_by_key[key]
+            normalized = _declared_channel_label(raw_text, normalized, declared_by_key)
 
         canonical_key = normalized.casefold()
         previous = canonical_to_raw.get(canonical_key)
         if previous is not None and previous != raw_text:
             raise ValueError(f"DIA-NN channels {previous!r} and {raw_text!r} both canonicalize to {normalized!r}")
         canonical_to_raw[canonical_key] = raw_text
-        rows.append((raw_text, normalized))
+        mass = _PLEXDIA_CHANNELS[normalized][1] if normalized in _PLEXDIA_CHANNELS else _CHANNEL_MASSES.get(raw_text)
+        rows.append((raw_text, normalized, mass))
     return rows
 
 
@@ -235,7 +265,7 @@ class DiaNNBaseAdapter(BaseConverter):
         self._conn.from_df(
             pd.DataFrame(
                 rows,
-                columns=["channel_value", "canonical_label"],
-            )
+                columns=["channel_value", "canonical_label", "channel_mass"],
+            ).astype({"channel_mass": "float64"})
         ).create("diann_channel_labels")
         return channel_col

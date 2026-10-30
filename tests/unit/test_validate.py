@@ -381,3 +381,27 @@ def test_anchor_membership_skips_non_string_anchor():
 
     table = pa.table({"anchor_protein": pa.array([1, 2]), "pg_accessions": pa.array([[], []], type=pa.list_(pa.string()))})
     assert not _anchor_without_membership(table)
+
+
+def test_pg_without_any_quantity_is_flagged(tmp_path):
+    """Labelled pg rows that all lack a positive intensity validate with a warning."""
+    from qpx.dataset import Dataset
+    from qpx.writers import PgWriter
+    from tests.conftest import make_pg_record
+
+    pg_class = Dataset._STRUCTURE_REGISTRY["pg"][0]
+
+    def checks(name, intensities):
+        path = tmp_path / f"{name}.pg.parquet"
+        records = [make_pg_record(anchor_protein=f"P{i}", intensities=intensities) for i in range(2)]
+        with PgWriter(path) as writer:
+            writer.write_batch(records)
+        result = pg_class.from_file(path).validate(strict=True)
+        assert result.is_valid
+        return [issue for issue in result.issues if issue.check == "no_pg_quantity"]
+
+    (issue,) = checks("unquantified", [{"label": "LFQ", "intensity": None}])
+    assert issue.severity == "warning"
+    assert "2 labelled pg row" in issue.message
+    assert not checks("identification_only", [])
+    assert not checks("quantified", [{"label": "LFQ", "intensity": 5.0}])

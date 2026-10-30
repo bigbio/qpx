@@ -40,6 +40,9 @@ _CV_MAPPINGS = [
     ("iIM", "iim"),
 ]
 
+# Ion mobility columns, 0 in a report of data acquired without ion mobility.
+_ION_MOBILITY_CV = {"Predicted.IM", "Predicted.iIM", "iIM"}
+
 
 _RT_SECONDS_FACTOR = 60.0
 
@@ -72,7 +75,7 @@ _CHANNEL_ROWS_SQL = """
                              _modified_sequence,
                              _pg_group,
                              intensities[1].label
-                ORDER BY _qvalue NULLS LAST
+                ORDER BY _qvalue NULLS LAST, rt NULLS LAST, intensities[1].intensity NULLS LAST
             ) = 1
         )
         SELECT
@@ -96,21 +99,36 @@ def _safe_double_sql(column: str) -> str:
     return f'CASE WHEN r."{column}" IS NOT NULL AND NOT isnan(CAST(r."{column}" AS DOUBLE)) THEN CAST(r."{column}" AS DOUBLE) END'
 
 
+def _positive_sql(column: str) -> str:
+    """Whether a value is finite and above zero: DIA-NN writes 0 for a quantity or ion mobility it has not measured."""
+    return f'(isfinite(CAST(r."{column}" AS DOUBLE)) AND CAST(r."{column}" AS DOUBLE) > 0)'
+
+
+def _measured_float_sql(column: str) -> str:
+    """Build a SQL expression that converts a measured (positive) value to FLOAT, null for DIA-NN's 0."""
+    return f'CASE WHEN {_positive_sql(column)} THEN CAST(r."{column}" AS FLOAT) END'
+
+
 def _build_mass_select_parts(resolved: dict, report_cols: set[str]) -> list[str]:
     """Build observed m/z and mass error expressions."""
     has_column = report_cols.__contains__
     parts: list[str] = []
-    # observed_mz: emit a truthful NULL when the report carries no Precursor.Mz
-    # (bigbio/qpx#244). A sentinel 0.0 looks like a real measurement and
-    # corrupts downstream mass-error / PPM math; NULL propagates as "unknown".
-    # The per-row _safe_float_sql already yields NULL for null/NaN cells, so no
-    # COALESCE-to-zero is applied even when the column is present.
-    observed_mz_col = resolved.get("observed_mz")
-    parts.append(
-        f"{_safe_float_sql(observed_mz_col)} AS observed_mz"
-        if observed_mz_col and has_column(observed_mz_col)
-        else "NULL::FLOAT AS observed_mz"
-    )
+    # observed_mz: DIA-NN's Precursor.Mz is the theoretical m/z of the precursor;
+    # the measured one is Precursor.Mz plus Ms1.Apex.Mz.Delta, the offset of the
+    # MS1 apex. A zero offset marks a precursor without a measured MS1 apex (all
+    # of them where Ms1.Apex.Area is 0), and a report without the offset (DIA-NN
+    # 1.8, 1.9) has no measured m/z, so both stay NULL rather than repeating the
+    # theoretical value (bigbio/qpx#244).
+    precursor_mz_col = resolved.get("precursor_mz")
+    delta_col = resolved.get("ms1_apex_mz_delta")
+    observed_expr = None
+    if precursor_mz_col and delta_col and has_column(precursor_mz_col) and has_column(delta_col):
+        delta = f'CAST(r."{delta_col}" AS DOUBLE)'
+        observed_expr = (
+            f'CASE WHEN isfinite({delta}) AND {delta} <> 0 AND isfinite(CAST(r."{precursor_mz_col}" AS DOUBLE)) '
+            f'THEN CAST(r."{precursor_mz_col}" AS DOUBLE) + {delta} END'
+        )
+    parts.append(f"CAST({observed_expr} AS FLOAT) AS observed_mz" if observed_expr else "NULL::FLOAT AS observed_mz")
 
     # mass_error_ppm: prefer a reported column, otherwise DERIVE it. DIA-NN
     # emits no mass-error column, so this was always null even though both
@@ -123,8 +141,7 @@ def _build_mass_select_parts(resolved: dict, report_cols: set[str]) -> list[str]
     mass_error_col = resolved.get("mass_error_ppm")
     if mass_error_col and has_column(mass_error_col):
         parts.append(f"{_safe_float_sql(mass_error_col)} AS mass_error_ppm")
-    elif observed_mz_col and has_column(observed_mz_col):
-        observed_expr = _safe_float_sql(observed_mz_col)
+    elif observed_expr:
         parts.append(
             "CASE WHEN lk.calculated_mz > 0 AND "
             f"({observed_expr}) > 0 "
@@ -166,9 +183,10 @@ def _build_acquisition_select_parts(resolved: dict, report_cols: set[str]) -> li
         else "NULL::FLOAT AS rt"
     )
 
+    # DIA-NN writes ion mobility 0 for data acquired without it.
     ion_mobility_col = resolved.get("ion_mobility")
     parts.append(
-        f"{_safe_float_sql(ion_mobility_col)} AS ion_mobility"
+        f"{_measured_float_sql(ion_mobility_col)} AS ion_mobility"
         if ion_mobility_col and has_column(ion_mobility_col)
         else "NULL::FLOAT AS ion_mobility"
     )
@@ -246,11 +264,16 @@ def _build_metadata_select_parts(
     parts: list[str] = []
     pg_col = resolved["pg_accessions"]
 
-    proteotypic_col = resolved.get("proteotypic")
-    if proteotypic_col and has_column(proteotypic_col):
-        parts.append(f'CAST(r."{proteotypic_col}" AS INTEGER) = 1 AS "unique"')
-    else:
-        parts.append(f'NOT contains(r."{pg_col}", \';\') AS "unique"')
+    # unique: a one-protein group of a peptide that maps to no other protein.
+    # Protein.Ids lists every protein the peptide maps to; DIA-NN's Proteotypic
+    # flag depends on the protein-grouping level (genes by default), so it stays
+    # a cv_param.
+    members = f"list_filter(string_split(r.\"{pg_col}\", ';'), lambda x: trim(x) <> '')"
+    single = f"len({members}) = 1"
+    ids_col = resolved.get("mp_accessions")
+    if ids_col and has_column(ids_col):
+        single += f" AND len(list_filter(string_split(r.\"{ids_col}\", ';'), lambda x: trim(x) <> '')) = 1"
+    parts.append(f'CASE WHEN len({members}) > 0 THEN {single} END AS "unique"')
 
     pg_qvalue_col = resolved.get("pg_global_qvalue")
     parts.append(
@@ -261,7 +284,7 @@ def _build_metadata_select_parts(
 
     for field in ("ion_mobility_start", "ion_mobility_stop"):
         column = resolved.get(field)
-        parts.append(f"{_safe_float_sql(column)} AS {field}" if column and has_column(column) else f"NULL::FLOAT AS {field}")
+        parts.append(f"{_measured_float_sql(column)} AS {field}" if column and has_column(column) else f"NULL::FLOAT AS {field}")
 
     genes_col = resolved.get("gg_names")
     if genes_col and has_column(genes_col):
@@ -320,9 +343,9 @@ def _build_batch_sql(
     # --- Nested: intensities ---
     label_expr, channel_helper_parts, channel_join = _build_channel_sql_parts(channel_col, qv_col)
     int_col = r["intensity"]
-    parts.append(
-        f"[STRUCT_PACK(label := {label_expr}, intensity := COALESCE({_safe_float_sql(int_col)}, 0.0::FLOAT))] AS intensities"
-    )
+    # A precursor DIA-NN reports without a quantity (0) keeps its label with a
+    # null intensity.
+    parts.append(f"[STRUCT_PACK(label := {label_expr}, intensity := {_measured_float_sql(int_col)})] AS intensities")
 
     # --- Nested columns built by helpers ---
     parts.append(_build_additional_intensities_sql(r, has_column, label_expr))
@@ -366,6 +389,7 @@ def _build_channel_sql_parts(channel_col: str | None, qvalue_col: str | None) ->
         return "'LFQ'", [], ""
 
     qvalue_expr = f"{_safe_double_sql(qvalue_col)} AS _qvalue" if qvalue_col else "NULL::DOUBLE AS _qvalue"
+    helpers = [qvalue_expr, "cl.channel_mass AS _channel_mass"]
     channel_join = sql_build(
         """
         JOIN diann_channel_labels cl
@@ -373,11 +397,20 @@ def _build_channel_sql_parts(channel_col: str | None, qvalue_col: str | None) ->
         """,
         channel_col=validate_identifier(channel_col),
     )
-    return "cl.canonical_label", [qvalue_expr], channel_join
+    return "cl.canonical_label", helpers, channel_join
+
+
+# Fields describing the multiplet's peptidoform, which is the lightest partner's,
+# and so taken from the lightest channel's row.
+_LIGHTEST_CHANNEL_FIELDS = {"observed_mz", "mass_error_ppm"}
 
 
 def _aggregate_channel_rows_sql(row_sql: str, target_schema: pa.Schema) -> str:
-    """Collapse DIA-NN's one-row-per-channel output to one QPX feature row."""
+    """Collapse DIA-NN's one-row-per-channel output to one QPX feature row.
+
+    The other scalar fields come from the channel with the best precursor
+    q-value, ties broken by label, so a conversion is reproducible.
+    """
     group_fields = {"sequence", "charge", "run_file_name"}
     python_fields = {
         "modifications",
@@ -413,8 +446,10 @@ def _aggregate_channel_rows_sql(row_sql: str, target_schema: pa.Schema) -> str:
                 "FILTER (WHERE additional_intensities IS NOT NULL) "
                 "AS additional_intensities"
             )
+        elif name in _LIGHTEST_CHANNEL_FIELDS:
+            select_parts.append(f"FIRST({quoted} ORDER BY _channel_mass NULLS LAST, intensities[1].label) AS {quoted}")
         else:
-            select_parts.append(f"FIRST({quoted} ORDER BY _qvalue NULLS LAST) AS {quoted}")
+            select_parts.append(f"FIRST({quoted} ORDER BY _qvalue NULLS LAST, intensities[1].label) AS {quoted}")
 
     select_parts.extend(["_modified_sequence", "_pg_group"])
     select_clause = ",\n            ".join(select_parts)
@@ -437,7 +472,7 @@ def _build_additional_intensities_sql(r: dict, _has, label_expr: str = "'LFQ'") 
     entries, checks = [], []
     for col, name in candidates:
         if _has(col):
-            chk = f'(r."{col}" IS NOT NULL AND NOT isnan(CAST(r."{col}" AS DOUBLE)))'
+            chk = _positive_sql(col)
             checks.append(chk)
             entries.append(
                 f"CASE WHEN {chk} THEN STRUCT_PACK(intensity_name := '{name}', intensity_value := CAST(r.\"{col}\" AS FLOAT)) END"
@@ -490,6 +525,8 @@ def _build_cv_params_sql(r: dict, _has) -> str:
     for diann_col, cv_name in _CV_MAPPINGS:
         if _has(diann_col):
             chk = f'(r."{diann_col}" IS NOT NULL AND CAST(r."{diann_col}" AS VARCHAR) != \'\')'
+            if diann_col in _ION_MOBILITY_CV:
+                chk = _positive_sql(diann_col)
             checks.append(chk)
             entries.append(
                 f"CASE WHEN {chk} THEN STRUCT_PACK(cv_name := '{cv_name}', cv_value := CAST(r.\"{diann_col}\" AS VARCHAR)) END"

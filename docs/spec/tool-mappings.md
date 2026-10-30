@@ -43,13 +43,13 @@ The Feature view captures quantified peptide features with intensity data. Featu
 | `charge` | Charge | Precursor.Charge | --- | Charge / PrecursorCharge |
 | `is_decoy` | Reverse | Decoy (`--report-decoys`), else accession prefix | --- | ProteinName prefix |
 | `peptide_qvalue` | --- | --- | --- | --- |
-| `calculated_mz` | From the peptidoform (`Mass` when a modification has no known mass) | --- | Calculated M/Z | --- |
-| `observed_mz` | m/z × (1 + Mass error [ppm] × 10⁻⁶); MaxQuant's `m/z` is theoretical | --- | --- | --- |
+| `calculated_mz` | From the peptidoform (`Mass` when a modification has no known mass) | From the peptidoform | Calculated M/Z | --- |
+| `observed_mz` | m/z × (1 + Mass error [ppm] × 10⁻⁶); MaxQuant's `m/z` is theoretical | Precursor.Mz + Ms1.Apex.Mz.Delta (2.x); `Precursor.Mz` is theoretical | --- | --- |
 | `rt` | Retention time | RT | --- | RetentionTime |
 | `rt_start` | --- | RT.Start | --- | --- |
 | `rt_stop` | --- | RT.Stop | --- | --- |
 | `predicted_rt` | --- | Predicted.RT | --- | --- |
-| `intensities` | Intensity; Intensity L/M/H (SILAC) | Precursor.Quantity | Intensity | Intensity + Channel |
+| `intensities` | Intensity; Intensity L/M/H (SILAC) | Precursor.Quantity (+ Channel for plexDIA) | Intensity | Intensity + Channel |
 | `identified_labels` | Labeling State, and msms.txt Labeling state of its MS/MS (SILAC) | --- | --- | --- |
 | `pg_accessions` | Proteins | Protein.Group (`DECOY_`-prefixed on decoy rows) | --- | ProteinName |
 | `anchor_protein` | --- | First Protein.Group accession | --- | First ProteinName accession |
