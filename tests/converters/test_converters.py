@@ -479,6 +479,30 @@ class TestMaxQuantPhosphoProbabilities:
         # No parenthetical probabilities -> None
         assert parse_phospho_probabilities("_PEPTIDEK_") is None
 
+    def test_unknown_name_keeps_psm_peptidoform_and_phospho_site(self):
+        """A name with parentheses stays one tag in the PSM peptidoform; later positions do not shift.
+
+        The PSM adapter re-parses the feature peptidoform with ``from_proforma``,
+        which turned ``K[RGG (K)]`` into ``K[RGG [K]]``: an extra modification
+        and every later position one residue too far (the phosphate on S5
+        reported on T6, and T6 marked as the assigned candidate).
+        """
+        from qpx.converters.maxquant.constants import parse_phospho_probabilities, phospho_candidates, to_proforma
+        from qpx.converters.ptm import from_proforma
+
+        sequence = "AAKPSTK"
+        feature_peptidoform = to_proforma("_AAK(RGG (K))PS(Phospho (STY))TK_")
+        site_scores = parse_phospho_probabilities("_AAKPS(0.9)T(0.1)K_")
+        psm_peptidoform, modifications = from_proforma(feature_peptidoform, sequence, site_scores=site_scores)
+
+        assert feature_peptidoform == psm_peptidoform == "AAK[RGG (K)]PS[UNIMOD:21]TK"
+        sites = {mod["name"]: [(p["position"], p["amino_acid"]) for p in mod["positions"]] for mod in modifications}
+        assert sites == {"RGG (K)": [(3, "K")], "UNIMOD:21": [(5, "S")]}
+        assigned = [
+            (c["position"], c["amino_acid"]) for c in phospho_candidates(site_scores, sequence, modifications) if c["assigned"]
+        ]
+        assert assigned == [(5, "S")]
+
 
 class TestMzIdentMLBuildPeptidoform:
     """Test _build_peptidoform from mzidentml.psm_records."""

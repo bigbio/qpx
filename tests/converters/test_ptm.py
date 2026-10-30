@@ -367,6 +367,19 @@ class TestNormalizePeptidoform:
         if result != "[Acetyl]-M[Oxidation]PEPTC[Carbamidomethyl]K":
             raise AssertionError(f"Unexpected: {result!r}")
 
+    def test_bracketed_name_with_parentheses_is_kept(self):
+        """Parentheses inside a ProForma tag are part of the name, not a nested tag."""
+        assert _normalize_peptidoform("PEPK[GlyGly (K)]R") == "PEPK[GlyGly (K)]R"
+        assert _normalize_peptidoform("HEXN[Hex(5)HexNAc(2)]TK") == "HEXN[Hex(5)HexNAc(2)]TK"
+
+    def test_bracketed_and_parenthesised_tags(self):
+        assert _normalize_peptidoform("PEPK[Odd (K)]TIDES(Phospho)K") == "PEPK[Odd (K)]TIDES[Phospho]K"
+
+    def test_two_nterm_tags_get_one_dash(self):
+        """The ProForma ``-`` follows the last leading tag, not the first."""
+        assert _normalize_peptidoform("[UNIMOD:1][Odd (K)]-PEPK") == "[UNIMOD:1][Odd (K)]-PEPK"
+        assert _normalize_peptidoform("(Acetyl)(TMT6plex)PEPK") == "[Acetyl][TMT6plex]-PEPK"
+
     def test_unmatched_open_paren(self):
         result = _normalize_peptidoform("C(Broken")
         if result != "C(Broken":

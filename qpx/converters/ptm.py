@@ -431,46 +431,40 @@ def _normalize_peptidoform(peptidoform: str) -> str:
     ``C(Carbamidomethyl)R``), whereas ProForma uses square brackets.
     This function converts parenthetical mod tags that follow an amino-acid
     residue (or appear at position 0 for N-term mods) to bracket notation
-    so that :func:`_from_proforma_impl` can parse them.
+    so that :func:`_from_proforma_impl` can parse them. Only parentheses
+    outside square brackets are converted: a ProForma tag such as
+    ``K[GlyGly (K)]`` is copied as it is instead of becoming the nested
+    ``K[GlyGly [K]]``.
     """
     if "(" not in peptidoform:
         return peptidoform
-    out: list[str] = []
     peptidoform = peptidoform.removeprefix(".")
-    n = len(peptidoform)
+    out: list[str] = []
     i = 0
-    while i < n:
-        if peptidoform[i] == "(":
-            # Find matching closing parenthesis respecting nesting depth
-            depth = 1
-            j = i + 1
-            while j < n and depth > 0:
-                if peptidoform[j] == "(":
-                    depth += 1
-                elif peptidoform[j] == ")":
-                    depth -= 1
-                j += 1
-            if depth != 0:
-                out.append(peptidoform[i:])
-                break
-            # Convert outer delimiters; keep inner content as-is
-            out.append("[")
-            out.append(peptidoform[i + 1 : j - 1])
-            out.append("]")
-            i = j
-        else:
-            out.append(peptidoform[i])
+    while i < len(peptidoform):
+        char = peptidoform[i]
+        if char not in "([":
+            out.append(char)
             i += 1
+            continue
+        end = _group_end(peptidoform, i, char, ")" if char == "(" else "]")
+        if end is None:
+            out.append(peptidoform[i:])
+            break
+        # Convert the outer delimiters; keep the inner content as it is
+        out.append(f"[{peptidoform[i + 1 : end - 1]}]")
+        i = end
+    return _add_nterm_dash("".join(out))
 
-    result = "".join(out)
 
-    # For N-term
-    if result.startswith("["):
-        idx = result.find("]")
-        if idx != -1 and idx + 1 < len(result) and result[idx + 1] != "-":
-            result = result[: idx + 1] + "-" + result[idx + 1 :]
-
-    return result
+def _add_nterm_dash(peptidoform: str) -> str:
+    """Insert the ProForma ``-`` after the leading N-terminal tags when it is missing."""
+    end = 0
+    while end < len(peptidoform) and peptidoform[end] == "[":
+        end = _group_end(peptidoform, end, "[", "]") or len(peptidoform)
+    if 0 < end < len(peptidoform) and peptidoform[end] != "-":
+        return f"{peptidoform[:end]}-{peptidoform[end:]}"
+    return peptidoform
 
 
 def _modification_site(seq_pos: int, last_aa: str | None, cterm: bool, sequence_length: int) -> tuple[int, str | None]:
