@@ -72,6 +72,8 @@ _VOCABULARIES = {
 }
 # Views that describe the whole dataset in exactly one row.
 _SINGLE_ROW_VIEWS = ("dataset",)
+# Score names are snake_case identifiers (docs/spec/scores.md).
+_SCORE_NAME_PATTERN = r"^[a-z0-9]+(_[a-z0-9]+)*$"
 
 
 def _out_of_range_count(values: pa.ChunkedArray | pa.Array, minimum: float | None = 0.0, maximum: float | None = 1.0) -> int:
@@ -95,6 +97,52 @@ def _range_values(column: pa.ChunkedArray | pa.Array, path: tuple[str, ...]) -> 
     if not pa.types.is_struct(column.type) or column.type.get_field_index(path[1]) < 0:
         return None
     return pc.call_function("struct_field", [column], pc.StructFieldOptions(path[1]))
+
+
+def _nonnullable_paths(arrow_type: pa.DataType, prefix: tuple[str, ...] = ()) -> list[tuple[str, ...]]:
+    """Paths to the struct fields below a column of *arrow_type* that the schema declares non-nullable."""
+    if pa.types.is_list(arrow_type):
+        return _nonnullable_paths(arrow_type.value_type, prefix)
+    if not pa.types.is_struct(arrow_type):
+        return []
+    paths = []
+    for child in arrow_type:
+        if not child.nullable:
+            paths.append((*prefix, child.name))
+        paths.extend(_nonnullable_paths(child.type, (*prefix, child.name)))
+    return paths
+
+
+def _nested_null_count(column: pa.ChunkedArray | pa.Array, path: tuple[str, ...]) -> int:
+    """Nulls at *path* below *column* within non-null structs; 0 when the data has another layout."""
+    parent = column
+    for depth, name in enumerate(path):
+        if pa.types.is_list(parent.type):
+            parent = pc.call_function("list_flatten", [parent])
+        if not pa.types.is_struct(parent.type) or parent.type.get_field_index(name) < 0:
+            return 0
+        child = pc.call_function("struct_field", [parent], pc.StructFieldOptions(name))
+        if depth == len(path) - 1:
+            # struct_field is null where its struct is; count only the field's own nulls.
+            return child.null_count - parent.null_count
+        parent = child
+    return 0
+
+
+def _bad_score_names(column: pa.ChunkedArray | pa.Array) -> pa.ChunkedArray | pa.Array:
+    """The score_name values of an additional_scores column that are not snake_case."""
+    names = _range_values(column, ("additional_scores", "score_name"))
+    if names is None or not pa.types.is_string(names.type):
+        return pa.array([], pa.string())
+    snake = pc.call_function("match_substring_regex", [names], pc.MatchSubstringOptions(_SCORE_NAME_PATTERN))
+    return names.filter(pc.call_function("invert", [snake]))
+
+
+def _score_name_issues(count: int, example: str | None, structure: str) -> list[ValidationIssue]:
+    if not count:
+        return []
+    message = f"{count} additional_scores entries have a score_name that is not snake_case, e.g. {example!r}"
+    return [_issue(structure, "score_name_format", "warning", "additional_scores", message)]
 
 
 def _issue(structure: str, check: str, severity: str, column: str, message: str) -> ValidationIssue:

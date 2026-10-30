@@ -1,4 +1,4 @@
-"""Value ranges declared in the YAML schemas, and the single-row dataset view."""
+"""Value checks: declared ranges, nested non-nullable fields, score names and the single-row dataset view."""
 
 import math
 
@@ -68,3 +68,27 @@ def test_dataset_view_must_have_one_row(rows):
     [issue] = [i for i in DatasetSchema.validate_full(table).issues if i.check == "row_count"]
     assert issue.severity == "error"
     assert f"{rows} rows" in issue.message
+
+
+def test_null_in_a_non_nullable_struct_field():
+    """A null cv_value inside a cv_params entry is a null in a non-nullable field."""
+    record = _with(make_feature_record(), cv_params=[{"cv_name": "fraction_group", "cv_value": None}, None])
+    table = pa.Table.from_pylist([record], schema=FeatureSchema.get_arrow_schema())
+    [issue] = [i for i in FeatureSchema.validate_full(table, strict=True).issues if i.column == "cv_params"]
+    assert issue.check == "null_values"
+    assert "Field 'cv_params.cv_value' is non-nullable but contains 1 null value(s)" in issue.message
+
+
+def test_score_names_are_snake_case():
+    """A score_name such as q-value is flagged with a warning."""
+    scores = [
+        {"score_name": "q-value", "score_value": 0.01, "higher_better": False},
+        {"score_name": "andromeda_score", "score_value": 50.0, "higher_better": True},
+    ]
+    table = pa.Table.from_pylist(
+        [_with(make_feature_record(), additional_scores=scores)], schema=FeatureSchema.get_arrow_schema()
+    )
+    [issue] = [i for i in FeatureSchema.validate_full(table, strict=True).issues if i.check == "score_name_format"]
+    assert issue.severity == "warning"
+    assert "1 additional_scores entries" in issue.message
+    assert "'q-value'" in issue.message

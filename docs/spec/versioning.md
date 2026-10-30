@@ -76,6 +76,8 @@ This version defines all core serialized views (PSM, Feature, PG, MZ), the deriv
       q-values and posterior error probabilities (0 to 1), sequence coverage
       (0 to 100) and primary intensities (at least 0); NaN and infinite values
       are outside every range.
+    - **Identity composites.** One identity composite value names one row
+      identity, also for producer-supplied ids.
 - **1.2** (backward-compatible): adds the [site](site.md) and
   [proteoform](proteoform.md) views, the optional `modification_candidates` column
   of the PSM and Feature views ([Modifications](modifications.md)) and the optional
@@ -137,21 +139,20 @@ This version defines all core serialized views (PSM, Feature, PG, MZ), the deriv
 
 ## Software Provider
 
-In addition to the specification version, every QPX file records the software that generated the data. This is stored in the `software_provider` metadata field in the Parquet file footer. The value identifies the tool name and version that produced the file:
+In addition to the specification version, every QPX file records the software behind it in two footer fields: `software_provider` names the software that wrote the file (`qpx` for the qpx writers, which also stamp their package version as `writer_version`), and `creator` names the tool whose output the data was converted from (`maxquant`, `diann`, `quantms`, ...):
 
 ```json
 {
-  "software_provider": {
-    "name": "quantms",
-    "version": "1.3.0"
-  }
+  "software_provider": "qpx",
+  "writer_version": "1.2.0",
+  "creator": "diann"
 }
 ```
 
 !!! info "Why track the software provider?"
     Tracking the generating software enables reproducibility and debugging. If a downstream analysis produces unexpected results, the software provider metadata allows users to determine which tool version created the input data and whether known issues apply.
 
-The `software_provider` field is a free-text string in the Parquet metadata. The JSON structure shown above is the recommended format, but tools may also use a flat string such as `"QuantMS 1.3.0"`.
+Both fields are free-text strings in the Parquet metadata.
 
 ## Version Compatibility Matrix
 

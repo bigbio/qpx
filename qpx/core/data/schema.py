@@ -19,14 +19,18 @@ from qpx.core.data.validation import (
     ValidationResult,
     _anchor_membership_issues,
     _anchor_without_membership,
+    _bad_score_names,
     _evidence_fraction_counts,
     _evidence_fraction_issues,
     _issue,
     _modification_candidate_counts,
     _modification_candidate_issues,
+    _nested_null_count,
+    _nonnullable_paths,
     _out_of_range_count,
     _range_issues,
     _range_values,
+    _score_name_issues,
     _sequence_edit_counts,
     _sequence_edit_issues,
     _vocabulary_count,
@@ -318,6 +322,7 @@ def _primary_key_issues(
 # ones. Validation streams no other column, so a check that reads a new column
 # must list it here.
 _ROW_CHECK_COLUMNS = (
+    "additional_scores",
     "anchor_protein",
     "pg_accessions",
     "modification_candidates",
@@ -334,18 +339,22 @@ class _RowCounts:
     def __init__(self, structure: str, schema: pa.Schema, required: list[str], ranges: dict):
         names = schema.names
         self.structure = structure
+        # Top-level columns by name; struct fields below them by path.
         self.nulls = dict.fromkeys(required, 0)
         self.ranges = ranges
         self.out_of_range = dict.fromkeys((path for path in ranges if path[0] in names), 0)
         self.vocabulary = dict.fromkeys((name for name in _VOCABULARIES.get(structure, {}) if name in names), 0)
         # Counts of the checks that are not kept per column.
-        self.totals = {"anchor": 0, "fractions": (0, 0, 0), "candidates": (0, 0), "edits": (0, 0), "scan": 0}
+        self.totals = {"anchor": 0, "fractions": (0, 0, 0), "candidates": (0, 0), "edits": (0, 0), "scan": 0, "scores": (0, None)}
 
     def add(self, batch: pa.Table | pa.RecordBatch, scan_format: str | None) -> None:
         """Add one batch's counts."""
         totals = self.totals
-        for name in self.nulls:
-            self.nulls[name] += batch.column(name).null_count
+        for key in self.nulls:
+            if isinstance(key, str):
+                self.nulls[key] += batch.column(key).null_count
+            else:
+                self.nulls[key] += _nested_null_count(batch.column(key[0]), key[1:])
         totals["anchor"] += _anchor_without_membership(batch)
         for path in self.out_of_range:
             values = _range_values(batch.column(path[0]), path)
@@ -359,20 +368,23 @@ class _RowCounts:
             self.vocabulary[name] += _vocabulary_count(batch.column(name), _VOCABULARIES[self.structure][name])
         if scan_format is not None:
             totals["scan"] += _scan_format_violations(batch.column("scan"), scan_format)
+        if "additional_scores" in batch.schema.names:
+            bad = _bad_score_names(batch.column("additional_scores"))
+            count, example = totals["scores"]
+            totals["scores"] = (count + len(bad), example or (bad[0].as_py() if len(bad) else None))
 
     def null_issues(self, rows: int, severity: str) -> list[ValidationIssue]:
         """Issues for the non-nullable columns that hold nulls."""
-        return [
-            _issue(
-                self.structure,
-                "null_values",
-                severity,
-                name,
-                f"Column '{name}' is non-nullable but contains {count} null value(s) out of {rows} rows",
-            )
-            for name, count in self.nulls.items()
-            if count
-        ]
+        issues = []
+        for key, count in self.nulls.items():
+            if not count:
+                continue
+            if isinstance(key, str):
+                message = f"Column '{key}' is non-nullable but contains {count} null value(s) out of {rows} rows"
+            else:
+                message = f"Field '{'.'.join(key)}' is non-nullable but contains {count} null value(s)"
+            issues.append(_issue(self.structure, "null_values", severity, key if isinstance(key, str) else key[0], message))
+        return issues
 
     def value_issues(self, severity: str) -> list[ValidationIssue]:
         """Issues from the value checks counted over the batches."""
@@ -383,6 +395,7 @@ class _RowCounts:
             *_vocabulary_issues(self.vocabulary, self.structure, severity),
             *_modification_candidate_issues(self.totals["candidates"], self.structure, severity),
             *_sequence_edit_issues(self.totals["edits"], self.structure, severity),
+            *_score_name_issues(*self.totals["scores"], self.structure),
         ]
 
 
@@ -415,6 +428,11 @@ class ViewSchema:
     def view_name(self) -> str:
         """The schema view name."""
         return self._view_name
+
+    @property
+    def file_type(self) -> str:
+        """The file_type a file of this view declares in its footer."""
+        return self._file_type
 
     @property
     def identity_composite(self) -> tuple[str, ...] | None:
@@ -467,7 +485,7 @@ class ViewSchema:
 
     def validation_columns(self, schema: pa.Schema) -> list[str]:
         """The columns of *schema* that the row-level checks of validate_batches() read."""
-        needed = {name for name, fdef in self._fields.items() if not fdef.nullable}
+        needed = {name for name, fdef in self._fields.items() if not fdef.nullable or _nonnullable_paths(fdef.arrow_type)}
         needed.update(_ROW_CHECK_COLUMNS, (path[0] for path in self.value_ranges), _VOCABULARIES.get(self._view_name, {}))
         return [name for name in schema.names if name in needed]
 
@@ -518,15 +536,22 @@ class ViewSchema:
         """Validate a view read as Arrow batches sharing *schema*, with the checks of validate_full().
 
         The checks that read one row at a time are summed batch by batch, so the
-        whole view is never held at once. The two that span rows are passed in for
-        the whole view: *keys* holds its primary-key columns (None when one is
-        missing) and *referential* its pg referential issues.
+        whole view is never held at once. Those that span rows or files are passed
+        in for the whole view: *keys* holds its primary-key columns (None when one
+        is missing) and *referential* the issues of its pg references, footers and
+        identity composites.
         """
         result = ValidationResult(structure=self._view_name)
         severity = "error" if strict else "warning"
         result.issues.extend(self._column_issues(schema))
 
         required = [name for name, fdef in self._fields.items() if name in schema.names and not fdef.nullable]
+        required += [
+            (name, *path)
+            for name, fdef in self._fields.items()
+            if name in schema.names
+            for path in _nonnullable_paths(fdef.arrow_type)
+        ]
         counts = _RowCounts(self._view_name, schema, required, self.value_ranges)
         scan_format = _declared_scan_format(schema, self._view_name)
         rows = 0

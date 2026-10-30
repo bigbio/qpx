@@ -295,6 +295,8 @@ In the YAML schemas, `required: true` marks *yes* and `optional: true` marks *op
 
 A numeric field may declare `minimum` and/or `maximum`, also on a field of a struct type (the `intensity` of each `intensities` entry). Values outside the range, NaN and infinite values are invalid; null is a missing value and is always in range.
 
+The fields of a struct type follow the same rule: a field that `types.yaml` does not mark `nullable: true` must not be null inside a non-null struct (for example the `cv_value` of a `cv_params` entry).
+
 ## Related pages
 
 - [PSM View](psm.md) — spectrum-level identifications.

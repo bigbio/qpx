@@ -21,7 +21,7 @@ The `higher_better` field makes the data self-describing so that downstream cons
 A producer writes `null` when it does not know the direction; it never defaults to `true`. Most PSI-MS score terms declare no order, so QPX converters take the direction from the term when it has one, treat e-values, q-values, p-values, PEP and FDR as lower-is-better and engine match scores and probabilities as higher-is-better, and leave anything else `null`. A consumer ranking PSMs by a score whose `higher_better` is `null` must decide the direction itself.
 
 !!! important "snake_case naming convention"
-    All score names in QPX use `snake_case` -- no colons, dots, spaces, or mixed case. This ensures score names are valid identifiers in SQL, Python, R, and any query language without quoting. The [Ontology Mapping](ontology.md) maps each snake_case name to its proper ontology term and accession.
+    All score names in QPX use `snake_case` -- no colons, dots, spaces, or mixed case. This ensures score names are valid identifiers in SQL, Python, R, and any query language without quoting. The [Ontology Mapping](ontology.md) maps each snake_case name to its proper ontology term and accession. `qpxc validate` warns on other `additional_scores` names.
 
 ### Example
 

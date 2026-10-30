@@ -10,6 +10,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from qpx.core.convert import QueryResult
+from qpx.core.data.footer_validation import duplicate_composite_issues, footer_issues
 from qpx.core.data.schema import ValidationResult, pg_referential_issues_from_query
 from qpx.core.engine import DuckDBEngine, create_engine
 from qpx.core.parquet_io import read_parquet_metadata
@@ -157,10 +158,12 @@ class BaseStructure:
         severity = "error" if strict else "warning"
         query = self._query.build_sql()
         schema = self._engine.connection.sql(sql_build("SELECT * FROM ($query) LIMIT 0", query=query)).to_arrow_table().schema
-        # DuckDB drops footer metadata. A single local PSM file has one format;
-        # never apply the first shard's declaration to a union of several files.
-        if view.view_name == "psm" and len(self._file_paths) == 1 and Path(self._file_path).is_file():
-            scan_format = (pq.read_metadata(self._file_path).metadata or {}).get(b"scan_format")
+        # DuckDB drops footer metadata, so the footers are read from the local files.
+        footers = [(str(path), pq.read_metadata(path).metadata or {}) for path in self._file_paths if Path(path).is_file()]
+        # A single PSM file has one format; never apply the first shard's
+        # declaration to a union of several files.
+        if view.view_name == "psm" and len(self._file_paths) == 1 and footers:
+            scan_format = footers[0][1].get(b"scan_format")
             if scan_format:
                 schema = schema.with_metadata({**(schema.metadata or {}), b"scan_format": scan_format})
         # Whole-view queries run before the batches stream: a new query on the
@@ -171,9 +174,10 @@ class BaseStructure:
             keys = self._engine.connection.sql(
                 sql_build("SELECT $columns FROM ($query)", columns=columns, query=query)
             ).to_arrow_table()
-        referential = []
+        referential = footer_issues(view, footers, severity)
+        referential += duplicate_composite_issues(self._engine, query, view, schema.names, footers, severity)
         if view.view_name == "pg" and {"pg_accessions", "grouped_runs", "label"} <= set(schema.names):
-            referential = pg_referential_issues_from_query(self._engine, query, view.view_name, severity)
+            referential += pg_referential_issues_from_query(self._engine, query, view.view_name, severity)
         # Only the columns the row checks read are streamed; the constant keeps the
         # select valid for a view that has none of them.
         columns = ", ".join(["1 AS _validation_row", *map(validate_identifier, view.validation_columns(schema))])

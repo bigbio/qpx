@@ -176,13 +176,14 @@ Every QPX Parquet file includes metadata as key-value pairs stored in the Parque
 | Key | Description |
 |-----|-------------|
 | `qpx_version` | Version of the QPX specification used to generate the file |
-| `software_provider` | Name and version of the software that produced the data |
+| `software_provider` | Software that wrote the file (`qpx` for the qpx writers) |
+| `writer_version` | Version of the qpx package that wrote the file |
 | `project_accession` | ProteomeXchange or project accession (e.g., `PXD012345`) |
 | `project_title` | Human-readable title of the project |
 | `scan_format` | Format of scan identifiers: `scan`, `index`, or `nativeId` |
 | `primary_key` | Primary-key column for identity-bearing views (`feature_id`, `psm_id`, or `pg_id`) |
 | `identity_composite` | Comma-separated producer properties used when QPX derives the row ID |
-| `creator` | Name of the tool or person who created the file |
+| `creator` | Tool whose output the data was converted from (e.g. `maxquant`, `diann`) |
 | `file_type` | QPX view type (e.g., `psm_file`, `feature_file`, `pg_file`) |
 | `creation_date` | ISO 8601 date when the file was created |
 | `compression_format` | Compression algorithm used: `zstd`, `snappy`, `gzip`, `lzo`, or `none` |
@@ -192,6 +193,15 @@ encoded as compact canonical JSON with escaped strings and JSON `null` values.
 QPX hashes those bytes with BLAKE2b using an 8-byte digest and stores the result
 as a signed, big-endian `int64`. `grouped_runs` is sorted for identity hashing;
 ordered lists such as `scan` retain their order.
+
+One identity composite value names one row identity: rows with equal composite
+values carry the same id, also when the producer supplies its own ids.
+
+`qpxc validate` checks the footer of every local file: an unparseable
+`qpx_version` or another major version than the reader's, a `file_type` of another
+view, an `identity_composite` naming fields outside the view and a `primary_key`
+other than the view's are errors; a missing `qpx_version`, `file_type`,
+`identity_composite` or `primary_key` fails strict validation.
 
 !!! tip "Writing Parquet with metadata in Python"
     ```python
@@ -204,7 +214,8 @@ ordered lists such as `scan` retain their order.
     # Define file-level metadata
     file_metadata = {
         "qpx_version": "1.3",
-        "software_provider": "QuantMS 1.3.0",
+        "software_provider": "qpx",
+        "creator": "quantms",
         "project_accession": "PXD012345",
         "file_type": "psm_file",
         "creation_date": "2021-01-01",

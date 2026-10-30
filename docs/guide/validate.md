@@ -95,7 +95,7 @@ def generate_example(command, default_text=""):
 
 ## Overview
 
-The `validate` command checks QPX datasets and individual Parquet files against their canonical schemas. It verifies column presence, type matching, null values in required columns, and primary key uniqueness.
+The `validate` command checks QPX datasets and individual Parquet files against their canonical schemas: the columns, values and footer of each structure, and the references between structures.
 
 ## Parameters {#validate-parameters}
 
@@ -123,16 +123,23 @@ print(generate_example(validate_cmd, "Validate QPX datasets and files:"))
 
 ## Validation Checks
 
+Each check reports an error, a warning, or a *strict* issue: a warning from
+`Dataset.validate()` and an error from `Dataset.validate(strict=True)` and from
+`qpxc validate`, which always validates strictly.
+
 The validator performs the following checks on each structure:
 
-| Check | Description |
-|-------|-------------|
-| **Column presence** | All required columns defined in the canonical schema must exist |
-| **Type matching** | Column Arrow types must match the schema definition |
-| **Null values** | Non-nullable columns must not contain null values |
-| **Primary key uniqueness** | Primary key columns must have unique values |
-| **Value ranges** | Values lie in the range their schema declares (q-values and PEP in [0, 1], sequence coverage in [0, 100], primary intensities at least 0) and are not NaN or infinite |
-| **Single row** | `dataset.parquet` has exactly one row |
+| Check | Severity | Description |
+|-------|----------|-------------|
+| **Column presence** | error | All required columns defined in the canonical schema must exist |
+| **Type matching** | error | Column Arrow types must match the schema definition |
+| **Null values** | strict | Non-nullable columns, and the non-nullable fields of their structs (such as `cv_params[].cv_value`), contain no nulls |
+| **Primary key uniqueness** | strict | Primary key columns must have unique values |
+| **Identity composites** | strict | Rows with equal identity composite values carry the same id |
+| **Value ranges** | strict | Values lie in the range their schema declares (q-values and PEP in [0, 1], sequence coverage in [0, 100], primary intensities at least 0) and are not NaN or infinite |
+| **Single row** | error | `dataset.parquet` has exactly one row |
+| **Footer** | error, strict | `qpx_version` has the reader's major version, `file_type` names the view, and `identity_composite` and `primary_key` name fields of the view (errors); a missing key is a strict issue, and a newer minor version a warning |
+| **Score names** | warning | `additional_scores` names are `snake_case` |
 
 When a dataset holds several views, it also checks the references between them:
 
@@ -140,11 +147,11 @@ When a dataset holds several views, it also checks the references between them:
 |-------|----------|-------------|
 | **Run references** | error | Every `run_file_name` of feature, psm and mz, and every member of `pg.grouped_runs`, is a run in `run.parquet` |
 | **Label → sample** | error | Each `(run, label)` of `feature.intensities` and each `(grouped_runs, label)` of pg resolves to exactly one `run.samples` entry, and a feature row lists each label once. A feature label that matches no sample of a single-sample run is only a warning, because the query helpers fall back to that sample |
-| **PSM label** | warning, error with `--strict` | `psm.label` is one of the `identified_labels` of the feature it links to |
+| **PSM label** | strict | `psm.label` is one of the `identified_labels` of the feature it links to |
 | **Fraction order** | warning | A multi-run `pg.grouped_runs` list is stored in ascending `run.fraction` order (when every member has a numeric fraction) |
-| **ID references** | warning, error with `--strict` | `psm.feature_id`, `feature.psm_ids`, `feature.pg_ids` and the site/proteoform `pg_id`/`best_psm_id` links name existing rows |
+| **ID references** | strict | `psm.feature_id`, `feature.psm_ids`, `feature.pg_ids` and the site/proteoform `pg_id`/`best_psm_id` links name existing rows |
 
-A cross-view check whose query fails is reported as skipped, with the reason (I/O error, out of memory or possible schema drift), and fails strict validation.
+A cross-view check whose query fails is reported as skipped, with the reason (I/O error, out of memory or possible schema drift), as a strict issue.
 
 ## Programmatic Validation
 

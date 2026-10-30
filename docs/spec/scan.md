@@ -121,7 +121,8 @@ file_metadata = {
     "qpx_version": "1.3",
     "scan_format": "scan",
     "file_type": "psm_file",
-    "software_provider": "quantms 1.3.0",
+    "software_provider": "qpx",
+    "creator": "quantms",
     "project_accession": "PXD012345",
     "creation_date": "2024-06-15",
 }

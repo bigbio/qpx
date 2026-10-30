@@ -248,9 +248,9 @@ Feature Parquet files store file-level metadata as key-value pairs in the Parque
 | Field | Description |
 |-------|-------------|
 | `qpx_version` | Version of the QPX format used to generate the file |
-| `software_provider` | Name and version of the software that generated the data |
+| `software_provider` | Software that wrote the file (`qpx` for the qpx writers) |
 | `scan_format` | Format of scan identifiers: `scan`, `index`, or `nativeId` |
-| `creator` | Name of the tool or person who created the file |
+| `creator` | Tool whose output the data was converted from (e.g. `maxquant`, `diann`) |
 | `file_type` | Type of the file (value: `feature_file`) |
 | `creation_date` | Date when the file was created |
 | `compression_format` | Compression algorithm used: `zstd` (default), `snappy`, `gzip`, `lzo`, or `none` |
