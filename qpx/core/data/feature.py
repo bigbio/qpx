@@ -8,6 +8,7 @@ from qpx.core.convert import QueryResult
 from qpx.core.data.base import BaseStructure
 from qpx.core.data.loader import load_schema
 from qpx.core.query import _escape_sql_string
+from qpx.core.sample_sql import feature_sample_ctes
 from qpx.core.sql import sql_build
 
 FeatureSchema = load_schema("feature")
@@ -69,16 +70,17 @@ class Feature(BaseStructure):
         """
         # fraction is an optional run column: an absent one reads as null.
         fraction = self._engine.optional_columns("run", "r", ("fraction",))
-        stmt = sql_build(
-            """SELECT f.sequence, f.peptidoform, f.charge, f.anchor_protein,
-               rs.sample_accession, rs.label, i.intensity,
-               f.run_file_name, rs.biological_replicate, $fraction
-        FROM $src f
-        JOIN run r ON f.run_file_name = r.run_file_name,
-             UNNEST(r.samples) AS _t1(rs),
-             UNNEST(f.intensities) AS _t2(i)
-        WHERE i.label = rs.label OR len(r.samples) = 1""",
-            src=self._query.source,
-            fraction=fraction,
+        ctes = feature_sample_ctes(
+            ("sequence", "peptidoform", "charge", "anchor_protein"),
+            source=self._query.source,
+            run_extra=(", " + fraction, ", fraction"),
+        )
+        stmt = (
+            ctes
+            + """
+        SELECT sequence, peptidoform, charge, anchor_protein,
+               sample_accession, sample_label AS label, intensity,
+               run_file_name, biological_replicate, fraction
+        FROM feature_samples"""
         )
         return QueryResult(self._engine.connection, stmt)

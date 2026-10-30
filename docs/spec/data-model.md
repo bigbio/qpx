@@ -245,21 +245,36 @@ Worked example (unnest the run, match the label):
 
 ```sql
 -- protein abundance per sample, from the flattened pg + run
-SELECT DISTINCT
-       pg.anchor_protein   AS protein_accession,
-       sc.sample_accession,
+WITH run_samples AS (
+    SELECT run_file_name, s.sample_accession, s.label
+    FROM (SELECT run_file_name, UNNEST(samples) AS s FROM 'PXD.run.parquet')
+),
+unit_samples AS (              -- each quantification unit resolved once
+    SELECT DISTINCT u.grouped_runs, rs.sample_accession, rs.label
+    FROM (
+        SELECT grouped_runs, UNNEST(grouped_runs) AS run_file_name
+        FROM (SELECT DISTINCT grouped_runs FROM 'PXD.pg.parquet')
+    ) u
+    JOIN run_samples rs USING (run_file_name)
+)
+SELECT pg.anchor_protein   AS protein_accession,
+       us.sample_accession,
        pg.label,
        pg.intensity        AS abundance
 FROM 'PXD.pg.parquet' pg
-CROSS JOIN UNNEST(pg.grouped_runs) AS g(run_file_name)
-JOIN 'PXD.run.parquet' r USING (run_file_name)
-CROSS JOIN UNNEST(r.samples) AS s(sc)
-WHERE sc.label = pg.label;     -- flattened: scalar pg.label, no intensities list
+JOIN unit_samples us
+  ON us.grouped_runs = pg.grouped_runs
+ AND us.label = pg.label;      -- flattened: scalar pg.label, no intensities list
 ```
 
 `DISTINCT` is required because several member runs can be fractions of the same
 sample; the quantity is already aggregated across those fractions and must be
-returned once per sample and label.
+returned once per sample and label. Resolving each distinct `grouped_runs` set
+once, instead of joining every pg row to every member run and every channel,
+keeps the query linear in the number of pg rows. On 1.28 million synthetic
+TMT16 pg rows (8 plexes of 3 or 12 fractions), the per-row form ran out of
+memory under a 3–4 GB limit, while the query above returned them in about a
+second.
 
 ## Where each concept lives (cheat sheet)
 

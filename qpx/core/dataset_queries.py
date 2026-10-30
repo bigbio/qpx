@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from qpx.core.convert import QueryResult
+from qpx.core.sample_sql import feature_sample_ctes, pg_sample_ctes
 from qpx.core.sql import escape_path, sql_build
 
 if TYPE_CHECKING:
@@ -255,47 +256,31 @@ class _DatasetQueryMixin:
             # p.label / p.intensity (no intensities list to UNNEST). Match each pg
             # row to the sample carrying its label. ID-only rows (null label /
             # intensity) never match a sample label and drop out naturally.
-            return sql_build(
-                """
-            WITH numbered_pg AS MATERIALIZED (
-                SELECT ROW_NUMBER() OVER () AS pg_row_id, *
-                FROM pg
-            ),
-            pg_samples AS (
-                SELECT DISTINCT p.pg_row_id,
-                                rs.sample_accession,
-                                rs.label AS intensity_label
-                FROM numbered_pg p
-                CROSS JOIN UNNEST(list_distinct(p.grouped_runs)) AS _g(run_file_name)
-                JOIN run r USING (run_file_name)
-                CROSS JOIN UNNEST(r.samples) AS _s(rs)
-            )
-            SELECT ps.sample_accession,
+            return (
+                pg_sample_ctes()
+                + """
+            SELECT us.sample_accession,
                    p.anchor_protein AS feature_id,
                    p.intensity
-            FROM numbered_pg p
-            JOIN pg_samples ps USING (pg_row_id)
-            WHERE p.label = ps.intensity_label
-              AND p.is_decoy = false
-            """,
+            FROM pg p
+            JOIN pg_unit_samples us
+              ON us.grouped_runs = p.grouped_runs
+             AND us.sample_label = p.label
+            WHERE p.is_decoy = false
+            """
             )
         if level == "peptide":
             if self.feature is None or self.run is None:
                 raise ValueError("level='peptide' requires feature and run structures.")
-            return sql_build(
-                """
-            SELECT rs.sample_accession,
-                   f.sequence AS feature_id,
-                   SUM(i.intensity) AS intensity
-            FROM feature f,
-                 run r,
-                 UNNEST(r.samples) AS _t1(rs),
-                 UNNEST(f.intensities) AS _t2(i)
-            WHERE f.run_file_name = r.run_file_name
-              AND (i.label = rs.label OR len(r.samples) = 1)
-              AND f.is_decoy = false
-            GROUP BY rs.sample_accession, f.sequence
-            """,
+            return (
+                feature_sample_ctes(("sequence",), feature_where="f.is_decoy = false")
+                + """
+            SELECT sample_accession,
+                   sequence AS feature_id,
+                   SUM(intensity) AS intensity
+            FROM feature_samples
+            GROUP BY sample_accession, sequence
+            """
             )
         raise ValueError(f"level must be 'protein' or 'peptide', got '{level}'")
 

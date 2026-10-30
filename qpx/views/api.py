@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from qpx.core.convert import QueryResult
+from qpx.core.sample_sql import feature_sample_ctes, pg_sample_ctes
 from qpx.core.sql import sql_build
 from qpx.views.base import BaseView
 
@@ -18,30 +19,22 @@ class ProteinView(BaseView):
 
     def intensity(self, q_value_threshold: float = 0.01) -> QueryResult:
         q_value_threshold = float(q_value_threshold)
-        sql = """
-        WITH numbered_pg AS MATERIALIZED (
-            SELECT ROW_NUMBER() OVER () AS pg_row_id, *
-            FROM pg
-        ),
-        pg_samples AS (
-            SELECT DISTINCT p.pg_row_id, rs.sample_accession, rs.label
-            FROM numbered_pg p
-            CROSS JOIN UNNEST(list_distinct(p.grouped_runs)) AS _g(run_file_name)
-            JOIN run r USING (run_file_name)
-            CROSS JOIN UNNEST(r.samples) AS _s(rs)
-        )
+        sql = pg_sample_ctes() + sql_build(
+            """
         SELECT p.anchor_protein AS protein_accession,
-               ps.sample_accession,
+               us.sample_accession,
                p.label,
                p.intensity,
                p.global_qvalue,
                p.gg_names AS gene_names
-        FROM numbered_pg p
-        JOIN pg_samples ps USING (pg_row_id)
-        WHERE p.label = ps.label
-          AND (p.global_qvalue IS NULL OR p.global_qvalue <= $threshold)
-        """
-        sql = sql_build(sql, threshold=str(q_value_threshold))
+        FROM pg p
+        JOIN pg_unit_samples us
+          ON us.grouped_runs = p.grouped_runs
+         AND us.sample_label = p.label
+        WHERE (p.global_qvalue IS NULL OR p.global_qvalue <= $threshold)
+        """,
+            threshold=str(q_value_threshold),
+        )
         return QueryResult(self._engine.connection, sql)
 
 
@@ -49,23 +42,17 @@ class PeptideView(BaseView):
     """Peptide intensity per sample — joins Feature + Run."""
 
     def intensity(self) -> QueryResult:
-        # The label carried by a feature intensity is not always the SDRF channel
-        # label carried by run.samples. For label-free (LFQ) runs the converters
-        # emit a generic feature label (e.g. DIA-NN's ``'raw'``) while run.samples
-        # carries the canonical ``'LFQ'`` channel, so an exact ``i.label = rs.label``
-        # join returns 0 rows. A label-free run has exactly one sample, so when the
-        # run is single-sample we attribute the intensity to that lone sample
-        # regardless of label; multiplexed (TMT/iTRAQ) runs still require an exact
-        # label match to disambiguate channels.
-        sql = """
-        SELECT f.sequence, f.peptidoform, f.charge, f.anchor_protein,
-               rs.sample_accession, rs.label AS label, i.intensity
-        FROM feature f
-        JOIN run r ON f.run_file_name = r.run_file_name,
-             UNNEST(r.samples) AS _t1(rs),
-             UNNEST(f.intensities) AS _t2(i)
-        WHERE (i.label = rs.label OR len(r.samples) = 1)
+        # A label-free run attributes its intensities to its lone sample whatever
+        # the feature label (DIA-NN's ``raw`` against the run's ``LFQ``);
+        # multiplexed runs need the exact label (see qpx.core.sample_sql).
+        sql = (
+            feature_sample_ctes(("sequence", "peptidoform", "charge", "anchor_protein"))
+            + """
+        SELECT sequence, peptidoform, charge, anchor_protein,
+               sample_accession, sample_label AS label, intensity
+        FROM feature_samples
         """
+        )
         return QueryResult(self._engine.connection, sql)
 
 

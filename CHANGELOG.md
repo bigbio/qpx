@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Peptide and protein abundance helpers are faster** — `Dataset.intensity()`, `Dataset.design_matrix()`, `PeptideView.intensity()`, `ProteinView.intensity()` and `Feature.for_quantification()` unnested `run.samples` and the feature intensities inside one `FROM` list, so DuckDB planned a cross product of features and runs at peptide level and joined every channel of a TMT feature to every channel of its run before matching the label; at protein level every pg row was resolved against every member run of its `grouped_runs`. Both lists are now unnested on their own and joined on run and label, and each distinct `grouped_runs` set is resolved to its samples once. On 405 label-free runs (2.94 million features) `intensity("peptide")` takes 0.37 s instead of 33.1 s. On fractionated TMT16 (12 runs, 240,000 features) it takes 0.59 s instead of 35.3 s, and `PeptideView.intensity()` and `Feature.for_quantification()` finish in 0.6 s where they ran out of a 5 GB temp directory. `ProteinView.intensity()` on 1.28 million fractionated TMT16 pg rows takes 0.8 s instead of 19.7 s. The worked example in [Data Model](docs/spec/data-model.md#label-channel-sample-resolution) resolves each `grouped_runs` set once in the same way. Output is unchanged.
+
 ## [1.2.0] - 2026-10-30
 
 ### Added
