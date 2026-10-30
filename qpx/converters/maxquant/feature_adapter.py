@@ -140,6 +140,7 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
 
         # Step 3: Load the experiment type and TMT channels from the SDRF
         _, experiment_type, tmt_channels = self._load_sdrf(sdrf_path)
+        self._fixed_mods = self._load_fixed_modifications(sdrf_path)
 
         # Step 3b: Build lookup maps from proteinGroups.txt
         pg_maps = self._build_protein_group_maps(protein_groups_path)
@@ -522,6 +523,7 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         sequence = str(row.get(r.get("sequence", "Sequence"), ""))
         peptidoform = to_proforma(
             str(row.get(r.get("modified_sequence", "Modified sequence"), "")),
+            self._fixed_mods,
         )
         _, modifications = from_proforma(peptidoform, sequence) if peptidoform else (None, None)
         charge = int(row.get(r.get("charge", "Charge"), 0))

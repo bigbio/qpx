@@ -82,8 +82,73 @@ def _resolve_mq_mod(tag: str) -> str:
     return tag
 
 
+def _closing_paren_end(seq: str, start: int) -> int:
+    """Index just past the parenthesis closing the one at ``start``, tracking nesting."""
+    depth = 1
+    j = start + 1
+    while j < len(seq) and depth > 0:
+        if seq[j] == "(":
+            depth += 1
+        elif seq[j] == ")":
+            depth -= 1
+        j += 1
+    return j
+
+
+def _split_modified_sequence(seq: str) -> tuple[str, list[tuple[int, str]]]:
+    """Split an underscore-free Modified sequence into residues and ``(position, tag)`` pairs.
+
+    A modification takes the position of the residue before it, 0 before the
+    first residue (N-term).
+    """
+    mods: list[tuple[int, str]] = []
+    plain_chars: list[str] = []
+    i = 0
+    while i < len(seq):
+        if seq[i] == "(":
+            j = _closing_paren_end(seq, i)
+            mods.append((len(plain_chars), _resolve_mq_mod(seq[i + 1 : j - 1])))
+            i = j
+        else:
+            plain_chars.append(seq[i])
+            i += 1
+    return "".join(plain_chars), mods
+
+
+FixedModification = tuple[str, str, str]
+"""``(accession, target residues, terminus)``; terminus is ``""``, ``"N"`` or ``"C"``."""
+
+
+def _fixed_positions(sequence: str, residues: str, terminus: str) -> list[int]:
+    """Where a fixed modification applies on ``sequence`` (0 = N-term, ``len + 1`` = C-term)."""
+    if not terminus:
+        return [position for position, residue in enumerate(sequence, start=1) if residue in residues]
+    position, residue = (0, sequence[:1]) if terminus == "N" else (len(sequence) + 1, sequence[-1:])
+    return [position] if not residues or residue in residues else []
+
+
+def fixed_modification_sites(
+    sequence: str, mods: list[tuple[int, str]], fixed_mods: tuple[FixedModification, ...]
+) -> list[tuple[int, str]]:
+    """The ``(position, accession)`` pairs the fixed modifications add to a peptide.
+
+    MaxQuant leaves fixed modifications out of ``Modified sequence``. Each one
+    is placed on every matching site that carries no reported modification,
+    so a site never gets a second modification (an N-terminal acetyl keeps a
+    fixed N-term label off, as in the search).
+    """
+    occupied = {position for position, _ in mods}
+    sites: list[tuple[int, str]] = []
+    for accession, residues, terminus in fixed_mods:
+        for position in _fixed_positions(sequence, residues, terminus):
+            if position not in occupied:
+                occupied.add(position)
+                sites.append((position, accession))
+    return sites
+
+
 @lru_cache(maxsize=8192)
-def to_proforma(modified_sequence: Optional[str]) -> str:
+def to_proforma(modified_sequence: Optional[str], fixed_mods: tuple[FixedModification, ...] = ()) -> str:
     """Convert a MaxQuant Modified sequence to ProForma notation.
 
     MaxQuant wraps sequences in underscores and uses parenthetical
@@ -92,6 +157,11 @@ def to_proforma(modified_sequence: Optional[str]) -> str:
         _PEPTM(Oxidation (M))IDEK_         -> PEPTM[UNIMOD:35]IDEK
         _(Acetyl (Protein N-term))PEPTIDEK_ -> [UNIMOD:1]-PEPTIDEK
         _(ac)PEPTIDEK_                      -> [UNIMOD:1]-PEPTIDEK
+
+    ``fixed_mods`` adds the fixed modifications MaxQuant leaves out (see
+    :func:`fixed_modification_sites`)::
+
+        _PEPCK_ with (("UNIMOD:4", "C", ""),) -> PEPC[UNIMOD:4]K
     """
     if not isinstance(modified_sequence, str) or not modified_sequence:
         return ""
@@ -100,35 +170,8 @@ def to_proforma(modified_sequence: Optional[str]) -> str:
     if not seq:
         return ""
 
-    mods: list[tuple[int, str]] = []
-    plain_chars: list[str] = []
-    i = 0
-    n = len(seq)
-    seq_pos = 0
-
-    while i < n:
-        if seq[i] == "(":
-            # Walk forward tracking parenthesis depth to handle nested parens
-            depth = 1
-            j = i + 1
-            while j < n and depth > 0:
-                if seq[j] == "(":
-                    depth += 1
-                elif seq[j] == ")":
-                    depth -= 1
-                j += 1
-            mod_name = seq[i + 1 : j - 1]
-            tag = _resolve_mq_mod(mod_name)
-            position = 0 if seq_pos == 0 else seq_pos
-            mods.append((position, tag))
-            i = j
-        else:
-            plain_chars.append(seq[i])
-            seq_pos += 1
-            i += 1
-
-    plain_seq = "".join(plain_chars)
-    return build_proforma(plain_seq, mods)
+    plain_seq, mods = _split_modified_sequence(seq)
+    return build_proforma(plain_seq, mods + fixed_modification_sites(plain_seq, mods, fixed_mods))
 
 
 def parse_phospho_probabilities(

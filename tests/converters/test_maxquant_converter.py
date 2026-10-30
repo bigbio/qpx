@@ -178,6 +178,156 @@ def test_pg_zero_lfq_and_ibaq_are_missing(tmp_path):
     ]
 
 
+_MOD_SDRF_HEADER = (
+    "source name\tcomment[data file]\tcomment[label]\tcomment[modification parameters]\t"
+    "comment[modification parameters]\tcomment[modification parameters]\tcomment[modification parameters]\n"
+)
+
+
+def _write_mod_sdrf(tmp_path, *mods):
+    """An LFQ SDRF for run1 declaring ``mods`` (four modification-parameter cells)."""
+    cells = list(mods) + [""] * (4 - len(mods))
+    sdrf = tmp_path / "sdrf.tsv"
+    sdrf.write_text(_MOD_SDRF_HEADER + "\t".join(["exp1", "run1.raw", "label free sample", *cells]) + "\n")
+    return sdrf
+
+
+_CARBAMIDOMETHYL = "NT=Carbamidomethyl;TA=C;MT=fixed;AC=UNIMOD:4"
+
+
+@pytest.mark.parametrize(
+    ("modified_sequence", "fixed_mods", "expected"),
+    [
+        ("_PEPCKC_", (("UNIMOD:4", "C", ""),), "PEPC[UNIMOD:4]KC[UNIMOD:4]"),
+        ("_PEPTIDEK_", (("UNIMOD:4", "C", ""),), "PEPTIDEK"),
+        ("_PEPCM(Oxidation (M))K_", (("UNIMOD:4", "C", ""),), "PEPC[UNIMOD:4]M[UNIMOD:35]K"),
+        # an N-terminal acetyl keeps a fixed N-term modification off
+        ("_(Acetyl (Protein N-term))PEPK_", (("UNIMOD:5", "", "N"),), "[UNIMOD:1]-PEPK"),
+        ("_PEPK_", (("UNIMOD:5", "", "N"),), "[UNIMOD:5]-PEPK"),
+        ("_PEPK_", (("UNIMOD:2", "K", "C"),), "PEPK-[UNIMOD:2]"),
+        ("_PEPR_", (("UNIMOD:2", "K", "C"),), "PEPR"),
+    ],
+)
+def test_to_proforma_adds_fixed_modifications(modified_sequence, fixed_mods, expected):
+    """MaxQuant leaves fixed modifications out of ``Modified sequence``; to_proforma puts them back."""
+    from qpx.converters.maxquant.constants import to_proforma
+
+    assert to_proforma(modified_sequence, fixed_mods) == expected
+
+
+def test_fixed_modifications_read_from_sdrf(tmp_path, caplog):
+    """Only placeable, non-isobaric MT=fixed SDRF modifications are taken, by their accession."""
+    from qpx.converters.maxquant.feature_adapter import MaxQuantFeatureAdapter
+
+    sdrf = _write_mod_sdrf(
+        tmp_path,
+        "NT=Carbamidomethyl;TA=C;MT=Fixed;AC=Unimod:4",
+        "NT=Oxidation;MT=variable;TA=M;AC=UNIMOD:35",
+        "NT=TMT6plex;TA=K;MT=fixed;AC=UNIMOD:737",
+        "NT=Acetyl;AC=UNIMOD:1;PP=Protein N-term;MT=fixed",
+    )
+    with MaxQuantFeatureAdapter() as adapter, caplog.at_level("WARNING"):
+        assert adapter._load_fixed_modifications(str(sdrf)) == (("UNIMOD:4", "C", ""),)
+    assert "Protein N-term" in caplog.text
+
+
+def test_fixed_modification_without_accession_uses_its_unimod_name(tmp_path):
+    """An SDRF fixed modification given only by ``NT`` takes the Unimod accession of that name.
+
+    A name the modification database does not know cannot be placed and is
+    left out, as before.
+    """
+    from qpx.converters.maxquant.feature_adapter import MaxQuantFeatureAdapter
+
+    sdrf = _write_mod_sdrf(
+        tmp_path, "NT=Carbamidomethyl;TA=C;MT=fixed", "NT=Methylthio;TA=C,M;MT=fixed", "NT=NoSuchMod;TA=K;MT=fixed"
+    )
+    with MaxQuantFeatureAdapter() as adapter:
+        assert adapter._load_fixed_modifications(str(sdrf)) == (("UNIMOD:4", "C", ""), ("UNIMOD:39", "CM", ""))
+
+
+@pytest.mark.parametrize(
+    "label",
+    [
+        "AC=UNIMOD:737;TA=K;MT=fixed",
+        "AC=UNIMOD:2016;TA=K;MT=fixed",
+        "AC=UNIMOD:214;TA=K;MT=fixed",
+        "NT=Label:13C(6)15N(4);TA=R;MT=fixed;AC=UNIMOD:267",
+        "AC=UNIMOD:259;TA=K;MT=fixed",
+    ],
+    ids=["tmt6plex_accession", "tmtpro_accession", "itraq4plex_accession", "silac_name", "silac_accession"],
+)
+def test_quantification_labels_are_not_fixed_modifications(tmp_path, label):
+    """TMT, iTRAQ and SILAC labels are skipped by name or, without ``NT``, by their Unimod accession.
+
+    MaxQuant reports ``Mass`` and ``m/z`` without isobaric tags, and carries a
+    SILAC label on the labelled rows only, so adding either to every
+    peptidoform would break its mass.
+    """
+    from qpx.converters.maxquant.psm_adapter import MaxQuantPsmAdapter
+
+    sdrf = _write_mod_sdrf(tmp_path, _CARBAMIDOMETHYL, label)
+    with MaxQuantPsmAdapter() as adapter:
+        assert adapter._load_fixed_modifications(str(sdrf)) == (("UNIMOD:4", "C", ""),)
+
+
+def test_feature_and_psm_peptidoforms_carry_sdrf_fixed_modifications(tmp_path):
+    """Fixed modifications from the SDRF make the peptidoform match calculated_mz."""
+    from qpx.converters.maxquant.converter import MaxQuantConverter
+    from qpx.converters.ptm import compute_precursor_mz
+    from qpx.core.constants import FEATURE, PSM
+
+    # PEPCK + carbamidomethyl (572.2628 + 57.0215): MaxQuant's Mass includes the fixed modification.
+    mass = 629.2843
+    evidence = tmp_path / "evidence.txt"
+    evidence.write_text(
+        _EVIDENCE_HEADER + f"PEPCK\t_PEPCK_\t2\trun1\tMULTI-MSMS\t100\t315.65\t30.0\t29.5\t30.5\t0.01\tP1\tP1\t1000\t{mass}\t1\n"
+    )
+    msms = tmp_path / "msms.txt"
+    msms.write_text(
+        "Sequence\tModified sequence\tCharge\tRaw file\tScan number\tm/z\tMass\tPEP\tReverse\tScore\tProteins\n"
+        f"PEPCK\t_PEPCK_\t2\trun1\t100\t315.65\t{mass}\t0.01\t\t100\tP1\n"
+    )
+    out = tmp_path / "out"
+    MaxQuantConverter().convert(
+        output_folder=str(out),
+        msms_file=str(msms),
+        evidence_file=str(evidence),
+        sdrf_file=str(_write_mod_sdrf(tmp_path, _CARBAMIDOMETHYL)),
+        output_prefix="mq",
+        structures=[PSM, FEATURE],
+    )
+
+    for view in ("feature", "psm"):
+        (row,) = pq.read_table(out / f"mq.{view}.parquet").to_pylist()
+        assert row["peptidoform"] == "PEPC[UNIMOD:4]K"
+        assert row["modifications"] == [
+            {
+                "name": "UNIMOD:4",
+                "accession": "UNIMOD:4",
+                "positions": [{"position": 4, "amino_acid": "C", "scores": None}],
+            }
+        ]
+        assert compute_precursor_mz(row["peptidoform"], 2) == pytest.approx(row["calculated_mz"], rel=1e-6)
+
+
+def test_peptidoforms_unchanged_without_sdrf_fixed_modifications(tmp_path, caplog):
+    """Without fixed modifications in the SDRF the peptidoform stays as MaxQuant wrote it, with a warning."""
+    from qpx.converters.maxquant.feature_adapter import MaxQuantFeatureAdapter
+
+    evidence = tmp_path / "evidence.txt"
+    evidence.write_text(
+        _EVIDENCE_HEADER + "PEPCK\t_PEPCK_\t2\trun1\tMULTI-MSMS\t100\t315.65\t30.0\t29.5\t30.5\t0.01\tP1\tP1\t1000\t629.2843\t1\n"
+    )
+    output = tmp_path / "feature.parquet"
+    with MaxQuantFeatureAdapter() as adapter, caplog.at_level("WARNING"):
+        adapter.convert(str(evidence), str(output), sdrf_path=str(_write_mod_sdrf(tmp_path)))
+
+    (row,) = pq.read_table(output).to_pylist()
+    assert row["peptidoform"] == "PEPCK"
+    assert len([r for r in caplog.records if "fixed modification" in r.message]) == 1
+
+
 def test_psm_handles_empty_modified_sequence(tmp_path):
     """Bug #248 (H): an empty ``Modified sequence`` must not abort the PSM view.
 

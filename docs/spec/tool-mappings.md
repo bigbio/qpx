@@ -17,7 +17,7 @@ The PSM (Peptide Spectrum Match) view captures spectrum-level identification res
 | QPX Field | MaxQuant | DIA-NN | FragPipe |
 | --- | --- | --- | --- |
 | `sequence` | Sequence | Stripped.Sequence | Peptide |
-| `peptidoform` | Modified sequence | Modified.Sequence | Modified Peptide |
+| `peptidoform` | Modified sequence, plus the SDRF fixed modifications MaxQuant leaves out | Modified.Sequence | Modified Peptide |
 | `charge` | Charge | Precursor.Charge | Charge |
 | `posterior_error_probability` | PEP | PEP | --- |
 | `is_decoy` | Reverse | --- | --- |
@@ -38,7 +38,7 @@ The Feature view captures quantified peptide features with intensity data. Featu
 | QPX Field | MaxQuant | DIA-NN | FragPipe | QuantMS MSstats |
 | --- | --- | --- | --- | --- |
 | `sequence` | Sequence | Stripped.Sequence | Peptide | PeptideSequence (unmodified) |
-| `peptidoform` | Modified sequence | Modified.Sequence | Modified Peptide | PeptideSequence (ProForma-normalized) |
+| `peptidoform` | Modified sequence, plus the SDRF fixed modifications MaxQuant leaves out | Modified.Sequence | Modified Peptide | PeptideSequence (ProForma-normalized) |
 | `charge` | Charge | Precursor.Charge | --- | Charge / PrecursorCharge |
 | `is_decoy` | Reverse | Decoy (`--report-decoys`), else accession prefix | --- | ProteinName prefix |
 | `peptide_qvalue` | --- | --- | --- | --- |

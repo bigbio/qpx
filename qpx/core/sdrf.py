@@ -71,6 +71,41 @@ def parse_sdrf_kv(sdrf_value: str) -> dict[str, str]:
     return pairs
 
 
+def parse_modification_parameters(sdrf_table: DataFrame) -> list[dict] | None:
+    """Parse the ``comment[modification parameters]`` columns of a lower-cased SDRF table.
+
+    Each column holds one modification as ``NT=...;AC=...;MT=...;TA=...;PP=...``,
+    read from its first non-blank value (the search settings are shared by
+    all rows). Returns one ``{accession, name, fixed, position,
+    target_amino_acid}`` dict per modification, or ``None`` when there are none.
+    """
+    results: list[dict] = []
+    for col in sdrf_table.columns:
+        if not col.startswith("comment[modification parameter"):
+            continue
+        values = sdrf_table[col].dropna()
+        mod = _modification_parameter(values.iloc[0]) if not values.empty else None
+        if mod:
+            results.append(mod)
+    return results or None
+
+
+def _modification_parameter(raw: str) -> dict | None:
+    """One ``comment[modification parameters]`` value as a dict, or ``None`` without ``AC``/``NT``."""
+    kv = parse_sdrf_kv(raw)
+    accession = kv.get("AC", "")
+    name = kv.get("NT", "")
+    if not accession and not name:
+        return None
+    return {
+        "accession": accession,
+        "name": name,
+        "fixed": kv.get("MT", "").lower() in ("fixed", "fix"),
+        "position": kv.get("PP", None),
+        "target_amino_acid": kv.get("TA", None),
+    }
+
+
 def get_complex_value_sdrf_column(sdrf_table: DataFrame, column: str) -> list:
     """
     Get the complex values from a SDRF column
@@ -112,6 +147,10 @@ class SDRFHandler:
 
     def get_enzymes(self):
         return get_complex_value_sdrf_column(self.sdrf_table, self.ENZYME_COLUMN)
+
+    def get_modification_parameters(self) -> list[dict] | None:
+        """The SDRF's search modifications; see :func:`parse_modification_parameters`."""
+        return parse_modification_parameters(self.sdrf_table)
 
     def get_experiment_type_from_sdrf(self):
         """

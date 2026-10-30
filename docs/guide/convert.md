@@ -399,8 +399,9 @@ Depending on `--structures` parameter:
 ### Best Practices {#maxquant-best-practices}
 
 - Use `--structures` to control which output files are generated
-- Always provide `--protein-groups-file` when available for better data quality
+- Always provide `--protein-groups-file` when available: features then take the protein group their `Protein group IDs` name, the membership the pg view carries
 - Ensure SDRF sample names match MaxQuant experiment names
+- Provide `--sdrf-file` with the PSM and feature conversions: MaxQuant leaves fixed modifications out of `Modified sequence`, and the SDRF's `MT=fixed` modifications (except TMT, iTRAQ and SILAC labels, which MaxQuant does not report as modifications) are added to the peptidoforms so they match `calculated_mz`
 - Use compressed files (.gz) to save disk space
 - Use `--spectral-data` flag if downstream analysis requires spectral information
 
