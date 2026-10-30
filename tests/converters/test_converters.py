@@ -60,6 +60,34 @@ class TestMaxQuantToProforma:
         result = to_proforma("_PEPTS(Phospho (STY))IDEK_")
         assert result == "PEPTS[UNIMOD:21]IDEK"
 
+    def test_names_outside_the_short_table(self):
+        from qpx.converters.maxquant.constants import to_proforma
+
+        assert to_proforma("_AK(GlyGly (K))PEK(Acetyl (K))R_") == "AK[UNIMOD:121]PEK[UNIMOD:1]R"
+        assert to_proforma("_(Glu->pyro-Glu)EPEPK_") == "[UNIMOD:27]-EPEPK"
+
+    def test_fixed_mods_written_inline(self):
+        from qpx.converters.maxquant.constants import to_proforma
+
+        fixed = (("C", "UNIMOD:4"), ("N-term", "UNIMOD:737"), ("K", "UNIMOD:737"))
+        assert to_proforma("_ACM(Oxidation (M))K_", fixed) == "[UNIMOD:737]-AC[UNIMOD:4]M[UNIMOD:35]K[UNIMOD:737]"
+        # A blocked N-terminus takes no label.
+        assert to_proforma("_(Acetyl (Protein N-term))ACK_", fixed) == "[UNIMOD:1]-AC[UNIMOD:4]K[UNIMOD:737]"
+
+    def test_fixed_mods_from_sdrf_and_parameters(self, tmp_path):
+        from qpx.converters.maxquant.constants import parameters_fixed_mods, sdrf_fixed_mods
+
+        entries = [
+            {"accession": "UNIMOD:4", "name": "Carbamidomethyl", "fixed": True, "position": None, "target_amino_acid": "C"},
+            {"accession": "", "name": "TMT6plex", "fixed": True, "position": "Any N-term", "target_amino_acid": None},
+            {"accession": "UNIMOD:35", "name": "Oxidation", "fixed": False, "position": None, "target_amino_acid": "M"},
+        ]
+        assert sdrf_fixed_mods(entries) == (("C", "UNIMOD:4"), ("N-term", "UNIMOD:737"))
+        params = tmp_path / "parameters.txt"
+        params.write_text("Parameter\tValue\nFixed modifications\tCarbamidomethyl (C);TMTpro (K)\n")
+        assert parameters_fixed_mods(params) == (("C", "UNIMOD:4"), ("K", "UNIMOD:2016"))
+        assert parameters_fixed_mods(tmp_path / "missing.txt") == ()
+
 
 class TestFragPipeToProforma:
     """Test to_proforma() from fragpipe.constants builds ProForma from sequence + mods."""
@@ -86,11 +114,11 @@ class TestFragPipeToProforma:
         from qpx.converters.fragpipe.constants import to_modifications
 
         peptidoform, modifications = to_modifications("C-term(-0.9840)", "PEPTIDEK")
-        assert peptidoform == "PEPTIDEK-[-0.984]"
+        assert peptidoform == "PEPTIDEK-[UNIMOD:2]"
         assert modifications == [
             {
-                "name": "CHEMMOD:-0.984",
-                "accession": None,
+                "name": "UNIMOD:2",
+                "accession": "UNIMOD:2",
                 "positions": [{"position": 9, "amino_acid": None, "scores": None}],
             }
         ]
@@ -332,50 +360,41 @@ class TestMaxQuantPhosphoProbabilities:
         assert parse_phospho_probabilities("_PEPTIDEK_") is None
 
 
-class TestMzIdentMLBuildPeptidoform:
-    """Test _build_peptidoform from mzidentml.psm_records."""
+class TestMzIdentMLPeptidoform:
+    """Peptidoforms built from mzIdentML Modification elements."""
 
-    def test_no_modifications(self):
-        from qpx.converters.mzidentml.psm_records import _build_peptidoform
+    @staticmethod
+    def _parse(sequence, *modifications):
+        from xml.etree.ElementTree import fromstring
 
-        assert _build_peptidoform("PEPTIDEK", None) == "PEPTIDEK"
+        from qpx.converters.mzidentml.psm_adapter import MzIdentMLPsmAdapter
+        from qpx.converters.ptm import build_proforma
+
+        ns = "http://psidev.info/psi/pi/mzIdentML/1.2"
+        body = "".join(
+            f'<Modification location="{loc}" monoisotopicMassDelta="{mass}"><cvParam accession="{acc}" name="{name}"/></Modification>'
+            for loc, mass, acc, name in modifications
+        )
+        pep = fromstring(f'<Peptide xmlns="{ns}"><PeptideSequence>{sequence}</PeptideSequence>{body}</Peptide>')
+        mods, _, tags = MzIdentMLPsmAdapter._parse_peptide_modifications(pep, ns, sequence)
+        return build_proforma(sequence, tags), mods
 
     def test_unimod_modification(self):
-        from qpx.converters.mzidentml.psm_records import _build_peptidoform
-
-        mods = [
-            {
-                "name": "Oxidation",
-                "accession": "UNIMOD:35",
-                "positions": [{"position": 5, "amino_acid": "M", "scores": None}],
-            }
-        ]
-        assert _build_peptidoform("PEPTMIDEK", mods) == "PEPTM[UNIMOD:35]IDEK"
+        assert self._parse("PEPTMIDEK", (5, 15.994915, "UNIMOD:35", "Oxidation"))[0] == "PEPTM[UNIMOD:35]IDEK"
 
     def test_nterm_modification(self):
-        from qpx.converters.mzidentml.psm_records import _build_peptidoform
+        assert self._parse("PEPTIDEK", (0, 42.010565, "UNIMOD:1", "Acetyl"))[0] == "[UNIMOD:1]-PEPTIDEK"
 
-        mods = [
-            {
-                "name": "Acetyl",
-                "accession": "UNIMOD:1",
-                "positions": [{"position": 0, "amino_acid": None, "scores": None}],
-            }
-        ]
-        assert _build_peptidoform("PEPTIDEK", mods) == "[UNIMOD:1]-PEPTIDEK"
+    def test_psi_mod_accession_maps_to_unimod(self):
+        assert self._parse("PEPSIDEK", (4, 79.966331, "MOD:00696", "phosphorylated residue"))[0] == "PEPS[UNIMOD:21]IDEK"
 
-    def test_psi_mod_accession(self):
-        from qpx.converters.mzidentml.psm_records import _build_peptidoform
+    def test_unknown_modification_keeps_mass(self):
+        peptidoform, mods = self._parse("PEPKIDEK", (4, 54.0106, "MS:1001460", "unknown modification"))
+        assert peptidoform == "PEPK[+54.0106]IDEK"
+        assert mods[0]["name"] == "+54.0106" and mods[0]["accession"] is None
 
-        mods = [
-            {
-                "name": "Phospho",
-                "accession": "MOD:00696",
-                "positions": [{"position": 3, "amino_acid": "S", "scores": None}],
-            }
-        ]
-        result = _build_peptidoform("PEPSIDEK", mods)
-        assert "[MOD:00696]" in result
+    def test_accession_contradicting_mass_keeps_mass(self):
+        assert self._parse("PEPKIDEK", (4, 54.0106, "UNIMOD:21", "Phospho"))[0] == "PEPK[+54.0106]IDEK"
 
 
 class TestModificationParsing:

@@ -8,7 +8,6 @@ from typing import NamedTuple, Optional
 
 from qpx.converters.mzidentml.crosslinks import _build_interlink, _build_looplink, _group_siis
 from qpx.converters.mzidentml.scores import _attach_site_localization_scores, _extract_pep, _extract_scores
-from qpx.converters.ptm import build_proforma
 from qpx.core.data.identity import derive_id
 
 
@@ -66,7 +65,7 @@ def _build_one_psm(group: dict, context: _SpectrumContext, parsed: dict) -> Opti
         cross_links = _build_looplink(alpha_pep, linker_info)
     elif xl_type in ("inter", "noncovalent"):
         cross_links = _build_interlink(alpha_pep, beta_sii, peptides, linker_info, xl_type)
-    peptidoform = _build_peptidoform(sequence, alpha_pep.get("modifications"))
+    peptidoform = alpha_pep["peptidoform"]
 
     # Peptide modifications are shared across PSMs; copy before adding per-SII scores.
     modifications = _attach_site_localization_scores(copy.deepcopy(alpha_pep.get("modifications")), alpha_sii["cv_params"])
@@ -185,32 +184,6 @@ def _psm_source_fields(run_file, alpha_sii, beta_sii, pep_evidence) -> dict:
         break  # Use first PeptideEvidence for positional info
 
     return {"psm_id": psm_id, "cv_params": cv_params or None}
-
-
-def _build_peptidoform(sequence: str, modifications: list[dict] | None) -> str:
-    """Build a ProForma string from mzIdentML parsed modifications.
-
-    Extracts (position, accession) pairs from the modification dicts and
-    delegates to ``build_proforma()``.  Accessions are normalised: if the
-    accession already looks like ``UNIMOD:N`` it is kept as-is; otherwise
-    ``MOD:NNNNN`` (PSI-MOD) accessions and plain names are used directly
-    as the tag.
-    """
-    if not sequence:
-        return ""
-    if not modifications:
-        return sequence
-
-    mods: list[tuple[int, str]] = []
-    for mod in modifications:
-        accession = mod.get("accession") or mod.get("name", "")
-        # Normalise UNIMOD prefix casing
-        tag = re.sub(r"(?i)^unimod:", "UNIMOD:", accession) if accession else mod.get("name", "")
-        for pos_info in mod.get("positions", []):
-            position = pos_info.get("position", 0)
-            mods.append((position, tag))
-
-    return build_proforma(sequence, mods)
 
 
 def _source_sii_identity(run_file: str, alpha_sii: dict, beta_sii: dict | None) -> tuple[int, list[dict]]:

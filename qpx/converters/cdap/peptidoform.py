@@ -10,8 +10,8 @@ sequence::
 The N-terminal label tag (e.g. TMT/iTRAQ on the alpha amine) appears before
 the first residue.  Subsequent ``±mass`` tokens annotate the residue that
 immediately precedes them.  Tokens are mapped to UNIMOD accessions via the
-mass tables in :mod:`qpx.converters.cdap.constants`; unknown masses are passed
-through unchanged as ``CHEMMOD`` strings so that downstream tooling can still
+mass tables in :mod:`qpx.converters.cdap.constants`; unknown masses are kept
+as ProForma mass shifts (``[+123.4560]``) so that downstream tooling can still
 report them.
 """
 
@@ -22,7 +22,7 @@ from functools import lru_cache
 from typing import Iterable
 
 from qpx.converters.cdap.constants import ALL_MOD_MASSES
-from qpx.converters.ptm import build_proforma
+from qpx.converters.ptm import build_proforma, format_mass_shift
 
 # Regex capturing a single signed delta-mass token (e.g. ``+229.163``,
 # ``-17.027``).  Anchored to start-of-string when scanning the prefix; the
@@ -31,16 +31,16 @@ _MASS_TOKEN_RE = re.compile(r"^([+-]\d+\.\d+)")
 
 
 def _resolve_mass_to_unimod(mass_token: str) -> str:
-    """Map a CDAP delta-mass token (e.g. ``+229.163``) to a UNIMOD or CHEMMOD tag.
+    """Map a CDAP delta-mass token (e.g. ``+229.163``) to a UNIMOD tag or a mass shift.
 
     The :data:`ALL_MOD_MASSES` table is the authoritative source.  Anything not
-    found there is preserved as a ``CHEMMOD:±mass`` string so the converter
-    never silently drops a modification.
+    found there is kept as a signed mass shift so the converter never silently
+    drops a modification.
     """
     accession = ALL_MOD_MASSES.get(mass_token)
     if accession is not None:
         return f"UNIMOD:{accession}"
-    return f"CHEMMOD:{mass_token}"
+    return format_mass_shift(float(mass_token))
 
 
 @lru_cache(maxsize=65536)

@@ -27,8 +27,8 @@ from qpx.converters.base import resolve_columns
 from qpx.converters.mappings import get_field_mappings
 from qpx.converters.maxquant.base_adapter import MaxQuantBaseAdapter
 from qpx.converters.maxquant.constants import (
-    PROTON_MASS,
     TMT_LABEL_TO_MQ_COL,
+    mq_calculated_mz,
     to_proforma,
 )
 from qpx.converters.ptm import from_proforma
@@ -121,8 +121,9 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         }
         self._resolved = resolve_columns(_FEATURE_MAP, actual_cols)
 
-        # Step 3: Load the experiment type and TMT channels from the SDRF
+        # Step 3: Load the experiment type, TMT channels and fixed modifications
         _, experiment_type, tmt_channels = self._load_sdrf(sdrf_path)
+        self._fixed = self._fixed_mods(sdrf_path, evidence_path)
 
         # Step 3b: Build lookup maps from proteinGroups.txt
         pg_maps = self._build_protein_group_maps(protein_groups_path)
@@ -414,9 +415,7 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         r = self._resolved  # shorthand for resolved column mappings
 
         sequence = str(row.get(r.get("sequence", "Sequence"), ""))
-        peptidoform = to_proforma(
-            str(row.get(r.get("modified_sequence", "Modified sequence"), "")),
-        )
+        peptidoform = to_proforma(str(row.get(r.get("modified_sequence", "Modified sequence"), "")), self._fixed)
         _, modifications = from_proforma(peptidoform, sequence) if peptidoform else (None, None)
         charge = int(row.get(r.get("charge", "Charge"), 0))
         run_file_name = str(row.get(r.get("run_file_name", "Raw file"), ""))
@@ -424,7 +423,7 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         # is_decoy (bool)
         is_decoy = mq_flag_to_bool(row.get(r.get("is_decoy", "Reverse"), ""))
 
-        spectrum_fields = self._evidence_spectrum_fields(row, charge)
+        spectrum_fields = self._evidence_spectrum_fields(row, charge, peptidoform)
 
         pg_accessions, anchor_protein, unique, pg_qvalue, gg_names = self._evidence_protein_fields(row, pg_maps)
 
@@ -532,7 +531,7 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         genes = genes or None
         return genes
 
-    def _evidence_spectrum_fields(self, row: dict, charge: int) -> dict:
+    def _evidence_spectrum_fields(self, row: dict, charge: int, peptidoform: str) -> dict:
         """Extract the spectrum, m/z, and retention-time fields."""
         r = self._resolved
         # Scan (list<int32>)
@@ -544,12 +543,7 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
             except (ValueError, TypeError):
                 pass
 
-        # Calculated m/z from neutral mass and charge
-        neutral_mass = safe_float(row.get(r.get("mass", "Mass")))
-        if neutral_mass and charge:
-            calculated_mz = (neutral_mass + charge * PROTON_MASS) / charge
-        else:
-            calculated_mz = None
+        calculated_mz = mq_calculated_mz(peptidoform, charge, safe_float(row.get(r.get("mass", "Mass"))))
 
         # m/z
         observed_mz = safe_float(row.get(r.get("observed_mz", "m/z")))

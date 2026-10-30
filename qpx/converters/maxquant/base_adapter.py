@@ -6,9 +6,13 @@ Provides common data-loading helpers used by
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Optional
 
 from qpx.converters.base import BaseConverter
+from qpx.converters.channel_labels import label_unimod, read_sdrf_labels
+from qpx.converters.maxquant.constants import FixedMods, parameters_fixed_mods, sdrf_fixed_mods
+from qpx.converters.ptm import NTERM
 from qpx.converters.utils import strip_uniprot_prefix
 
 
@@ -18,6 +22,9 @@ class MaxQuantBaseAdapter(BaseConverter):
     Subclasses inherit ``_load_sdrf()`` so the SDRF loading logic is
     defined once rather than duplicated across the feature and PG adapters.
     """
+
+    # Fixed modifications written into peptidoforms; set by ``convert``.
+    _fixed: FixedMods = ()
 
     @staticmethod
     def _norm_uniprot_id(pid: str) -> str:
@@ -30,6 +37,27 @@ class MaxQuantBaseAdapter(BaseConverter):
             P55011  →  P55011  (returned as-is)
         """
         return strip_uniprot_prefix(pid)
+
+    @staticmethod
+    def _fixed_mods(sdrf_path: Optional[str], source_path: str) -> FixedMods:
+        """Fixed modifications as ``(site, "UNIMOD:n")`` pairs; *site* is a residue or ``"N-term"``.
+
+        MaxQuant leaves fixed modifications and isobaric labels out of
+        ``Modified sequence``. They are read from the SDRF ``MT=fixed`` entries,
+        else from the ``parameters.txt`` MaxQuant writes next to *source_path*;
+        an isobaric label neither lists is added from the SDRF channel labels.
+        """
+        fixed: FixedMods = ()
+        if sdrf_path:
+            from qpx.converters.sdrf import SdrfConverter
+            from qpx.core.sdrf import SDRFHandler
+
+            fixed = sdrf_fixed_mods(SdrfConverter.parse_modification_params(SDRFHandler(sdrf_path).sdrf_table))
+        fixed = fixed or parameters_fixed_mods(Path(source_path).with_name("parameters.txt"))
+        label = label_unimod(read_sdrf_labels(sdrf_path))
+        if label is not None and all(tag != f"UNIMOD:{label}" for _, tag in fixed):
+            fixed += ((NTERM, f"UNIMOD:{label}"), ("K", f"UNIMOD:{label}"))
+        return fixed
 
     def _load_sdrf(self, sdrf_path: Optional[str]) -> tuple[dict, str, list]:
         """Load SDRF and return ``(sample_map, experiment_type, tmt_channels)``.

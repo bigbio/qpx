@@ -399,7 +399,7 @@ class SdrfConverter(BaseConverter):
         run_groups = sdrf_df.groupby("_run_file")
 
         # Parse modification parameters (same across all rows usually)
-        mod_params = self._parse_modification_params(sdrf_df)
+        mod_params = self.parse_modification_params(sdrf_df)
 
         records: list[dict] = []
         for run_file, group in run_groups:
@@ -518,7 +518,7 @@ class SdrfConverter(BaseConverter):
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _parse_modification_params(sdrf_df: pd.DataFrame) -> list[dict] | None:
+    def parse_modification_params(sdrf_df: pd.DataFrame) -> list[dict] | None:
         """Extract modification parameters from SDRF comment columns."""
         mod_cols = [c for c in sdrf_df.columns if c.startswith("comment[modification parameter")]
         if not mod_cols:

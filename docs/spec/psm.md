@@ -150,7 +150,7 @@ Several fields in the PSM view use structures shared across other QPX views:
 {
   "psm_id": -4279600662514899531,
   "sequence": "AAAAAAAAAAGAAGGR",
-  "peptidoform": "[Acetyl]-AAAAAAAAAAGAAGGR",
+  "peptidoform": "[UNIMOD:1]-AAAAAAAAAAGAAGGR",
   "charge": 2,
   "scan": [42164],
   "rt": 5140.98,
@@ -164,7 +164,7 @@ Several fields in the PSM view use structures shared across other QPX views:
   "modifications": [
     {
       "name": "Acetyl",
-      "accession": "UniMod:1",
+      "accession": "UNIMOD:1",
       "positions": [
         {
           "position": 0,
@@ -206,7 +206,7 @@ When spectral arrays are included, the record also contains peak-level data:
 {
   "psm_id": -4279600662514899531,
   "sequence": "AAAAAAAAAAGAAGGR",
-  "peptidoform": "[Acetyl]-AAAAAAAAAAGAAGGR",
+  "peptidoform": "[UNIMOD:1]-AAAAAAAAAAGAAGGR",
   "charge": 2,
   "scan": [42164],
   "rt": 5140.98,

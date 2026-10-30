@@ -21,7 +21,7 @@ from typing import Iterable
 # The current QPX specification (on-disk format) version. Keep in sync with
 # docs/spec/versioning.md ("Current Version"). Two-component {major}.{minor};
 # no patch component.
-QPX_SPEC_VERSION = "1.2"
+QPX_SPEC_VERSION = "1.3"
 
 
 class QpxVersionError(ValueError):

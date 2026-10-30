@@ -220,6 +220,24 @@ def experiment_type_from_labels(sdrf_labels: Optional[set[str]]) -> str:
     return "LFQ"
 
 
+# Unimod accession of the reagent each isobaric plex is labelled with.
+_PLEX_UNIMOD = {"tmt6plex": 737, "tmt10plex": 737, "tmt11plex": 737, "tmt16plex": 2016, "tmt18plex": 2016}
+_PLEX_UNIMOD |= {"itraq4plex": 214, "itraq8plex": 730}
+
+
+def label_unimod(sdrf_labels: Optional[set[str]]) -> Optional[int]:
+    """UNIMOD accession of the isobaric reagent the SDRF channel labels imply, or ``None``."""
+    family = _FAMILY_PREFIX.get(experiment_type_from_labels(sdrf_labels))
+    if family is None:
+        return None
+    canonical = {normalize_label(label) for label in sdrf_labels if label}
+    infer = infer_tmtplex if family == "tmt" else infer_itraqplex
+    try:
+        return _PLEX_UNIMOD.get(infer(canonical))
+    except ValueError:
+        return None
+
+
 def _channel_indices(channel_indices: Optional[Iterable]) -> set[int]:
     """Integer channel ordinals in ``channel_indices``; values that are not numbers are skipped."""
     indices: set[int] = set()

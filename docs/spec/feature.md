@@ -211,11 +211,11 @@ Several fields in the feature view use structures shared across other QPX views:
 {
   "feature_id": -5948337580339590069,
   "sequence": "VLHPLEGAVVIIFK",
-  "peptidoform": "[UniMod:1]-VLHPLEGAVVIIFK",
+  "peptidoform": "[UNIMOD:1]-VLHPLEGAVVIIFK",
   "modifications": [
     {
       "name": "Acetyl",
-      "accession": "UniMod:1",
+      "accession": "UNIMOD:1",
       "positions": [
         {"position": 0, "amino_acid": null, "scores": null}
       ]

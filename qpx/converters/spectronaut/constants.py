@@ -5,32 +5,7 @@ from __future__ import annotations
 import re
 from functools import lru_cache
 
-from qpx.converters.ptm import build_proforma, from_proforma
-
-# ---------------------------------------------------------------------------
-# Spectronaut modification name -> UNIMOD accession
-# ---------------------------------------------------------------------------
-
-_SN_MOD_TO_UNIMOD: dict[str, int] = {
-    "Carbamidomethyl (C)": 4,
-    "Oxidation (M)": 35,
-    "Acetyl (Protein N-term)": 1,
-    "Phospho (STY)": 21,
-    "Phospho (S)": 21,
-    "Phospho (T)": 21,
-    "Phospho (Y)": 21,
-    "Deamidated (NQ)": 7,
-    "Deamidated (N)": 7,
-    "Deamidated (Q)": 7,
-    "GlyGly (K)": 121,
-    "Dimethyl (KR)": 36,
-    "Methylation (KR)": 34,
-    "Formylation (Protein N-term)": 122,
-    "TMT6plex (K)": 737,
-    "TMT6plex (Protein N-term)": 737,
-    "TMTpro (K)": 737,
-    "TMTpro (Protein N-term)": 737,
-}
+from qpx.converters.ptm import build_proforma, from_proforma, unimod_from_name
 
 _NTERM_RE = re.compile(r"N-term|Protein N-term")
 
@@ -71,7 +46,7 @@ def to_proforma(modified_sequence: str) -> str:
         if seq[i] == "[":
             end = seq.index("]", i)
             mod_name = seq[i + 1 : end]
-            unimod_id = _SN_MOD_TO_UNIMOD.get(mod_name)
+            unimod_id = unimod_from_name(mod_name)
             if unimod_id is not None:
                 tag = f"UNIMOD:{unimod_id}"
             else:

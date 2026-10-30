@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `qpx.converters.ptm.normalize_peptidoform()` rewrites a peptidoform into the canonical form, and `unimod_from_name()` / `canonical_mod_tag()` resolve modification names, accessions and masses to Unimod.
+
+### Changed
+
+- **Specification 1.3: canonical peptidoform.** Converters write fixed modifications and labels inline, `UNIMOD:n` accessions and signed four-decimal mass shifts (no `CHEMMOD:`), and `calculated_mz` is the theoretical m/z of the peptidoform. MaxQuant peptidoforms now carry the fixed modifications from the SDRF (`MT=fixed`) or `parameters.txt` and the isobaric label implied by the SDRF channels. `feature_id`/`psm_id` change for affected rows.
+- mzIdentML modifications are mapped to Unimod by name or mass when they carry a PSI-MOD or "unknown modification" accession, and keep the reported mass when it contradicts the accession.
+
+### Fixed
+
+- The Unimod mass table had wrong entries: 214 (iTRAQ4plex) was −18.01, 312 and 385 carried TMT6plex and TMTpro masses, and TMTpro was mapped to 730 (iTRAQ8plex). FragPipe TMT became Cysteinyl, TMTpro and iTRAQ8plex became Ammonia-loss, MaxQuant/CDAP TMTpro became iTRAQ8plex, Spectronaut TMTpro became TMT6plex, and CDAP iTRAQ4 `calculated_mz` was 162 Da per label too low. Equal-mass candidates (Gln→pyro-Glu vs Ammonia-loss) are now told apart by site, or written as the mass.
+- The ProForma normaliser rewrote parentheses inside bracketed tags, turning MaxQuant/Spectronaut names such as `GlyGly (K)` into nested brackets (`K[GlyGly [K]]`) with bogus extra modifications and shifted positions; names outside the old MaxQuant/Spectronaut tables (`GlyGly (K)`, `Acetyl (K)`) now resolve to Unimod.
+
 ## [1.2.0] - 2026-10-30
 
 ### Added

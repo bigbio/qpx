@@ -563,7 +563,7 @@ class TestSaveAnndata:
 
             loaded = anndata.read_h5ad(path)
             assert loaded.shape == (2, 2)
-            assert loaded.uns["qpx_version"] == "1.2"
+            assert loaded.uns["qpx_version"] == "1.3"
             assert loaded.uns["writer_version"]
 
     def test_save_anndata_custom_name(self, dataset_dir):

@@ -80,7 +80,7 @@ CHANNEL_DEFS: dict[str, list[str]] = {
 # delta-mass token (as it appears in ``PeptideSequence``) to the UNIMOD id.
 LABEL_TAG_MASSES: dict[str, int] = {
     "+229.163": 737,  # TMT6/10/11
-    "+304.207": 730,  # TMTpro / TMT18
+    "+304.207": 2016,  # TMTpro / TMT18
     "+144.102": 214,  # iTRAQ4
 }
 

@@ -20,7 +20,7 @@ import pandas as pd
 from qpx.converters.base import resolve_columns
 from qpx.converters.mappings import get_field_mappings
 from qpx.converters.maxquant.base_adapter import MaxQuantBaseAdapter
-from qpx.converters.maxquant.constants import PROTON_MASS, parse_phospho_probabilities, phospho_candidates, to_proforma
+from qpx.converters.maxquant.constants import mq_calculated_mz, parse_phospho_probabilities, phospho_candidates, to_proforma
 from qpx.converters.ptm import from_proforma
 from qpx.converters.utils import mq_flag_to_bool, safe_float
 from qpx.writers.psm import PsmWriter
@@ -71,6 +71,7 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
         chunksize: int = 500_000,
         spectral_data: bool = False,
         creator: str = "maxquant",
+        sdrf_path: Optional[str] = None,
     ) -> None:
         """Run the msms.txt -> psm.parquet conversion.
 
@@ -80,7 +81,9 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
             chunksize: Rows per batch.
             spectral_data: Whether to include spectral arrays.
             creator: Creator tag in Parquet metadata.
+            sdrf_path: Optional SDRF file declaring fixed modifications and labels.
         """
+        self._fixed = self._fixed_mods(sdrf_path, msms_path)
         # Step 1: Load msms.txt into DuckDB
         self._load_msms(msms_path)
 
@@ -148,7 +151,7 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
         # is_decoy (bool) -- MaxQuant uses '+' for Reverse
         is_decoy = mq_flag_to_bool(row.get(r.get("is_decoy", "Reverse"), ""))
 
-        spectrum_fields = self._psm_spectrum_fields(row, charge)
+        spectrum_fields = self._psm_spectrum_fields(row, charge, peptidoform)
 
         # Protein accessions — normalise sp|/tr| prefixes for consistency
         proteins_cell = row.get("Proteins")
@@ -198,9 +201,7 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
         """Parse the peptide identity and phospho localization."""
         r = self._resolved
         sequence = str(row.get(r.get("sequence", "Sequence"), ""))
-        peptidoform = to_proforma(
-            str(row.get(r.get("modified_sequence", "Modified sequence"), "")),
-        )
+        peptidoform = to_proforma(str(row.get(r.get("modified_sequence", "Modified sequence"), "")), self._fixed)
 
         # Parse phospho site localization probabilities (if available)
         phospho_raw = row.get("Phospho (STY) Probabilities")
@@ -228,7 +229,7 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
             return None
         return sequence, peptidoform, modifications, site_scores
 
-    def _psm_spectrum_fields(self, row: dict, charge: int) -> dict:
+    def _psm_spectrum_fields(self, row: dict, charge: int, peptidoform: str) -> dict:
         """Extract PSM spectrum, m/z, and retention-time fields."""
         r = self._resolved
         # Scan (list<int32>)
@@ -246,12 +247,7 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
         # m/z values
         observed_mz = safe_float(row.get(r.get("observed_mz", "m/z"))) or 0.0
 
-        # Calculated m/z from neutral mass and charge
-        neutral_mass = safe_float(row.get("Mass"))
-        if neutral_mass and charge:
-            calculated_mz = (neutral_mass + charge * PROTON_MASS) / charge
-        else:
-            calculated_mz = None
+        calculated_mz = mq_calculated_mz(peptidoform, charge, safe_float(row.get("Mass")))
 
         # RT (minutes → seconds)
         rt = safe_float(row.get(r.get("rt", "Retention time")))

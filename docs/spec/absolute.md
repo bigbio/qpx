@@ -128,7 +128,7 @@ adata.layers["ibaq_raw"] = np.array(
 )
 
 # Add file-level metadata
-adata.uns["qpx_version"] = "1.2"
+adata.uns["qpx_version"] = "1.3"
 adata.uns["file_type"] = "absolute_expression"
 adata.uns["project_accession"] = "PXD000000"
 

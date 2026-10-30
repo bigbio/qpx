@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from functools import lru_cache
 
-from qpx.converters.ptm import build_proforma, from_proforma, mass_to_unimod
+from qpx.converters.ptm import build_proforma, format_mass_shift, from_proforma, mass_to_unimod
 
 # ---------------------------------------------------------------------------
 # Decoy detection
@@ -63,17 +63,15 @@ def to_proforma(assigned_mods: str, sequence: str) -> str:
         if not m:
             continue
 
-        pos_str, _aa, terminus, mass_str = m.groups()
+        pos_str, aa, terminus, mass_str = m.groups()
         try:
             mass = float(mass_str)
         except ValueError:
             continue
 
-        unimod_id = mass_to_unimod(mass)
-        if unimod_id is not None:
-            tag = f"UNIMOD:{unimod_id}"
-        else:
-            tag = f"+{mass}" if mass >= 0 else str(mass)
+        nterm = terminus == "N-term"
+        unimod_id = mass_to_unimod(mass, residue=aa or (sequence[0] if nterm else None), nterm=nterm)
+        tag = f"UNIMOD:{unimod_id}" if unimod_id is not None else format_mass_shift(mass)
 
         if terminus == "N-term":
             position = 0

@@ -576,6 +576,7 @@ class TestSharedModificationsNoCrossContamination:
             "peptides": {
                 "SharedPep": {
                     "sequence": "PEPTIDE",
+                    "peptidoform": "PEPT[UNIMOD:21]IDE",
                     "modifications": self._phospho_mod(),
                     "xl_mods": {},
                 }

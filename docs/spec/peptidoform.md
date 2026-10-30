@@ -8,50 +8,75 @@ The `peptidoform` field appears alongside the bare `sequence` field (amino acids
 
 ProForma is a HUPO-PSI standard for encoding peptide sequences with modifications in a single string. Modifications are placed in square brackets immediately after the residue they modify (or before the sequence for N-terminal modifications).
 
+### Canonical form
+
+Every QPX producer writes the peptidoform in one canonical form, so the same
+molecule gets the same string, and therefore the same identity, whichever
+tool produced it:
+
+1. **Every modification is written inline**, including fixed modifications
+   (carbamidomethyl cysteine) and isobaric or MS1 labels (TMT, iTRAQ, SILAC,
+   dimethyl), even where the search engine leaves them out of its own
+   sequence column.
+2. **A modification with a Unimod entry is written as `UNIMOD:n`** in upper
+   case. Names (`Oxidation`, `GlyGly (K)`) and PSI-MOD accessions are mapped to
+   their Unimod accession.
+3. **A modification without a Unimod entry is written as its signed
+   monoisotopic mass shift in Daltons with four decimals**, `[+79.9663]` or
+   `[-17.0265]`. `CHEMMOD:` is not used. An accession QPX cannot check the mass
+   of keeps the reported mass after a pipe, `[UNIMOD:1842|+54.0106]`.
+4. N-terminal modifications precede the sequence and a hyphen,
+   `[UNIMOD:1]-PEPTIDE`; C-terminal ones follow a hyphen, `PEPTIDE-[UNIMOD:2]`.
+5. `calculated_mz` is the theoretical m/z of the peptidoform at the reported
+   charge whenever every modification in it has a known mass.
+
+A name that resolves to no Unimod entry and comes with no mass is kept as
+written (`K[Custom (K)]`); parentheses inside a bracketed tag belong to the
+tag. Readers that accept other ProForma spellings can bring them to the
+canonical form with `qpx.converters.ptm.normalize_peptidoform`.
+
 ### Examples
 
-**Basic modification by name**
-
-```text
-PEPTIDM[Oxidation]K
-```
-
-Methionine at position 7 carries an Oxidation modification.
-
-**Modification by UNIMOD accession (recommended)**
+**Variable modification**
 
 ```text
 PEPTIDM[UNIMOD:35]K
 ```
 
-Same as above, but using the UNIMOD accession number. This is the recommended approach because accessions are unambiguous.
+Methionine at position 7 carries an oxidation (Unimod 35).
 
 **N-terminal modification**
 
 ```text
-[Acetyl]-PEPTIDMK
+[UNIMOD:1]-PEPTIDMK
 ```
 
 Acetylation on the N-terminus of the peptide.
 
-**Multiple modifications**
+**Fixed and variable modifications together**
 
 ```text
-[Acetyl]-PEPT[Phospho]IDM[Oxidation]K
+[UNIMOD:1]-PEPT[UNIMOD:21]IDC[UNIMOD:4]M[UNIMOD:35]K
 ```
 
-N-terminal acetylation, phosphorylation on threonine at position 4, and oxidation on methionine at position 7.
+N-terminal acetylation, a phosphorylated threonine at position 4, the fixed
+carbamidomethylation of the cysteine and an oxidised methionine.
 
 **TMT-labeled peptide**
 
 ```text
-[TMT6plex]-PEPTIDM[Oxidation]K[TMT6plex]
+[UNIMOD:737]-PEPTIDM[UNIMOD:35]K[UNIMOD:737]
 ```
 
-TMT6plex isobaric tag on the N-terminus and on the C-terminal lysine, with an additional oxidation on methionine.
+TMT6plex (Unimod 737) on the N-terminus and on the C-terminal lysine, with an
+additional oxidation on methionine. TMTpro is Unimod 2016, iTRAQ4plex 214 and
+iTRAQ8plex 730.
 
-!!! tip
-    When a modification does not have a UNIMOD entry, use the CHEMMOD notation to specify the mass shift in Daltons: `PEPTIDM[CHEMMOD:+15.9949]K`.
+**Modification without a Unimod entry**
+
+```text
+PEPTIDK[+54.0106]R
+```
 
 ## Where peptidoform is used
 

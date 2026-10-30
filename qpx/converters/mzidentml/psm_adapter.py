@@ -19,6 +19,7 @@ except ImportError:
 
 from qpx.converters.base import BaseConverter
 from qpx.converters.mzidentml.psm_records import _build_psm_records
+from qpx.converters.ptm import build_proforma, canonical_mod_tag
 from qpx.core.cv_terms import CV_SCAN_START_TIME, CV_XL_ACCEPTOR, CV_XL_DONOR
 from qpx.core.files import run_file_stem
 from qpx.writers.psm import PsmWriter
@@ -112,24 +113,50 @@ class MzIdentMLPsmAdapter(BaseConverter):
             seq_el = pep.find(f"{{{ns}}}PeptideSequence")
             sequence = seq_el.text if seq_el is not None else ""
 
-            mods, xl_mods = self._parse_peptide_modifications(pep, ns)
+            mods, xl_mods, tags = self._parse_peptide_modifications(pep, ns, sequence or "")
 
             peptides[pep_id] = {
                 "sequence": sequence,
+                "peptidoform": build_proforma(sequence, tags) if sequence else "",
                 "modifications": mods or None,
                 "xl_mods": xl_mods,
             }
         return peptides
 
     @staticmethod
-    def _parse_peptide_modifications(pep, ns: str) -> tuple[list, dict]:
-        """Separate regular modifications from crosslink donor/acceptor sites."""
+    def _regular_modification(mod, ns: str, location: int, mass_text, sequence: str) -> tuple[dict, str]:
+        """The QPX modification and canonical ProForma tag of a non-cross-link Modification."""
+        mod_name = ""
+        mod_accession = None
+        for cv in mod.findall(f"{{{ns}}}cvParam"):
+            mod_name = cv.get("name", "")
+            mod_accession = cv.get("accession")
+            break  # Take first cvParam as the mod identity
+        residue = sequence[location - 1] if 0 < location <= len(sequence) else None
+        tag = canonical_mod_tag(mod_accession, mod_name, float(mass_text) if mass_text else None, residue, location == 0)
+        head = tag.split("|", 1)[0]
+        is_unimod = head.startswith("UNIMOD:")
+        return {
+            "name": mod_name if is_unimod and mod_name else head,
+            "accession": head if is_unimod else None,
+            "positions": [{"position": location, "amino_acid": mod.get("residues", "") or None, "scores": None}],
+        }, tag
+
+    @staticmethod
+    def _parse_peptide_modifications(pep, ns: str, sequence: str) -> tuple[list, dict, list[tuple[int, str]]]:
+        """Separate regular modifications from crosslink donor/acceptor sites.
+
+        Also returns the ``(position, tag)`` pairs of the regular modifications
+        in canonical ProForma form, checked against the reported mass.
+        """
         mods = []
+        tags: list[tuple[int, str]] = []
         xl_mods: dict[str, list[dict]] = {}  # keyed by xl pair value
 
         for mod in pep.findall(f"{{{ns}}}Modification"):
             location = int(mod.get("location", "0"))
-            mass_delta = float(mod.get("monoisotopicMassDelta", "0"))
+            mass_text = mod.get("monoisotopicMassDelta")
+            mass_delta = float(mass_text) if mass_text else 0.0
             residues = mod.get("residues", "")
 
             # Check for XL cvParams
@@ -151,28 +178,11 @@ class MzIdentMLPsmAdapter(BaseConverter):
                     break
 
             if not is_xl:
-                # Regular modification
-                mod_name = ""
-                mod_accession = None
-                for cv in mod.findall(f"{{{ns}}}cvParam"):
-                    mod_name = cv.get("name", "")
-                    mod_accession = cv.get("accession")
-                    break  # Take first cvParam as the mod identity
-                mods.append(
-                    {
-                        "name": mod_name or f"CHEMMOD:+{mass_delta}",
-                        "accession": mod_accession,
-                        "positions": [
-                            {
-                                "position": location,
-                                "amino_acid": residues or None,
-                                "scores": None,
-                            }
-                        ],
-                    }
-                )
+                mod_dict, tag = MzIdentMLPsmAdapter._regular_modification(mod, ns, location, mass_text, sequence)
+                mods.append(mod_dict)
+                tags.append((location, tag))
 
-        return mods, xl_mods
+        return mods, xl_mods, tags
 
     def _parse_peptide_evidence(self, root, ns: str) -> dict[str, dict]:
         """Map PeptideEvidence id → {peptide_ref, db_ref, is_decoy, start, end, pre, post}."""

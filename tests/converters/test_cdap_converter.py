@@ -452,12 +452,13 @@ def test_cdap_feature_representative_is_stable_on_full_tie(tmp_path):
     assert outputs[0]["additional_scores"] == outputs[1]["additional_scores"]
 
 
-def test_cdap_feature_chemmod_calc_mz_is_null_not_observed(tmp_path):
-    """An unparseable CHEMMOD must leave calculated_mz NULL, not fall back
-    to the observed precursor m/z (#250)."""
+def test_cdap_feature_unknown_mass_calc_mz_is_theoretical_not_observed(tmp_path):
+    """An unknown mass shift stays in the peptidoform as [+mass], and
+    calculated_mz is computed from it, never the observed precursor m/z (#250)."""
     from qpx.converters.cdap.feature_adapter import CdapFeatureAdapter
+    from qpx.converters.ptm import compute_precursor_mz
 
-    # +123.456 is not in the CDAP mass table -> CHEMMOD -> unparseable calc mass.
+    # +123.456 is not in the CDAP mass table -> kept as a mass shift.
     rows = [_base_row(PeptideSequence="PEP+123.456TIDEK", OriginalPrecursorMz="777.7", QueryPrecursorMz="777.7")]
     _write_psm(tmp_path / "psm", "chemmod.psm", rows)
 
@@ -468,7 +469,8 @@ def test_cdap_feature_chemmod_calc_mz_is_null_not_observed(tmp_path):
     table = pq.read_table(str(out))
     assert table.num_rows == 1
     calc = table.column("calculated_mz").to_pylist()[0]
-    assert calc is None
+    assert table.column("peptidoform").to_pylist()[0] == "PEP[+123.4560]TIDEK"
+    assert calc == pytest.approx(compute_precursor_mz("PEP[+123.4560]TIDEK", 2), abs=1e-3)
 
 
 def test_cdap_pg_distinct_groups_sharing_leader(tmp_path):

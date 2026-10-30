@@ -6,7 +6,7 @@ import re
 from functools import lru_cache
 from typing import Optional
 
-from qpx.converters.ptm import build_proforma
+from qpx.converters.ptm import NTERM, build_proforma, compute_precursor_mz, unimod_from_name
 
 PROTON_MASS: float = 1.007_276_466_77
 
@@ -14,45 +14,8 @@ PROTON_MASS: float = 1.007_276_466_77
 # MaxQuant modification name -> UNIMOD accession mapping
 # ---------------------------------------------------------------------------
 
-MQ_MOD_TO_UNIMOD: dict[str, int] = {
-    "oxidation (m)": 35,
-    "acetyl (protein n-term)": 1,
-    "carbamidomethyl (c)": 4,
-    "phospho (sty)": 21,
-    "phospho (s)": 21,
-    "phospho (t)": 21,
-    "phospho (y)": 21,
-    "deamidation (nq)": 7,
-    "deamidation (n)": 7,
-    "deamidation (q)": 7,
-    "gln->pyro-glu": 28,
-    "methyl (kr)": 34,
-    "methyl (k)": 34,
-    "methyl (r)": 34,
-    "dimethyl (kr)": 36,
-    "dimethyl (k)": 36,
-    "dimethyl (r)": 36,
-    "trimethyl (k)": 37,
-    "gg (k)": 121,
-    "formyl (protein n-term)": 122,
-    "carbamyl (protein n-term)": 5,
-    "tmt6plex (k)": 737,
-    "tmt6plex (n-term)": 737,
-    "tmt10plex (k)": 737,
-    "tmt10plex (n-term)": 737,
-    "tmt11plex (k)": 737,
-    "tmt11plex (n-term)": 737,
-    "tmt16plex (k)": 730,
-    "tmt16plex (n-term)": 730,
-    "tmtpro (k)": 730,
-    "tmtpro (n-term)": 730,
-    "itraq4plex (k)": 214,
-    "itraq4plex (n-term)": 214,
-    "itraq8plex (k)": 385,
-    "itraq8plex (n-term)": 385,
-    "pyro-glu from e": 214,
-}
-
+# Older MaxQuant versions abbreviate modifications in "Modified sequence"; full
+# names such as "Oxidation (M)" resolve through :func:`unimod_from_name`.
 MQ_SHORT_TO_UNIMOD: dict[str, int] = {
     "ox": 35,
     "ac": 1,
@@ -73,17 +36,87 @@ def _resolve_mq_mod(tag: str) -> str:
     if m:
         return f"UNIMOD:{m.group(1)}"
 
-    uid = MQ_MOD_TO_UNIMOD.get(tag.lower())
-    if uid is None:
-        uid = MQ_SHORT_TO_UNIMOD.get(tag.lower())
+    uid = MQ_SHORT_TO_UNIMOD.get(tag.lower()) or unimod_from_name(tag)
     if uid is not None:
         return f"UNIMOD:{uid}"
 
     return tag
 
 
+FixedMods = tuple[tuple[str, str], ...]
+
+
+def _site_list(sites: str) -> list[str]:
+    """Residues and ``N-term`` named by a MaxQuant or SDRF site field; protein N-term sites are skipped."""
+    text = sites.strip()
+    if text.lower() in ("n-term", "any n-term"):
+        return [NTERM]
+    if "term" in text.lower():
+        return []
+    return [aa for aa in text.replace(",", "") if aa.isalpha() and aa.isupper()]
+
+
+def sdrf_fixed_mods(entries: Optional[list[dict]]) -> FixedMods:
+    """Fixed modifications from the SDRF ``comment[modification parameters]`` entries.
+
+    *entries* is :meth:`SdrfConverter.parse_modification_params` output.
+    """
+    fixed: list[tuple[str, str]] = []
+    for entry in entries or []:
+        if not entry["fixed"]:
+            continue
+        accession = re.match(r"(?i)unimod:(\d+)$", entry["accession"] or "")
+        uid = int(accession.group(1)) if accession else unimod_from_name(entry["name"] or "")
+        if uid is None:
+            continue
+        position = (entry["position"] or "").strip().lower()
+        if position in ("any n-term", "n-term"):
+            sites = [NTERM]
+        elif "term" in position:
+            sites = []
+        else:
+            sites = _site_list(entry["target_amino_acid"] or "")
+        fixed.extend((site, f"UNIMOD:{uid}") for site in sites)
+    return tuple(fixed)
+
+
+def parameters_fixed_mods(parameters_path) -> FixedMods:
+    """Fixed modifications from the ``Fixed modifications`` row of MaxQuant's ``parameters.txt``."""
+    try:
+        with open(parameters_path, encoding="utf-8") as handle:
+            row = next((line for line in handle if line.startswith("Fixed modifications\t")), None)
+    except FileNotFoundError:
+        return ()
+    if row is None:
+        return ()
+    fixed: list[tuple[str, str]] = []
+    for name in row.split("\t", 1)[1].strip().split(";"):
+        match = re.match(r"(.+?)\s+\(([^()]*)\)$", name.strip())
+        uid = unimod_from_name(name) if match else None
+        if uid is not None:
+            fixed.extend((site, f"UNIMOD:{uid}") for site in _site_list(match.group(2)))
+    return tuple(fixed)
+
+
+def _with_fixed_mods(sequence: str, mods: list[tuple[int, str]], fixed_mods: FixedMods) -> list[tuple[int, str]]:
+    """Add the fixed modifications MaxQuant leaves out of ``Modified sequence``.
+
+    A fixed modification goes on every matching site that carries no other modification.
+    """
+    taken = {position for position, _ in mods}
+    extra = [(0, tag) for site, tag in fixed_mods if site == NTERM and 0 not in taken]
+    extra += [
+        (position, tag)
+        for position, aa in enumerate(sequence, start=1)
+        if position not in taken
+        for site, tag in fixed_mods
+        if site == aa
+    ]
+    return mods + extra
+
+
 @lru_cache(maxsize=8192)
-def to_proforma(modified_sequence: Optional[str]) -> str:
+def to_proforma(modified_sequence: Optional[str], fixed_mods: FixedMods = ()) -> str:
     """Convert a MaxQuant Modified sequence to ProForma notation.
 
     MaxQuant wraps sequences in underscores and uses parenthetical
@@ -92,6 +125,9 @@ def to_proforma(modified_sequence: Optional[str]) -> str:
         _PEPTM(Oxidation (M))IDEK_         -> PEPTM[UNIMOD:35]IDEK
         _(Acetyl (Protein N-term))PEPTIDEK_ -> [UNIMOD:1]-PEPTIDEK
         _(ac)PEPTIDEK_                      -> [UNIMOD:1]-PEPTIDEK
+
+    *fixed_mods* (``(site, tag)`` pairs) are written inline, since MaxQuant
+    omits fixed modifications and isobaric labels from the sequence.
     """
     if not isinstance(modified_sequence, str) or not modified_sequence:
         return ""
@@ -128,7 +164,15 @@ def to_proforma(modified_sequence: Optional[str]) -> str:
             i += 1
 
     plain_seq = "".join(plain_chars)
-    return build_proforma(plain_seq, mods)
+    return build_proforma(plain_seq, _with_fixed_mods(plain_seq, mods, fixed_mods))
+
+
+def mq_calculated_mz(peptidoform: Optional[str], charge: int, neutral_mass: Optional[float]) -> Optional[float]:
+    """Theoretical m/z of *peptidoform*; MaxQuant's ``Mass`` when a modification has no known mass."""
+    calculated = compute_precursor_mz(peptidoform, charge) if peptidoform else None
+    if calculated is None and neutral_mass and charge:
+        calculated = (neutral_mass + charge * PROTON_MASS) / charge
+    return calculated
 
 
 def parse_phospho_probabilities(

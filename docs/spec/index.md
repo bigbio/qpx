@@ -124,4 +124,4 @@ Several data structures are reused across multiple views. Each concept has its o
 
 ## Current status
 
-The QPX format is at **version 1.2**, primarily implemented in the [quantms workflow](https://github.com/bigbio/quantms). The format is open and can be adopted by any software tool. During the pre-2.0 stabilisation period, minor versions may include documented breaking changes; readers must check each file's `qpx_version` and the [versioning changelog](versioning.md). Every view file includes a `qpx_version` metadata field to identify which specification version produced it.
+The QPX format is at **version 1.3**, primarily implemented in the [quantms workflow](https://github.com/bigbio/quantms). The format is open and can be adopted by any software tool. During the pre-2.0 stabilisation period, minor versions may include documented breaking changes; readers must check each file's `qpx_version` and the [versioning changelog](versioning.md). Every view file includes a `qpx_version` metadata field to identify which specification version produced it.

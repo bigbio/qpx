@@ -1,5 +1,7 @@
 """Test shared PTM utilities (flat ptm.py)."""
 
+import pytest
+
 from qpx.converters.ptm import (
     UNIMOD_MASS,
     _normalize_peptidoform,
@@ -226,3 +228,101 @@ class TestComputePrecursorMz:
     def test_empty(self):
         assert compute_precursor_mz("", 2) is None
         assert compute_precursor_mz("PEPTIDE", 0) is None
+
+
+class TestUnimodRegistry:
+    """The curated Unimod table, the site-aware mass lookup and the name lookup."""
+
+    def test_names_and_masses_match_unimod(self):
+        import pyopenms
+
+        from qpx.converters.ptm import UNIMOD_MODS
+
+        db = pyopenms.ModificationsDB()
+        reference = {}
+        for index in range(db.getNumberOfModifications()):
+            mod = db.getModification(index)
+            reference.setdefault(mod.getUniModRecordId(), (mod.getId(), mod.getDiffMonoMass()))
+        for uid, (name, mass, _) in UNIMOD_MODS.items():
+            assert reference[uid][0] == name, uid
+            assert abs(reference[uid][1] - mass) < 1e-5, uid
+
+    @pytest.mark.parametrize(
+        ("mass", "residue", "nterm", "expected"),
+        [
+            (229.1629, "K", False, 737),
+            (304.2071, "K", False, 2016),
+            (304.2054, "K", False, 730),
+            (144.1021, None, True, 214),
+            (-17.0265, "Q", True, 28),
+            (-17.0265, "C", True, 385),
+            (-17.0265, None, False, None),
+            (-18.0106, "E", True, 27),
+            (15.9949, "M", False, 35),
+            (500.0, None, False, None),
+        ],
+    )
+    def test_mass_to_unimod(self, mass, residue, nterm, expected):
+        from qpx.converters.ptm import mass_to_unimod
+
+        assert mass_to_unimod(mass, residue, nterm) == expected
+
+    @pytest.mark.parametrize(
+        ("name", "expected"),
+        [
+            ("GlyGly (K)", 121),
+            ("Acetyl (Protein N-term)", 1),
+            ("Deamidation (NQ)", 7),
+            ("TMTpro (K)", 2016),
+            ("iTRAQ8plex (N-term)", 730),
+            ("Glu->pyro-Glu", 27),
+            ("Label:13C(6)15N(2)", 259),
+            ("Custom (K)", None),
+        ],
+    )
+    def test_unimod_from_name(self, name, expected):
+        from qpx.converters.ptm import unimod_from_name
+
+        assert unimod_from_name(name) == expected
+
+    def test_canonical_mod_tag(self):
+        from qpx.converters.ptm import canonical_mod_tag
+
+        assert canonical_mod_tag("UNIMOD:35", "Oxidation", 15.994915) == "UNIMOD:35"
+        assert canonical_mod_tag("UNIMOD:35", "Oxidation", 54.0106) == "+54.0106"
+        assert canonical_mod_tag("UNIMOD:99999", None, 54.0106) == "UNIMOD:99999|+54.0106"
+        assert canonical_mod_tag("MS:1001460", "unknown modification", 79.96633, "S") == "UNIMOD:21"
+        assert canonical_mod_tag(None, None, 1234.5678) == "+1234.5678"
+
+
+class TestBracketedTagsKeepParentheses:
+    """Parentheses inside a bracketed tag belong to the tag (no nested brackets)."""
+
+    @pytest.mark.parametrize("peptidoform", ["PEPK[GlyGly (K)]R", "PEPK[Label:13C(6)15N(2)]R"])
+    def test_inner_parentheses_untouched(self, peptidoform):
+        assert _normalize_peptidoform(peptidoform) == peptidoform
+
+    def test_positions_after_named_tag(self):
+        from qpx.converters.ptm import from_proforma
+
+        _, mods = from_proforma("AK[Acetyl (K)]PS[UNIMOD:21]TR", "AKPSTR")
+        assert [(m["name"], m["positions"][0]["position"]) for m in mods] == [("Acetyl (K)", 2), ("UNIMOD:21", 4)]
+
+
+@pytest.mark.parametrize(
+    ("raw", "canonical"),
+    [
+        ("PEPTM[Oxidation]K", "PEPTM[UNIMOD:35]K"),
+        ("[Acetyl]-PEPTIDE", "[UNIMOD:1]-PEPTIDE"),
+        ("PEPTC(Carbamidomethyl)K", "PEPTC[UNIMOD:4]K"),
+        ("PEPS[CHEMMOD:+79.966331]K", "PEPS[UNIMOD:21]K"),
+        ("PEPK[+54.01062]R", "PEPK[+54.0106]R"),
+        ("PEPK[UniMod:737]R", "PEPK[UNIMOD:737]R"),
+        ("[-17.0265]-QPEPK", "[UNIMOD:28]-QPEPK"),
+        ("PEPK[Custom (K)]R", "PEPK[Custom (K)]R"),
+    ],
+)
+def test_normalize_peptidoform(raw, canonical):
+    from qpx.converters.ptm import normalize_peptidoform
+
+    assert normalize_peptidoform(raw) == canonical

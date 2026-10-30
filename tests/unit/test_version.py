@@ -18,8 +18,8 @@ from tests.conftest import make_pg_record
 
 def test_spec_version_is_the_format_version():
     """The spec version is the two-component format version, distinct from the build."""
-    assert QPX_SPEC_VERSION == "1.2"
-    assert parse_spec_version(QPX_SPEC_VERSION) == (1, 2)
+    assert QPX_SPEC_VERSION == "1.3"
+    assert parse_spec_version(QPX_SPEC_VERSION) == (1, 3)
     assert parse_spec_version("1.0") < parse_spec_version("1.1")
 
 

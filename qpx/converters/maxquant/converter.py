@@ -61,7 +61,7 @@ class MaxQuantConverter(BaseOrchestrator):
                 logger.info("SDRF conversion complete")
 
         if PSM in structures and msms_file:
-            self._convert_psms(msms_file, output_folder / f"{prefix}.psm.parquet", spectral_data, ontology_entries)
+            self._convert_psms(msms_file, sdrf_file, output_folder / f"{prefix}.psm.parquet", spectral_data, ontology_entries)
             logger.info("MaxQuant PSM conversion complete")
 
         if FEATURE in structures and evidence_file:
@@ -106,7 +106,7 @@ class MaxQuantConverter(BaseOrchestrator):
         ]
         super()._write_provenance(output_folder, prefix, records)
 
-    def _convert_psms(self, msms_file, output_path, spectral_data, ontology_entries):
+    def _convert_psms(self, msms_file, sdrf_file, output_path, spectral_data, ontology_entries):
         """Write PSMs and collect their ontology and source mappings."""
         with MaxQuantPsmAdapter(
             duckdb_memory=self._memory,
@@ -118,6 +118,7 @@ class MaxQuantConverter(BaseOrchestrator):
                 output_path=str(output_path),
                 chunksize=_BATCH_SIZE,
                 spectral_data=spectral_data,
+                sdrf_path=str(sdrf_file) if sdrf_file else None,
             )
             ontology_entries.extend(score_ontology_entries(adapter.get_discovered_scores(), view=PSM))
             self._resolved_mappings_by_view[PSM] = adapter.get_resolved_columns()

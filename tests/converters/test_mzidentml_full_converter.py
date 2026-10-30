@@ -328,7 +328,7 @@ class TestIndexFallback:
         parsed = {
             "spectra_data": {"SD1": "e2e.mgf"},
             "db_sequences": {},
-            "peptides": {"Pep1": {"sequence": "PEPTIDE", "modifications": None, "xl_mods": {}}},
+            "peptides": {"Pep1": {"sequence": "PEPTIDE", "peptidoform": "PEPTIDE", "modifications": None, "xl_mods": {}}},
             "peptide_evidence": {},
             "linker_info": {},
             "spectrum_results": [
