@@ -184,6 +184,16 @@ with qpx.open_dataset("./PXD014414") as ds:
             print(f"  [{issue.severity}] {issue.message}")
 ```
 
+`validate()` takes:
+
+| Argument | Default | Meaning |
+|----------|---------|---------|
+| `structures` | all | Structure names to validate; a requested structure the dataset does not have, or could not read, is an error |
+| `strict` | `False` | Report the *strict* issues as errors, as `qpxc validate` does |
+| `semantic` | `False` | Also run the [semantic checks](#semantic-checks) |
+
+`qpxc validate` has no `--strict` flag: it always validates strictly, so a check that is only a warning from `ds.validate()`, such as a duplicate primary key, fails the command.
+
 ## Exit Codes
 
 | Code | Meaning |

@@ -25,7 +25,7 @@ This is a two-component scheme without patch numbers. The version applies to the
 
 ## Version in Files
 
-All serialized QPX views (PSM, Feature, PG, MZ, and the other Parquet and AnnData files) include a `qpx_version` field in their file-level metadata identifying which version of the QPX specification generated the file. In Parquet files it is a key-value pair in the file footer; in AnnData (`.h5ad`) and MuData (`.h5mu`) files it is stored under `uns`. Peptide- and protein-level summaries are derived [API views](views.md) computed on demand from these files, not standalone serialized files.
+All serialized QPX views (PSM, Feature, PG, MZ, and the other Parquet and AnnData files) include a `qpx_version` field in their file-level metadata identifying which version of the QPX specification generated the file. In Parquet files it is a key-value pair in the file footer; in AnnData (`.h5ad`) and MuData (`.h5mu`) files it is stored under `uns`. Files written by the qpx 1.0.x releases carry the package version instead, such as `1.0.2`; readers compare the first two components only, so such a file is specification 1.0. Peptide- and protein-level summaries are derived [API views](views.md) computed on demand from these files, not standalone serialized files.
 
 ```python
 import pyarrow.parquet as pq
@@ -102,8 +102,9 @@ This version defines all core serialized views (PSM, Feature, PG, MZ), the deriv
       source data as-produced and log a warning on a duplicate identity id rather
       than crashing (a duplicate usually signals a converter identity bug worth
       investigating). A **NULL primary key remains a fatal error**, and
-      `qpxc validate --strict` (the audit/CI path) still reports a duplicate
-      primary key as an **error**.
+      `qpxc validate` (the audit/CI path, which always validates strictly) and
+      `Dataset.validate(strict=True)` still report a duplicate primary key as an
+      **error**; `Dataset.validate()` reports it as a warning.
     - **No in-place migration.** These changes affect derived `pg_id` values and
       identity handling; regenerate qpx files by **re-converting from the original
       source files** — there is no on-disk migration.

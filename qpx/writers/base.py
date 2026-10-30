@@ -627,7 +627,7 @@ class BaseWriter:
         (bigbio/qpx#242). They are re-run here at ``close()`` over the complete
         written file, so the record/batch and table paths converge. Per the
         maintainer policy (1.1.2) these are **warnings** on the write/convert
-        path, never a raise; ``qpxc validate --strict`` stays the strict gate.
+        path, never a raise; ``qpxc validate`` (always strict) stays the strict gate.
         """
         if getattr(self._schema_class, "view_name", None) != "pg":
             return
