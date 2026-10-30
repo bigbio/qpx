@@ -140,6 +140,10 @@ sample of the run. `protein_view.intensity()` applies no q-value filter unless
 `q_value_threshold` is given. A view over a structure the dataset lacks raises a
 `ValueError` naming it.
 
+`.intensity()` returns a lazy result. `.filter("protein_group = 'P1;P2'")` narrows it
+in SQL, which DuckDB pushes into the scans, so a lookup does not read the whole view
+first; iterating a result, or `fetchone()`, streams its rows in batches.
+
 ### Abundance matrices
 
 `Dataset.intensity(level)` returns the long-form abundance (`sample_accession`,

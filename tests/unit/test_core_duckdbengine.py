@@ -192,6 +192,16 @@ def test_query_result(feature_parquet):
         partial.fetchone()
         assert QueryResult(engine.connection, "SELECT sequence FROM feature").to_arrow().num_rows == 3
         assert len(partial.fetchall()) == 2
+
+        # rows stream in batches, across other queries on the connection
+        many = QueryResult(engine.connection, "SELECT range AS i FROM range(25000)")
+        assert many.fetchone() == (0,)
+        assert QueryResult(engine.connection, "SELECT COUNT(*) FROM feature").fetchone() == (3,)
+        assert [row[0] for row in many] == list(range(1, 25000))
+
+        # filter narrows the rows of a query
+        charged = QueryResult(engine.connection, "SELECT sequence, charge FROM feature").filter("charge = 2")
+        assert {row[1] for row in charged.fetchall()} == {2}
     finally:
         engine.close()
 

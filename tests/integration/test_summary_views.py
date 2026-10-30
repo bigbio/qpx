@@ -48,9 +48,11 @@ def test_protein_and_peptide_views_leave_decoys_out(plex):
     with Dataset(plex) as ds:
         proteins = ds.protein_view.intensity().to_df()
         confident = ds.protein_view.intensity(q_value_threshold=0.01).to_df()
+        one_group = ds.protein_view.intensity().filter("protein_group = 'P1;P2'").to_df()
         peptides = ds.peptide_view.intensity().to_df()
     assert sorted(proteins["protein_group"]) == ["P1", "P1;P2"]
     assert confident["protein_group"].tolist() == ["P1"]
+    assert one_group["intensity"].tolist() == [20.0]
     assert sorted(peptides["sequence"]) == ["ONLYK", "SHAREDK"]
 
 

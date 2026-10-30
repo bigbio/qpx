@@ -108,38 +108,42 @@ class DuckDBEngine:
             self._setup_s3(s3_config)
 
     def _setup_s3(self, config: dict) -> None:
-        """Configure DuckDB httpfs for S3 access."""
+        """Configure DuckDB httpfs for S3 access.
+
+        The settings are GLOBAL so that cursors of the connection, which stream
+        query rows, read S3 too; the in-memory database is this engine's own.
+        """
         self._conn.execute("INSTALL httpfs")
         self._conn.execute("LOAD httpfs")
         if "region" in config:
             self._conn.execute(
                 sql_build(
-                    "SET s3_region='$val'",
+                    "SET GLOBAL s3_region='$val'",
                     val=_validate_set_value(config["region"], "s3_region"),
                 )
             )
         if "access_key_id" in config and "secret_access_key" in config:
             self._conn.execute(
                 sql_build(
-                    "SET s3_access_key_id='$val'",
+                    "SET GLOBAL s3_access_key_id='$val'",
                     val=_validate_set_value(config["access_key_id"], "s3_access_key_id"),
                 )
             )
             self._conn.execute(
                 sql_build(
-                    "SET s3_secret_access_key='$val'",
+                    "SET GLOBAL s3_secret_access_key='$val'",
                     val=_validate_set_value(config["secret_access_key"], "s3_secret_access_key"),
                 )
             )
         if "endpoint" in config:
             self._conn.execute(
                 sql_build(
-                    "SET s3_endpoint='$val'",
+                    "SET GLOBAL s3_endpoint='$val'",
                     val=_validate_set_value(config["endpoint"], "s3_endpoint"),
                 )
             )
         if config.get("anonymous", False):
-            self._conn.execute("SET s3_url_style='path'")
+            self._conn.execute("SET GLOBAL s3_url_style='path'")
 
     @property
     def connection(self) -> duckdb.DuckDBPyConnection:
