@@ -31,6 +31,7 @@ retained even when its intensity is null. Fields marked with
 | Field | Description | Type | Required |
 |-------|-------------|------|----------|
 | `pg_accessions` | Protein accessions of all proteins within this group | `array[string]` | Yes |
+| `pg_group_id` | Hash of the sorted `pg_accessions`; the same for all rows of a group and on `feature` (specification 1.3) | `int64`, null | No |
 | `pg_names` | Descriptive names for the proteins in the group | `array[string]` | No |
 | `gg_accessions` | Gene group accessions as a string array | `array[string]` | No |
 | `gg_names` | Gene names corresponding to the proteins in the group | `array[string]` | No |

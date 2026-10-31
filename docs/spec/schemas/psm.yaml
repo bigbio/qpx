@@ -59,6 +59,13 @@ fields:
   additional_scores:
     type: "list<score>"
     doc: "Search engine scores"
+  qvalue:
+    type: float64
+    minimum: 0
+    maximum: 1
+    nullable: true
+    optional: true
+    doc: "PSM-level q-value, filled from additional_scores at write time (scores.md); null when the source has none"
   predicted_rt:
     type: float32
     doc: "Predicted RT (seconds)"

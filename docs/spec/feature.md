@@ -55,6 +55,8 @@ These fields are shared with the PSM view and describe the peptide identificatio
 | `charge` | Charge of the quantified analyte | int16 | yes |
 | `posterior_error_probability` | Posterior error probability (PEP) for the peptide match | float64, null | no |
 | `peptide_qvalue` | Peptide-level q-value; null when the search engine does not provide one | float64, null | optional |
+| `precursor_qvalue` | Run-level precursor q-value, filled from `additional_scores` ([typed q-values](scores.md#typed-q-value-columns)); specification 1.3 | float64, null | No |
+| `global_qvalue` | Experiment-level precursor q-value, filled from `additional_scores`; specification 1.3 | float64, null | No |
 | `is_decoy` | Whether the peptide is a decoy match (`true`) or a target match (`false`); use `false` when no target-decoy search was used. A peptide that matches both target and decoy proteins (OpenMS `target_decoy = target+decoy`) is a target match | bool | yes |
 | `calculated_mz` | Theoretical peptide mass-to-charge ratio based on identified sequence and modifications; null when it cannot be calculated | float32, null | yes |
 | `observed_mz` | Experimental observed peptide mass-to-charge ratio; null when the producer reports no measured precursor m/z | float32, null | yes |
@@ -93,6 +95,7 @@ These fields are shared with the PSM view and describe the peptide identificatio
 | `anchor_protein` | One protein accession that represents the protein group; null when no protein mapping was performed (converters normalize blank/whitespace to null) | string, null | yes |
 | `unique` | True when the peptide's protein group has exactly one protein and the peptide maps to no other group; false when the group has several members or the peptide is shared with other groups; null when the group is unresolved | bool, null | no |
 | `pg_positions` | Peptide start and end positions within each protein in the protein group | array[struct], null | optional |
+| `pg_group_id` | Hash of the sorted `pg_accessions`, equal to `pg.pg_group_id`, to group and join without comparing lists; specification 1.3 | int64, null | No |
 | `pg_global_qvalue` | Global q-value of the protein group at the experiment level | float64, null | optional |
 | `gg_accessions` | Gene accessions associated with the protein group | array[string], null | optional |
 | `gg_names` | Gene names associated with the protein group | array[string], null | optional |

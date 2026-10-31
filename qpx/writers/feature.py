@@ -9,6 +9,7 @@ import pyarrow as pa
 from qpx.core.data import FeatureSchema
 from qpx.core.data.identity import derive_id
 from qpx.writers.base import BaseWriter
+from qpx.writers.derived import FEATURE_SCORE_COLUMNS, fill_group_ids, fill_score_columns
 
 _log = logging.getLogger(__name__)
 
@@ -41,6 +42,9 @@ class FeatureWriter(BaseWriter):
         """Derive identified Feature ids by default from the declared composite."""
         super().__init__(*args, override_provided_ids=override_provided_ids, **kwargs)
         self._unidentified_fallback_count = 0
+
+    def _derive_columns(self, table: pa.Table) -> pa.Table:
+        return fill_group_ids(fill_score_columns(table, FEATURE_SCORE_COLUMNS))
 
     def _should_override_provided_id(self, index: int, composite_values: dict[str, list]) -> bool:
         """Use the natural composite only for identified Features."""

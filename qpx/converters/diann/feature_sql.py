@@ -472,6 +472,10 @@ def _aggregate_channel_rows_sql(row_sql: str, target_schema: pa.Schema) -> str:
         "psm_ids",
         "pg_ids",
         "modification_candidates",
+        # Derived by the writer from additional_scores and pg_accessions.
+        "precursor_qvalue",
+        "global_qvalue",
+        "pg_group_id",
         # Producer-specific optional fields not emitted by DIA-NN.
         "identified_labels",
         "quantification_unit_id",

@@ -49,6 +49,10 @@ class Feature(BaseStructure):
         """Filter features by run file."""
         return self.filter(f"run_file_name = '{_escape_sql_string(run_file_name)}'")
 
+    def confident(self, max_qvalue: float = 0.01) -> Feature:
+        """Filter to target features at or below a run-level precursor q-value, else their peptide q-value."""
+        return self.filter(f"is_decoy = false AND COALESCE(precursor_qvalue, peptide_qvalue) <= {float(max_qvalue)}")
+
     def peptide_intensities(self) -> QueryResult:
         """
         Flatten intensities: one row per (peptide, label, intensity).

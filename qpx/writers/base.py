@@ -243,6 +243,10 @@ class BaseWriter:
         """Whether every row keeps its provided id, so the composite need not be read."""
         return not self._override_provided_ids and id_field in table.column_names and table.column(id_field).null_count == 0
 
+    def _derive_columns(self, table: pa.Table) -> pa.Table:
+        """Fill the columns this view derives from the others; none by default."""
+        return table
+
     def _fill_identity_table(self, table: pa.Table) -> pa.Table:
         """Return *table* with its derived-id column present and non-null.
 
@@ -253,6 +257,7 @@ class BaseWriter:
         stashing the original as a ``provided_<id>`` cv_param. This is the single
         derivation point for every write path (record, table, DataFrame).
         """
+        table = self._derive_columns(table)
         composite = self._identity_composite
         id_field = self._id_field
         if not composite or id_field is None:

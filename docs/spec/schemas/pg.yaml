@@ -17,6 +17,11 @@ fields:
     type: "list<string>"
     required: true
     doc: "Protein accessions within this group. Part of the default identity composite: the FULL group membership (not just the leader) keys the pg_id, so two distinct groups that happen to share a leading protein get distinct ids. Hashed order-independently (membership is a set)."
+  pg_group_id:
+    type: int64
+    nullable: true
+    optional: true
+    doc: "Hash of the sorted pg_accessions, equal for all rows of a group and to feature.pg_group_id, for grouping and joining without comparing lists"
   pg_names:
     type: "list<string>"
     doc: "Protein group names"

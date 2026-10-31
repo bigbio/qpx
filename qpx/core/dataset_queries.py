@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from qpx.core.convert import QueryResult
+from qpx.core.data.identity import derive_id
 from qpx.core.query import _escape_sql_string
 from qpx.core.sample_resolution import RUN_SAMPLES_SQL, feature_samples_sql
 from qpx.core.sql import escape_path, sql_build
@@ -86,22 +87,25 @@ class _DatasetQueryMixin:
     # ``grouped_runs`` is unnested so the run test is an equality: all three
     # conditions are then hash-join keys instead of a filter applied to every
     # same-membership pair. The view is unordered; link_feature_pg() sorts.
+    # Files with ``pg_group_id`` (spec 1.3) compare that flat key instead of lists.
     _LINK_FEATURE_PG_SQL = """
         WITH feat_labels AS (
             SELECT
                 f.feature_id AS feature_id,
                 f.run_file_name AS run_file_name,
-                list_sort(list_transform(f.pg_accessions, lambda x: x.accession)) AS membership,
+                $feature_membership AS membership,
                 UNNEST(list_transform(f.intensities, lambda i: i.label)) AS feature_label
             FROM feature f
+            $feature_filter
         ),
         pg_runs AS (
             SELECT
                 p.pg_id AS pg_id,
                 p.label AS label,
-                list_sort(p.pg_accessions) AS membership,
+                $pg_membership AS membership,
                 UNNEST(p.grouped_runs) AS run_file_name
             FROM pg p
+            $pg_filter
         )
         SELECT DISTINCT
             fl.feature_id AS feature_id,
@@ -121,16 +125,38 @@ class _DatasetQueryMixin:
     _FEATURE_PG_LINK_VIEW = "qpx_feature_pg_link"
     _FEATURE_PSM_LINK_VIEW = "qpx_feature_psm_link"
 
+    def _feature_pg_link_sql(self, group: list[str] | None = None) -> str:
+        """The softlink query, on ``pg_group_id`` when both views have it, optionally of one protein group."""
+        by_id = all("pg_group_id" in self._engine.view_columns(view) for view in ("feature", "pg"))
+        feature_membership = "f.pg_group_id" if by_id else "list_sort(list_transform(f.pg_accessions, lambda x: x.accession))"
+        pg_membership = "p.pg_group_id" if by_id else "list_sort(p.pg_accessions)"
+        feature_filter = pg_filter = ""
+        if group is not None:
+            members = "[" + ", ".join(f"'{_escape_sql_string(accession)}'" for accession in sorted(group)) + "]"
+            key = str(derive_id([sorted(group)])) if by_id else members
+            feature_filter = f"WHERE {feature_membership} = {key}"
+            pg_filter = f"WHERE {pg_membership} = {key}"
+        return sql_build(
+            self._LINK_FEATURE_PG_SQL,
+            feature_membership=feature_membership,
+            pg_membership=pg_membership,
+            feature_filter=feature_filter,
+            pg_filter=pg_filter,
+        )
+
     def _register_feature_pg_link_view(self) -> None:
         """Register the feature->pg softlink as the ``qpx_feature_pg_link`` view."""
-        self._engine.register_view(self._FEATURE_PG_LINK_VIEW, self._LINK_FEATURE_PG_SQL)
+        self._engine.register_view(self._FEATURE_PG_LINK_VIEW, self._feature_pg_link_sql())
 
     def _register_feature_psm_link_view(self) -> None:
         """Register the feature<->psm softlink as the ``qpx_feature_psm_link`` view."""
         self._engine.register_view(self._FEATURE_PSM_LINK_VIEW, self._LINK_FEATURE_PSM_SQL)
 
-    def link_feature_pg(self) -> QueryResult:
+    def link_feature_pg(self, group: list[str] | None = None) -> QueryResult:
         """Compute the feature->pg softlink as ``(feature_id, pg_id, label)`` rows.
+
+        ``group`` limits it to the protein group with exactly these members, which
+        is filtered before the join and takes a fraction of the whole link's time.
 
         A label-aware read-side join of the registered ``feature`` and ``pg``
         views (bigbio/qpx#269): a feature links to a pg row only when their
@@ -148,6 +174,8 @@ class _DatasetQueryMixin:
             channel/fraction produce no rows (this is correct, not an error).
         """
         self._require_feature_pg("link_feature_pg")
+        if group is not None:
+            return QueryResult(self._engine.connection, f"{self._feature_pg_link_sql(group)} ORDER BY feature_id, pg_id")
         self._register_feature_pg_link_view()
         return QueryResult(
             self._engine.connection, "SELECT feature_id, pg_id, label FROM qpx_feature_pg_link ORDER BY feature_id, pg_id"

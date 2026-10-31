@@ -47,6 +47,7 @@ step in `provenance.parquet`.
 | `mass_error_ppm` | Mass error in ppm: 1e6 × (observed_mz − calculated_mz) / calculated_mz | float32, null | no |
 | `missed_cleavages` | Number of missed enzymatic cleavages | int16, null | no |
 | `rt` | MS2 scan's retention time (in seconds) | float32, null | no |
+| `qvalue` | PSM-level q-value, filled from `additional_scores` ([typed q-values](scores.md#typed-q-value-columns)); specification 1.3 | float64, null | no |
 | `predicted_rt` | Predicted retention time of the peptide (in seconds) | float32, null | no |
 | `run_file_name` | Spectrum file name without path or extension | string | yes |
 | `scan` | Scan identifier as an array of integer components (e.g., `[43920]` for single-scan instruments, `[10, 1, 345]` for Waters function/process/scan) | array[int32] | yes |

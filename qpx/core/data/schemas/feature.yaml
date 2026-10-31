@@ -46,6 +46,20 @@ fields:
     nullable: true
     optional: true
     doc: "Peptide-level q-value; null/absent when the search engine does not provide one"
+  precursor_qvalue:
+    type: float64
+    minimum: 0
+    maximum: 1
+    nullable: true
+    optional: true
+    doc: "Run-level precursor q-value, filled from additional_scores at write time (scores.md); null when the source has none"
+  global_qvalue:
+    type: float64
+    minimum: 0
+    maximum: 1
+    nullable: true
+    optional: true
+    doc: "Experiment-level precursor q-value, filled from additional_scores at write time (scores.md); null when the source has none"
   is_decoy:
     type: bool
     required: true
@@ -131,6 +145,11 @@ fields:
   unique:
     type: bool
     doc: "True when the peptide resolves to a protein group of exactly one protein and maps to no other group; False when that group has several members or the producer assigned it a peptide shared with other groups (a razor peptide). Null when the group is unresolved, including a shared peptide the producer did not assign."
+  pg_group_id:
+    type: int64
+    nullable: true
+    optional: true
+    doc: "Hash of the sorted pg_accessions, equal to pg.pg_group_id, for grouping and joining without comparing lists; null without a protein group"
   pg_global_qvalue:
     type: float64
     minimum: 0

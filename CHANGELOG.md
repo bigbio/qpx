@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Specification 1.3: flat confidence and group keys.** `psm.qvalue`, `feature.precursor_qvalue` and `feature.global_qvalue` hold q-values under one name whichever tool produced them, filled by the writers from `additional_scores`, and `psm.confident()` and `feature.confident()` filter on them. `pg_group_id` on pg and feature is a hash of the group's sorted membership: `link_feature_pg()` joins on it, and `link_feature_pg(group=[...])` reads one group's link.
 - `qpxc convert maxquant` writes the pepmap view from `Proteins` of `evidence.txt`, and each LFQ feature's `MS/MS count` as `spectral_count`.
 - `DatasetCollection` registers one view per structure over all datasets, with a `source_dataset` column, next to the positional `feature_0` views, which change with the list order.
 - `to_df(dtype_backend="pyarrow")` keeps a view's columns in Arrow memory, and `Feature.intensities_wide(labels=...)` gives one intensity column per label. The cost of each way to read nested intensities is in the specification.

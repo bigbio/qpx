@@ -33,6 +33,19 @@ A producer writes `null` when it does not know the direction; it never defaults 
 ]
 ```
 
+### Typed q-value columns
+
+Filtering on a nested score reads about 100 times the data of a flat column, and a filter on one name misses other producers. Writers therefore copy q-values from `additional_scores` to flat columns (specification 1.3), which is the portable way to filter: `psm.confident()` and `feature.confident()` use them. Score names are compared in `snake_case`, and the first match of a row wins.
+
+| Column | Level and scope | Filled from |
+| ------ | --------------- | ----------- |
+| `psm.qvalue` | PSM, as computed by the source | `qvalue`, `q_value`, `psm_qvalue`, `psm_level_qvalue`, `<engine>_qvalue`, `<engine>_q_value`; not names of a higher level (`peptide`, `peptidoform`, `protein`, `pg`, `gg`, `global`, `precursor`) |
+| `feature.peptide_qvalue` | Peptide, as computed by the source | `peptide_qvalue`, `peptide_level_qvalue` |
+| `feature.precursor_qvalue` | Precursor, per run | `precursor_qvalue`, `qvalue`, `q_value`, `psm_level_qvalue` |
+| `feature.global_qvalue` | Precursor, per experiment | `global_qvalue` |
+
+A column stays null when the source has no such score, and the score stays in `additional_scores`.
+
 ### Recommended score names
 
 The following score names are commonly used across QPX views. All names are `snake_case`. For formal ontology names and accessions, see the [Ontology Mapping](ontology.md#scores).
