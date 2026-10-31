@@ -26,6 +26,7 @@ from qpx.writers.pg import PgWriter
 logger = logging.getLogger(__name__)
 
 _EXT_RE = re.compile(r"\.(mzML|raw|d|wiff|htrms)$", re.IGNORECASE)
+_IS_IMPUTED_COLUMN = "EG.IsImputed"
 
 
 class SpectronautPgAdapter(SpectronautBaseAdapter):
@@ -115,6 +116,10 @@ class SpectronautPgAdapter(SpectronautBaseAdapter):
         gg_col = r.get("gg_accessions")
         if gg_col and gg_col in report_cols:
             parts.append(f'FIRST(r."{gg_col}") AS gg_accessions')
+
+        # A group's quantity in a run is imputed when every precursor behind it is.
+        if _IS_IMPUTED_COLUMN in report_cols:
+            parts.append(f'BOOL_AND(TRY_CAST(r."{_IS_IMPUTED_COLUMN}" AS BOOLEAN)) AS is_imputed')
 
         # Peptide counting columns
         seq_col = "PEP.StrippedSequence"
@@ -235,6 +240,7 @@ class SpectronautPgAdapter(SpectronautBaseAdapter):
             "gg_names": gg_accessions,
             "gg_qvalue": None,
             "anchor_protein": anchor_protein,
+            "is_imputed": row["is_imputed"] if pd.notna(row.get("is_imputed")) else None,
             "grouped_runs": [run_file_name],
             "global_qvalue": global_qvalue,
             "pg_qvalue": pg_qvalue,

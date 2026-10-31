@@ -323,8 +323,9 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
                     "higher_better": True,
                 }
             )
+        # MaxQuant writes 0 when it did not compute the fraction.
         pif = safe_float(row.get("PIF"))
-        if pif is not None:
+        if pif:
             additional_scores.append(
                 {
                     "score_name": "parent_ion_fraction",

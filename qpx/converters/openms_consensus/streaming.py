@@ -102,14 +102,28 @@ def _se_engines(search_meta: dict[str, str]) -> list[tuple[str, str]]:
     return [(key[3:], value) for key, value in search_meta.items() if key.startswith("SE:")]
 
 
-def _software(element) -> tuple[str, str, str] | None:
-    """A ``dataProcessing`` element's software as (name, version, processing action); None without a name."""
+# Parameters that say how a tool was run on this machine, not what it computed.
+_EXECUTION_PARAMETERS = {"in", "out", "log", "debug", "threads", "no_progress", "test", "force", "ini", "write_ini"}
+
+
+def _tool_parameters(element) -> tuple[tuple[str, str], ...]:
+    """The ``parameter: <name>`` user params of a ``dataProcessing`` element, without the execution ones."""
+    prefix = "parameter: "
+    return tuple(
+        (name.removeprefix(prefix), value)
+        for name, value in _user_params(element).items()
+        if name.startswith(prefix) and name.removeprefix(prefix) not in _EXECUTION_PARAMETERS
+    )
+
+
+def _software(element) -> tuple[str, str, str, tuple[tuple[str, str], ...]] | None:
+    """A ``dataProcessing`` element's software as (name, version, processing action, parameters); None without a name."""
     software = next((child for child in element if _localname(child.tag) == "software"), None)
     if software is None or not software.attrib.get("name"):
         return None
     action = next((child for child in element if _localname(child.tag) == "processingAction"), None)
     action_name = action.attrib.get("name", "") if action is not None else ""
-    return software.attrib["name"], software.attrib.get("version", ""), action_name
+    return software.attrib["name"], software.attrib.get("version", ""), action_name, _tool_parameters(element)
 
 
 class ProvenanceHeader(NamedTuple):
@@ -117,7 +131,7 @@ class ProvenanceHeader(NamedTuple):
 
     search_engines: list[tuple[str, str]]
     original_search_engines: list[tuple[str, str]]
-    data_processing: list[tuple[str, str, str]]
+    data_processing: list[tuple[str, str, str, tuple[tuple[str, str], ...]]]
 
 
 def read_provenance_header(path: str) -> ProvenanceHeader:

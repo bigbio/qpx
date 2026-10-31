@@ -174,6 +174,18 @@ _PRECURSOR_LAYER_QUERY = """
     WHERE x.intensity_value IS NOT NULL AND $label
     """
 
+_PRECURSOR_IMPUTED_QUERY = """
+    SELECT run_file_name, intensity_label, precursor_id, 1.0::FLOAT AS intensity
+    FROM (
+        SELECT f.run_file_name,
+               f.peptidoform || '|' || CAST(f.charge AS VARCHAR) AS precursor_id,
+               UNNEST(f.imputed_labels) AS intensity_label
+        FROM feature f
+        WHERE NOT f.is_decoy
+    )
+    WHERE $label
+    """
+
 # A protein group is quantified once for its unit, the runs in grouped_runs (the
 # fractions of one sample or plex), so an observation of the proteins modality is
 # a unit, named after its first run. Variables are groups keyed by their sorted
@@ -189,6 +201,15 @@ _PROTEIN_QUERY = f"""
            p.intensity
     FROM pg p
     WHERE NOT p.is_decoy AND p.intensity IS NOT NULL AND $label
+    """
+
+_PROTEIN_IMPUTED_QUERY = f"""
+    SELECT {_UNIT_SQL} AS run_file_name,
+           CAST(p.label AS VARCHAR) AS intensity_label,
+           {_GROUP_SQL} AS protein_group,
+           1.0::FLOAT AS intensity
+    FROM pg p
+    WHERE NOT p.is_decoy AND p.is_imputed AND $label
     """
 
 _PROTEIN_LAYER_QUERY = f"""
@@ -356,6 +377,27 @@ def _additional_layers(
     return layers
 
 
+def _imputed_mask_layer(
+    engine: DuckDBEngine,
+    query: str,
+    label_column: str,
+    intensity_label: str | None,
+    var_col: str,
+    observations: pd.Index,
+    variables: pd.Index,
+) -> dict[str, sparse.csr_matrix]:
+    """The ``imputed_mask`` layer, 1 in the cells the tool imputed; empty when none are."""
+    table = _query_arrow(engine, query, label_column, intensity_label)
+    if table.num_rows == 0:
+        return {}
+    row_col = "run_file_name"
+    if intensity_label is None:
+        table = _with_observation_id(table)
+        row_col = "observation_id"
+    # Summed cells stack the flags of the rows behind them.
+    return {"imputed_mask": _pivot_arrow_to_sparse(table, row_col, var_col, "intensity", observations, variables).sign()}
+
+
 def _build_precursor_adata(
     engine: DuckDBEngine,
     intensity_label: str | None,
@@ -379,6 +421,10 @@ def _build_precursor_adata(
     layers = _additional_layers(
         engine, _PRECURSOR_LAYER_QUERY, "a.label", intensity_label, "precursor_id", observations, precursors
     )
+    if "imputed_labels" in engine.view_columns("feature"):
+        layers |= _imputed_mask_layer(
+            engine, _PRECURSOR_IMPUTED_QUERY, "intensity_label", intensity_label, "precursor_id", observations, precursors
+        )
 
     obs = _load_run_obs(engine, observation_keys, all_labels=intensity_label is None)
     var = pd.DataFrame(index=precursors)
@@ -419,6 +465,10 @@ def _build_protein_adata(
 
     intensity_matrix = _pivot_arrow_to_sparse(table, row_col, "protein_group", "intensity", observations, groups)
     layers = _additional_layers(engine, _PROTEIN_LAYER_QUERY, "p.label", intensity_label, "protein_group", observations, groups)
+    if "is_imputed" in engine.view_columns("pg"):
+        layers |= _imputed_mask_layer(
+            engine, _PROTEIN_IMPUTED_QUERY, "p.label", intensity_label, "protein_group", observations, groups
+        )
 
     obs = _load_run_obs(engine, observation_keys, all_labels=intensity_label is None)
     obs = _unit_obs(engine, obs, all_labels=intensity_label is None)

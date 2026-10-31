@@ -65,9 +65,10 @@ _FRACTION_SUM_TOLERANCE = 1e-6
 # Producers round candidate probabilities (MaxQuant to three decimals), so an
 # alternative group can sum to a few thousandths above 1.
 _CANDIDATE_SUM_TOLERANCE = 0.01
-# Closed vocabularies of the site and proteoform views. ``prior_evidence`` and
-# ``source`` are open: producers name their own evidence classes and sources.
+# Closed vocabularies. ``prior_evidence`` and ``source`` are open: producers name
+# their own evidence classes and sources.
 _VOCABULARIES = {
+    "feature": {"identification_type": ("direct", "transferred", "secondary")},
     "proteoform": {"kind": ("canonical", "isoform", "variant", "chain"), "evidence": ("specific", "shared")},
 }
 # Views that describe the whole dataset in exactly one row.

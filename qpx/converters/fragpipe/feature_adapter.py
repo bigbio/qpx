@@ -46,6 +46,8 @@ _PSM_LOOKUP_SQL = """
 
 # Derive field map from central YAML mappings
 _FEATURE_MAP = get_field_mappings("fragpipe", "feature")
+# IonQuant's per-experiment ``Match Type`` column.
+_IDENTIFICATION_TYPES = {"MS/MS": "direct", "MBR": "transferred"}
 _FEATURE_IDENTITY_COMPOSITE = (
     "quantification_unit_id",
     "peptidoform",
@@ -328,7 +330,8 @@ class FragPipeFeatureAdapter(BaseConverter):
             # experiment whose feature was identified there by MS/MS rather than
             # transferred by match-between-runs. One combined Feature of a
             # multi-run experiment cannot represent one fraction's PSM.
-            id_run = runs[0] if len(runs) == 1 and row.get(f"{experiment} Match Type") != "MBR" else None
+            match_type = row.get(f"{experiment} Match Type")
+            id_run = runs[0] if len(runs) == 1 and match_type != "MBR" else None
             psm = psm_lookup.get((id_run, common_fields["peptidoform"], str(common_fields["charge"])))
 
             psm_fields = self._feature_psm_fields(psm, mz, protein_raw)
@@ -349,6 +352,7 @@ class FragPipeFeatureAdapter(BaseConverter):
                 "ion_mobility_stop": None,
                 "gg_accessions": None,
                 "id_run_file_name": id_run,
+                "identification_type": _IDENTIFICATION_TYPES.get(match_type),
                 "rt_start": None,
                 "rt_stop": None,
             }

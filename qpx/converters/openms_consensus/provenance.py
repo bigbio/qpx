@@ -63,6 +63,9 @@ def _inputs_are_isobaric(consensusxml_paths: list[str]) -> bool:
     return any(_consensus_is_isobaric(header) for header in headers if header is not None)
 
 
+_SEMANTIC_PARAMETERS = {"isotope_correction": "isotope_corrected", "normalization": "normalization"}
+
+
 def _provenance_sources(headers) -> tuple[list, list, list]:
     """Deduplicate original engines, rescoring engines and processing tools."""
     original = list(dict.fromkeys(engine for header in headers for engine in header.original_search_engines))
@@ -101,6 +104,20 @@ def _search_steps(original, engines, psm_views) -> list[dict]:
     return steps
 
 
+def _step_parameters(tool_parameters) -> list[dict] | None:
+    """A processing step's parameters, led by the intensity semantics they state.
+
+    IsobaricAnalyzer nests these as ``quantification:isotope_correction`` and
+    ``quantification:normalization``; the spec names them independently of the tool.
+    """
+    semantics = []
+    for name, value in tool_parameters:
+        option = name.rsplit(":", maxsplit=1)[-1]
+        if option in _SEMANTIC_PARAMETERS:
+            semantics.append({"key": _SEMANTIC_PARAMETERS[option], "value": value})
+    return semantics + [{"key": name, "value": value} for name, value in tool_parameters] or None
+
+
 def _quantification_steps(software, core_views, consensusxml_paths) -> tuple[list[dict], str, Optional[str]]:
     """Quantification steps from the recorded processing tools, or one OpenMS workflow step when none is recorded."""
     steps = [
@@ -109,12 +126,13 @@ def _quantification_steps(software, core_views, consensusxml_paths) -> tuple[lis
             step_name=normalize_score_name(action) or "quantification",
             tool_name=name,
             tool_version=version,
+            parameters=_step_parameters(parameters),
             output_views=core_views,
         )
-        for name, version, action in software
+        for name, version, action, parameters in software
     ]
     if software:
-        versions = {version for _, version, _ in software}
+        versions = {version for _, version, _, _ in software}
         software_name = "OpenMS"
         software_version = next(iter(versions)) if len(versions) == 1 and "" not in versions else None
     else:

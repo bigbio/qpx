@@ -106,7 +106,8 @@ class MaxQuantConverter(BaseOrchestrator):
                 "tool_name": "MaxQuant",
                 "tool_version": None,
                 "tool_uri": None,
-                "parameters": None,
+                # The primary intensities: `Reporter intensity` and `Intensity`, not their corrected or LFQ forms.
+                "parameters": [{"key": "isotope_corrected", "value": "false"}, {"key": "normalization", "value": "none"}],
                 "config": None,
                 "output_views": structures,
             },

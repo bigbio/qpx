@@ -47,7 +47,6 @@ _SCORE_MAPPINGS = [
 _CV_MAPPINGS = [
     ("EG.iRTPredicted", "predicted_irt"),
     ("EG.iRTEmpirical", "empirical_irt"),
-    ("EG.IsImputed", "is_imputed"),
 ]
 
 _RT_SECONDS_FACTOR = 60.0
@@ -312,10 +311,23 @@ class SpectronautFeatureAdapter(SpectronautBaseAdapter):
         parts.append(f"{ge} AS gg_accessions")
         parts.append(f"{ge} AS gg_names")
 
-        # id_run_file_name
-        run_col = r["run_file_name"]
-        parts.append(f"regexp_replace(FIRST(r.\"{run_col}\"), '\\.(mzML|raw|d|wiff|htrms)$', '', 'i') AS id_run_file_name")
         return parts
+
+    def _build_identification_select_parts(self, r: dict, report_cols: set[str]) -> list[str]:
+        """Build SQL for the identifying run, and how the tool arrived at it when ``EG.IsImputed`` says."""
+        run_col = r["run_file_name"]
+        run_name = f"regexp_replace(FIRST(r.\"{run_col}\"), '\\.(mzML|raw|d|wiff|htrms)$', '', 'i')"
+        imputed_col = r.get("is_imputed")
+        if not imputed_col or imputed_col not in report_cols:
+            return [f"{run_name} AS id_run_file_name"]
+        # An imputed peak was not identified in this run: its identification came from another one.
+        imputed = f'TRY_CAST(FIRST(r."{imputed_col}") AS BOOLEAN)'
+        labels = ", ".join(f"'{label}'" for label in self._label_columns or ("LFQ",))
+        return [
+            f"CASE WHEN {imputed} THEN NULL ELSE {run_name} END AS id_run_file_name",
+            f"CASE {imputed} WHEN TRUE THEN 'transferred' WHEN FALSE THEN 'direct' END AS identification_type",
+            f"CASE WHEN {imputed} THEN [{labels}] END AS imputed_labels",
+        ]
 
     def _build_batch_sql(
         self,
@@ -331,6 +343,7 @@ class SpectronautFeatureAdapter(SpectronautBaseAdapter):
         r = self._resolved
         parts = self._build_core_select_parts(r, report_cols)
         parts.extend(self._build_meta_select_parts(r, report_cols))
+        parts.extend(self._build_identification_select_parts(r, report_cols))
 
         # --- Nested columns ---
         parts.append(self._build_intensities_sql(r))

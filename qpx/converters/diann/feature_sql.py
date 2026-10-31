@@ -479,6 +479,15 @@ def _aggregate_channel_rows_sql(row_sql: str, target_schema: pa.Schema) -> str:
         "irt",
         # Producer-specific optional fields not emitted by DIA-NN.
         "identified_labels",
+        "identification_type",
+        "match_score",
+        "match_qvalue",
+        "match_rt_delta",
+        "match_mz_delta",
+        "imputed_labels",
+        "parent_ion_fraction",
+        "quant_scan",
+        "quant_ms_level",
         "rt_aligned",
         "quantification_unit_id",
         "compensation_voltage",
@@ -520,10 +529,10 @@ def _aggregate_channel_rows_sql(row_sql: str, target_schema: pa.Schema) -> str:
 def _build_additional_intensities_sql(r: dict, _has, label_expr: str = "'LFQ'") -> str:
     """Build SQL for the additional_intensities nested column."""
     candidates = [
-        ("PG.MaxLFQ", "maxlfq"),
+        ("PG.MaxLFQ", "pg_maxlfq"),
     ]
     if "normalize_intensity" in r:
-        candidates.append((r["normalize_intensity"], "precursor_normalised"))
+        candidates.append((r["normalize_intensity"], "normalize_intensity"))
     if "ms1_area" in r:
         candidates.append((r["ms1_area"], "ms1_area"))
     entries, checks = [], []

@@ -132,6 +132,23 @@ Each entry in `pg_positions` contains:
 | `id_run_file_name` | The run file containing the best PSM that identified the feature (may differ from `run_file_name`) | string, null | no |
 | `scan` | Scan identifier of the best PSM that identified the feature, as an array of integer components (e.g., `[43920]` for single-scan instruments, `[10, 1, 345]` for Waters function/process/scan) | array[int32] | yes |
 
+### Identification Origin
+
+| Field | Description | Type | Required |
+|-------|-------------|------|----------|
+| `identification_type` | How the tool identified the feature in this run: `direct` (its own MS/MS), `transferred` (matched from another run), `secondary` (a co-fragmenting peptide of a chimeric spectrum). Null when the tool does not say; `id_run_file_name` is null for a transferred row and can be null for other reasons, so filter on this field. | string, null | No |
+| `match_score`, `match_qvalue` | The tool's score and q-value for the match of a transferred identification | float, null | No |
+| `match_rt_delta`, `match_mz_delta` | Difference of a transferred identification from its donor, in seconds and Th | float, null | No |
+| `imputed_labels` | Labels of `intensities` entries whose value the tool imputed instead of measuring. Null when none are or the tool does not say. | array[string], null | No |
+
+### Isobaric Quantification Scan
+
+| Field | Description | Type | Required |
+|-------|-------------|------|----------|
+| `parent_ion_fraction` | Fraction of the isolation window's signal from the target precursor, 0-1. Isolation interference is one minus this. | float, null | No |
+| `quant_scan` | Scan the reporter intensities were read from, as the integer components `scan` uses. Differs from `scan` under SPS-MS3. | array[int32], null | No |
+| `quant_ms_level` | MS level of that scan, 2 or 3, when the producer records it | int32, null | No |
+
 ### Optional Cross-References
 
 | Field | Description | Type | Required |

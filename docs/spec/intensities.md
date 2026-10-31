@@ -104,6 +104,10 @@ zeros a tool uses as a "not quantified" sentinel as null instead. `NaN`, infinit
 values are not valid intensities. The protein-group view follows the same rule with one row per
 label (see [Protein Group](pg.md)).
 
+A value the tool imputed instead of measuring is an ordinary entry with its label in
+`feature.imputed_labels`, or a pg row with `is_imputed` true. `build_mudata()` adds those cells as
+the layer `imputed_mask`.
+
 !!! note
     For LFQ experiments, each feature row corresponds to one MS run and one sample, so the `intensities` array has at most one element. For multiplexed experiments (TMT, iTRAQ), the array contains one element per measured label.
 
@@ -146,8 +150,23 @@ additional_intensities: array[struct{
 ]
 ```
 
-!!! tip
-    Common `intensity_name` values include `normalize_intensity`, `lfq`, `ibaq`, and `maxlfq`. Tool-specific names are acceptable when no standard name exists.
+### Intensity names
+
+Each `intensity_name` has one meaning, including its level: a name on a feature row is a value of that precursor unless it starts with `pg_`, which marks a value of the feature's protein group repeated on its rows. Protein-group names are in [Recommended Intensity Names](pg.md#recommended-intensity-names). Tool-specific names are acceptable when no name below fits, in `snake_case`.
+
+| `intensity_name` on a feature | Source tool(s) | Description |
+|---|---|---|
+| `normalize_intensity` | DIA-NN | The tool's normalised precursor quantity (`Precursor.Normalised`) |
+| `ms1_area` | DIA-NN | MS1 area of the precursor |
+| `spectral_count` | MaxQuant | MS/MS scans of the evidence row (`MS/MS count`) |
+| `reporter_intensity_corrected` | MaxQuant (TMT/iTRAQ) | Isotope-purity-corrected reporter intensity |
+| `ratio_<num>_<den>` | MaxQuant, OpenMS | Ratio of two labels of a multiplet, on the numerator label |
+| `pg_maxlfq` | DIA-NN | MaxLFQ quantity of the protein group (`PG.MaxLFQ`) |
+| `pg_quantity` | Spectronaut | Quantity of the protein group (`PG.Quantity`) |
+
+### Processing state
+
+The primary intensities' processing is stated on the tool's step in the [provenance view](provenance.md), when the converter knows it, as the `parameters` keys `isotope_corrected` (`true`/`false`, for isobaric reporter intensities) and `normalization` (`none`, or the tool's value). No key means the input does not say. Compare intensities across datasets only when these agree.
 
 ## When to use which field
 

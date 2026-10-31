@@ -110,6 +110,11 @@ fields:
   additional_scores:
     type: "list<score>"
     doc: "Additional scores"
+  is_imputed:
+    type: bool
+    nullable: true
+    optional: true
+    doc: "Whether the tool imputed this quantity instead of measuring it; null when the tool does not say"
   cv_params:
     type: "list<cv_param>"
     doc: "CV parameters"

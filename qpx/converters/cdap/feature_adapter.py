@@ -222,6 +222,7 @@ class CdapFeatureAdapter(CdapBaseAdapter):
                 "gg_accessions": None,
                 "gg_names": None,
                 "id_run_file_name": run_file_name,
+                "identification_type": "direct",
                 "rt_start": None,
                 "rt_stop": None,
             }

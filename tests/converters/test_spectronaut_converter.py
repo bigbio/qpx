@@ -235,7 +235,8 @@ class TestRunNameNormalization:
             "intensity": "INT",
         }
         core = FeatureAdapter._build_core_select_parts(r, set())
-        meta = FeatureAdapter._build_meta_select_parts(r, set())
+        with FeatureAdapter() as adapter:
+            meta = adapter._build_identification_select_parts(r, set())
         pg = PgAdapter._build_pg_select_parts(r, set())
 
         feat_run = next(self._run_expr(p) for p in core if p.endswith("AS run_file_name"))

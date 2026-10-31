@@ -64,6 +64,10 @@ provenance_schema = pa.schema(
 
 `qpxc convert` adds the options a conversion ran with to the `parameters` of its `format_conversion` step, defaults included: every option that shapes the output, such as `qvalue_threshold` (`none` when unset, so "not filtered" is on record), `structures` or `rank1_only`. An input path is recorded by file name, and an input file also by its SHA-256 as `<option>_sha256`. Output locations and resource limits are not recorded.
 
+## Recorded tool parameters
+
+`qpxc convert openms-consensus` copies the `parameter:` values OpenMS stores in the consensusXML header to the `parameters` of each tool's step, without the ones about how it ran (`in`, `out`, `threads`, ...). Keys `isotope_corrected` and `normalization` state the processing of the primary intensities; see [Processing state](intensities.md#processing-state).
+
 ## Step Categories
 
 Each processing step belongs to a category that groups steps by function.

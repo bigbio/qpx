@@ -33,6 +33,7 @@ from qpx.converters.maxquant.constants import (
     mq_observed_mz,
     to_proforma,
 )
+from qpx.converters.maxquant.evidence_fields import identification_fields
 from qpx.converters.maxquant.protein_fields import group_ids, parse_genes
 from qpx.converters.maxquant.silac import (
     identified_labels,
@@ -724,4 +725,5 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         return {
             "missed_cleavages": missed_cleavages,
             "id_run_file_name": id_run_file_name,
+            **identification_fields(row, evidence_type),
         }

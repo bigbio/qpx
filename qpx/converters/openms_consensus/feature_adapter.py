@@ -20,6 +20,7 @@ from qpx.converters.channel_labels import normalize_label
 from qpx.converters.openms_consensus.channels import Ms1Channels, column_labels, label_state_params, list_value, ratio_name
 from qpx.converters.openms_consensus.modifications import localization_scores, to_modifications
 from qpx.converters.openms_consensus.protein_groups import ProteinGroupIndex, identification_identifier
+from qpx.converters.openms_consensus.quant_scan import quant_scan_fields
 from qpx.converters.utils import canonical_accession, mass_error_ppm, safe_float
 from qpx.core.cleavage import count_missed_cleavages
 from qpx.core.files import run_file_stem as _run_stem
@@ -498,7 +499,7 @@ def _peptide_positions(hit) -> set[tuple[str, int, int]]:
 
 
 def _feature_evidence_by_run(pids, map_info, cf_runs, resolve_run):
-    """Collect evidence once per consensus feature, including unresolved source runs."""
+    """Collect evidence once per consensus feature; identifications of no known run are under ``None``."""
     sequence = pids[0].getHits()[0].getSequence()
     by_run: dict[str, dict] = {}
     all_positions: set[tuple[str, int, int]] = set()
@@ -510,11 +511,10 @@ def _feature_evidence_by_run(pids, map_info, cf_runs, resolve_run):
         positions = _peptide_positions(hits[0]) if matches else set()
         all_positions.update(positions)
         run = _pid_run(pid, map_info, cf_runs, resolve_run)
-        if run is not None:
-            evidence = by_run.setdefault(run, {"consistent": True, "has_spectrum": False, "positions": set()})
-            evidence["consistent"] = evidence["consistent"] and matches
-            evidence["has_spectrum"] = evidence["has_spectrum"] or bool(_pid_scans(pid))
-            evidence["positions"].update(positions)
+        evidence = by_run.setdefault(run, {"consistent": True, "has_spectrum": False, "positions": set()})
+        evidence["consistent"] = evidence["consistent"] and matches
+        evidence["has_spectrum"] = evidence["has_spectrum"] or bool(_pid_scans(pid))
+        evidence["positions"].update(positions)
     return by_run, all_positions
 
 
@@ -529,15 +529,19 @@ def _feature_identification_fields(run, protein_fields, evidence_by_run, all_pos
     """
     evidence = evidence_by_run.get(run, {"consistent": False, "has_spectrum": False, "positions": all_positions})
     if run in evidence_by_run and not evidence["consistent"]:
-        return {"id_run_file_name": None, "pg_positions": None}
+        return {"id_run_file_name": None, "identification_type": None, "pg_positions": None}
     members = {entry["accession"] for entry in protein_fields.get("pg_accessions") or []}
     positions = [
         {"protein_accession": acc, "start": start, "end": end}
         for acc, start, end in sorted(evidence["positions"])
         if not members or acc in members
     ]
+    direct = evidence["consistent"] and evidence["has_spectrum"]
+    # A run without identifications of its own was matched in, unless one has no known run.
+    transferred = run not in evidence_by_run and None not in evidence_by_run
     return {
-        "id_run_file_name": run if evidence["consistent"] and evidence["has_spectrum"] else None,
+        "id_run_file_name": run if direct else None,
+        "identification_type": "direct" if direct else "transferred" if transferred else None,
         "pg_positions": positions or None,
     }
 
@@ -753,6 +757,7 @@ def feature_records_for_cf(
         protein_fields = dict.fromkeys(protein_fields)
     identified = _identified_labels_by_run(pids, map_info, cf_runs, resolve_run, ms1) if ms1 else {}
     ratios = _evidence_ratios_by_run(cf, ms1) if ms1 else {}
+    scan_fields = quant_scan_fields(cf)
     records: list[dict] = []
     for run, entry in by_run.items():
         intensities = [{"label": label, "intensity": inten} for label, inten in entry["labels"].items()]
@@ -768,6 +773,7 @@ def feature_records_for_cf(
             "peptide_qvalue": peptide_qvalue,
             **run_protein_fields,
             **_feature_identification_fields(run, run_protein_fields, evidence_by_run, all_positions),
+            **scan_fields,
         }
         if ms1:
             lightest = next(iter(ms1.run_labels(run)), None)

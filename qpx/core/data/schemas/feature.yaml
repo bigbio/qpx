@@ -193,6 +193,51 @@ fields:
   id_run_file_name:
     type: string
     doc: "Run file containing best PSM"
+  identification_type:
+    type: string
+    nullable: true
+    optional: true
+    doc: "How the tool identified the feature in this run: direct (its own MS/MS), transferred (matched from another run), secondary (a co-fragmenting peptide of a chimeric spectrum); null when the tool does not say"
+  match_score:
+    type: float32
+    nullable: true
+    optional: true
+    doc: "The tool's score for the match of a transferred identification"
+  match_qvalue:
+    type: float32
+    nullable: true
+    optional: true
+    doc: "The tool's q-value for the match of a transferred identification"
+  match_rt_delta:
+    type: float32
+    nullable: true
+    optional: true
+    doc: "Retention-time difference of a transferred identification from its donor (seconds)"
+  match_mz_delta:
+    type: float32
+    nullable: true
+    optional: true
+    doc: "m/z difference of a transferred identification from its donor (Th)"
+  imputed_labels:
+    type: "list<string>"
+    nullable: true
+    optional: true
+    doc: "Labels of intensities whose value the tool imputed instead of measuring; null when none are or the tool does not say"
+  parent_ion_fraction:
+    type: float32
+    nullable: true
+    optional: true
+    doc: "Fraction of the isolation window's signal from the target precursor (0-1); isolation interference is one minus this"
+  quant_scan:
+    type: "list<int32>"
+    nullable: true
+    optional: true
+    doc: "Scan the reporter intensities were read from, as the integer components scan uses, when the producer records it; differs from scan under SPS-MS3"
+  quant_ms_level:
+    type: int32
+    nullable: true
+    optional: true
+    doc: "MS level of the scan the reporter intensities were read from (2 or 3), when the producer records it"
   rt_start:
     type: float32
     doc: "RT window start"

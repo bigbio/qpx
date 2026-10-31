@@ -62,6 +62,7 @@ The following score names are commonly used across QPX views. All names are `sna
 | `msgf_raw_score` | PSM | higher is better | Raw score from MS-GF+ |
 | `msgf_spec_evalue` | PSM | lower is better | Spectral E-value from MS-GF+ |
 | `sage_hyperscore` | PSM | higher is better | Hyperscore from Sage search engine |
+| `parent_ion_fraction` | PSM | higher is better | Fraction of the isolation window's signal from the target precursor, 0-1 (MaxQuant `PIF`, FragPipe `Purity`, CDAP `PrecursorPurity`); on a feature it is the column of that name |
 | `precursor_qvalue` | Feature | lower is better | Run-level precursor q-value (`Q.Value`), as emitted by the DIA-NN converter |
 | `pg_qvalue` | Feature | lower is better | Run-level protein-group q-value, as emitted by the DIA-NN converter |
 | `pg_pep` | PG | lower is better | Protein-group posterior error probability (`PG.PEP`), as emitted by the DIA-NN converter |

@@ -14,7 +14,15 @@ _log = logging.getLogger(__name__)
 # OpenMS producer identity (bigbio/qpx#229), also passed to FeatureWriter.
 FEATURE_IDENTITY_COMPOSITE = ("peptidoform", "charge", "run_file_name", "rt", "scan", "observed_mz", "consensus_rt")
 _PROTEIN_FIELDS = ("anchor_protein", "pg_accessions", "unique", "gg_accessions", "gg_names", "pg_global_qvalue")
-_EVIDENCE_FIELDS = ("scan", "id_run_file_name", "pg_positions", "posterior_error_probability", "peptide_qvalue", *_PROTEIN_FIELDS)
+_EVIDENCE_FIELDS = (
+    "scan",
+    "id_run_file_name",
+    "identification_type",
+    "pg_positions",
+    "posterior_error_probability",
+    "peptide_qvalue",
+    *_PROTEIN_FIELDS,
+)
 
 
 def feature_ids(records: list[dict]) -> list[int]:

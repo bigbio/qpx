@@ -169,6 +169,7 @@ Each entry in `peptides` contains:
 
 | Field | Description | Type | Required |
 |-------|-------------|------|----------|
+| `is_imputed` | Whether the tool imputed this quantity instead of measuring it; null when the tool does not say | `bool`, null | No |
 | `cv_params` | Optional list of controlled vocabulary parameters for additional metadata | `array[struct{cv_name, cv_value}]` | No |
 
 ## Example
