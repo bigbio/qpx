@@ -388,7 +388,7 @@ def _build_batch_sql(
     parts.extend(_build_metadata_select_parts(r, report_cols))
 
     # --- Nested: intensities ---
-    label_expr, channel_helper_parts, channel_join = _build_channel_sql_parts(channel_col, qv_col)
+    label_expr, channel_helper_parts, channel_join = _build_channel_sql_parts(channel_col, qv_col, has_column)
     int_col = r["intensity"]
     # A precursor DIA-NN reports without a quantity (0) keeps its label with a
     # null intensity.
@@ -432,13 +432,20 @@ def _build_batch_sql(
     return row_sql
 
 
-def _build_channel_sql_parts(channel_col: str | None, qvalue_col: str | None) -> tuple[str, list[str], str]:
+def _build_channel_sql_parts(channel_col: str | None, qvalue_col: str | None, has_column) -> tuple[str, list[str], str]:
     """Return the label, helper columns, and join used for channel-aware rows."""
     if channel_col is None:
         return "'LFQ'", [], ""
 
     qvalue_expr = f"{_safe_double_sql(qvalue_col)} AS _qvalue" if qvalue_col else "NULL::DOUBLE AS _qvalue"
-    helpers = [qvalue_expr, "cl.channel_mass AS _channel_mass"]
+    helpers = [
+        qvalue_expr,
+        "cl.channel_mass AS _channel_mass",
+        *(
+            f"{_safe_double_sql(column) if has_column(column) else 'NULL::DOUBLE'} AS {alias}"
+            for column, alias in (("Channel.Q.Value", "_channel_qvalue"), ("Channel.Evidence", "_channel_evidence"))
+        ),
+    ]
     channel_join = sql_build(
         """
         JOIN diann_channel_labels cl
@@ -452,6 +459,20 @@ def _build_channel_sql_parts(channel_col: str | None, qvalue_col: str | None) ->
 # Fields describing the multiplet's peptidoform, which is the lightest partner's,
 # and so taken from the lightest channel's row.
 _LIGHTEST_CHANNEL_FIELDS = {"observed_mz", "mass_error_ppm"}
+
+
+_CHANNEL_AGGREGATES = {
+    "channel_details": """LIST(STRUCT_PACK(
+                label := intensities[1].label,
+                mz := observed_mz,
+                rt := rt,
+                qvalue := COALESCE(_channel_qvalue, _qvalue),
+                evidence := _channel_evidence
+            ) ORDER BY intensities[1].label) AS channel_details""",
+    "representative_label": (
+        "FIRST(intensities[1].label ORDER BY _qvalue NULLS LAST, intensities[1].label) AS representative_label"
+    ),
+}
 
 
 def _aggregate_channel_rows_sql(row_sql: str, target_schema: pa.Schema) -> str:
@@ -501,6 +522,8 @@ def _aggregate_channel_rows_sql(row_sql: str, target_schema: pa.Schema) -> str:
             continue
         if name in group_fields:
             select_parts.append(quoted)
+        elif name in _CHANNEL_AGGREGATES:
+            select_parts.append(_CHANNEL_AGGREGATES[name])
         elif name == "intensities":
             select_parts.append("LIST(intensities[1] ORDER BY intensities[1].label) AS intensities")
         elif name == "additional_intensities":

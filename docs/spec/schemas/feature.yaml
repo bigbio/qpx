@@ -166,6 +166,16 @@ fields:
     maximum: 1
     optional: true
     doc: "Global q-value of PG"
+  channel_details:
+    type: "list<channel_detail>"
+    optional: true
+    nullable: true
+    doc: "What was measured of each channel of a multiplet row: its m/z, retention time, q-value and the tool's evidence score"
+  representative_label:
+    type: string
+    optional: true
+    nullable: true
+    doc: "The channel whose row gave the row's scores, retention time and other scalars, when a tool reports one row per channel"
   pg_positions:
     type: "list<protein_position>"
     optional: true

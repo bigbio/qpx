@@ -82,6 +82,8 @@ These fields are shared with the PSM view and describe the peptide identificatio
 |-------|-------------|------|----------|
 | `intensities` | Primary intensity-based abundance of the feature across labels | array[struct], null | no |
 | `additional_intensities` | Pre-computed intensity values from the upstream tool (e.g., normalized, LFQ, iBAQ) as named key-value pairs per label | array[struct], null | no |
+| `channel_details` | MS1-label multiplets: `{label, mz, rt, qvalue, evidence}` of each partner ([MS1 labels](intensities.md#ms1-labels-silac-dimethyl-mtraq)); specification 1.3 | array[struct], null | optional |
+| `representative_label` | The channel whose report row gave the row's scalars, where a tool reports one row per channel; specification 1.3 | string, null | optional |
 | `identified_labels` | MS1-label multiplets: the labels whose partner was identified by MS/MS ([MS1 labels](intensities.md#ms1-labels-silac-dimethyl-mtraq)) | array[string], null | optional |
 | `run_file_name` | The run file name that contains the feature | string | yes |
 | `quantification_unit_id` | Quantification unit represented by the quantity when it may aggregate multiple raw runs | string, null | optional |

@@ -13,6 +13,7 @@ from typing import Optional
 import pyopenms as oms
 
 from qpx.converters.channel_labels import normalize_label
+from qpx.core.files import run_file_stem
 
 _CHANNEL_RE = re.compile(r"(tmt|itraq)\d*plex?_(\d+[NC]?)", re.IGNORECASE)
 _MASS_TAG_RE = re.compile(r"^(dimethyl|mtraq)(\d+)$", re.IGNORECASE)
@@ -195,3 +196,33 @@ class Ms1Channels:
     def run_labels(self, run: str) -> list[str]:
         """The labels of one run, lightest first."""
         return [label for (other, _), label in sorted(self.by_run_channel.items()) if other == run]
+
+
+def evidence_ratios_by_run(cf, ms1) -> dict[str, list[dict]]:
+    """``MS1Label:evidence_ratio`` as ``ratio_<num>_<den>`` on the numerator label of each run.
+
+    OpenMS lists the reference channel, the lowest of the run, with a ratio of 1.0.
+    """
+    if not cf.metaValueExists("MS1Label:evidence_ratio"):
+        return {}
+    by_run: dict[str, dict[int, float]] = defaultdict(dict)
+    for run, channel, ratio in zip(
+        list_value(cf.getMetaValue("MS1Label:evidence_ratio_run")),
+        list_value(cf.getMetaValue("MS1Label:evidence_ratio_channel")),
+        list_value(cf.getMetaValue("MS1Label:evidence_ratio")),
+    ):
+        by_run[run_file_stem(run)][int(channel)] = float(ratio)
+    entries: dict[str, list[dict]] = {}
+    for run, ratios in by_run.items():
+        reference = ms1.by_run_channel[(run, min(ratios))]
+        entries[run] = [
+            {
+                "label": ms1.by_run_channel[(run, channel)],
+                "intensities": [
+                    {"intensity_name": ratio_name(ms1.by_run_channel[(run, channel)], reference), "intensity_value": ratio}
+                ],
+            }
+            for channel, ratio in sorted(ratios.items())
+            if channel != min(ratios)
+        ]
+    return entries

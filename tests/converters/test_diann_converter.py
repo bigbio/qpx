@@ -270,6 +270,22 @@ class TestDiaNNFeatureConversion:
             assert 0.0 <= value <= 1.0, f"q-value out of range: {value}"
 
 
+def test_plexdia_channel_details_prefer_the_channel_q_value(tmp_path):
+    from qpx.converters.diann.feature_adapter import DiannFeatureAdapter
+
+    report_path, _, sdrf_path = _write_plexdia_inputs(tmp_path)
+    report = pd.read_csv(report_path, sep="\t")
+    report["Channel.Q.Value"] = [0.2, 0.3]
+    report["Channel.Evidence"] = [1.5, 2.5]
+    report.to_csv(report_path, sep="\t", index=False)
+    output_path = tmp_path / "plexdia.feature.parquet"
+    with DiannFeatureAdapter() as adapter:
+        adapter.convert(diann_report=str(report_path), output_path=str(output_path), sdrf_path=str(sdrf_path))
+
+    [row] = pq.read_table(output_path).to_pylist()
+    assert [(e["label"], e["qvalue"], e["evidence"]) for e in row["channel_details"]] == [("H", 0.3, 2.5), ("L", 0.2, 1.5)]
+
+
 def test_plexdia_feature_collapses_channels_into_one_row(tmp_path):
     """Channel rows for one precursor become one feature with two intensities."""
     from qpx.converters.diann.feature_adapter import DiannFeatureAdapter
@@ -291,6 +307,9 @@ def test_plexdia_feature_collapses_channels_into_one_row(tmp_path):
     assert rows[0]["peptide_qvalue"] is None
     scores = {entry["score_name"]: entry["score_value"] for entry in rows[0]["additional_scores"]}
     assert scores["precursor_qvalue"] == pytest.approx(0.002)
+    assert rows[0]["representative_label"] == "L"
+    assert [(entry["label"], entry["qvalue"]) for entry in rows[0]["channel_details"]] == [("H", 0.003), ("L", 0.002)]
+    assert rows[0]["channel_details"][0]["rt"] == rows[0]["rt"]
 
 
 # ---------------------------------------------------------------------------

@@ -91,6 +91,12 @@ labels, quantified side by side in one run. QPX encodes them as follows:
 - **`feature.identified_labels`** lists the labels whose partner was identified
   by MS/MS (MaxQuant `Labeling state`); the others were quantified by their
   isotope pattern only.
+- **`feature.channel_details`** holds what was measured of each partner, one
+  entry per label: its `mz`, `rt`, `qvalue` and the tool's `evidence` score. DIA-NN
+  fills all of them from `Channel.Q.Value` (else `Q.Value`) and `Channel.Evidence`,
+  and `qpxc convert openms-consensus` the m/z and retention time of each sub-feature.
+  `feature.representative_label` names the channel whose report row gave the row's
+  scores and retention time, where a tool reports one row per channel.
 - **A PSM is the identified partner.** `psm.peptidoform` carries its label
   modifications, `psm.label` names its channel, and `psm.feature_id` links it to
   the multiplet's feature row (the peptidoforms differ by design). The PSM label

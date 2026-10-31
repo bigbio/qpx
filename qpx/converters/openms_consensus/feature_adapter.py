@@ -17,7 +17,7 @@ from itertools import chain
 from typing import Optional
 
 from qpx.converters.channel_labels import normalize_label
-from qpx.converters.openms_consensus.channels import Ms1Channels, column_labels, label_state_params, list_value, ratio_name
+from qpx.converters.openms_consensus.channels import Ms1Channels, column_labels, evidence_ratios_by_run, label_state_params
 from qpx.converters.openms_consensus.modifications import localization_scores, to_modifications
 from qpx.converters.openms_consensus.protein_groups import ProteinGroupIndex, identification_identifier
 from qpx.converters.openms_consensus.quant_scan import quant_scan_fields
@@ -362,7 +362,9 @@ def _group_subfeatures_by_run(cf, map_info: dict[int, tuple[str, str]]) -> dict[
         run, label = map_info.get(sub.getMapIndex(), (None, None))
         if run is None:
             continue
-        entry = by_run.setdefault(run, {"rt": float(sub.getRT()), "mz": float(sub.getMZ()), "labels": {}})
+        entry = by_run.setdefault(run, {"rt": float(sub.getRT()), "mz": float(sub.getMZ()), "labels": {}, "channels": {}})
+        if intensity > entry["labels"].get(label, 0.0):
+            entry["channels"][label] = {"label": label, "mz": float(sub.getMZ()), "rt": float(sub.getRT())}
         entry["labels"][label] = max(entry["labels"].get(label, 0.0), intensity)
     return by_run
 
@@ -676,36 +678,6 @@ def _identified_labels_by_run(pids, map_info, cf_runs, resolve_run, ms1) -> dict
     return {run: [label for label in ms1.run_labels(run) if label in labels] for run, labels in identified.items()}
 
 
-def _evidence_ratios_by_run(cf, ms1) -> dict[str, list[dict]]:
-    """``MS1Label:evidence_ratio`` as ``ratio_<num>_<den>`` on the numerator label of each run.
-
-    OpenMS lists the reference channel, the lowest of the run, with a ratio of 1.0.
-    """
-    if not cf.metaValueExists("MS1Label:evidence_ratio"):
-        return {}
-    by_run: dict[str, dict[int, float]] = defaultdict(dict)
-    for run, channel, ratio in zip(
-        list_value(cf.getMetaValue("MS1Label:evidence_ratio_run")),
-        list_value(cf.getMetaValue("MS1Label:evidence_ratio_channel")),
-        list_value(cf.getMetaValue("MS1Label:evidence_ratio")),
-    ):
-        by_run[_run_stem(run)][int(channel)] = float(ratio)
-    entries: dict[str, list[dict]] = {}
-    for run, ratios in by_run.items():
-        reference = ms1.by_run_channel[(run, min(ratios))]
-        entries[run] = [
-            {
-                "label": ms1.by_run_channel[(run, channel)],
-                "intensities": [
-                    {"intensity_name": ratio_name(ms1.by_run_channel[(run, channel)], reference), "intensity_value": ratio}
-                ],
-            }
-            for channel, ratio in sorted(ratios.items())
-            if channel != min(ratios)
-        ]
-    return entries
-
-
 def _multiplet_fields(record: dict, entry: dict, lightest: str | None) -> dict:
     """Position of an MS1-label multiplet row: its lightest measured partner.
 
@@ -756,7 +728,7 @@ def feature_records_for_cf(
     if any(fields != protein_fields for fields in protein_fields_by_run.values()):
         protein_fields = dict.fromkeys(protein_fields)
     identified = _identified_labels_by_run(pids, map_info, cf_runs, resolve_run, ms1) if ms1 else {}
-    ratios = _evidence_ratios_by_run(cf, ms1) if ms1 else {}
+    ratios = evidence_ratios_by_run(cf, ms1) if ms1 else {}
     scan_fields = quant_scan_fields(cf)
     records: list[dict] = []
     for run, entry in by_run.items():
@@ -779,6 +751,7 @@ def feature_records_for_cf(
             lightest = next(iter(ms1.run_labels(run)), None)
             record.update(_multiplet_fields(record, entry, lightest))
             record["identified_labels"] = identified.get(run)
+            record["channel_details"] = [entry["channels"][label] for label in sorted(entry["channels"])]
             record["additional_intensities"] = ratios.get(run)
             record["cv_params"] = label_state_params(hit)
         records.append(record)

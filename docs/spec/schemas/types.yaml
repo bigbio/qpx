@@ -47,6 +47,14 @@ pg_protein:
     pre: {type: string, nullable: true}
     post: {type: string, nullable: true}
 
+channel_detail:
+  fields:
+    label: {type: string}
+    mz: {type: float64, nullable: true}
+    rt: {type: float32, nullable: true}
+    qvalue: {type: float64, nullable: true}
+    evidence: {type: float64, nullable: true}
+
 protein_position:
   fields:
     protein_accession: {type: string}

@@ -52,6 +52,8 @@ def test_silac_keeps_one_intensity_per_channel(tmp_path, streaming):
     assert feature["observed_mz"] == pytest.approx(827.402, abs=1e-3)
     assert abs(feature["mass_error_ppm"]) < 1
     assert feature["identified_labels"] == ["SILAC light"]
+    assert [entry["label"] for entry in feature["channel_details"]] == sorted(entry["label"] for entry in feature["intensities"])
+    assert all(entry["mz"] and entry["rt"] for entry in feature["channel_details"])
     assert feature["additional_intensities"][0]["label"] == "SILAC heavy"
     assert _extra(feature)["ratio_h_l"] == pytest.approx(3.7745, abs=1e-3)
 
