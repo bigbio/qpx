@@ -14,6 +14,7 @@ from qpx.converters.sdrf import convert_sdrf_views
 from qpx.core.constants import FEATURE, ONTOLOGY, PEPMAP, PG, PSM, RUN, SAMPLE
 from qpx.core.scores import field_ontology_entries, score_ontology_entries
 from qpx.core.sdrf import SDRFHandler
+from qpx.writers import SiteWriter
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,7 @@ class MaxQuantConverter(BaseOrchestrator):
         structures=None,
         spectral_data=False,
         project_accession=None,
+        sites_files=(),
     ):
         output_folder = Path(output_folder)
         output_folder.mkdir(parents=True, exist_ok=True)
@@ -84,6 +86,10 @@ class MaxQuantConverter(BaseOrchestrator):
                 protein_groups_file, evidence_file, sdrf_file, output_folder / f"{prefix}.pg.parquet", ontology_entries
             )
             logger.info("MaxQuant PG conversion complete")
+
+        if sites_files:
+            self._convert_sites(sites_files, evidence_file, sdrf_file, output_folder / f"{prefix}.site.parquet")
+            structures = [*structures, "site"]
 
         self._write_conversion_metadata(output_folder, prefix, structures, project_accession, ontology_entries)
 
@@ -181,6 +187,14 @@ class MaxQuantConverter(BaseOrchestrator):
             ontology_entries.extend(score_ontology_entries(adapter.get_discovered_scores(), view=PG))
             self._resolved_mappings_by_view[PG] = adapter.get_resolved_columns()
         write_protein_view(str(protein_groups_file), str(output_path).replace(".pg.parquet", ".protein.parquet"))
+
+    def _convert_sites(self, sites_files, evidence_file, sdrf_file, output_path) -> None:
+        """Write the site view of the ``Sites.txt`` tables."""
+        with (
+            MaxQuantPgAdapter(duckdb_memory=self._memory, duckdb_threads=self._cpus) as adapter,
+            SiteWriter(output_path, compression=self._compression) as writer,
+        ):
+            adapter.write_sites(sites_files, evidence_file, sdrf_file, writer)
 
     def _write_conversion_metadata(self, output_folder, prefix, structures, project_accession, ontology_entries):
         """Write field ontology, provenance, and dataset metadata."""

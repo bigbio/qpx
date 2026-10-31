@@ -103,6 +103,7 @@ The `transform` command group provides tools for processing and transforming QPX
 ## Available Commands
 
 - [gene-map](#gene-map) - Map genes from FASTA
+- [site](#site) - Quantify modification sites from the feature view
 - [protein-properties](#protein-properties) - Fill protein coverage, molecular weight and peptide positions from an optional FASTA
 - [normalize-accessions](#normalize-accessions) - Normalize protein accession formats (full ↔ bare)
 - [update-metadata](#update-metadata) - Update sample/run metadata from a revised SDRF
@@ -201,6 +202,7 @@ The same step runs after conversion when `--fasta` is passed to `qpxc convert di
 | --- | --- |
 | `--dataset` | QPX dataset directory (flat Parquet views) |
 | `--fasta` | Protein FASTA used for the search (plain or `.gz`) |
+| `--fasta-uri` | Where others can get this FASTA, recorded in provenance beside its checksum |
 | `--in-place` | Overwrite the dataset's files |
 | `--output-folder` | Write an annotated copy instead (empty, outside the dataset) |
 
@@ -224,6 +226,20 @@ qpxc convert diann --report-path report.parquet ... --fasta search.fasta
 - Coverage reflects the peptides **exported in the dataset** (after FDR filtering). On PXD000612 it agrees with OpenMS's recorded coverage to a median difference of 0.0 points (93% of groups within 1 point, correlation 0.9995).
 
 ---
+
+## site
+
+Writes `site.parquet` from the feature view: per run and label, the intensity of the peptides that place a modification on a residue of their anchor protein, and its share of all peptides covering that residue ([Modification Sites](../spec/site.md#quantified-sites)). It needs `feature.pg_positions`, so run `protein-properties --fasta` first where the converter did not fill them.
+
+```bash
+qpxc transform site --dataset ./qpx_output --modification Phospho --in-place
+```
+
+| Parameter | Description | Required |
+|-----------|-------------|----------|
+| `--dataset` | Dataset directory | Yes |
+| `--modification` | Unimod name or accession; repeat for several | Yes |
+| `--in-place` / `--output-folder` | Where to write: exactly one | Yes |
 
 ## normalize-accessions
 

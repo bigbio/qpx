@@ -8,6 +8,7 @@ from .metadata import transform_update_metadata_cmd
 from .protein_properties import annotate_dataset_protein_properties, transform_protein_properties_cmd
 from .quantify import QUANT_METHODS, transform_quantify_cmd
 from .relayout import transform_relayout_cmd
+from .site import transform_site_cmd
 
 __all__ = [
     "transform",
@@ -18,6 +19,7 @@ __all__ = [
     "transform_protein_properties_cmd",
     "QUANT_METHODS",
     "transform_quantify_cmd",
+    "transform_site_cmd",
 ]
 
 
@@ -33,5 +35,6 @@ for _command in (
     transform_update_metadata_cmd,
     transform_quantify_cmd,
     transform_relayout_cmd,
+    transform_site_cmd,
 ):
     transform.add_command(_command)

@@ -1,7 +1,7 @@
 name: site
 file_type: site_file
 primary_key: [site_id]
-identity_composite: [protein_accession, position, modification_name, grouped_runs]
+identity_composite: [protein_accession, position, modification_name, grouped_runs, label]
 doc: "Protein modification sites: one row per claim that a residue of a protein carries a given modification (protein, position, modification, runs), with a q-value over those claims, the probability that the residue is modified, and the share of the residue's modification evidence that supports this modification"
 
 fields:
@@ -95,6 +95,25 @@ fields:
     required: true
     doc: "Decoy or knockoff site, written when a reader should be able to recompute site_qvalue"
 
+  # Quantification
+  label:
+    type: string
+    optional: true
+    nullable: true
+    doc: "Channel of this quantification; null for a claim without one. Part of the identity composite"
+  intensity:
+    type: float32
+    minimum: 0
+    optional: true
+    nullable: true
+    doc: "Quantity of the modified site in this label and these runs"
+  stoichiometry:
+    type: float64
+    minimum: 0
+    maximum: 1
+    optional: true
+    nullable: true
+    doc: "Fraction of the protein's copies at this residue that carry the modification, in this label and these runs (MaxQuant Occupancy)"
   # Scores and metadata
   additional_scores:
     type: "list<score>"

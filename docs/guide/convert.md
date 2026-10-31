@@ -402,6 +402,18 @@ qpxc convert maxquant \
     --verbose
 ```
 
+### Modification sites {#maxquant-sites}
+
+`--sites-file` converts a `<modification>Sites.txt` table into the [site view](../spec/site.md#quantified-sites). Repeat it for several modifications. Each experiment's runs come from `--evidence-file` or the SDRF.
+
+```bash
+qpxc convert maxquant \
+    --evidence-file evidence.txt \
+    --protein-groups-file proteinGroups.txt \
+    --sites-file "Phospho (STY)Sites.txt" \
+    --output-folder ./qpx_output
+```
+
 ### Output Files {#maxquant-output}
 
 Depending on `--structures` parameter:

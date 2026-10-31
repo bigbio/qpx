@@ -61,6 +61,13 @@ def _maxquant_structures(structures, msms_file, evidence_file, protein_groups_fi
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
 )
 @click.option(
+    "--sites-file",
+    "sites_files",
+    multiple=True,
+    help="MaxQuant <modification>Sites.txt for the site view, such as 'Phospho (STY)Sites.txt'; repeat for several",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
+@click.option(
     "--sdrf-file",
     help="SDRF metadata file (required for feature and PG)",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
@@ -141,6 +148,7 @@ def convert_maxquant_cmd(**kwargs):
         structures=list(requested),
         spectral_data=spectral_data,
         project_accession=project_accession,
+        sites_files=kwargs["sites_files"],
     )
 
     prefix = output_prefix or "maxquant"

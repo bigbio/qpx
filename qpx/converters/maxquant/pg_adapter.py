@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import re
+from pathlib import Path
 from typing import Optional
 
 import duckdb
@@ -24,6 +25,7 @@ from qpx.converters.channel_labels import experiment_runs_from_sdrf
 from qpx.converters.mappings import get_field_mappings
 from qpx.converters.maxquant.base_adapter import MaxQuantBaseAdapter
 from qpx.converters.maxquant.silac import multiplet_labels, ratio_entries, ratio_letters
+from qpx.converters.maxquant.sites import convert_sites_file
 from qpx.converters.utils import mq_flag_to_bool, safe_float
 from qpx.core.files import run_file_stem
 from qpx.writers.pg import PgWriter
@@ -134,6 +136,16 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
         )
         count = self._conn.execute("SELECT COUNT(*) FROM protein_groups").fetchall()[0][0]
         self.logger.info("Loaded %s MaxQuant protein groups", f"{count:,}")
+
+    def write_sites(self, sites_files, evidence_file, sdrf_file, writer) -> None:
+        """Write ``Sites.txt`` tables, which name experiments, with each experiment's runs from the evidence or SDRF."""
+        sdrf = str(sdrf_file) if sdrf_file else None
+        experiment_runs = self._build_experiment_to_runs(str(evidence_file) if evidence_file else None)
+        experiment_runs = experiment_runs or experiment_runs_from_sdrf(sdrf)
+        if not experiment_runs:
+            raise ValueError("Sites.txt names experiments, not runs: convert it with --evidence-file or --sdrf-file")
+        for path in sites_files:
+            convert_sites_file(Path(path), experiment_runs, lambda columns: self._load_sdrf(sdrf, columns), writer)
 
     def _build_experiment_to_runs(self, evidence_path: Optional[str]) -> dict[str, list[str]]:
         """Map each MaxQuant *Experiment* to its member *Raw file* names.
