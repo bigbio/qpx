@@ -630,6 +630,7 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
             "rt_stop": rt_stop,
             "posterior_error_probability": pep,
             "ion_mobility": ion_mobility,
+            "ccs": safe_float(row.get("CCS")),
         }
 
     def _assigned_group(self, row: dict, pg_maps: dict | None, razor: str) -> tuple[Optional[dict], bool]:

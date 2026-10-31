@@ -228,3 +228,65 @@ def test_total_ion_current_is_the_reported_tic(tmp_path):
 
     rows = pq.read_table(str(out), columns=["run_file_name", "total_ion_current"]).to_pylist()
     assert {row["run_file_name"]: row["total_ion_current"] for row in rows} == {"run_j": 1000.0, "run_k": 60.0}
+
+
+@pytest.mark.parametrize(
+    ("cv_param", "column", "value"),
+    [
+        (
+            '<cvParam cvRef="MS" accession="MS:1002476" name="ion mobility drift time" value="25.5" '
+            'unitAccession="UO:0000028" unitName="millisecond" unitCvRef="UO" />',
+            "drift_time",
+            25.5,
+        ),
+        (
+            '<cvParam cvRef="MS" accession="MS:1001581" name="FAIMS compensation voltage" value="-45.0" '
+            'unitAccession="UO:0000218" unitName="volt" unitCvRef="UO" />',
+            "compensation_voltage",
+            -45.0,
+        ),
+    ],
+)
+def test_drift_time_and_faims_voltage_have_their_own_columns(tmp_path, cv_param, column, value):
+    from qpx.transforms.spectra_mapping import SpectraMappingTransform
+
+    d = tmp_path / "mzml"
+    d.mkdir()
+    path = d / "run.mzML"
+    _make_mini_mzml(path, [(2, 1, 60.0)])
+    path.write_text(path.read_text().replace("<scan>", "<scan>" + cv_param))
+    out = tmp_path / "out.mz.parquet"
+    SpectraMappingTransform(mzml_directory=d).write_mz_parquet_from_dir(out)
+
+    row = pq.read_table(str(out)).to_pylist()[0]
+    assert row[column] == pytest.approx(value)
+    assert row["inverse_ion_mobility"] is None
+
+
+def test_per_peak_ion_mobility_is_kept_with_its_unit(tmp_path):
+    import numpy as np
+    import pyopenms as oms
+
+    from qpx.transforms.spectra_mapping import SpectraMappingTransform
+
+    d = tmp_path / "mzml"
+    d.mkdir()
+    spectrum = oms.MSSpectrum()
+    spectrum.setMSLevel(1)
+    spectrum.setRT(60.0)
+    spectrum.setNativeID("scan=1")
+    spectrum.set_peaks(([100.0, 200.0], [10.0, 20.0]))
+    mobility = oms.FloatDataArray()
+    mobility.setName("Ion Mobility")
+    mobility.set_data(np.array([0.8, 0.9], dtype=np.float32))
+    spectrum.setFloatDataArrays([mobility])
+    experiment = oms.MSExperiment()
+    experiment.addSpectrum(spectrum)
+    oms.MzMLFile().store(str(d / "run.mzML"), experiment)
+    out = tmp_path / "out.mz.parquet"
+
+    SpectraMappingTransform(mzml_directory=d).write_mz_parquet_from_dir(out)
+
+    row = pq.read_table(str(out)).to_pylist()[0]
+    assert row["ion_mobility_array"] == pytest.approx([0.8, 0.9])
+    assert row["ion_mobility_array_unit"] == "ms"

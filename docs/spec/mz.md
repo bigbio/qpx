@@ -29,6 +29,8 @@ See the full YAML schema in [`mz.yaml`](schemas/mz.yaml).
 |-------|-------------|------|----------|
 | `scan_start_time` | Start time of the scan in **minutes**, as in mzML; `rt` on psm and feature is in seconds, so multiply by 60 to join them | `float` | Yes |
 | `inverse_ion_mobility` | Inverse ion mobility, used for TIMS data (1/K0) | `float` | Optional |
+| `drift_time` | Ion mobility drift time in milliseconds (MS:1002476), for drift-tube and travelling-wave instruments | `float` | Optional |
+| `compensation_voltage` | FAIMS compensation voltage in volts (MS:1001581) | `float` | Optional |
 | `ion_injection_time` | Ion injection time in milliseconds; null when the source does not record it | `float` | Optional |
 | `total_ion_current` | Total ion current (TIC) for the scan | `float` | Yes |
 
@@ -56,6 +58,8 @@ Each precursor struct contains:
 |-------|-------------|------|----------|
 | `mz` | Array of m/z values for the scan | `array[float]` | Yes |
 | `intensity` | Array of intensity values corresponding to the m/z values | `array[float]` | Yes |
+| `ion_mobility_array` | Ion mobility of each peak, for a spectrum whose peaks span a mobility range (a timsTOF frame or a diaPASEF window) | `array[float]` | Optional |
+| `ion_mobility_array_unit` | Unit of `ion_mobility_array`: `Vs/cm^2` (1/K0) or `ms` (drift time) | `string` | Optional |
 
 ### CV params
 

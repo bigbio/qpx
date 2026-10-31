@@ -7,6 +7,7 @@ correct schemas and plausible values.
 
 from pathlib import Path
 
+import pandas as pd
 import pyarrow.parquet as pq
 import pytest
 
@@ -796,3 +797,19 @@ def test_peak_annotations_split_charge_from_ion_type():
     # Tokens that do not line up with the peaks cannot annotate them.
     assert peak_annotations("y3;b4", 3) == (None, None)
     assert peak_annotations(None, 0) == (None, None)
+
+
+def test_collisional_cross_section_is_read_when_present(tmp_path):
+    source = Path(__file__).parents[1] / "examples" / "maxquant" / "maxquant_simple"
+    evidence = pd.read_csv(source / "evidence.txt", sep="\t", nrows=5, low_memory=False)
+    evidence["CCS"] = 412.5
+    path = tmp_path / "evidence.txt"
+    evidence.to_csv(path, sep="\t", index=False)
+    output = tmp_path / "feature.parquet"
+
+    from qpx.converters.maxquant.feature_adapter import MaxQuantFeatureAdapter
+
+    with MaxQuantFeatureAdapter() as adapter:
+        adapter.convert(str(path), str(output))
+
+    assert set(pq.read_table(output, columns=["ccs"]).column("ccs").to_pylist()) == {412.5}

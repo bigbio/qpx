@@ -241,6 +241,7 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
             "predicted_rt": None,
             "cv_params": cv_params or None,
             "ion_mobility": ion_mobility,
+            "ccs": safe_float(row.get("CCS")),
             "missed_cleavages": missed_cleavages,
             "protein_accessions": protein_accessions or None,
             "mz_array": mz_array,

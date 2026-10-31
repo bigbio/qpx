@@ -184,6 +184,7 @@ mzIdentML produces no feature view.
 | `scan` | `MS/MS scan number`. Empty for match-between-runs rows. | From the matching PSM. | Not implemented: always empty. | Filled. | The `scan=` number in `Reference`, which only isobaric inputs carry. Empty for label-free inputs, whose `Reference` is a file name, and DIA-NN inputs, which have no `Reference`. |
 | `rt` | Filled. | Not implemented. | Filled. | Filled. | `RetentionTime`, which only isobaric inputs carry. Not provided by label-free and DIA-NN inputs. |
 | `ion_mobility` | `1/K0`, when present. | From the matching PSM's `Ion Mobility`, when present. | `FG.ApexIonMobility`, when exported; null when 0. | Not provided. | Not provided. |
+| `ccs` | `CCS`, when present. | Not provided. | Not provided. | Not provided. | Not provided. |
 | `compensation_voltage` | Not implemented. | `Compensation Voltage`; 0 when the column is absent, because the field is part of FragPipe's feature identity. | Not implemented. | Not provided. | Not provided. |
 | `missed_cleavages` | Filled from `Missed cleavages`. | From the matching PSM. | Calculated from the peptide sequence and the SDRF enzyme; null without `--sdrf-file`. `PEP.NrOfMissedCleavages` is not read. | Not implemented: no enzyme is declared to the converter. | Not implemented, although the required SDRF declares the enzyme. |
 | `intensities` | TMT: one entry per channel the SDRF assigns in the run. SILAC: one entry per label (`Intensity L/M/H`); null for a label MaxQuant did not quantify, and for both labels of a peptide without a labelled residue. | Label-free: `<exp> Intensity`. TMT/iTRAQ: one entry per channel of `--annotation-file`, null for FragPipe's 0. An isobaric SDRF or a one-plex `ion.tsv` without the annotation stops the conversion. | `FG.Quantity`, or one entry per `EG.Channel<N>Quantity`: the report does not name its channels, so they take the SDRF's SILAC labels lightest first, or `SILAC light`/`medium`/`heavy` without an SDRF. Null for a value Spectronaut reports as `Filtered`. | Null when no reporter channel (TMT) or precursor area (label-free) is positive. | Filled. |
@@ -271,6 +272,7 @@ Spectronaut and QuantMS MSstats produce no PSM view.
 | `additional_scores` | Filled. | `Hyperscore`, `Expectation`, `Purity` (as `parent_ion_fraction`), and `Glycan Score` and `Glycan q-value` (as `glycan_score` and `glycan_qvalue`). | Filled. | Score terms on the identification item. Null when it has none. |
 | `rt` | Filled. | Filled. | Filled. | The `scan start time` of the spectrum result. Null when the file omits it. |
 | `ion_mobility` | `1/K0`, when present. | `Ion Mobility`, when present. | Not provided. | Not implemented. |
+| `ccs` | `CCS`, when present. | Not provided. | Not provided. | Not provided. |
 | `missed_cleavages` | Filled from `Missed cleavages`. | Filled from `Number of Missed Cleavages`. | Not implemented: no enzyme is declared to the converter. | Only the `MS:1003044` term on the identification item. Not calculated from the enzyme that the file declares. |
 | `protein_accessions` | `Proteins`, which MaxQuant leaves blank for some reverse hits. | `Protein` and `Mapped Proteins`. | Filled. | Filled. |
 | `cross_links`, `crosslinked_peptidoform`, `protein_starts`, `partner_protein_accessions`, `partner_protein_starts`, `crosslink_decoy_class` | Out of scope. | Out of scope. | Out of scope. | Cross-linking identifications only. |
@@ -310,7 +312,7 @@ dataset. With the search FASTA they fill null `pg.sequence_coverage`,
 
 ## Proteome Discoverer
 
-`qpxc convert proteome-discoverer` reads the text exports of a consensus result, not the `.pdResult` file. Both header spellings of PD are accepted (`m/z [Da]` and `mz in Da`, `Abundance: 126` and `Abundance 126`). It was measured on PXD081613 (TMTpro 18-plex, Sequest and Comet with ptmRS; the first 16,421 PSMs of the phosphoproteome), PXD073725 (TMT10, older headers, grouped abundances only; 58,948 PSMs), PXD046576 (Minora label-free; 16,359 PSMs) and PXD083739 (identification only; 29,218 PSMs). Labelled MS1 exports (`Abundance: Light`) stop the conversion.
+`qpxc convert proteome-discoverer` reads the text exports of a consensus result, not the `.pdResult` file. Both header spellings of PD are accepted (`m/z [Da]` and `mz in Da`, `Abundance: 126` and `Abundance 126`). It was measured on PXD081613 (TMTpro 18-plex, Sequest and Comet with ptmRS; 109,700 PSMs of a phosphoproteome, in which Comet's isotope errors show up as +1 to +3 Da in `observed_mz`, which PD's `DeltaM` reports too), PXD073725 (TMT10, older headers, grouped abundances only; 58,948 PSMs), PXD046576 (Minora label-free; 16,359 PSMs) and PXD083739 (identification only; 29,218 PSMs). Labelled MS1 exports (`Abundance: Light`) stop the conversion.
 
 | View | Source |
 | ---- | ------ |

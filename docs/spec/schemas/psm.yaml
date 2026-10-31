@@ -87,6 +87,10 @@ fields:
     type: float32
     optional: true
     doc: "Ion mobility"
+  ccs:
+    type: float32
+    optional: true
+    doc: "Collisional cross section in square angstroms (MS:1002954), when the producer reports one"
   missed_cleavages:
     type: int16
     doc: "Number of missed enzymatic cleavages (MS:1003044)"

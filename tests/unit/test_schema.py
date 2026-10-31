@@ -167,7 +167,21 @@ def test_run_with_only_required_columns_is_valid():
 def test_mz_and_psm_with_optional_columns_absent():
     """Mz and PSM columns may be absent in both validation modes (bigbio/qpx#356)."""
     cases = [
-        (MzSchema, {"run_file_name", "scan", "inverse_ion_mobility", "ion_injection_time", "precursors", "cv_params"}),
+        (
+            MzSchema,
+            {
+                "run_file_name",
+                "scan",
+                "inverse_ion_mobility",
+                "drift_time",
+                "compensation_voltage",
+                "ion_injection_time",
+                "precursors",
+                "ion_mobility_array",
+                "ion_mobility_array_unit",
+                "cv_params",
+            },
+        ),
         (
             PsmSchema,
             {

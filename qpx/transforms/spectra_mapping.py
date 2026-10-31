@@ -118,6 +118,22 @@ def _total_ion_current(spectrum, intensity) -> float:
     return float(intensity.sum()) if len(intensity) else 0.0
 
 
+def _drift_value(spectrum, unit) -> float | None:
+    """The spectrum's drift value when it is in *unit*; OpenMS holds 1/K0, drift time and FAIMS CV in one slot."""
+    return float(spectrum.getDriftTime()) if spectrum.getDriftTimeUnit() == unit else None
+
+
+def _peak_ion_mobility(spectrum, oms) -> dict:
+    """The per-peak ion mobility array and its unit, for spectra that carry one."""
+    if not spectrum.containsIMData():
+        return {"ion_mobility_array": None, "ion_mobility_array_unit": None}
+    index, unit = spectrum.getIMData()
+    units = {oms.DriftTimeUnit.VSSC: "Vs/cm^2", oms.DriftTimeUnit.MILLISECOND: "ms"}
+    # get_data() is a view into the array object, so the object has to outlive the copy.
+    peak_array = spectrum.getFloatDataArrays()[index]
+    return {"ion_mobility_array": peak_array.get_data().copy(), "ion_mobility_array_unit": units.get(unit)}
+
+
 def _ion_injection_time(spectrum) -> Optional[float]:
     """Ion injection time (ms) of the scan, None when the mzML does not report it."""
     for acquisition in spectrum.getAcquisitionInfo():
@@ -673,16 +689,15 @@ class SpectraMappingTransform:
             "centroid": spectrum.getType() == oms.SpectrumSettings.SpectrumType.CENTROID,
             "scan_start_time": float(spectrum.getRT() / 60.0),  # Convert seconds to minutes
             # timsTOF PASEF MS2 carries its precursor's 1/K0; frames and DIA windows have none.
-            "inverse_ion_mobility": (
-                float(spectrum.getDriftTime())
-                if spectrum.getDriftTimeUnit() == oms.DriftTimeUnit.VSSC and spectrum.getDriftTime() >= 0
-                else None
-            ),
+            "inverse_ion_mobility": _drift_value(spectrum, oms.DriftTimeUnit.VSSC),
+            "drift_time": _drift_value(spectrum, oms.DriftTimeUnit.MILLISECOND),
+            "compensation_voltage": _drift_value(spectrum, oms.DriftTimeUnit.FAIMS_COMPENSATION_VOLTAGE),
             "ion_injection_time": _ion_injection_time(spectrum),
             "total_ion_current": _total_ion_current(spectrum, intensity_array),
             "precursors": precursors,
             "mz": mz_array,
             "intensity": intensity_array,
+            **_peak_ion_mobility(spectrum, oms),
             "cv_params": _spectrum_cv_params(spectrum) or None,
         }
 

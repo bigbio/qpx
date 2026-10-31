@@ -506,6 +506,7 @@ def _aggregate_channel_rows_sql(row_sql: str, target_schema: pa.Schema) -> str:
         "match_rt_delta",
         "match_mz_delta",
         "imputed_labels",
+        "ccs",
         "parent_ion_fraction",
         "quant_scan",
         "quant_ms_level",

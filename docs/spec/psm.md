@@ -65,6 +65,7 @@ These fields are optional and may not exist in the file at all. They are include
 | `cross_links` | Cross-link information for XL-MS experiments. Each entry describes one cross-link site. `null` for non-cross-linked PSMs                                | array[struct], null | optional |
 | `pass_threshold` | Whether the search engine or validator marks the PSM as passing its threshold. `null` when it does not say | bool, null | optional |
 | `ion_mobility` | Ion mobility value for the precursor ion                                                                                                                | float32, null | optional |
+| `ccs` | Collisional cross section in square angstroms (MS:1002954), when the producer reports one | float32, null | no |
 | `mz_array` | Array of m/z values for the spectrum                                                                                                                    | array[float32], null | optional |
 | `intensity_array` | Array of intensity values for the spectrum                                                                                                              | array[float32], null | optional |
 | `charge_array` | Array of fragment ion charge values                                                                                                                     | array[int32], null | optional |

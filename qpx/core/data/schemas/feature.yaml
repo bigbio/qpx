@@ -121,6 +121,10 @@ fields:
   ion_mobility:
     type: float32
     doc: "Ion mobility"
+  ccs:
+    type: float32
+    optional: true
+    doc: "Collisional cross section in square angstroms (MS:1002954), when the producer reports one"
   compensation_voltage:
     type: float32
     nullable: true

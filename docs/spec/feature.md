@@ -70,6 +70,7 @@ These fields are shared with the PSM view and describe the peptide identificatio
 | `rt_stop` | End of the retention time window for the feature | float32, null | no |
 | `predicted_rt` | Predicted retention time of the peptide (in seconds) | float32, null | no |
 | `ion_mobility` | Ion mobility value for the precursor ion | float32, null | no |
+| `ccs` | Collisional cross section in square angstroms (MS:1002954), when the producer reports one | float32, null | no |
 | `ion_mobility_start` | Start ion mobility value for the precursor ion | float32, null | no |
 | `ion_mobility_stop` | Stop ion mobility value for the precursor ion | float32, null | no |
 | `compensation_voltage` | FAIMS compensation voltage; `0` for non-FAIMS FragPipe units | float32, null | optional |

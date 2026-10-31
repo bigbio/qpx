@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Specification 1.3: more ion mobility.** `ccs` on psm and feature, read from MaxQuant's `CCS`; `drift_time`, `compensation_voltage`, `ion_mobility_array` and `ion_mobility_array_unit` on mz, so `qpxc convert mz` keeps what mzML holds besides TIMS 1/K0.
 - `qpxc convert proteome-discoverer` reads PD's `PSMs.txt`, `Proteins.txt` and `InputFiles.txt` exports, in either header spelling, into psm, feature, pg and pepmap views with TMT/iTRAQ channels or label-free abundances. The `.pdResult` file is not read.
 - `qpxc convert fragpipe --annotation-file` reads the TMT/iTRAQ reporter quantities of one plex from the channel columns of `ion.tsv` and `protein.tsv`, with the MS1 intensity beside them; `--tmt-report` adds TMT-Integrator's log2 protein abundance. The pg view of FragPipe now sets `contaminant`.
 - `qpxc validate --semantic` warns when fewer than 95 % of features link to a pg row, the sign of two producers naming groups differently.
