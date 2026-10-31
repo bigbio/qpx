@@ -63,7 +63,7 @@ def _localname(tag: str) -> str:
 
 
 def _f32(value: str | float) -> float:
-    """Parse to float32 then back to float, matching pyopenms's ``float`` storage.
+    """Parse to float32 then back to float, matching pyopenms's ``float`` storage of an intensity.
 
     OpenMS stores sub-feature intensities as C++ ``float`` (32-bit); reading the
     XML string as a 64-bit Python float would keep digits pyopenms rounds away, so
@@ -340,8 +340,11 @@ class _ProteinIdentification:
 
 
 def _parse_hit_score(attrs: dict[str, str]) -> float:
-    """Use NaN for absent scores; adapters normalize it to None, not zero."""
-    return _f32(attrs.get("score") or "nan")
+    """Use NaN for absent scores; adapters normalize it to None, not zero.
+
+    The hit stores it as pyopenms does, so both readers agree on any version.
+    """
+    return float(attrs.get("score") or "nan")
 
 
 def _parse_protein_hit(element) -> oms.ProteinHit:
@@ -562,16 +565,20 @@ class StreamingConsensusMap:
 
     def iter_identifications(self, *, include_assigned: bool = True):
         """Stream identification context without constructing feature/sub-feature objects."""
-        for _, el in _iterparse(self._path, events=("end",)):
+        root = elements = None
+        for event, el in _iterparse(self._path, events=("start", "end")):
             tag = _localname(el.tag)
-            if tag == "UnassignedPeptideIdentification":
+            if event == "start":
+                root = el if root is None else root
+                elements = el if tag == "consensusElementList" else elements
+            elif tag == "UnassignedPeptideIdentification":
                 yield "unassigned", _parse_peptide_id(el, self._ph_to_acc)
-                el.clear()
+                root.clear()
             elif tag == "PeptideIdentification" and include_assigned:
                 yield "assigned", _parse_peptide_id(el, self._ph_to_acc)
                 el.clear()
             elif tag == "consensusElement":
-                el.clear()
+                elements.clear()
 
     def __iter__(self):
         for kind, obj in self.iter_all():
@@ -582,16 +589,18 @@ class StreamingConsensusMap:
         """Single pass yielding ``("element", ConsensusFeature)`` then, in file
         order, ``("unassigned", PeptideIdentification)``. The converter uses
         one traversal for identification context and another for all output views."""
-        depth_in_list = False
+        root = elements = None
         for event, el in _iterparse(self._path, events=("start", "end")):
             tag = _localname(el.tag)
-            if event == "start" and tag == "consensusElementList":
-                depth_in_list = True
-            elif event == "end" and tag == "consensusElementList":
-                depth_in_list = False
-            elif event == "end" and tag == "consensusElement" and depth_in_list:
+            if event == "start":
+                root = el if root is None else root
+                elements = el if tag == "consensusElementList" else elements
+            elif tag == "consensusElementList":
+                elements = None
+            elif tag == "consensusElement" and elements is not None:
                 yield "element", _parse_consensus_element(el, self._ph_to_acc)
-                el.clear()
-            elif event == "end" and tag == "UnassignedPeptideIdentification":
+                # Detach the element: a cleared child still costs memory per row.
+                elements.clear()
+            elif tag == "UnassignedPeptideIdentification":
                 yield "unassigned", _parse_peptide_id(el, self._ph_to_acc)
-                el.clear()
+                root.clear()

@@ -40,6 +40,8 @@ from qpx.writers.psm import PsmWriter
 
 _log = logging.getLogger("qpx.converters.openms_consensus.converter")
 _PSM_IDENTITY_COMPOSITE = ("peptidoform", "charge", "run_file_name", "scan")
+# Pending record dicts cost far more than their row groups: keep few of them.
+_STREAM_BATCH = 20_000
 
 
 @dataclass(frozen=True)
@@ -224,7 +226,7 @@ def _write_pg(pg, config, written) -> None:
             )
 
 
-def _stream_feature_psm(cm, writers, context, pg, config, scan_formats: set[str | None], *, batch=100_000) -> int:
+def _stream_feature_psm(cm, writers, context, pg, config, scan_formats: set[str | None], *, batch=_STREAM_BATCH) -> int:
     """Write one ordered element/unassigned pass in batches and accumulate PG evidence."""
     fw, pw = writers
     maps = pg.maps if pg is not None else None
@@ -287,6 +289,7 @@ def _open_stream_writers(stack, config) -> tuple:
                 creator=output.creator,
                 identity_composite=_FEATURE_IDENTITY_COMPOSITE,
                 compression=output.compression,
+                batch_size=_STREAM_BATCH,
             )
         )
     if "psm" in config.structures:
@@ -296,6 +299,7 @@ def _open_stream_writers(stack, config) -> tuple:
                 creator=output.creator,
                 identity_composite=_PSM_IDENTITY_COMPOSITE,
                 compression=output.compression,
+                batch_size=_STREAM_BATCH,
             )
         )
     return fw, pw

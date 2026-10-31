@@ -78,8 +78,8 @@ def _consensusxml_list(ctx, param, value) -> tuple[Path, ...]:
     default=None,
     help=(
         "Force the low-memory streaming reader on/off. Default: auto (streaming for "
-        "consensusXML files > 4 GB). The in-memory reader peaks at ~6-7x the file "
-        "size in RAM; streaming uses about half that and takes about twice as long."
+        "consensusXML files > 1 GB). The in-memory reader peaks at ~7x the file "
+        "size in RAM; streaming peaks at ~2.3x and takes ~1.7x as long."
     ),
 )
 @click.option("--verbose", is_flag=True, help="Enable verbose logging.")

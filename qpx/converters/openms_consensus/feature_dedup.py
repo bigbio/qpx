@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 from dataclasses import dataclass
 
@@ -44,17 +46,17 @@ def _merge_evidence(target: dict, source: dict) -> None:
     ] or None
 
 
-@dataclass
+@dataclass(slots=True)
 class _PeakChoice:
     """Compact winner state; never retain the source XML or pyopenms objects."""
 
     rank: tuple
     row: int
     fid: int
-    record: dict
+    packed: bytes
 
 
-class FeatureDeduplicator:
+class FeatureDeduplicator:  # pylint: disable=too-many-instance-attributes
     """Keep the feature with more runs, then higher quality (ties keep the first).
 
     Duplicate rows share an ID or a measured peak. Identification evidence is
@@ -62,27 +64,35 @@ class FeatureDeduplicator:
     ``superseded`` address original output positions, including already flushed
     batches. PSM IDs resolve directly to the final winner, without redirect cycles.
     An optional peptide accumulator receives only the winning peak contributions.
+
+    Every row must stay comparable until the end and duplicates are rare, so each
+    winner is held packed and only unpacked when a duplicate of it turns up.
     """
 
     def __init__(self, pep_intensity=None):
-        self._best: dict[tuple, _PeakChoice] = {}
+        self._by_id: dict[int, _PeakChoice] = {}
+        self._by_peak: dict[bytes, _PeakChoice] = {}
         self.superseded: set[int] = set()
         self.redirect: dict[int, _PeakChoice] = {}
         self.row_patches: dict[int, dict] = {}
         self.dropped = 0
         self.rows = 0
         self.pep_intensity = pep_intensity
+        self._fields = (*FEATURE_IDENTITY_COMPOSITE, *_EVIDENCE_FIELDS)
+        if pep_intensity is not None:
+            self._fields += ("sequence", "intensities")
 
     @staticmethod
-    def _peak(rec: dict) -> tuple:
+    def _peak(rec: dict) -> bytes:
         intensities = tuple(sorted((i["label"], i["intensity"]) for i in rec.get("intensities") or ()))
-        return (rec["run_file_name"], rec["peptidoform"], rec["charge"], rec["rt"], intensities)
+        peak = (rec["run_file_name"], rec["peptidoform"], rec["charge"], rec["rt"], intensities)
+        return hashlib.blake2b(repr(peak).encode(), digest_size=16).digest()
 
-    def _compact(self, rec: dict) -> dict:
-        fields = (*FEATURE_IDENTITY_COMPOSITE, *_EVIDENCE_FIELDS)
-        if self.pep_intensity is not None:
-            fields += ("sequence", "intensities")
-        return {name: rec.get(name) for name in fields}
+    def _pack(self, rec: dict) -> bytes:
+        return json.dumps([rec.get(name) for name in self._fields], separators=(",", ":")).encode()
+
+    def _unpack(self, packed: bytes) -> dict:
+        return dict(zip(self._fields, json.loads(packed)))
 
     def _accumulate(self, record: dict, sign: int) -> None:
         if self.pep_intensity is not None:
@@ -94,20 +104,22 @@ class FeatureDeduplicator:
         self.dropped += 1
         self.redirect[choice.fid] = self.redirect[fid] = choice
         replace = rank > choice.rank
+        record = self._unpack(choice.packed)
         if replace:
             self.superseded.add(choice.row)
             self.row_patches.pop(choice.row, None)
-            self._accumulate(choice.record, -1)
-            merged = self._compact(rec)
-            _merge_evidence(merged, choice.record)
-            choice.record = merged
+            self._accumulate(record, -1)
+            merged = self._unpack(self._pack(rec))
+            _merge_evidence(merged, record)
+            record = merged
             choice.rank, choice.row = rank, self.rows
-            self._accumulate(merged, 1)
+            self._accumulate(record, 1)
         else:
-            _merge_evidence(choice.record, rec)
-        choice.fid = feature_ids([choice.record])[0]
-        self._best[("id", choice.fid)] = choice
-        self.row_patches[choice.row] = {**choice.record, "feature_id": choice.fid}
+            _merge_evidence(record, rec)
+        choice.packed = self._pack(record)
+        choice.fid = feature_ids([record])[0]
+        self._by_id[choice.fid] = choice
+        self.row_patches[choice.row] = {**record, "feature_id": choice.fid}
         return replace
 
     def keep(self, records: list[dict], ids: list[int], quality: float) -> list[dict]:
@@ -115,16 +127,16 @@ class FeatureDeduplicator:
         rank = (len(records), quality)
         kept = []
         for rec, fid in zip(records, ids):
-            keys = (("id", fid), ("peak", self._peak(rec)))
-            choice = next((self._best[key] for key in keys if key in self._best), None)
+            peak = self._peak(rec)
+            choice = self._by_id.get(fid) or self._by_peak.get(peak)
             if choice is None:
-                choice = _PeakChoice(rank, self.rows, fid, self._compact(rec))
-                self._accumulate(choice.record, 1)
+                choice = _PeakChoice(rank, self.rows, fid, self._pack(rec))
+                self._accumulate(rec, 1)
                 emit = True
             else:
                 emit = self._combine(choice, rec, fid, rank)
-            for key in keys:
-                self._best[key] = choice
+            self._by_id[fid] = choice
+            self._by_peak[peak] = choice
             if emit:
                 self.rows += 1
                 kept.append(rec)

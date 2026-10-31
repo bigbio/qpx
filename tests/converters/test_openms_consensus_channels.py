@@ -11,6 +11,7 @@ import pytest
 
 from qpx.converters.openms_consensus.channels import column_labels
 from qpx.converters.openms_consensus.converter import OpenMSConsensusConverter
+from qpx.converters.openms_consensus.streaming import _parse_hit_score
 
 TOPP = Path(__file__).parents[1] / "examples" / "openms_topp"
 
@@ -169,3 +170,15 @@ def test_column_labels(labels, expected):
 def test_ambiguous_channel_labels_stop_the_conversion(labels):
     with pytest.raises(ValueError, match="run.mzML"):
         column_labels(_map(*labels))
+
+
+def test_streaming_does_not_round_scores():
+    """Precision is up to pyopenms: rounding here would make the readers differ where it keeps doubles."""
+    assert _parse_hit_score({"score": "0.2"}) == 0.2
+
+
+def test_both_readers_report_the_same_scores(tmp_path):
+    memory, stream = (_convert(tmp_path, "MS1LabeledWorkflow_6_ratios_out", streaming)["feature"] for streaming in (False, True))
+    assert {row["feature_id"]: row["peptide_qvalue"] for row in stream} == {
+        row["feature_id"]: row["peptide_qvalue"] for row in memory
+    }

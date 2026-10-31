@@ -44,9 +44,9 @@ def _as_paths(consensusxml_path) -> list[str]:
 
 
 # Above this decompressed consensusXML size, auto-select the streaming reader. A whole
-# in-memory conversion peaks at ~6-7x the file in RAM (~27 GB at this size); streaming
-# about halves that but takes about twice as long.
-_STREAM_THRESHOLD_BYTES = 4 * 1024**3
+# in-memory conversion peaks at ~7x the file in RAM (~7 GB at this size); streaming
+# peaks at ~2.3x and takes ~1.7x as long.
+_STREAM_THRESHOLD_BYTES = 1024**3
 
 
 def _should_stream(path: str) -> bool:
@@ -179,8 +179,8 @@ class OpenMSConsensusConverter(BaseOrchestrator):  # pylint: disable=too-few-pub
 
         ``streaming`` picks the consensusXML reader: ``None`` (default) auto-selects
         — the low-memory streaming reader when any input is above ``_STREAM_THRESHOLD_BYTES``
-        (where an in-memory conversion peaks at ~6-7x the file in RAM), else the
-        faster in-memory pyopenms load. ``True``/``False`` forces the choice.
+        (an in-memory conversion peaks at ~7x the file in RAM, streaming at ~2.3x), else
+        the faster in-memory pyopenms load. ``True``/``False`` forces the choice.
 
         ``project_accession`` (e.g. ``PXD001819``) is stamped into dataset.parquet.
 

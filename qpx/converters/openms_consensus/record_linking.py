@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -10,6 +11,11 @@ from typing import Optional
 from qpx.converters.openms_consensus.feature_dedup import feature_ids as _feature_ids
 
 _NO_LINK = (0,)
+
+
+def _key_digest(key: tuple) -> bytes:
+    """128-bit digest of a PSM identity key: a tenth of the memory of the tuple itself."""
+    return hashlib.blake2b(repr(key).encode(), digest_size=16).digest()
 
 
 def _link_rank(peptidoform, charge, rt, mz, feature: Optional[dict], feature_id: Optional[int], quality: float) -> tuple:
@@ -97,32 +103,35 @@ class _PsmKeys:  # pylint: disable=too-many-instance-attributes
         self.before_features = True
 
     def __contains__(self, key) -> bool:
-        if key not in self._keys:
+        digest = _key_digest(key)
+        if digest not in self._keys:
             return False
-        if not self.unassigned and key in self._claimable:
-            self.dropped_rows.add(self._claimable.pop(key))
+        if not self.unassigned and digest in self._claimable:
+            self.dropped_rows.add(self._claimable.pop(digest))
             return False
         return True
 
     def add(self, key) -> None:
         """Register an emitted key at the next output row."""
+        digest = _key_digest(key)
         if self.unassigned and self.before_features:
-            self._claimable[key] = self.rows
+            self._claimable[digest] = self.rows
         elif not self.unassigned:
-            self._links[key] = (None, self.rows)
-        self._keys.add(key)
+            self._links[digest] = (None, self.rows)
+        self._keys.add(digest)
         self.rows += 1
 
     def offer(self, key, rank: tuple, feature_id: Optional[int]) -> None:
         """Record a candidate link for an emitted key; keep it when it outranks the current one."""
-        entry = self._links.get(key)
+        digest = _key_digest(key)
+        entry = self._links.get(digest)
         if entry is None:
             return
         current, row = entry
         if current is None:
-            self._links[key] = (rank, row)
+            self._links[digest] = (rank, row)
         elif rank > current:
-            self._links[key] = (rank, row)
+            self._links[digest] = (rank, row)
             self.feature_id_patch[row] = feature_id
 
     def start_file(self) -> None:
