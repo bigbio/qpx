@@ -12,6 +12,21 @@ Instrument, enzyme, and dissociation method fields store **plain strings** (huma
 
 ---
 
+## Per-Run Search and Channel Fields {#per-run-fields}
+
+`modification_parameters` lists the modifications of the SDRF rows of that run, so that a phospho run and a global run of one study keep their own. These fields are in specification 1.3:
+
+| Field | Source | Meaning |
+| ----- | ------ | ------- |
+| `label_definitions` | `comment[modification parameters]` of each label's rows | For each SILAC, dimethyl or mTRAQ label of the run, its label modifications with their masses. `SILAC heavy` alone does not say whether a plex used K4R6 or K8R10 |
+| `gradient_length` | `comment[gradient length]` | LC gradient in seconds. `120 min`, `2 h` and `7200 s` are read; a bare number is minutes |
+| `samples[].channel_role` | `comment[channel role]`, or `comment[reference channel]` | `reference` for the channel `comment[reference channel]` names, `sample` for the others; otherwise the value of `comment[channel role]`, such as `carrier` or `empty` |
+| `samples[].mixture` | `comment[mixture]` | Identifier of the labelled mixture, to separate TMT plexes |
+
+A sample may occupy several labels of a run, as in pulsed SILAC; helpers keep them apart by `(sample, label, unit)`.
+
+---
+
 ## MODIFICATION Structure {#modification-structure}
 
 Modification parameters use a dedicated struct with explicit fields, since modifications have well-known properties (fixed/variable, position, target residue) that benefit from a typed schema:
@@ -24,6 +39,7 @@ MODIFICATION = pa.struct(
         pa.field("fixed", pa.bool_(), nullable=True),  # true = fixed, false = variable
         pa.field("position", pa.string(), nullable=True),  # e.g. "Anywhere", "Protein N-term"
         pa.field("target_amino_acid", pa.string(), nullable=True),  # e.g. "S,T,Y", "C"
+        pa.field("mass_delta", pa.float64(), nullable=True),  # SDRF MM=, else the Unimod mass
     ]
 )
 

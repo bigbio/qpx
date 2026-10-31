@@ -27,7 +27,7 @@ See the full YAML schema in [`mz.yaml`](schemas/mz.yaml).
 
 | Field | Description | Type | Required |
 |-------|-------------|------|----------|
-| `scan_start_time` | Start time of the scan in minutes | `float` | Yes |
+| `scan_start_time` | Start time of the scan in **minutes**, as in mzML; `rt` on psm and feature is in seconds, so multiply by 60 to join them | `float` | Yes |
 | `inverse_ion_mobility` | Inverse ion mobility, used for TIMS data (1/K0) | `float` | Optional |
 | `ion_injection_time` | Ion injection time in milliseconds; null when the source does not record it | `float` | Optional |
 | `total_ion_current` | Total ion current (TIC) for the scan | `float` | Yes |
@@ -45,9 +45,9 @@ Each precursor struct contains:
 | `selected_ion_mz` | m/z value of the selected precursor ion | `float` | Yes |
 | `selected_ion_charge` | Charge state of the selected precursor ion | `int` | No |
 | `selected_ion_intensity` | Intensity of the selected precursor ion | `float` | No |
-| `isolation_window_target` | Target m/z for the isolation window | `float` | No |
-| `isolation_window_lower` | Lower bound of the isolation window | `float` | No |
-| `isolation_window_upper` | Upper bound of the isolation window | `float` | No |
+| `isolation_window_target` | Target m/z of the isolation window, which may differ from the selected ion | `float` | No |
+| `isolation_window_lower` | Offset below the target, not an m/z: the window starts at target − lower | `float` | No |
+| `isolation_window_upper` | Offset above the target, not an m/z: the window ends at target + upper | `float` | No |
 | `spectrum_ref` | Reference to another spectrum (for linking to external datasets) | `string` | No |
 
 ### Spectral data
@@ -133,3 +133,26 @@ An MS2 spectrum with a single precursor ion:
 
 !!! warning "Array alignment"
     The `mz` and `intensity` arrays MUST have the same length within each record. Each element at index `i` in `intensity` corresponds to the peak at index `i` in `mz`.
+
+## Spectrum metadata
+
+`cv_params` of a spectrum converted from mzML holds what the file states:
+
+| `cv_name` | Value |
+| --------- | ----- |
+| `activation_method` | Dissociation methods of the first precursor, `;`-separated; an SPS-MS3 or EThcD scan names each |
+| `collision_energy` | Activation energy |
+| `filter_string` | Vendor filter line |
+| `analyzer` | First word of the filter line, such as `FTMS` or `ITMS` |
+
+## What a view holds
+
+The footer key `spectrum_content` states which spectra were written, because an empty result otherwise cannot tell "no spectrum" from "not converted":
+
+| Value | Producer | Meaning |
+| ----- | -------- | ------- |
+| `all_spectra` | `qpxc convert mz` | Every spectrum of each mzML |
+| `selected_ms_levels` | `qpxc convert mz` with MS levels, DIA-NN without matched scans | Only those MS levels |
+| `identified_spectra` | DIA-NN | Only spectra that have an identification |
+
+A view may also leave `mz` and `intensity` empty, keeping only scan headers. The footer key `acquisition_start` holds a JSON object from run to the mzML `startTimeStamp`. `MzSpectra.run_summary()` gives spectra per MS level, total ion current, injection time and covered time per run, which describe the acquisition only under `all_spectra`.

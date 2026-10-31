@@ -314,4 +314,7 @@ class FragPipePsmAdapter(BaseConverter):
                     "cv_value": str(int(termini)),
                 }
             )
+        compensation_voltage = safe_float(row.get("Compensation Voltage"))
+        if compensation_voltage is not None:
+            cv_params.append({"cv_name": "compensation_voltage", "cv_value": str(compensation_voltage)})
         return additional_scores, missed_cleavages, cv_params

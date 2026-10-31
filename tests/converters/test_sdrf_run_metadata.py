@@ -3,6 +3,7 @@
 import pyarrow.parquet as pq
 import pytest
 
+from qpx.converters.ptm import unimod_mass
 from qpx.converters.sdrf import SdrfConverter
 from qpx.core.sdrf import parse_sdrf_kv
 
@@ -12,6 +13,7 @@ OXIDATION = {
     "fixed": False,
     "position": "Anywhere",
     "target_amino_acid": "M",
+    "mass_delta": unimod_mass(35),
 }
 
 

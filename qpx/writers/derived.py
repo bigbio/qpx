@@ -34,6 +34,9 @@ FEATURE_SCORE_COLUMNS: dict[str, Callable[[str], bool]] = {
 }
 
 
+_IRT_PARAMS = ["irt", "empirical_irt"]
+
+
 def _score_values(scores: pa.Array, wanted: Callable[[str], bool]) -> np.ndarray:
     """The first wanted score of each row of a ``list<score>`` array, NaN where it has none."""
     values = np.full(len(scores), np.nan)
@@ -66,6 +69,27 @@ def fill_score_columns(table: pa.Table, columns: dict[str, Callable[[str], bool]
         filled = pc.call_function("coalesce", [table.column(index), typed])
         table = table.set_column(index, table.schema.field(index), filled)
     return table
+
+
+def fill_irt(table: pa.Table) -> pa.Table:
+    """Fill a null ``irt`` from the ``irt`` or ``empirical_irt`` entry of ``cv_params``."""
+    index = table.schema.get_field_index("irt")
+    if index < 0 or "cv_params" not in table.schema.names or not table.num_rows:
+        return table
+    params = pa.concat_arrays(table.column("cv_params").chunks)
+    entries = params.flatten()
+    if len(entries) == 0:
+        return table
+    chosen = pc.call_function("is_in", [entries.field("cv_name")], pc.SetLookupOptions(pa.array(_IRT_PARAMS)))
+    rows = np.flatnonzero(chosen.fill_null(False).to_numpy(zero_copy_only=False))
+    if not len(rows) > 0:
+        return table
+    values = np.full(len(params), np.nan)
+    parents = pc.call_function("list_parent_indices", [params]).to_numpy()
+    numbers = pc.call_function("cast", [entries.field("cv_value").take(pa.array(rows))], pc.CastOptions(pa.float64()))
+    values[parents[rows]] = numbers.to_numpy(zero_copy_only=False)
+    typed = pa.array(values, mask=np.isnan(values), type=table.schema.field(index).type)
+    return table.set_column(index, table.schema.field(index), pc.call_function("coalesce", [table.column(index), typed]))
 
 
 def _members(entry) -> tuple[str, ...]:

@@ -476,8 +476,10 @@ def _aggregate_channel_rows_sql(row_sql: str, target_schema: pa.Schema) -> str:
         "precursor_qvalue",
         "global_qvalue",
         "pg_group_id",
+        "irt",
         # Producer-specific optional fields not emitted by DIA-NN.
         "identified_labels",
+        "rt_aligned",
         "quantification_unit_id",
         "compensation_voltage",
         "consensus_rt",

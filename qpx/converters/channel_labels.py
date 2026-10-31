@@ -463,7 +463,7 @@ def fraction_groups_from_consensusxml(
     return groups
 
 
-def _is_ms1_label(text: str) -> bool:
+def is_ms1_label(text: str) -> bool:
     """A SILAC, dimethyl or mTRAQ label names its quantity already, whatever the experiment type says."""
     return _MS1_LABEL.match(text) is not None
 
@@ -490,7 +490,7 @@ def _relabel_entries(column, channel_labels: dict[int, str], is_lfq: bool) -> pa
     # A numeric label fixes the channel; any other label takes its position's channel.
     fixed = [
         text
-        if _is_ms1_label(text)
+        if is_ms1_label(text)
         else "LFQ"
         if is_lfq
         else channel_labels.get(int(text), normalize_label(text))
@@ -530,7 +530,7 @@ def _relabel_scalar_labels(column, channel_labels: dict[int, str], is_lfq: bool)
     encoded = column.combine_chunks().dictionary_encode()
     labels = [
         text
-        if _is_ms1_label(text)
+        if is_ms1_label(text)
         else "LFQ"
         if is_lfq
         else channel_labels.get(int(text), normalize_label(text))

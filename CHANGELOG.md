@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Specification 1.3: run and retention time metadata.** `run.label_definitions`, `run.gradient_length`, `samples[].channel_role` and `samples[].mixture`, read from the SDRF; `modification_parameters[].mass_delta`; `feature.rt_aligned` and `feature.irt`. `convert mz` records activation, collision energy, filter string and analyzer in `cv_params`, and the footer of an mz view states `spectrum_content` and `acquisition_start`. `MzSpectra.run_summary()` gives acquisition statistics per run.
 - **Specification 1.3: flat confidence and group keys.** `psm.qvalue`, `feature.precursor_qvalue` and `feature.global_qvalue` hold q-values under one name whichever tool produced them, filled by the writers from `additional_scores`, and `psm.confident()` and `feature.confident()` filter on them. `pg_group_id` on pg and feature is a hash of the group's sorted membership: `link_feature_pg()` joins on it, and `link_feature_pg(group=[...])` reads one group's link.
 - `qpxc convert maxquant` writes the pepmap view from `Proteins` of `evidence.txt`, and each LFQ feature's `MS/MS count` as `spectral_count`.
 - `DatasetCollection` registers one view per structure over all datasets, with a `source_dataset` column, next to the positional `feature_0` views, which change with the list order.
@@ -53,6 +54,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Run modification parameters come from that run's SDRF rows, not the first row of the study. MaxQuant `feature.rt` is the raw `Retention time`, as documented and as in `psm.rt`; the calibrated time, used until now, moves to `rt_aligned`. `feature_id` is unchanged, because the composite uses `rt_start` and `rt_stop`.
+- mz `isolation_window_target` is the window target, not the selected ion, and a zero window offset is 0 rather than null. The specification now says that the two window fields are offsets. `ion_mobility` is documented as 1/K0 (`MS:1002815`), which every converter writes, and FragPipe keeps `Compensation Voltage` in psm `cv_params`.
 - MaxQuant reads iTRAQ4 and other partial plexes from the columns of the plex with as many reporter columns as the table (`ITRAQ114` is column 2 of an 8-column table), and SDRF spellings such as `iTRAQ reagent 114` and `iTRAQ4plex-114` resolve to their channel. A MaxQuant pg zero `LFQ intensity` or `iBAQ` is null beside a positive intensity too, and a negative value in a DIA-NN pg matrix no longer becomes an intensity.
 - One rule strips run-file suffixes in every converter, including `.wiff2` and `.htrms`, so these runs join their SDRF rows wherever they are read.
 - Every converter writes UniProt ids as bare accessions: mzIdentML, `openms-consensus` and `quantms-msstats` wrote `sp|P1|NAME` and DIA-NN `DECOY_sp|P1|NAME`. mzIdentML now fills `pg_names` from the entry names, and `qpxc transform normalize-accessions` handles `DECOY_`/`REV__` ids and moves entry names into a null `pg_names` instead of dropping them.

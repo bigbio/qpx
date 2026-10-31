@@ -332,6 +332,18 @@ class BaseWriter:
         """Declare a confirmed format before close, including after streamed batches."""
         self._guard(self._set_scan_format, scan_format)
 
+    def add_footer_metadata(self, entries: dict[bytes, bytes]) -> None:
+        """Add footer keys before close, including after streamed batches."""
+        self._guard(self._add_footer_metadata, entries)
+
+    def _add_footer_metadata(self, entries: dict[bytes, bytes]) -> None:
+        if self._writer is not None and not hasattr(self._writer, "add_key_value_metadata"):
+            logger.warning("Cannot add %s after batches were written: PyArrow 17 or newer is required", sorted(entries))
+            return
+        self._file_metadata.update(entries)
+        if self._writer is not None:
+            self._writer.add_key_value_metadata(entries)
+
     def _set_scan_format(self, scan_format: str) -> None:
         """Keep footer keys and the serialized Arrow schema in sync atomically."""
         if self._writer is not None and not hasattr(self._writer, "add_key_value_metadata"):

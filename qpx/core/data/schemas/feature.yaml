@@ -103,6 +103,16 @@ fields:
     type: float32
     nullable: true
     doc: "Retention time (seconds); may participate in a producer-specific identity composite when it identifies the upstream Feature entity"
+  rt_aligned:
+    type: float32
+    nullable: true
+    optional: true
+    doc: "Retention time after the tool's alignment between runs (seconds); rt is the time on this run's own clock"
+  irt:
+    type: float32
+    nullable: true
+    optional: true
+    doc: "Indexed retention time, in the tool's iRT scale; filled at write time from the cv_params irt and empirical_irt"
   consensus_rt:
     type: float32
     nullable: true

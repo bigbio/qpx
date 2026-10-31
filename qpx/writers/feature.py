@@ -9,7 +9,7 @@ import pyarrow as pa
 from qpx.core.data import FeatureSchema
 from qpx.core.data.identity import derive_id
 from qpx.writers.base import BaseWriter
-from qpx.writers.derived import FEATURE_SCORE_COLUMNS, fill_group_ids, fill_score_columns
+from qpx.writers.derived import FEATURE_SCORE_COLUMNS, fill_group_ids, fill_irt, fill_score_columns
 
 _log = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ class FeatureWriter(BaseWriter):
         self._unidentified_fallback_count = 0
 
     def _derive_columns(self, table: pa.Table) -> pa.Table:
-        return fill_group_ids(fill_score_columns(table, FEATURE_SCORE_COLUMNS))
+        return fill_irt(fill_group_ids(fill_score_columns(table, FEATURE_SCORE_COLUMNS)))
 
     def _should_override_provided_id(self, index: int, composite_values: dict[str, list]) -> bool:
         """Use the natural composite only for identified Features."""

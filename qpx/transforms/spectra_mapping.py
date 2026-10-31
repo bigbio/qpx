@@ -25,6 +25,7 @@ Usage:
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 from typing import Optional, Union
@@ -48,6 +49,8 @@ NATIVE_ID_PATTERNS = [
 ]
 
 # PSI-MS "ion injection time"; pyopenms keeps it on the scan's acquisition.
+_ISOLATION_TARGET = "isolation window target m/z"
+_FILTER_STRING = "filter string"
 _ION_INJECTION_TIME = "MS:1000927"
 
 
@@ -59,10 +62,10 @@ _MZ_BATCH_PEAKS = 10_000_000
 class _MzRecordWriter:
     """pyopenms mzML consumer that writes QPX mz records in peak-bounded batches."""
 
-    def __init__(self, writer, build_record, ms_levels):
+    def __init__(self, writer, build_record):
+        self.acquisition_start: str | None = None
         self._writer = writer
         self._build_record = build_record
-        self._ms_levels = ms_levels
         self._records: list[dict] = []
         self._peaks = 0
         self._index = 0
@@ -72,9 +75,9 @@ class _MzRecordWriter:
         """Buffer one spectrum's record; write the batch once it holds enough peaks."""
         index = self._index
         self._index += 1
-        if self._ms_levels is not None and spectrum.getMSLevel() not in self._ms_levels:
-            return
         record = self._build_record(spectrum, index)
+        if record is None:
+            return
         self._records.append(record)
         self._peaks += len(record["mz"])
         if self._peaks >= _MZ_BATCH_PEAKS:
@@ -87,14 +90,18 @@ class _MzRecordWriter:
             self.written += len(self._records)
             self._records, self._peaks = [], 0
 
+    def experimental_settings(self, settings) -> None:
+        """Keep the mzML ``startTimeStamp``."""
+        self.acquisition_start = settings.getDateTime().get() or None
+
     def ignore(self, *_args) -> None:
-        """Experiment settings, expected sizes and chromatograms are not written."""
+        """Expected sizes and chromatograms are not written."""
 
     # pyopenms MzMLFile.transform calls camelCase consumer hooks; route them here.
     _HOOKS = {
         "consumeSpectrum": "consume_spectrum",
         "consumeChromatogram": "ignore",
-        "setExperimentalSettings": "ignore",
+        "setExperimentalSettings": "experimental_settings",
         "setExpectedSize": "ignore",
     }
 
@@ -117,6 +124,33 @@ def _ion_injection_time(spectrum) -> Optional[float]:
         if acquisition.metaValueExists(_ION_INJECTION_TIME):
             return float(acquisition.getMetaValue(_ION_INJECTION_TIME))
     return None
+
+
+def _isolation_target(precursor) -> float:
+    """The isolation window target, which differs from the selected ion in a DIA or wide-window scan."""
+    if precursor.metaValueExists(_ISOLATION_TARGET):
+        return float(precursor.getMetaValue(_ISOLATION_TARGET))
+    return float(precursor.getMZ())
+
+
+def _spectrum_cv_params(spectrum) -> list[dict]:
+    """Activation, collision energy, filter string and analyzer of a spectrum, as far as the mzML states them."""
+    params: list[dict] = []
+    if spectrum.metaValueExists(_FILTER_STRING):
+        filter_string = str(spectrum.getMetaValue(_FILTER_STRING))
+        params.append({"cv_name": "filter_string", "cv_value": filter_string})
+        analyzer = filter_string.split(" ", 1)[0]
+        if analyzer.endswith("MS"):
+            params.append({"cv_name": "analyzer", "cv_value": analyzer})
+    for precursor in spectrum.getPrecursors()[:1]:
+        methods = [
+            method.decode() if isinstance(method, bytes) else method for method in precursor.getActivationMethodsAsString()
+        ]
+        if methods:
+            params.append({"cv_name": "activation_method", "cv_value": ";".join(methods)})
+        if precursor.getActivationEnergy() > 0:
+            params.append({"cv_name": "collision_energy", "cv_value": str(precursor.getActivationEnergy())})
+    return params
 
 
 class _MzMLCache:
@@ -307,6 +341,7 @@ class SpectraMappingTransform:
 
         self._native_id_pattern = native_id_pattern
         self._cache = _MzMLCache()
+        self._acquisition_starts: dict[str, str] = {}
 
     def _resolve_mzml_path(self, run_file_name: str) -> Optional[Path]:
         """
@@ -501,6 +536,7 @@ class SpectraMappingTransform:
                     logger.warning("Skipping run %s: mzML file not found", run_name)
                     continue
                 total_spectra += self._write_mzml_spectra(mzml_path, run_name, writer, ms_levels)
+            self._declare_mz_contents(writer, ms_levels)
 
         logger.info("Wrote %d spectra from %d runs to %s", total_spectra, len(run_file_names), output_path)
         return output_path
@@ -543,6 +579,7 @@ class SpectraMappingTransform:
                 total_spectra += self._write_mzml_spectra(mzml_path, run_name, writer, ms_levels, formats)
             if len(formats) == 1 and None not in formats:
                 writer.set_scan_format(formats.pop())
+            self._declare_mz_contents(writer, ms_levels)
 
         logger.info("Wrote %d spectra from %d mzML files to %s", total_spectra, len(mzml_paths), output_path)
         return output_path
@@ -578,14 +615,27 @@ class SpectraMappingTransform:
         # Stream spectra rather than loading the whole experiment, so memory stays
         # bounded by one peak-limited batch instead of growing with the file.
         def build_record(spectrum, index):
+            if ms_levels is not None and spectrum.getMSLevel() not in ms_levels:
+                return None
             if formats is not None:
                 formats.add(scan_format_from_native_id(spectrum.getNativeID()))
             return self._build_mz_record(spectrum, run_name, index, oms)
 
-        consumer = _MzRecordWriter(writer, build_record, ms_levels)
+        consumer = _MzRecordWriter(writer, build_record)
         oms.MzMLFile().transform(str(mzml_path), consumer)
         consumer.flush()
+        if consumer.acquisition_start:
+            self._acquisition_starts[run_name] = consumer.acquisition_start
         return consumer.written
+
+    def _declare_mz_contents(self, writer, ms_levels) -> None:
+        """Say in the footer what the view holds and when its runs were acquired."""
+        writer.add_footer_metadata(
+            {
+                b"spectrum_content": b"all_spectra" if ms_levels is None else b"selected_ms_levels",
+                b"acquisition_start": json.dumps(self._acquisition_starts, sort_keys=True).encode(),
+            }
+        )
 
     @staticmethod
     def _build_mz_record(spectrum, run_name, index, oms) -> dict:
@@ -608,17 +658,9 @@ class SpectraMappingTransform:
                         "selected_ion_mz": float(precursor.getMZ()),
                         "selected_ion_charge": (int(precursor.getCharge()) if precursor.getCharge() > 0 else None),
                         "selected_ion_intensity": (float(precursor.getIntensity()) if precursor.getIntensity() > 0 else None),
-                        "isolation_window_target": float(precursor.getMZ()),
-                        "isolation_window_lower": (
-                            float(precursor.getIsolationWindowLowerOffset())
-                            if precursor.getIsolationWindowLowerOffset() > 0
-                            else None
-                        ),
-                        "isolation_window_upper": (
-                            float(precursor.getIsolationWindowUpperOffset())
-                            if precursor.getIsolationWindowUpperOffset() > 0
-                            else None
-                        ),
+                        "isolation_window_target": _isolation_target(precursor),
+                        "isolation_window_lower": float(precursor.getIsolationWindowLowerOffset()),
+                        "isolation_window_upper": float(precursor.getIsolationWindowUpperOffset()),
                         "spectrum_ref": None,
                     }
                 )
@@ -641,7 +683,7 @@ class SpectraMappingTransform:
             "precursors": precursors,
             "mz": mz_array,
             "intensity": intensity_array,
-            "cv_params": None,
+            "cv_params": _spectrum_cv_params(spectrum) or None,
         }
 
     def close(self):

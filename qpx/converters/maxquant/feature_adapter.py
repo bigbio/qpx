@@ -600,9 +600,12 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         )
 
         # RT (minutes → seconds)
-        rt = safe_float(row.get(r.get("rt", "Calibrated retention time")))
+        rt = safe_float(row.get(r.get("rt", "Retention time")))
         if rt is not None:
             rt *= 60.0
+        rt_aligned = safe_float(row.get(r.get("rt_aligned", "Calibrated retention time")))
+        if rt_aligned is not None:
+            rt_aligned *= 60.0
         rt_start = safe_float(row.get(r.get("rt_start", "Calibrated retention time start")))
         if rt_start is not None:
             rt_start *= 60.0
@@ -621,6 +624,7 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
             "observed_mz": observed_mz,
             "mass_error_ppm": mass_error_ppm(calculated_mz, observed_mz),
             "rt": rt,
+            "rt_aligned": rt_aligned,
             "rt_start": rt_start,
             "rt_stop": rt_stop,
             "posterior_error_probability": pep,

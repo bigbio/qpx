@@ -162,6 +162,9 @@ class DiannMzAdapter:
         pending: list[dict] = []
         written = 0
         writer = MzWriter(output_path, compression=self._compression, batch_size=self._batch_size)
+        writer.add_footer_metadata(
+            {b"spectrum_content": b"selected_ms_levels" if scans_by_run is None else b"identified_spectra"}
+        )
         try:
             for ms2_file in ms2_files:
                 run_name = ms2_file.name.removesuffix("_ms2_info.parquet")

@@ -170,7 +170,7 @@ Sample metadata fields map to biological ontologies. These mappings are critical
 | `run_file_name` | --- | --- | Spectrum file name without path or extension |
 | `scan` | scan number | `MS:1003057` | Scan identifier as array of integer components |
 | `protein_accessions` | --- | --- | Protein accessions the peptide maps to (optional column) |
-| `ion_mobility` | ion mobility drift time | `MS:1002476` | Ion mobility value for the precursor |
+| `ion_mobility` | inverse reduced ion mobility | `MS:1002815` | Inverse reduced ion mobility (1/K0, Vs/cm²) for the precursor |
 | `mz_array` | m/z array | `MS:1000514` | Array of fragment m/z values |
 | `intensity_array` | intensity array | `MS:1000515` | Array of fragment intensity values |
 | `charge_array` | --- | --- | Array of fragment ion charge values |
@@ -198,7 +198,7 @@ Sample metadata fields map to biological ontologies. These mappings are critical
 | `rt_start` | --- | --- | Start of the retention time window |
 | `rt_stop` | --- | --- | End of the retention time window |
 | `predicted_rt` | predicted retention time | `MS:1000897` | Predicted retention time (seconds) |
-| `ion_mobility` | ion mobility drift time | `MS:1002476` | Ion mobility value for the precursor |
+| `ion_mobility` | inverse reduced ion mobility | `MS:1002815` | Inverse reduced ion mobility (1/K0, Vs/cm²) for the precursor |
 | `ion_mobility_start` | --- | --- | Start ion mobility value |
 | `ion_mobility_stop` | --- | --- | End ion mobility value |
 | `run_file_name` | --- | --- | Run file containing the feature |
