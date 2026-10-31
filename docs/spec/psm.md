@@ -91,6 +91,28 @@ The `cross_links` field supports XL-MS (cross-linking mass spectrometry) experim
 | `linker_accession` | XLMOD controlled vocabulary accession for the linker (e.g., `"XLMOD:02001"`) | string, null | no |
 | `linker_mass` | Cross-linker mass in Daltons | float64 | yes |
 
+`peptidoform` names only the alpha peptide, while `calculated_mz` and `observed_mz` belong to the whole complex, so these columns of the PSM state the rest:
+
+| Field | Description | Type |
+|-------|-------------|------|
+| `crosslinked_peptidoform` | The linked species in ProForma 2.0, what tells two link species with the same alpha peptide apart: `PEPK[XLMOD:02001#XL1]R//SEK[#XL1]R`, with the linker's mass where it has no accession, `PEP//SEK` for a noncovalent pair | string, null |
+| `protein_starts` | First residue of the alpha peptide in each of `protein_accessions` (1-indexed): the linked residue is at `start + donor_position - 1` | array[int32], null |
+| `partner_protein_accessions` | Proteins of the partner peptide. `protein_accessions` holds those of the alpha peptide | array[string], null |
+| `partner_protein_starts` | First residue of the partner peptide in each of those proteins (1-indexed): the linked residue is at `start + acceptor_position - 1` | array[int32], null |
+| `crosslink_decoy_class` | `target_target`, `target_decoy` or `decoy_decoy`. `is_decoy` is true for both of the latter | string, null |
+
+A false-discovery rate at the level of the residue pair or protein pair goes in `additional_scores` under its own name, next to that of the PSM. One row per residue pair is a query away:
+
+```sql
+SELECT protein_accessions[1] AS protein_a, partner_protein_accessions[1] AS protein_b,
+       link.donor_position + protein_starts[1] - 1 AS residue_a,
+       link.acceptor_position + partner_protein_starts[1] - 1 AS residue_b,
+       count(*) AS psms
+FROM (SELECT *, unnest(cross_links) AS link FROM psm)
+WHERE link.xl_type = 'inter' AND crosslink_decoy_class = 'target_target'
+GROUP BY ALL
+```
+
 !!! example "Cross-linked PSM"
     ```json
     {

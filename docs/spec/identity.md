@@ -37,7 +37,7 @@ So do not join across datasets on an id or on a natural key (`peptidoform`, `cha
 
 OpenMS `-out_qpx` files declare their own composite in the footer, and `qpxc convert openms` re-derives ids with that composite. The two OpenMS routes declare different feature composites, so their `feature_id` values differ for the same data.
 
-`qpxc convert mzidentml` supplies its `psm_id` values (`identity_source` `provided`): the hash of `[run_file_name, spectrum_identification_item_ids]`, because a spectrum can hold several hits of one peptidoform. Its footer still names the schema default, which does not reproduce them.
+`qpxc convert mzidentml` supplies its `psm_id` values (`identity_source` `provided`): the hash of `[run_file_name, spectrum_identification_item_ids]`, because a spectrum can hold several hits of one peptidoform. Its footer still names the schema default, which does not reproduce them. On a cross-linked PSM the validator reads `crosslinked_peptidoform` in place of `peptidoform`, which names only the alpha peptide.
 
 ## How an id is derived
 

@@ -101,6 +101,31 @@ fields:
     type: "list<cross_link>"
     optional: true
     doc: "Cross-link information for XL-MS experiments"
+  crosslinked_peptidoform:
+    type: string
+    optional: true
+    nullable: true
+    doc: "The whole linked species in ProForma 2.0: PEPK[XLMOD:02001#XL1]R//SEK[#XL1]R for two peptides, peptidoform alone naming only the alpha peptide"
+  protein_starts:
+    type: "list<int32>"
+    optional: true
+    nullable: true
+    doc: "For a cross-linked PSM: first residue of the peptide in each of protein_accessions (1-indexed)"
+  partner_protein_accessions:
+    type: "list<string>"
+    optional: true
+    nullable: true
+    doc: "Proteins of the partner peptide of an inter-peptide cross-link or noncovalent pair"
+  partner_protein_starts:
+    type: "list<int32>"
+    optional: true
+    nullable: true
+    doc: "First residue of the partner peptide in each of partner_protein_accessions (1-indexed), for placing the linked residue in the protein"
+  crosslink_decoy_class:
+    type: string
+    optional: true
+    nullable: true
+    doc: "Target or decoy origin of the two peptides: target_target, target_decoy or decoy_decoy"
   pass_threshold:
     type: "bool"
     optional: true

@@ -102,6 +102,78 @@ def _build_interlink(
     return links or None
 
 
+def _tag_residue(peptidoform: str, position: int, tag: str) -> str:
+    """Put ``[tag]`` after a residue of a ProForma string; position 0 is the N-terminus."""
+    if position == 0:
+        return f"[{tag}]{peptidoform}" if peptidoform.startswith("[") else f"[{tag}]-{peptidoform}"
+    residues = depth = 0
+    for index, char in enumerate(peptidoform):
+        depth += (char == "[") - (char == "]")
+        if char.isalpha() and depth == 0:
+            residues += 1
+            if residues == position:
+                insert_at = index + 1
+                # A residue's own modifications stay next to it.
+                while peptidoform[insert_at : insert_at + 1] == "[":
+                    insert_at = peptidoform.index("]", insert_at) + 1
+                return f"{peptidoform[:insert_at]}[{tag}]{peptidoform[insert_at:]}"
+    # Past the last residue is the C-terminus.
+    return f"{peptidoform}-[{tag}]"
+
+
+def crosslinked_peptidoform(peptidoform: str, cross_links: Optional[list[dict]]) -> Optional[str]:
+    """The linked species in ProForma 2.0: ``PEPK[XLMOD:02001#XL1]R//SEK[#XL1]R``."""
+    if not cross_links:
+        return None
+    alpha = peptidoform
+    partner = cross_links[0]["partner_peptidoform"]
+    for number, link in enumerate(cross_links, start=1):
+        if link["donor_position"] is None:
+            continue
+        name = link["linker_accession"] or f"{link['linker_mass']:+.4f}"
+        alpha = _tag_residue(alpha, link["donor_position"], f"{name}#XL{number}")
+        if link["acceptor_position"] is None:
+            continue
+        if partner is None:
+            alpha = _tag_residue(alpha, link["acceptor_position"], f"#XL{number}")
+        else:
+            partner = _tag_residue(partner, link["acceptor_position"], f"#XL{number}")
+    return f"{alpha}//{partner}" if partner is not None else alpha
+
+
+def _evidence_proteins(sii: dict, parsed: dict) -> tuple[list[str], list[Optional[int]]]:
+    """The proteins of an identification item, each with the peptide's first residue in it."""
+    accessions: list[str] = []
+    starts: list[Optional[int]] = []
+    for reference in sii["peptide_evidence_refs"]:
+        entry = parsed["peptide_evidence"].get(reference, {})
+        accession = parsed["db_sequences"].get(entry.get("db_ref", ""), "")
+        if accession and accession not in accessions:
+            accessions.append(accession)
+            starts.append(entry.get("start"))
+    return accessions, starts
+
+
+def _is_decoy(sii: dict, parsed: dict) -> bool:
+    return any(parsed["peptide_evidence"].get(ref, {}).get("is_decoy", False) for ref in sii["peptide_evidence_refs"])
+
+
+def partner_fields(alpha_sii: dict, beta_sii: Optional[dict], parsed: dict) -> dict:
+    """Where the linked peptides sit in their proteins, and their target or decoy origin."""
+    _, alpha_starts = _evidence_proteins(alpha_sii, parsed)
+    if beta_sii is None:
+        return {"protein_starts": alpha_starts or None}
+    accessions, starts = _evidence_proteins(beta_sii, parsed)
+    decoys = _is_decoy(alpha_sii, parsed) + _is_decoy(beta_sii, parsed)
+    return {
+        "protein_starts": alpha_starts or None,
+        "partner_protein_accessions": accessions or None,
+        "partner_protein_starts": starts or None,
+        "crosslink_decoy_class": ("target_target", "target_decoy", "decoy_decoy")[decoys],
+        "is_decoy": decoys > 0,
+    }
+
+
 def _sii_link_group(sii) -> tuple:
     """Read crosslink group and association flags from one SII."""
     xl_group = None

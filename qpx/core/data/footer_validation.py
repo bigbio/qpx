@@ -136,15 +136,21 @@ def _declared_composite(view, footers: list[tuple[str, dict]], columns: list[str
     return composite
 
 
+def _composite_key_sql(name: str, columns: list[str]) -> str:
+    """One composite column as a grouping key; ``peptidoform`` names only the alpha peptide of a cross-link."""
+    if name in SET_VALUED_FIELDS:
+        return f"list_sort(list_distinct({validate_identifier(name)}))"
+    if name == "peptidoform" and "crosslinked_peptidoform" in columns:
+        return "COALESCE(crosslinked_peptidoform, peptidoform)"
+    return validate_identifier(name)
+
+
 def duplicate_composite_issues(engine, query: str, view, columns: list[str], footers, severity: str) -> list[ValidationIssue]:
     """Identity composites that carry several ids: one composite value must name one row identity."""
     composite = _declared_composite(view, footers, columns) if view.identity_composite else None
     if composite is None:
         return []
-    keys = ", ".join(
-        f"list_sort(list_distinct({validate_identifier(name)}))" if name in SET_VALUED_FIELDS else validate_identifier(name)
-        for name in composite
-    )
+    keys = ", ".join(_composite_key_sql(name, columns) for name in composite)
     id_field = view.primary_key[0]
     sql = sql_build(_DUPLICATE_COMPOSITE_SQL, id_field=validate_identifier(id_field), query=query, keys=keys)
     groups, ids = engine.connection.sql(sql).fetchall()[0]

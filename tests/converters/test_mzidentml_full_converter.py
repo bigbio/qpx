@@ -20,6 +20,7 @@ from qpx.core.data import (
     ProvenanceSchema,
     PsmSchema,
 )
+from qpx.dataset import Dataset
 
 XL_EXAMPLES = Path(__file__).parent.parent / "examples" / "mzidentml" / "xl"
 PXD054720_DIR = Path(__file__).parent.parent / "examples" / "mzidentml" / "PXD054720"
@@ -438,3 +439,13 @@ def test_several_result_batches_match_one(tmp_path, monkeypatch):
         assert pq.read_table(tmp_path / "one" / f"mz.{view}.parquet").equals(
             pq.read_table(tmp_path / "many" / f"mz.{view}.parquet")
         )
+
+
+def test_link_species_with_one_alpha_peptide_are_separate_identities(tmp_path):
+    mzid = XL_EXAMPLES / "Xlink_EDC_mzIdentML_1_3_0_draft.mzid.gz"
+    MzIdentMLConverter().convert(mzid_path=str(mzid), output_folder=str(tmp_path), output_prefix="xl")
+
+    with Dataset(str(tmp_path), file_prefix="xl") as dataset:
+        result = dataset.validate()["psm"]
+
+    assert not result.errors

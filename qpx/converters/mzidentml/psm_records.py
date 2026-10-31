@@ -7,7 +7,13 @@ import logging
 import re
 from typing import NamedTuple, Optional
 
-from qpx.converters.mzidentml.crosslinks import _build_interlink, _build_looplink, _group_siis
+from qpx.converters.mzidentml.crosslinks import (
+    _build_interlink,
+    _build_looplink,
+    _group_siis,
+    crosslinked_peptidoform,
+    partner_fields,
+)
 from qpx.converters.mzidentml.scores import _attach_site_localization_scores, _extract_pep, _extract_scores
 from qpx.core.cv_terms import MULTI_SPECTRA_ACCESSIONS
 from qpx.core.data.identity import derive_id
@@ -102,6 +108,8 @@ def _build_one_psm(group: dict, context: _SpectrumContext, parsed: dict) -> Opti
         **spectrum_fields,
         **source_fields,
         "cross_links": cross_links,
+        "crosslinked_peptidoform": crosslinked_peptidoform(peptidoform, cross_links),
+        **(partner_fields(alpha_sii, beta_sii, parsed) if cross_links else {}),
     }
 
 
