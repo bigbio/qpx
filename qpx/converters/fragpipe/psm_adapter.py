@@ -246,6 +246,17 @@ class FragPipePsmAdapter(BaseConverter):
                 }
             )
 
+        # Purity: the precursor's share of the ion abundance in the isolation window
+        purity = safe_float(row.get("Purity"))
+        if purity is not None:
+            additional_scores.append(
+                {
+                    "score_name": "parent_ion_fraction",
+                    "score_value": purity,
+                    "higher_better": True,
+                }
+            )
+
         # Missed cleavages (dedicated field)
         missed = row.get("Number of Missed Cleavages")
         missed_cleavages = int(missed) if pd.notna(missed) else None

@@ -13,7 +13,7 @@ import pandas as pd
 
 from qpx.converters.base import BaseConverter, resolve_columns
 from qpx.converters.fragpipe.constants import is_decoy_accession, protein_accessions, to_modifications, to_proforma
-from qpx.converters.fragpipe.pg_adapter import normalize_run_name, resolve_experiment_runs
+from qpx.converters.fragpipe.pg_adapter import normalize_run_name, require_label_free, resolve_experiment_runs
 from qpx.converters.mappings import get_field_mappings
 from qpx.converters.utils import safe_float
 from qpx.core.sql import escape_path, sql_build
@@ -108,6 +108,8 @@ class FragPipeFeatureAdapter(BaseConverter):
             chunksize: Rows per batch.
             creator: Creator tag in Parquet metadata.
         """
+        require_label_free(sdrf_path)
+
         # Step 1: Load feature file into DuckDB
         self._load_feature_file(feature_path)
 
@@ -198,7 +200,11 @@ class FragPipeFeatureAdapter(BaseConverter):
         for col in col_names:
             if col.endswith(" Intensity") and not col.endswith(" MaxLFQ Intensity"):
                 experiments.add(col[: -len(" Intensity")])
-
+        if not experiments:
+            raise ValueError(
+                "FragPipe combined_ion.tsv has no '<experiment> Intensity' columns; a one-experiment ion.tsv, "
+                "whose TMT/iTRAQ channel columns hold its reporter quantities, is not supported"
+            )
         return sorted(experiments)
 
     # ------------------------------------------------------------------

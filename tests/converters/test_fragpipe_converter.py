@@ -482,6 +482,35 @@ def test_features_carry_their_group_and_mapped_proteins(tmp_path):
     }
 
 
+def test_isobaric_sdrf_is_refused(tmp_path):
+    """combined_ion/combined_protein hold MS1 intensities; for a TMT SDRF they must not
+    be written as the label-free quantity."""
+    ion, _ = _write_feature_inputs(tmp_path, experiment="plex1", spectrum_source="run_01")
+    protein = _write_input(tmp_path)
+    sdrf = tmp_path / "sdrf.tsv"
+    sdrf.write_text("source name\tcomment[data file]\tcomment[label]\ns1\trun_01.raw\tTMT126\ns2\trun_01.raw\tTMT127N\n")
+    with FragPipeFeatureAdapter() as adapter:
+        with pytest.raises(ValueError, match="TMT reporter-ion quantities are not converted"):
+            adapter.convert(feature_path=str(ion), output_path=str(tmp_path / "f.parquet"), sdrf_path=str(sdrf))
+    with FragPipePgAdapter() as adapter:
+        with pytest.raises(ValueError, match="TMT reporter-ion quantities are not converted"):
+            adapter.convert(protein_path=str(protein), output_path=str(tmp_path / "p.parquet"), sdrf_path=str(sdrf))
+
+
+def test_one_experiment_ion_table_is_refused(tmp_path):
+    """A per-experiment ion.tsv names no experiment and carries TMT channels; it wrote no
+    feature file while the conversion reported one."""
+    ion = tmp_path / "ion.tsv"
+    ion.write_text(
+        "Peptide Sequence\tM/Z\tCharge\tIntensity\tAssigned Modifications\tProtein\tMapped Proteins\t"
+        "plex_TMT_126\tplex_TMT_127N\n"
+        "PEPTIDEK\t500.0\t2\t1000\tN-term(229.1629)\tsp|P1|A_HUMAN\t\t10\t20\n"
+    )
+    with FragPipeFeatureAdapter() as adapter:
+        with pytest.raises(ValueError, match="no '<experiment> Intensity' columns"):
+            adapter.convert(feature_path=str(ion), output_path=str(tmp_path / "f.parquet"))
+
+
 # ---- PSM adapter (psm.tsv) -------------------------------------------------
 
 
@@ -501,6 +530,21 @@ def test_psm_lists_mapped_proteins_and_reads_probability(tmp_path):
     assert row["posterior_error_probability"] == pytest.approx(0.01)
     assert row["observed_mz"] is None
     assert row["mass_error_ppm"] is None
+
+
+def test_psm_purity_is_the_parent_ion_fraction(tmp_path):
+    """FragPipe Purity, the precursor's share of the isolation window, is kept as a score."""
+    psm = tmp_path / "psm.tsv"
+    psm.write_text(
+        "Spectrum\tPeptide\tCharge\tAssigned Modifications\tCalculated M/Z\tPurity\tProtein\n"
+        "run_01.00500.00500.2\tPEPTIDEK\t2\t\t500.000\t0.87\tsp|P1|A_HUMAN\n"
+    )
+    out = tmp_path / "psm.parquet"
+    with FragPipePsmAdapter() as adapter:
+        adapter.convert(psm_path=str(psm), output_path=str(out))
+    scores = {s["score_name"]: s for s in pq.read_table(out).to_pylist()[0]["additional_scores"]}
+    assert scores["parent_ion_fraction"]["score_value"] == pytest.approx(0.87)
+    assert scores["parent_ion_fraction"]["higher_better"] is True
 
 
 @pytest.mark.parametrize(

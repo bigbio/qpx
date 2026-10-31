@@ -16,7 +16,7 @@ import logging
 import pandas as pd
 
 from qpx.converters.base import BaseConverter, resolve_columns
-from qpx.converters.channel_labels import experiment_runs_from_sdrf
+from qpx.converters.channel_labels import experiment_runs_from_sdrf, experiment_type_from_labels, read_sdrf_labels
 from qpx.converters.fragpipe.constants import is_decoy_accession, protein_accessions
 from qpx.converters.mappings import get_field_mappings
 from qpx.converters.utils import safe_float
@@ -121,6 +121,22 @@ def load_experiment_annotation(path: str) -> dict[str, list[str]]:
     return normalize_experiment_mapping(mapping)
 
 
+def require_label_free(sdrf_path: str | None) -> None:
+    """Refuse an isobaric (TMT/iTRAQ) SDRF.
+
+    ``combined_ion.tsv`` and ``combined_protein.tsv`` hold MS1 intensities per
+    experiment; the reporter-ion quantities are in the channel columns of the
+    one-experiment reports, which are not converted. Writing the MS1 intensities
+    as the label-free quantity of an isobaric experiment would be wrong.
+    """
+    experiment_type = experiment_type_from_labels(read_sdrf_labels(sdrf_path))
+    if experiment_type in ("TMT", "iTRAQ"):
+        raise ValueError(
+            f"FragPipe {experiment_type} reporter-ion quantities are not converted: combined_ion.tsv and "
+            "combined_protein.tsv hold MS1 intensities, which would be written as label-free. Convert psm.tsv only."
+        )
+
+
 def resolve_experiment_runs(
     experiments: list[str],
     experiment_to_runs: dict[str, list[str]] | None,
@@ -204,6 +220,8 @@ class FragPipePgAdapter(BaseConverter):
                 SDRF resolves an experiment, conversion raises rather than emitting
                 a dangling experiment token.
         """
+        require_label_free(sdrf_path)
+
         # Step 1: Load protein file into DuckDB
         self._load_protein_file(protein_path)
 
@@ -273,7 +291,10 @@ class FragPipePgAdapter(BaseConverter):
             if suffix:
                 experiments.add(col[: -len(suffix) - 1])
         if not experiments:
-            raise ValueError("FragPipe combined_protein.tsv has no per-experiment columns such as '<experiment> Intensity'")
+            raise ValueError(
+                "FragPipe combined_protein.tsv has no per-experiment columns such as '<experiment> Intensity'; "
+                "a one-experiment protein.tsv is not supported"
+            )
         return sorted(experiments)
 
     # ------------------------------------------------------------------
