@@ -250,15 +250,20 @@ def _qpx_feature_to_peptide_df(feature_path: Path, sdrf_path: Optional[Path] = N
     import pandas as pd
     import pyarrow as pa
     import pyarrow.compute as pc
+    import pyarrow.dataset as ds
     import pyarrow.parquet as pq
 
     from qpx.version import check_feature_schema_compatible
 
-    schema = pq.read_schema(str(feature_path))
+    # A run name in a partition path is a string, whatever it looks like.
+    partitioning = (
+        ds.HivePartitioning.discover(schema=pa.schema([("run_file_name", pa.string())])) if feature_path.is_dir() else None
+    )
+    schema = pq.ParquetDataset(str(feature_path), partitioning=partitioning).schema
     check_feature_schema_compatible(schema, feature_path)
     has_decoy = "is_decoy" in schema.names
     columns = ["anchor_protein", "sequence", "run_file_name", "intensities"] + (["is_decoy"] if has_decoy else [])
-    table = pq.read_table(str(feature_path), columns=columns)
+    table = pq.read_table(str(feature_path), columns=columns, partitioning=partitioning)
     logger.info("Loaded %d QPX feature rows from %s", table.num_rows, feature_path)
 
     if has_decoy:
@@ -308,9 +313,9 @@ def _qpx_feature_to_peptide_df(feature_path: Path, sdrf_path: Optional[Path] = N
 @click.command("quantify")
 @click.option(
     "--feature-path",
-    help="QPX feature.parquet file path",
+    help="QPX feature.parquet file, or a directory partitioned by run_file_name",
     required=True,
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    type=click.Path(exists=True, path_type=Path),
 )
 @click.option(
     "--method",

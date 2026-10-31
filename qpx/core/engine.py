@@ -179,25 +179,33 @@ class DuckDBEngine:
     def register_parquet_files(self, name: str, file_paths) -> None:
         """Register several Parquet shards as one unioned DuckDB view.
 
-        DuckDB reads the list of files positionally-unioned, matching the S3
-        glob path's behaviour so a multi-shard structure yields the same rows
-        locally and over S3 (bigbio/qpx#252).
+        DuckDB unions the files by column name, matching the S3 glob path so a
+        multi-shard structure yields the same rows locally and over S3
+        (bigbio/qpx#252); a shard without a column reads as null for it.
         """
         paths = list(file_paths)
         if len(paths) == 1:
             self.register_parquet(name, paths[0])
             return
         path_list = ", ".join(f"'{escape_path(str(p))}'" for p in paths)
-        self._create_view(name, sql_build("read_parquet([$paths])", paths=path_list))
+        self._create_view(name, sql_build("read_parquet([$paths], union_by_name=true)", paths=path_list))
 
     def register_partitioned_parquet(self, name: str, directory: str | Path) -> None:
-        """Register a Hive-partitioned Parquet directory as a DuckDB view."""
+        """Register a Hive-partitioned Parquet directory as a DuckDB view.
+
+        A run name is a string however it looks: autocast, ``1/10`` would be a
+        BIGINT and ``2024-01-15`` a DATE.
+        """
         glob_pattern = str(Path(directory) / "**" / "*.parquet")
-        self._create_view(name, sql_build("read_parquet('$path', hive_partitioning=true)", path=escape_path(glob_pattern)))
+        hive_types = ", hive_types={'run_file_name': 'VARCHAR'}" if next(Path(directory).rglob("run_file_name=*"), None) else ""
+        self._create_view(
+            name,
+            sql_build("read_parquet('$path', hive_partitioning=true$types)", path=escape_path(glob_pattern), types=hive_types),
+        )
 
     def register_s3_parquet(self, name: str, s3_path: str) -> None:
         """Register an S3 Parquet file as a DuckDB view."""
-        self._create_view(name, sql_build("read_parquet('$path')", path=escape_path(s3_path)))
+        self._create_view(name, sql_build("read_parquet('$path', union_by_name=true)", path=escape_path(s3_path)))
 
     def register_view(self, name: str, sql: str) -> None:
         """Register ``sql`` as a named DuckDB view.

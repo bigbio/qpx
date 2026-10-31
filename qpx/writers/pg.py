@@ -108,6 +108,7 @@ def _explode_pg_table(records: list[dict], schema: pa.Schema) -> pa.Table:
 
 class PgWriter(BaseWriter):
     _schema_class = PgSchema
+    _record_only_keys = ("intensities",)
 
     def _write_batch(self, records: list[dict]):
         """Explode ``intensities`` into one row per label, then buffer/flush.

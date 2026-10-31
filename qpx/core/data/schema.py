@@ -118,6 +118,8 @@ def _canonicalize_primary_key_column(column: pa.ChunkedArray) -> pa.Array | pa.C
 
 
 _SCAN_FORMATS = ("scan", "index", "nativeId")
+# The column a physical merge adds, naming the dataset a row came from.
+SOURCE_DATASET_COLUMN = "source_dataset"
 
 
 def _declared_scan_format(schema: pa.Schema, structure: str) -> str | None:
@@ -484,10 +486,11 @@ class ViewSchema:
     def get_extended_arrow_schema(self, extra_column_names: list[str]) -> pa.Schema:
         """Return the base schema extended with additional string columns.
 
-        Only allowed when ``extra_columns=True`` in the YAML spec.
-        Extra columns are appended as nullable ``pa.string()`` fields.
+        Only allowed when ``extra_columns=True`` in the YAML spec, except for
+        ``source_dataset``, which a merge adds to every view. Extra columns are
+        appended as nullable ``pa.string()`` fields.
         """
-        if not self._extra_columns:
+        if not self._extra_columns and set(extra_column_names) - {SOURCE_DATASET_COLUMN}:
             raise ValueError(f"Schema '{self._view_name}' does not allow extra columns")
         base = self.get_arrow_schema()
         known = set(base.names)

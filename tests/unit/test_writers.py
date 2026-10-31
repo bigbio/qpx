@@ -393,7 +393,7 @@ class TestAtomicWrites:
                 make_feature_record(sequence="SECOND", peptidoform="SECOND"),
             ]
         )
-        writer.write_batch([{"not": "a valid record"}])
+        writer.write_batch([{"charge": "not a charge"}])
 
         with pytest.raises(ValueError):
             writer.close()

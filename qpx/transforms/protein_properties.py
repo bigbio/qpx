@@ -291,7 +291,7 @@ def _protein_peptides(candidates: dict[str, set[str]], fasta: FastaSequences) ->
 
 def _stamped_schema(schema: pa.Schema) -> tuple[pa.Schema, str]:
     """The source schema with its footer re-stamped (new uuid/date, same identity)."""
-    from qpx.writers.base import _stamp_footer_metadata
+    from qpx.writers.partitioned import _stamp_footer_metadata
 
     metadata = schema.metadata or {}
     compression = metadata.get(b"compression_format", b"zstd").decode() or "zstd"

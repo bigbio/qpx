@@ -273,6 +273,10 @@ class _DatasetValidationMixin:
             Mapping of structure name to its validation result.
         """
         targets = structures or [name for name in self.structure_names() if name in self._structures or name in self._skipped]
+        if not targets:
+            message = f"No QPX views found in {self.path}"
+            issue = ValidationIssue(structure="dataset", check="no_structures", severity="error", column=None, message=message)
+            return {"dataset": ValidationResult(structure="dataset", issues=[issue])}
         results: dict[str, ValidationResult] = {}
         for name in targets:
             struct = self._structures.get(name)
@@ -281,6 +285,12 @@ class _DatasetValidationMixin:
             )
 
         present = {name for name in results if self._structures.get(name) is not None}
+
+        if "dataset" in present and (rows := self.dataset_meta.count()) != 1:
+            message = f"The dataset view describes one dataset, so it has one row; it has {rows}"
+            results["dataset"].issues.append(
+                ValidationIssue(structure="dataset", check="single_row", severity="error", column=None, message=message)
+            )
 
         # Cross-structure invariant: every pg.grouped_runs element must be a
         # real run.run_file_name. A grouped run that names no acquisition run is

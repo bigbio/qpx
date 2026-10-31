@@ -72,11 +72,11 @@ PXD004683/
 ├── exp.dataset.parquet
 └── feature/                         # Partitioned structure (large)
     ├── run_file_name=run_01.raw/
-    │   └── part-0.parquet
+    │   └── part-1f3a9c2e-0.parquet
     ├── run_file_name=run_02.raw/
-    │   └── part-0.parquet
+    │   └── part-1f3a9c2e-0.parquet
     └── run_file_name=run_03.raw/
-        └── part-0.parquet
+        └── part-1f3a9c2e-0.parquet
 ```
 
 ### Auto-Discovery
@@ -94,15 +94,25 @@ print(ds.feature.count())  # Works regardless of storage layout
 ### Writing Partitioned Data
 
 ```python
-from qpx.writers.base import BaseWriter
+from qpx.writers import FeatureWriter
 import pyarrow.parquet as pq
 
 # Read existing data
 table = pq.read_table("exp.feature.parquet")
 
-# Write as Hive-partitioned
-BaseWriter.write_partitioned(table, "feature/", partition_cols=["run_file_name"])
+# Write as Hive-partitioned; ids, the identity composite and the footer are kept
+FeatureWriter.write_partitioned(table, "feature/", partition_cols=["run_file_name"])
 ```
+
+A directory that already holds Parquet files raises by default. `mode="append"`
+adds to it, each call under its own file names, so repeated calls stream a large
+table into one directory. `mode="replace_partitions"` replaces the partitions the
+table writes and keeps the others. `qpxc transform quantify --feature-path` also
+accepts a directory partitioned by `run_file_name`.
+
+No converter writes partitioned output: partition a view after the conversion.
+A run name read back from a partition path stays a string, even if it looks like
+a number or a date.
 
 ### DuckDB Integration
 
@@ -117,6 +127,37 @@ GROUP BY run_file_name;
 
 !!! warning "Practical limits of Parquet metadata"
     Parquet stores all file-level and column-level metadata in the file footer. When reading a partitioned dataset, the footer of every partition file must be loaded into memory to reconstruct the full schema and row group statistics. For datasets with thousands of partitions, this metadata overhead can become significant. Consider using fewer, larger partitions rather than many small ones.
+
+## Writing from Python
+
+Each view has a writer in `qpx.writers`. Rows are written to a staging file that
+replaces the destination when the writer closes without an error.
+
+```python
+from qpx.writers import FeatureWriter
+
+with FeatureWriter("exp.feature.parquet", identity_composite=("peptidoform", "charge", "run_file_name")) as writer:
+    writer.write_batch(records)
+```
+
+- A record key outside the schema raises when the record is written. Keys that
+  start with an underscore are ignored, for hints between the steps of a converter.
+- A value the schema cannot hold raises when its batch is written, naming the
+  column, the row of the batch and the value. That can be at `close()`, which
+  writes the last batch.
+- Non-fatal findings, such as scans that violate the declared `scan_format`, are
+  logged once per file.
+- `FeatureWriter` re-derives identified feature ids by default, and keeps a provided
+  one as a `provided_feature_id` cv_param. Other writers keep provided ids. Pass
+  `override_provided_ids=False` to keep the feature ids, for instance when
+  `psm.feature_id` already refers to them.
+- `FeatureWriter.derive_ids(table, identity_composite=...)` returns the table with
+  the ids the writer would derive, so that `psm.feature_id` can be filled first.
+
+`Dataset.save_structure()` replaces a view of a dataset: it writes under the
+prefix of the dataset's files, keeps the rows' ids and takes the identity composite,
+`creator` and `scan_format` from the existing file. Another `prefix` adds a file
+that is read together with the view, with a warning.
 
 ## Cloud / S3 Access
 

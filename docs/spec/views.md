@@ -236,7 +236,9 @@ print(coll.structure_names)
 
 ### Physical Merge
 
-Merge matching structures from multiple datasets into a new directory. A `source_dataset` column is added to distinguish origins.
+Merge matching structures from multiple datasets into a new directory. The rows
+are streamed through the QPX writers, so the output has QPX footers and row
+groups and respects the collection's memory limit.
 
 ```python
 coll.merge("merged_output/", structures=["feature", "pg"])
@@ -247,5 +249,28 @@ df = merged.feature.to_df()
 print(df["source_dataset"].value_counts())
 ```
 
+Datasets that share a run, a sample or a primary key would count those rows
+twice, so `on_collision` decides what happens:
+
+| `on_collision` | Behaviour |
+| --- | --- |
+| `"error"` (default) | Refuses before writing, and names what the datasets share. |
+| `"namespace"` | Keeps both. Run names, sample accessions and the other names that link rows become `<source>:<name>`, and ids are rewritten per source, so links between views still resolve. |
+| `"dedupe-identical"` | For copies of the same data: a row whose key is already written is dropped if identical. A key with different values raises, and so do rows that are not identical in a run another dataset also has, which are two analyses of it. |
+
+Each view has its own merge rule:
+
+| View | Result |
+| --- | --- |
+| `psm`, `feature`, `pg`, `mz`, `site`, `proteoform`, `sample`, `run` | The rows of every dataset, with a `source_dataset` column: the project accession, else the directory name. |
+| `dataset` | One row. `project_accession` joins the accessions with `;`. |
+| `provenance` | The steps of every dataset, numbered through, with `source_dataset`, then a `merge_datasets` step. |
+| `ontology` | One row per field and view, joining the source tools and columns. A field with different terms keeps the first, with a warning. |
+| `pepmap` | One row per peptidoform, with the proteins of every dataset. |
+
+Footers keep the identity composite of the sources. Datasets with different
+composites give one file per composite (`merged-1.feature.parquet`, ...), which
+are read as one view, because a footer declares one composite.
+
 !!! note "Common structures only"
-    When no `structures` argument is passed to `merge()`, only structures present in **all** datasets are merged.
+    When no `structures` argument is passed to `merge()`, only structures present in **all** datasets are merged, and a warning names the others.

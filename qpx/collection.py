@@ -23,7 +23,7 @@ class DatasetCollection:
         coll = DatasetCollection([ds1, ds2])
         coll.sql("SELECT COUNT(*) FROM feature_0 UNION ALL SELECT COUNT(*) FROM feature_1")
 
-        # Merge into a new dataset
+        # Merge into a new dataset (refuses overlapping datasets; see ``merge``)
         coll.merge("merged_output/", structures=["feature"])
     """
 
@@ -82,47 +82,33 @@ class DatasetCollection:
         output_dir: str | Path,
         structures: list[str] | None = None,
         prefix: str = "merged",
+        on_collision: str = "error",
     ) -> Path:
         """Physically merge datasets into a new directory.
 
-        Concatenates matching structures across all datasets.
-        Adds a ``source_dataset`` column to distinguish origins.
+        Rows are streamed through the QPX writers, so the output has QPX footers
+        and row groups, whatever the memory limit of the collection allows. Data
+        views get a ``source_dataset`` column, the project accession or directory
+        name of the row's dataset. ``dataset`` becomes one row, ``provenance`` the
+        steps of every source followed by the merge, ``ontology`` and ``pepmap``
+        one row per key. Without ``structures``, only views present in every
+        dataset are merged, and the others are named in a warning.
+
+        Datasets with different identity composites give one file per composite,
+        because a footer declares one.
+
+        ``on_collision`` decides what happens when datasets share a run, a sample
+        or a primary key, which would count those rows twice:
+
+        - ``"error"`` (default): refuse, naming what they share, before writing.
+        - ``"namespace"``: keep both. Run and sample names and other names that
+          link rows become ``<source>:<name>``, and ids are rewritten per source.
+        - ``"dedupe-identical"``: for copies of the same data. Rows with an
+          already written key are dropped if identical; a difference raises.
         """
-        import pyarrow as pa
-        import pyarrow.parquet as pq
+        from qpx.core.dataset_merge import merge_datasets
 
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        target_structures = structures or self._common_structures()
-
-        for name in target_structures:
-            tables = []
-            for ds in self.datasets:
-                struct = ds._structures.get(name)
-                if struct is None:
-                    continue
-                tbl = struct.to_arrow()
-                source_col = pa.array([str(ds.path)] * tbl.num_rows, type=pa.string())
-                tbl = tbl.append_column("source_dataset", source_col)
-                tables.append(tbl)
-
-            if tables:
-                merged = pa.concat_tables(tables, promote_options="permissive")
-                _, suffix = self.datasets[0]._STRUCTURE_REGISTRY.get(name, (None, f".{name}.parquet"))
-                out_path = output_dir / f"{prefix}{suffix}"
-                pq.write_table(merged, str(out_path), compression="zstd")
-
-        return output_dir
-
-    def _common_structures(self) -> list[str]:
-        """Return structure names present in ALL datasets."""
-        if not self.datasets:
-            return []
-        common = set(self.datasets[0].available_structures)
-        for ds in self.datasets[1:]:
-            common &= set(ds.available_structures)
-        return sorted(common)
+        return merge_datasets(self, output_dir, structures, prefix, on_collision)
 
     def close(self):
         self._engine.close()

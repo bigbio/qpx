@@ -86,7 +86,7 @@ class TestPhysicalMerge:
         ds2 = qpx.open_dataset(str(ds2_dir))
 
         coll = qpx.DatasetCollection([ds1, ds2])
-        coll.merge(merge_dir, structures=["feature"])
+        coll.merge(merge_dir, structures=["feature"], on_collision="namespace")
 
         # Verify merged file exists and has double rows
         merged_ds = qpx.open_dataset(str(merge_dir))
@@ -109,7 +109,7 @@ class TestPhysicalMerge:
         ds2 = qpx.open_dataset(str(ds2_dir))
 
         coll = qpx.DatasetCollection([ds1, ds2])
-        coll.merge(merge_dir, structures=["feature"])
+        coll.merge(merge_dir, structures=["feature"], on_collision="namespace")
 
         merged_ds = qpx.open_dataset(str(merge_dir))
         df = merged_ds.feature.to_df()
@@ -133,7 +133,7 @@ class TestPhysicalMerge:
 
         coll = qpx.DatasetCollection([ds1, ds2])
         # Merge all common structures
-        coll.merge(merge_dir)
+        coll.merge(merge_dir, on_collision="namespace")
 
         merged_ds = qpx.open_dataset(str(merge_dir))
         # At minimum, feature should be present

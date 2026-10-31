@@ -209,7 +209,7 @@ Output files generated:
 ### Best Practices {#diann-best-practices}
 
 - Use Q-value threshold of 0.05 or lower for high-confidence results
-- Enable partitioning for large datasets to improve memory usage
+- Set `--max-memory` for large reports, and see [Hive partitioning](../spec/serialization.md#hive-partitioning) for partitioning the output afterwards
 - Use verbose mode during initial testing to diagnose issues
 - Ensure SDRF file correctly matches sample names in DIA-NN report
 - When passing a pg_matrix, ensure it comes from the same DIA-NN run as the report

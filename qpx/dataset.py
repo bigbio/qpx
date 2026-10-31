@@ -41,6 +41,14 @@ _log = logging.getLogger(__name__)
 _FILE_LAYOUT_GUARDS = {"pg": check_pg_file_compatible, "feature": check_feature_file_compatible}
 
 
+def _require_local_directory(path: str | Path) -> None:
+    """Raise for a location a local dataset cannot be read from; discovery would find nothing in it and say so nowhere."""
+    if "://" in str(path):
+        raise ValueError(f"Cannot open {path}: only local directories and s3:// locations are supported")
+    if not Path(path).is_dir():
+        raise FileNotFoundError(f"QPX dataset directory not found: {path}")
+
+
 class Dataset(_DatasetValidationMixin, _DatasetQueryMixin, _DatasetWriteMixin):
     """
     A QPX dataset — a directory of related Parquet/H5AD files.
@@ -92,6 +100,8 @@ class Dataset(_DatasetValidationMixin, _DatasetQueryMixin, _DatasetWriteMixin):
         duckdb_temp_dir: str | Path | None = None,
     ):
         self._is_s3 = isinstance(path, str) and path.startswith("s3://")
+        if not self._is_s3:
+            _require_local_directory(path)
         self.path = path if self._is_s3 else Path(path)
         self._file_prefix = file_prefix
         self._engine = DuckDBEngine(
@@ -198,6 +208,14 @@ class Dataset(_DatasetValidationMixin, _DatasetQueryMixin, _DatasetWriteMixin):
             if guard is not None:
                 for match in matches:
                     guard(match)
+            if len(matches) > 1:
+                _log.warning(
+                    "%s is read from %d files as one view (%s, ...). If they are not shards of one dataset, "
+                    "their rows are counted together: pass file_prefix to read one.",
+                    name,
+                    len(matches),
+                    matches[0].name,
+                )
             self._engine.register_parquet_files(name, matches)
             self._structures[name] = cls(
                 engine=self._engine,

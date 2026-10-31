@@ -15,10 +15,11 @@ import pyarrow.parquet as pq
 
 from qpx._version import __version__
 from qpx.core.data.identity import derive_id
-from qpx.core.data.schema import pg_referential_issues_from_parquet
+from qpx.core.data.schema import _scan_format_issues, _scan_format_violations, pg_referential_issues_from_parquet
 from qpx.core.engine import create_connection
 from qpx.core.sql import sql_build, validate_identifier
 from qpx.version import QPX_SPEC_VERSION
+from qpx.writers.encoding import parquet_write_options
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -26,183 +27,12 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-# High-entropy float leaves that compress poorly under the default
-# dictionary/PLAIN encoding (≈1.1x with ZSTD on continuous values). Parquet's
-# BYTE_STREAM_SPLIT encoding reorders the bytes of IEEE floats so that ZSTD can
-# exploit the per-byte regularity, measuring 15-28% smaller per column on real
-# data. Paths use pyarrow's dotted leaf convention (``col``, ``a.list.element``,
-# nested struct fields joined by ``.``). Only leaves present in a given schema
-# are touched, so this list can name columns from any QPX view.
-#
-# NOTE: this is deliberately NOT applied to low-cardinality / dictionary-friendly
-# float columns (e.g. ``additional_scores.score_value``,
-# ``posterior_error_probability``), where BYTE_STREAM_SPLIT measured *larger*
-# than the default dictionary encoding. Those keep their default encoding.
-#
-# PEP was a candidate for float32 + BYTE_STREAM_SPLIT (audit projected ~52%),
-# but empirical validation over the real qpx corpus found genuine PEP values as
-# small as ~1e-300..1e-318 (DIA/quantms feature+psm files): these underflow to
-# zero in float32 and would corrupt any downstream -log10(PEP)/q-value use. The
-# float32 narrowing was therefore held (PEP stays float64), so it is not split.
-#
-# The intensity leaves (``intensities.list.element.intensity`` and the nested
-# ``additional_intensities…intensity_value``) are intentionally NOT split.
-# BYTE_STREAM_SPLIT helps continuous LFQ intensities (~-20%) but slightly *hurts*
-# TMT reporter-ion columns (+4-7%), which dominate TMT feature files (~64% of
-# the file). Rather than probe the data at write time, we simply omit them here:
-# they fall back to dictionary encoding, which is safe everywhere (never worse
-# than PLAIN) and avoids the TMT regression. RT/mz leaves (a proven win) stay.
-#
-# The mz view's peak arrays are split as well: on Thermo DIA, timsTOF DDA-PASEF and
-# diaPASEF spectra, m/z measured ~36% smaller than dictionary encoding; intensity
-# 10% smaller (Thermo, DDA-PASEF) or 2% larger (diaPASEF), ~25% smaller files overall.
-_BYTE_STREAM_SPLIT_LEAVES: tuple[str, ...] = (
-    "predicted_rt",
-    "rt",
-    "rt_start",
-    "rt_stop",
-    "calculated_mz",
-    "observed_mz",
-    "mz.list.element",
-    "intensity.list.element",
-)
-
-# ZSTD level 9 (vs the pyarrow default of 3) buys a few extra percent at modest
-# write-cost; only codecs that accept a level get one.
-_COMPRESSION_LEVELS: dict[str, int] = {"zstd": 9, "gzip": 9}
-
-# Row-group sizing for partitioned (dataset) writes. Left unset, pyarrow's
-# dataset writer flushes a group per input batch, which for streamed msnet
-# conversion fragments into ~80-row groups and collapses ZSTD (1.12x vs 1.75x).
-# A 200k-1M window matches the single-file writer's effective grouping.
-_PARTITIONED_MIN_ROWS_PER_GROUP: int = 200_000
-_PARTITIONED_MAX_ROWS_PER_GROUP: int = 1_000_000
-
-
-def _stamp_footer_metadata(
-    table: pa.Table,
-    compression: str,
-    file_metadata: dict | None = None,
-) -> pa.Table:
-    """Return *table* with qpx footer KV metadata on its schema.
-
-    Layering: any metadata already on the table schema, then defaults that a
-    caller may override (``creation_date``/``uuid``), then *file_metadata* (e.g.
-    a writer's ``_file_metadata`` carrying ``file_type``/``uuid``), and finally
-    the **canonical identity** (``qpx_version``/``writer_version``/
-    ``compression_format``) which always wins so a stale caller value cannot
-    mis-stamp the file. Used so partitioned datasets carry the same footer
-    identity as single files.
-    """
-    merged: dict[bytes, bytes] = dict(table.schema.metadata or {})
-    # Overridable defaults.
-    merged.update(
-        {
-            b"creation_date": datetime.datetime.now().isoformat().encode(),
-            b"uuid": str(uuid.uuid4()).encode(),
-        }
-    )
-    if file_metadata:
-        merged.update(
-            {
-                (k if isinstance(k, bytes) else str(k).encode()): (v if isinstance(v, bytes) else str(v).encode())
-                for k, v in file_metadata.items()
-            }
-        )
-    # Canonical identity — reserved, must not be overridden by caller metadata.
-    merged.update(
-        {
-            b"qpx_version": QPX_SPEC_VERSION.encode(),
-            b"writer_version": __version__.encode(),
-            b"compression_format": str(compression).encode(),
-        }
-    )
-    return table.replace_schema_metadata(merged)
-
-
-def _validate_partitioned_table(schema_class, table: pa.Table) -> None:
-    """Reject structural errors and log non-strict partitioned-write findings."""
-    result = schema_class.validate_full(table, strict=False)
-    if result.errors:
-        raise ValueError("Schema validation failed:\n" + "\n".join(issue.message for issue in result.errors))
-    for issue in result.warnings:
-        logger.warning(
-            "%s partitioned-write validation '%s': %s",
-            schema_class.view_name,
-            issue.check,
-            issue.message,
-        )
-
-
-def _validate_partition_columns(table: pa.Table, cols: list[str]) -> None:
-    """Require existing scalar columns for Hive partitioning."""
-    # Validate the partition columns up front so the default path (or an
-    # unsupported key) fails with an actionable message instead of a raw
-    # KeyError deep in pyarrow. Since QPX 1.1 the pg view is keyed on
-    # grouped_runs (list<string>) with no scalar run_file_name, and Hive
-    # partitioning encodes each value as a directory name — it cannot
-    # represent a list — so the pg view is not Hive-partitionable.
-    available = set(table.schema.names)
-    missing = [c for c in cols if c not in available]
-    if missing:
-        if "grouped_runs" in available and "run_file_name" in missing:
-            raise ValueError(
-                "The protein-group (pg) view is not Hive-partitionable: it is keyed on "
-                "'grouped_runs' (list<string>, since QPX 1.1) and has no scalar "
-                "'run_file_name' column. Hive partitioning encodes each value as a "
-                "directory name and cannot represent a list. Write pg as a single "
-                "Parquet file (write_table), or partition the psm/feature views, which "
-                "keep 'run_file_name'."
-            )
-        raise ValueError(f"Cannot partition on missing column(s) {missing}; available columns: {sorted(available)}")
-    for col in cols:
-        col_type = table.schema.field(col).type
-        if pa.types.is_list(col_type) or pa.types.is_large_list(col_type) or pa.types.is_struct(col_type):
-            raise ValueError(
-                f"Cannot Hive-partition on non-scalar column '{col}' (type {col_type}); partition "
-                "columns must be scalar. The pg view's 'grouped_runs' is a list, so pg is not "
-                "partitionable — write it as a single file."
-            )
-
-
-def _schema_leaf_paths(schema: pa.Schema) -> list[str]:
-    """Return every leaf column path in pyarrow's dotted convention."""
-
-    def _walk(field: pa.Field, prefix: str) -> list[str]:
-        dtype = field.type
-        if pa.types.is_struct(dtype):
-            out: list[str] = []
-            for i in range(dtype.num_fields):
-                child = dtype.field(i)
-                out.extend(_walk(child, f"{prefix}.{child.name}"))
-            return out
-        if pa.types.is_list(dtype) or pa.types.is_large_list(dtype):
-            return _walk(dtype.value_field, f"{prefix}.list.element")
-        return [prefix]
-
-    leaves: list[str] = []
-    for top in schema:
-        leaves.extend(_walk(top, top.name))
-    return leaves
-
-
-def parquet_write_options(schema: pa.Schema, compression: str) -> dict:
-    """Build QPX ParquetWriter options for *schema* and *compression*."""
-    options: dict = {"compression": compression}
-    level = _COMPRESSION_LEVELS.get(str(compression).lower())
-    if level is not None:
-        options["compression_level"] = level
-
-    leaves = _schema_leaf_paths(schema)
-    bss = {leaf: "BYTE_STREAM_SPLIT" for leaf in _BYTE_STREAM_SPLIT_LEAVES if leaf in leaves}
-    # Always stamp the explicit v2.6 format and dictionary-encode non-BSS leaves so
-    # every artifact (feature/psm and pg alike) uses the same encoding, rather than
-    # falling back to pyarrow defaults when no byte-stream-split leaf is present.
-    options["version"] = "2.6"
-    options["use_dictionary"] = [leaf for leaf in leaves if leaf not in bss]
-    if bss:
-        options["column_encoding"] = bss
-    return options
+def _cast_column(column: pa.ChunkedArray, target: pa.DataType) -> pa.ChunkedArray | pa.Array:
+    """Cast *column*; a null struct read back from DuckDB has null children, which a required child field refuses."""
+    try:
+        return column.cast(target)
+    except pa.ArrowInvalid:
+        return pa.array(column.to_pylist(), type=target)
 
 
 class BaseWriter:
@@ -217,6 +47,8 @@ class BaseWriter:
     """
 
     _schema_class = None  # Override in subclasses
+    # Keys a record may carry that the writer turns into schema columns.
+    _record_only_keys: tuple[str, ...] = ()
 
     def __init__(
         self,
@@ -249,6 +81,7 @@ class BaseWriter:
         # normally would otherwise promote the partial file — publishing exactly
         # the truncated output the staging was added to prevent (bigbio/qpx#288).
         self._write_failed = False
+        self._warned_checks: set[str] = set()
         self._extra_columns = extra_columns or []
         # Override mode (e.g. consensusXML): re-derive the id even when the
         # producer supplied one, stashing the original as a cv_param so it is
@@ -390,7 +223,9 @@ class BaseWriter:
             if provided is not None:
                 if cv_lists is not None:
                     params = list(cv_lists[index] or [])
-                    params.append({"cv_name": f"provided_{id_field}", "cv_value": str(provided)})
+                    provided_param = {"cv_name": f"provided_{id_field}", "cv_value": str(provided)}
+                    if provided_param not in params:
+                        params.append(provided_param)
                     cv_lists[index] = params
             ids.append(
                 derive_id(
@@ -464,12 +299,8 @@ class BaseWriter:
         relaxed = self._relaxed_id_schema()
         present = set(table.schema.names)
         n = table.num_rows
-        columns = [table.column(f.name) if f.name in present else pa.nulls(n, type=f.type) for f in relaxed]
-        intermediate = pa.Table.from_arrays(
-            columns,
-            schema=pa.schema([pa.field(f.name, columns[i].type) for i, f in enumerate(relaxed)]),
-        )
-        return intermediate.cast(relaxed)
+        columns = [_cast_column(table.column(f.name), f.type) if f.name in present else pa.nulls(n, type=f.type) for f in relaxed]
+        return pa.Table.from_arrays(columns, schema=relaxed)
 
     @property
     def arrow_schema(self) -> pa.Schema:
@@ -489,6 +320,7 @@ class BaseWriter:
 
     def write_batch(self, records: list[dict]):
         """Accumulate records and flush when batch_size is reached."""
+        self._guard(self._check_record_keys, records)
         return self._guard(self._write_batch, records)
 
     def set_scan_format(self, scan_format: str) -> None:
@@ -513,6 +345,16 @@ class BaseWriter:
                 }
             )
 
+    def _check_record_keys(self, records: list[dict]) -> None:
+        """Refuse a mistyped key, which would otherwise be an all-null column.
+
+        Keys starting with an underscore are a converter's transient hints.
+        """
+        allowed = {*self.arrow_schema.names, *self._record_only_keys}
+        unknown = {key for key in set().union(*records) if not key.startswith("_")} - allowed
+        if unknown:
+            raise ValueError(f"{self._schema_class.view_name} records have keys outside the schema: {sorted(unknown)}")
+
     def _write_batch(self, records: list[dict]):
         self._buffer.extend(records)
         while len(self._buffer) >= self._batch_size:
@@ -531,9 +373,10 @@ class BaseWriter:
 
     def _write_table(self, table: pa.Table):
         table = self._fill_identity_table(table)
-        errors = self._schema_class.validate(table, strict=False)
-        if errors:
-            raise ValueError("Schema validation failed:\n" + "\n".join(errors))
+        result = self._schema_class.validate_full(table, strict=False)
+        if result.errors:
+            raise ValueError("Schema validation failed:\n" + "\n".join(issue.message for issue in result.errors))
+        self._log_validation_warnings(result.warnings)
         self._ensure_writer()
         self._writer.write_table(table)
 
@@ -590,6 +433,7 @@ class BaseWriter:
                 # reaches the destination.
                 self._validate_identity_uniqueness()
                 self._validate_referential()
+                self._validate_scan_format()
                 self._promote_staged()
             completed = True
         finally:
@@ -635,6 +479,16 @@ class BaseWriter:
         for issue in issues:
             logger.warning("pg referential check '%s': %s", issue.check, issue.message)
 
+    def _validate_scan_format(self) -> None:
+        """Warn about scans the declared format does not allow; a streamed file declares it only at the end."""
+        declared = self._file_metadata.get(b"scan_format")
+        if self._schema_class.view_name != "psm" or not declared:
+            return
+        declared = declared.decode()
+        with pq.ParquetFile(self._validation_path) as file:
+            count = sum(_scan_format_violations(batch.column(0), declared) for batch in file.iter_batches(columns=["scan"]))
+        self._log_validation_warnings(_scan_format_issues(declared, count, "psm", "warning"))
+
     def _validate_identity_uniqueness(self) -> None:
         """Reject duplicate or null identity ids across the complete output file."""
         id_field = self._id_field
@@ -671,14 +525,42 @@ class BaseWriter:
                 total_count,
             )
 
+    def _log_validation_warnings(self, issues) -> None:
+        """Log each distinct non-fatal finding once per file, or a violation would be published unnoticed."""
+        for issue in issues:
+            if issue.check not in self._warned_checks:
+                self._warned_checks.add(issue.check)
+                logger.warning("%s: %s check '%s': %s", self._path.name, self._schema_class.view_name, issue.check, issue.message)
+
+    def _records_problem(self, records: list[dict], schema: pa.Schema) -> str | None:
+        """Name the first column and row of *records* that the schema cannot hold."""
+        for field in schema:
+            try:
+                pa.array([record.get(field.name) for record in records], type=field.type)
+            except (pa.ArrowInvalid, pa.ArrowTypeError, pa.ArrowNotImplementedError):
+                for row, record in enumerate(records):
+                    try:
+                        pa.array([record.get(field.name)], type=field.type)
+                    except (pa.ArrowInvalid, pa.ArrowTypeError, pa.ArrowNotImplementedError) as exc:
+                        return f"column '{field.name}', row {row} of the batch, value {record.get(field.name)!r}: {exc}"
+        return None
+
+    def _build_table(self, records: list[dict], schema: pa.Schema) -> pa.Table:
+        """Arrow table of *records*, naming the column and row of a value the schema cannot hold."""
+        try:
+            return pa.Table.from_pylist(records, schema=schema)
+        except (pa.ArrowInvalid, pa.ArrowTypeError, pa.ArrowNotImplementedError) as exc:
+            problem = self._records_problem(records, schema)
+            raise ValueError(f"Cannot write {self._schema_class.view_name} records: {problem or exc}") from exc
+
     def _write_arrow_batch(self, records: list[dict]):
         if self._identity_composite and self._id_field is not None:
             # Build with a nullable id, then derive from the persisted (cast)
             # values via _fill_identity_table — the same path table/DataFrame
             # writes use, so a row's id is identical no matter how it was written.
-            self._write_identity_table(pa.Table.from_pylist(records, schema=self._relaxed_id_schema()))
+            self._write_identity_table(self._build_table(records, self._relaxed_id_schema()))
             return
-        batch = pa.RecordBatch.from_pylist(records, schema=self.arrow_schema)
+        batch = self._build_table(records, self.arrow_schema).combine_chunks().to_batches()[0]
         self._check_required_non_null(batch)
         self._ensure_writer()
         self._writer.write_batch(batch)
@@ -711,6 +593,29 @@ class BaseWriter:
         """
         return parquet_write_options(self.arrow_schema, self._compression)
 
+    def identified_table(self, table: pa.Table) -> pa.Table:
+        """*table* with its id column filled as this writer would write it."""
+        return self._fill_identity_table(table)
+
+    @property
+    def footer_metadata(self) -> dict[bytes, bytes]:
+        """The footer this writer stamps on its files."""
+        return dict(self._file_metadata)
+
+    @classmethod
+    def view_schema(cls):
+        """The schema of the view this writer writes."""
+        return cls._schema_class
+
+    @classmethod
+    def derive_ids(cls, table: pa.Table, identity_composite: Optional[Sequence[str]] = None) -> pa.Table:
+        """Return *table* with its id column derived from the identity composite for the rows that have none.
+
+        Lets a producer know a row's id before writing, for instance to fill
+        ``psm.feature_id``. Pass the composite the file will declare.
+        """
+        return cls("unused", identity_composite=identity_composite, override_provided_ids=False).identified_table(table)
+
     @classmethod
     def write_partitioned(
         cls,
@@ -719,17 +624,23 @@ class BaseWriter:
         partition_cols: list[str] | None = None,
         compression: str = "zstd",
         file_metadata: dict | None = None,
+        mode: str = "error",
+        identity_composite: Optional[Sequence[str]] = None,
     ) -> Path:
         """Write Arrow table as Hive-partitioned Parquet.
 
         Called on a concrete writer subclass (e.g. ``FeatureWriter``) the table
-        is routed through the **same id-derivation and schema validation** as
-        the single-file writers before it is written, so a partitioned dump no
-        longer bypasses those checks (bigbio/qpx#252): the derived id is stamped
-        when absent, structural validation errors are rejected, and non-strict
-        findings such as duplicate identities are logged as warnings. Called on
-        the un-bound ``BaseWriter`` (no schema is known) it stays a raw
-        partitioned dump, unchanged.
+        is routed through the **same schema validation** as the single-file
+        writers before it is written, so a partitioned dump no longer bypasses
+        those checks (bigbio/qpx#252): the derived id is stamped for rows without
+        one, provided ids are kept, structural validation errors are rejected,
+        and non-strict findings such as duplicate identities are logged as
+        warnings. The footer declares the writer's identity. Called on the
+        un-bound ``BaseWriter`` (no schema is known) it stays a raw partitioned
+        dump, unchanged.
+
+        Repeated calls with ``mode="append"`` stream a large table into one
+        directory, as every call adds files with unique names.
 
         Encoding parity with the single-file writers: the same
         :func:`parquet_write_options` path is used, so partitioned output gets
@@ -753,49 +664,25 @@ class BaseWriter:
             Extra footer KV metadata (bytes->bytes) to stamp, e.g. a writer's
             ``_file_metadata`` carrying ``file_type`` / ``uuid``. Merged on top
             of any metadata already on the table schema and a minimal qpx footer.
+        mode : str
+            With data already in *output_dir*: ``"error"`` (default) raises,
+            ``"append"`` adds to it, ``"replace_partitions"`` replaces the
+            partitions this table writes and keeps the others.
+        identity_composite : Sequence[str] | None
+            The composite that ids are derived from and the footer declares;
+            defaults to the one in the table's footer metadata, as a table read
+            from a QPX file carries, else to the schema's.
 
         Returns
         -------
         Path
             The output directory.
         """
-        import pyarrow.dataset as ds
+        from qpx.writers.partitioned import write_partitioned_table
 
-        output_dir = Path(output_dir)
-        cols = partition_cols or ["run_file_name"]
-
-        # When called on a concrete writer subclass, route through the same
-        # id-derivation + validation the single-file writers use so partitioned
-        # output is not a validation-bypass (bigbio/qpx#252). An instance is
-        # built only to reuse _fill_identity_table / the schema; no file is
-        # opened until write_dataset below. On the un-bound BaseWriter
-        # (_schema_class is None) this is skipped and the raw dump is unchanged.
-        schema_class = cls._schema_class
-        if schema_class is not None:
-            deriver = cls(output_dir, compression=compression)
-            table = deriver._fill_identity_table(table)
-            _validate_partitioned_table(schema_class, table)
-
-        _validate_partition_columns(table, cols)
-
-        table = _stamp_footer_metadata(table, compression, file_metadata)
-
-        part_schema = pa.schema([table.schema.field(c) for c in cols])
-        partitioning = ds.partitioning(part_schema, flavor="hive")
-
-        opts = parquet_write_options(table.schema, compression)
-        file_options = ds.ParquetFileFormat().make_write_options(**opts)
-        ds.write_dataset(
-            table,
-            str(output_dir),
-            format="parquet",
-            partitioning=partitioning,
-            existing_data_behavior="overwrite_or_ignore",
-            file_options=file_options,
-            min_rows_per_group=_PARTITIONED_MIN_ROWS_PER_GROUP,
-            max_rows_per_group=_PARTITIONED_MAX_ROWS_PER_GROUP,
+        return write_partitioned_table(
+            cls, table, output_dir, partition_cols, compression, file_metadata, mode, identity_composite
         )
-        return output_dir
 
     def __enter__(self):
         return self
