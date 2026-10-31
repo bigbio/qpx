@@ -70,6 +70,24 @@ For a published dataset, `qpxc transform relayout` sorts the views, records the 
 
 Choose by the reads you expect, because one order serves one kind of query well. Sorting by protein costs per-run reads their pruning; Hive partitioning by run is fastest per run, and measured 57% more bytes and 3.5× slower for proteins. Partition by a batch of runs rather than one file per run, and only for a dataset mostly read run by run.
 
+### Size of the long pg format
+
+`pg` is long: one row per label, each with its own `pg_id`, so a TMT file is larger than the nested form it replaced (a factor of 2.34 on a TMT dataset). A value costs 14–21 bytes in a realistic single-cell matrix. Sorting by `anchor_protein` (`qpxc transform relayout`) took 34% off the same TMT file. Only the primary quantity is a row; `additional_intensities` cannot be pivoted the same way.
+
+### Reader compatibility
+
+Writers use `BYTE_STREAM_SPLIT` on the retention-time and m/z columns and on the peak arrays of `mz` (`rt`, `rt_start`, `rt_stop`, `predicted_rt`, `calculated_mz`, `observed_mz`, `mz`, `intensity`), `RLE_DICTIONARY` on strings, and `PLAIN`/`RLE` elsewhere. Quantities and scores sit in nested `list<struct>` columns.
+
+| Reader | QPX files | Checked with |
+|---|---|---|
+| PyArrow, pandas with `engine="pyarrow"` | Reads everything | 24.0, read in the test suite |
+| DuckDB | Reads everything | 1.5, 2.0 |
+| Polars | Reads everything, nested columns included | 1.41 |
+| Apache Spark, R `arrow` | Support the encoding; nested columns not confirmed here | Not tested here |
+| fastparquet | **Fails** on those columns: `NotImplementedError: Encoding 9`. Even without that encoding it returns `None` for every `list<struct>` value, silently; strings and scalars read | 2026.3 |
+
+To read with fastparquet, rewrite through PyArrow without the encoding, and expect nested columns to be lost.
+
 ### Comparing two conversions
 
 Converters write rows in a fixed order, but two conversions of the same input do not produce identical bytes: the footer holds a uuid and a date, and `dataset.parquet` a packaging time. Compare rows and ids, not checksums.

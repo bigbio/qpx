@@ -126,7 +126,7 @@ Sample metadata fields map to biological ontologies. These mappings are critical
 
 | Field | Ontology | Ontology Accession | Description |
 |---|---|---|---|
-| `run_accession` | --- | --- | Unique run identifier (= SDRF `assay name`) |
+| `run_accession` | --- | --- | Run identifier: the run file stem |
 | `run_file_name` | --- | --- | Raw data file name without path or extension |
 | `samples` | --- | --- | Sample-channel mapping (FK to `sample.parquet`) |
 | `fraction` | --- | --- | Fraction identifier |

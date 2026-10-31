@@ -32,7 +32,7 @@ Run columns describe technical and instrument-related properties of the data acq
 
 | SDRF Column | QPX Field Name | Target File |
 |---|---|---|
-| `assay name` | `run_accession` | run.parquet |
+| `comment[data file]` (stem) | `run_accession`, `run_file_name` | run.parquet |
 | `comment[data file]` | `run_file_name` | run.parquet |
 | `comment[label]` | label (inside `samples` list) | run.parquet |
 | `comment[fraction identifier]` | `fraction` | run.parquet |
@@ -96,7 +96,7 @@ At ingestion time, the SDRF TSV is split into `sample.parquet` and `run.parquet`
 1. **Load** the SDRF TSV file
 2. **Rename** columns using the field registry above
 3. **Extract sample-level columns** -- deduplicate rows by `sample_accession` (= `source name`) to produce `sample.parquet`
-4. **Extract run-level columns** -- one row per `run_accession` (= `assay name`), with the `samples` list linking to sample accessions, labels, and replicate numbers, to produce `run.parquet`
+4. **Extract run-level columns** -- one row per `run_file_name`, with the `samples` list linking to sample accessions, labels, and replicate numbers, to produce `run.parquet`
 5. **Parse ontology terms** -- instrument, enzyme, dissociation and acquisition cells become plain strings on the run, and their resolved terms go to `additional_terms`
 6. **Preserve provenance** -- the SDRF the conversion was given is copied to `{prefix}.sdrf.tsv`, and its SHA-256 is recorded in `provenance.parquet`
 

@@ -75,9 +75,9 @@ import pyarrow as pa
 
 run_schema = pa.schema(
     [
-        # Identity -- maps to SDRF "assay name"
-        pa.field("run_accession", pa.string()),  # PK
-        pa.field("run_file_name", pa.string()),  # raw data file name (without extension)
+        # Identity
+        pa.field("run_accession", pa.string()),  # run file stem
+        pa.field("run_file_name", pa.string()),  # PK: raw data file name (without extension)
         pa.field("file_name", pa.string(), nullable=True),  # original file name with extension (e.g. "S1_Frontal_1.raw")
         # Sample-channel mapping (one run can contain multiple samples via TMT/iTRAQ)
         pa.field(
@@ -114,17 +114,19 @@ run_schema = pa.schema(
 
 | Field | Description | Type | Required |
 |---|---|---|---|
-| `run_accession` | Unique run identifier (= SDRF `assay name`) | string | yes |
-| `run_file_name` | Raw data file name (without extension) | string | yes |
+| `run_accession` | Run identifier. Converters write the run file stem, whatever the SDRF `assay name` says, so it equals `run_file_name`; not the primary key | string | yes |
+| `run_file_name` | Raw data file name (without extension); the primary key | string | yes |
 | `file_name` | Original file name with extension (e.g. `S1_Frontal_1.raw`) | string | optional |
-| `samples` | List of sample-channel mappings with replicate info (FK to sample.parquet) | list[struct] | yes |
+| `samples` | List of sample-channel mappings with replicate info (FK to sample.parquet) | list[sample_channel] | yes |
 | `fraction` | Fraction identifier | string | optional |
 | `instrument` | Mass spectrometer name | string | optional |
 | `enzymes` | Proteolytic enzyme name(s) | list[string] | optional |
 | `dissociation_method` | Fragmentation method name (e.g. HCD, CID, ETD) | string | optional |
 | `acquisition_method` | Data acquisition method name (e.g. DDA, DIA); from `comment[proteomics data acquisition method]` | string | optional |
-| `additional_terms` | Other ontology-backed run terms (acquisition method, labeling, etc.) | list[ONTOLOGY_TERM] | optional |
-| `modification_parameters` | Modifications configured in the database search | list[MODIFICATION] | optional |
+| `additional_terms` | Other ontology-backed run terms (acquisition method, labeling, etc.) | list[ontology_term] | optional |
+| `modification_parameters` | Modifications configured in the database search | list[modification_param] | optional |
+| `label_definitions` | For each SILAC, dimethyl or mTRAQ label of the run, its label modifications; see above | list[label_definition] | optional |
+| `gradient_length` | LC gradient in seconds; see above | float32 | optional |
 
 ### Samples list detail
 

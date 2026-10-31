@@ -20,7 +20,7 @@ Define these once; the rest of the spec uses them consistently.
 |------|------------|----------|
 | **run** | One MS acquisition — one raw file that was measured on the instrument. One row per run. | `run.parquet` (PK `run_file_name`) |
 | **run_file_name** | The raw data file name **without extension** (e.g. `S1_Frontal_1`). The universal join key from the identification/quantification views back to `run`. | `run`, `feature`, `psm`, `mz` |
-| **run_accession** | Unique run identifier = SDRF **assay name**. Human/design label for the run. | `run.run_accession` |
+| **run_accession** | Run identifier. Converters write the run file stem, not the SDRF **assay name**. | `run.run_accession` |
 | **sample** | A biological specimen (= SDRF **source name**). One row per sample. | `sample.parquet` (PK `sample_accession`) |
 | **source name** | SDRF term for the biological sample; becomes `sample_accession`. | SDRF → `sample` |
 | **channel** | A physically distinguishable measurement track within one run. LFQ has one channel; TMT-10plex has ten reporter-ion channels; plexDIA has one per plex label. | concept |

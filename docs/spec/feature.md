@@ -97,7 +97,7 @@ These fields are shared with the PSM view and describe the peptide identificatio
 |-------|-------------|------|----------|
 | `pg_accessions` | Full membership of the peptide's protein group; for a peptide shared by several groups, the group the producer assigned it to (e.g. MaxQuant's razor group) | array[struct], null | no |
 | `anchor_protein` | One protein accession that represents the protein group; null when no protein mapping was performed (converters normalize blank/whitespace to null) | string, null | yes |
-| `unique` | True when the peptide's protein group has exactly one protein and the peptide maps to no other group; false when the group has several members or the peptide is shared with other groups; null when the group is unresolved | bool, null | no |
+| `unique` | (SQL: quote it, see below) True when the peptide's protein group has exactly one protein and the peptide maps to no other group; false when the group has several members or the peptide is shared with other groups; null when the group is unresolved | bool, null | no |
 | `pg_positions` | Peptide start and end positions within each protein in the protein group | array[struct], null | optional |
 | `pg_group_id` | Hash of the sorted `pg_accessions`, equal to `pg.pg_group_id`, to group and join without comparing lists; specification 1.3 | int64, null | No |
 | `pg_global_qvalue` | Global q-value of the protein group at the experiment level | float64, null | optional |
@@ -111,6 +111,9 @@ Each entry in `pg_positions` contains:
 | `protein_accession` | Protein accession within the protein group | `string` |
 | `start` | 1-based start position of the peptide in the protein sequence | `int` |
 | `end` | 1-based end position of the peptide in the protein sequence (inclusive) | `int` |
+
+!!! warning "`unique` is a reserved SQL word"
+    DuckDB and SQLite stop with a parser error on a bare `unique`. Quote or qualify it: `SELECT "unique" FROM feature` or `SELECT f.unique FROM feature f`. It becomes `is_unique` at the next breaking release.
 
 !!! note "Gene and protein inference data"
     Gene accessions, gene names, and unique peptide indicators are optionally included in the feature file for convenience. Protein-level scores are stored in the [Protein Group View](pg.md). When `pg_ids` is populated, join it directly to `pg.pg_id`. Otherwise join on the group membership (`pg_accessions` compared as a set with `pg.pg_accessions`), require `feature.run_file_name` to be a member of `pg.grouped_runs`, and match `pg.label` to a label in `feature.intensities` (`Dataset.link_feature_pg()`).

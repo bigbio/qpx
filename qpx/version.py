@@ -141,9 +141,10 @@ def _guard_pg_layout(source: str, columns: set[str], version_str: str | None) ->
             "'run_file_name' onto 'grouped_runs' (list<string>); this file still "
             "has 'run_file_name' and no 'grouped_runs' column, so grouped-runs "
             "queries cannot run.\n"
-            "  fix              : regenerate this PG file with qpx >= 1.1, or "
-            "migrate it by wrapping each scalar run_file_name into a single-element "
-            "grouped_runs list. See docs/spec/versioning.md (changelog 1.1)."
+            "  fix              : regenerate this PG file with qpx >= 1.1. Without the "
+            "source files, follow 'Migrating Without Re-converting' in "
+            "docs/spec/versioning.md: grouped_runs alone is not enough, the file also "
+            "needs flat label and intensity columns and a pg_id."
         )
 
 

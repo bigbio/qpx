@@ -7,7 +7,7 @@ fields:
   run_accession:
     type: string
     required: true
-    doc: "Unique run identifier (SDRF assay name)"
+    doc: "Run identifier; converters write the run file stem. The primary key is run_file_name"
   run_file_name:
     type: string
     required: true

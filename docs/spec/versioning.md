@@ -97,6 +97,9 @@ This version defines all core serialized views (PSM, Feature, PG, MZ), the deriv
   Run, MZ and PSM files may leave out the columns the specification does not
   require, and `mz.ion_injection_time` may be null. Nothing is removed or retyped,
   so 1.1 files are valid 1.2 files.
+- **1.1.6** (on-disk spec version stays `1.1`, backward-incompatible for `mz`):
+  `mz.scan` changes from `int32` to `list<int32>`, like `psm.scan` and
+  `feature.scan`. Re-convert mz files.
 - **1.1.2** (on-disk spec version stays `1.1`): two related fixes to identity
   handling.
     - **PG identity now keys on full group membership** (backward-incompatible for
@@ -144,6 +147,12 @@ This version defines all core serialized views (PSM, Feature, PG, MZ), the deriv
   `[sequence, charge, run_file_name, scan]` to `[peptidoform, charge,
   run_file_name, scan]`. Converters may declare a different producer-specific
   Feature composite. Regenerate Feature, PSM, and PG files under >= 1.1.
+- **1.1** (values and files): QPX 1.1.0 also changed these, without a changelog
+  entry at the time. `run.samples[].label` and `intensities[].label` are the
+  canonical names of the [vocabulary](intensities.md#label-vocabulary). The MuData
+  `obs` index of isobaric and plexDIA data is `observation_id` (run and channel),
+  where it was `run_file_name`, and `.h5mu` files state `qpx_version` and
+  `writer_version` in `uns`, which 1.0 files lack.
 - **1.1** (OpenMS bridge): OpenMS and QPX share the *fraction_group* concept — a
   group of fraction raw files that together quantify one protein, which is exactly
   what `grouped_runs` encodes. Rather than change OpenMS's Arrow schema, the QPX
@@ -152,6 +161,14 @@ This version defines all core serialized views (PSM, Feature, PG, MZ), the deriv
   experimental design), so the grouping is preserved across both sides via a
   shared cv term. No OpenMS schema change is required.
 - **1.0**: initial specification.
+
+## Migrating Without Re-converting
+
+Re-converting from the source files is the supported route: it also picks up converter fixes. Where only QPX files survive, these rules bring them forward by hand.
+
+- **`pg` from 1.0.** Wrap `run_file_name` in a one-element `grouped_runs`, flatten `intensities` to one row per label with `label` and `intensity`, and derive `pg_id` from `pg_accessions, grouped_runs, label`. This reproduced all `pg_id` values of a re-converted file.
+- **`feature_id` and `psm_id`.** Hash the composite the producer used, which is not always the schema default: [Row Identity](identity.md#composites) lists each one (DIA-NN, for instance, hashes `peptidoform, charge, run_file_name`). Hash the persisted values, in canonical peptidoform spelling from 1.3 on.
+- **Labels in 1.0.2 files.** DIA-NN wrote `raw` and CDAP wrote `precursor_area` as label-free feature labels. These were non-conformant output, not an older vocabulary: rewrite both to `LFQ`.
 
 ## Software Provider
 
