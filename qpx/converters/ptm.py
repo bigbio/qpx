@@ -78,39 +78,45 @@ def _modification_names(mod) -> set[str]:
     return {name.lower() for name in names if name}
 
 
-class _UnimodIndex:
-    """The Unimod entries of pyopenms' ``ModificationsDB``, sorted by delta mass and keyed by name.
+class _UnimodIndex(NamedTuple):
+    """The Unimod entries of pyopenms' ``ModificationsDB``, sorted by delta mass and keyed by name."""
+
+    sites: list[_UnimodSite]
+    masses: list[float]
+    by_name: dict[str, list[_UnimodSite]]
+    mass_by_accession: dict[int, float]
+
+
+@lru_cache(maxsize=1)
+def _unimod_index() -> _UnimodIndex:
+    """Build the Unimod index once per process.
 
     ModificationsDB holds one entry per Unimod accession and site, read from the
     Unimod release that pyopenms ships. Entries without a Unimod accession (from
     PSI-MOD or XLMOD only) and OpenMS' own entries (record id 99900 and up) are
     left out.
     """
+    import pyopenms as oms  # pylint: disable=import-outside-toplevel
 
-    def __init__(self) -> None:
-        import pyopenms as oms  # pylint: disable=import-outside-toplevel
-
-        spec = oms.ResidueModification.TermSpecificity
-        termini = {int(spec.N_TERM): "N", int(spec.PROTEIN_N_TERM): "N", int(spec.C_TERM): "C", int(spec.PROTEIN_C_TERM): "C"}
-        db = oms.ModificationsDB()
-        sites = []
-        self.by_name: dict[str, list[_UnimodSite]] = {}
-        for index in range(db.getNumberOfModifications()):
-            mod = db.getModification(index)
-            if 0 < mod.getUniModRecordId() < _OPENMS_CUSTOM_RECORD_ID:
-                terminus = termini.get(int(mod.getTermSpecificity()))
-                sites.append(_UnimodSite(mod.getUniModRecordId(), mod.getDiffMonoMass(), mod.getOrigin(), terminus))
-                for name in _modification_names(mod):
-                    self.by_name.setdefault(name, []).append(sites[-1])
-        sites.sort(key=lambda site: site.mass)
-        self.sites = sites
-        self.masses = [site.mass for site in sites]
-        self.mass_by_accession = {site.accession: site.mass for site in sites}
-
-
-@lru_cache(maxsize=1)
-def _unimod_index() -> _UnimodIndex:
-    return _UnimodIndex()
+    spec = oms.ResidueModification.TermSpecificity
+    termini = {int(spec.N_TERM): "N", int(spec.PROTEIN_N_TERM): "N", int(spec.C_TERM): "C", int(spec.PROTEIN_C_TERM): "C"}
+    db = oms.ModificationsDB()
+    sites: list[_UnimodSite] = []
+    by_name: dict[str, list[_UnimodSite]] = {}
+    for index in range(db.getNumberOfModifications()):
+        mod = db.getModification(index)
+        if 0 < mod.getUniModRecordId() < _OPENMS_CUSTOM_RECORD_ID:
+            terminus = termini.get(int(mod.getTermSpecificity()))
+            sites.append(_UnimodSite(mod.getUniModRecordId(), mod.getDiffMonoMass(), mod.getOrigin(), terminus))
+            for name in _modification_names(mod):
+                by_name.setdefault(name, []).append(sites[-1])
+    sites.sort(key=lambda site: site.mass)
+    return _UnimodIndex(
+        sites=sites,
+        masses=[site.mass for site in sites],
+        by_name=by_name,
+        mass_by_accession={site.accession: site.mass for site in sites},
+    )
 
 
 class _UnimodMasses(Mapping):
