@@ -2,43 +2,20 @@
 
 from __future__ import annotations
 
-import re
 from functools import lru_cache
 
-from qpx.converters.ptm import build_proforma, from_proforma
-
-# ---------------------------------------------------------------------------
-# Spectronaut modification name -> UNIMOD accession
-# ---------------------------------------------------------------------------
-
-_SN_MOD_TO_UNIMOD: dict[str, int] = {
-    "Carbamidomethyl (C)": 4,
-    "Oxidation (M)": 35,
-    "Acetyl (Protein N-term)": 1,
-    "Phospho (STY)": 21,
-    "Phospho (S)": 21,
-    "Phospho (T)": 21,
-    "Phospho (Y)": 21,
-    "Deamidated (NQ)": 7,
-    "Deamidated (N)": 7,
-    "Deamidated (Q)": 7,
-    "GlyGly (K)": 121,
-    "Dimethyl (KR)": 36,
-    "Methylation (KR)": 34,
-    "Formylation (Protein N-term)": 122,
-    "TMT6plex (K)": 737,
-    "TMT6plex (Protein N-term)": 737,
-    "TMTpro (K)": 737,
-    "TMTpro (Protein N-term)": 737,
-}
-
-_NTERM_RE = re.compile(r"N-term|Protein N-term")
+from qpx.converters.ptm import (
+    build_proforma,
+    from_proforma,
+    modification_tag,
+    position_site,
+    split_modified_sequence,
+    vendor_position,
+)
 
 # ---------------------------------------------------------------------------
 # PTM parsing: Spectronaut Modified.Sequence -> ProForma
 # ---------------------------------------------------------------------------
-
-_MOD_TOKEN_RE = re.compile(r"\[([^\]]+)\]")
 
 
 @lru_cache(maxsize=8192)
@@ -46,7 +23,9 @@ def to_proforma(modified_sequence: str) -> str:
     """Convert Spectronaut ``EG.ModifiedSequence`` to ProForma notation.
 
     Spectronaut encodes modifications in brackets, wrapped in underscores,
-    e.g. ``_PIGLC[Carbamidomethyl (C)]IAPVLAAK_``.
+    e.g. ``_PIGLC[Carbamidomethyl (C)]IAPVLAAK_``. Names are resolved through
+    Unimod by :func:`qpx.converters.ptm.modification_tag`; a name for the N- or
+    C-terminus is placed on that terminus.
 
     Args:
         modified_sequence: The ``EG.ModifiedSequence`` value.
@@ -56,39 +35,12 @@ def to_proforma(modified_sequence: str) -> str:
     """
     if not modified_sequence:
         return ""
-
-    seq = modified_sequence.strip("_")
-    if not seq:
-        return ""
-
-    mods: list[tuple[int, str]] = []
-    plain_chars: list[str] = []
-    i = 0
-    n = len(seq)
-    seq_pos = 0
-
-    while i < n:
-        if seq[i] == "[":
-            end = seq.index("]", i)
-            mod_name = seq[i + 1 : end]
-            unimod_id = _SN_MOD_TO_UNIMOD.get(mod_name)
-            if unimod_id is not None:
-                tag = f"UNIMOD:{unimod_id}"
-            else:
-                tag = mod_name
-
-            position = 0 if seq_pos == 0 else seq_pos
-            if _NTERM_RE.search(mod_name) and seq_pos > 0:
-                position = 0
-            mods.append((position, tag))
-            i = end + 1
-        else:
-            plain_chars.append(seq[i])
-            seq_pos += 1
-            i += 1
-
-    plain_seq = "".join(plain_chars)
-    return build_proforma(plain_seq, mods)
+    sequence, mods = split_modified_sequence(modified_sequence.strip("_"), "[", "]")
+    tags: list[tuple[int, str]] = []
+    for position, name in mods:
+        position = vendor_position(name, position, sequence)
+        tags.append((position, modification_tag(name, *position_site(sequence, position))))
+    return build_proforma(sequence, tags)
 
 
 def to_modifications(modified_sequence: str, sequence: str) -> tuple[str, list[dict] | None]:

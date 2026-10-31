@@ -1,62 +1,328 @@
-"""Shared PTM utilities: UNIMOD tables, ProForma builder/parser, precursor m/z.
+"""Shared PTM utilities: Unimod lookups, ProForma builder/parser, precursor m/z.
 
 This flat module consolidates shared logic previously spread across
 ``qpx.converters.ptm.unimod``, ``qpx.converters.ptm.proforma``,
 ``qpx.converters.ptm.modifications``, and ``qpx.converters.ptm.__init__``.
 
-Tool-specific constants (MaxQuant _MQ_MOD_TO_UNIMOD, _MQ_SHORT_TO_UNIMOD,
-resolve_to_unimod) are **not** included here -- they belong in the respective
-converter's ``constants.py``.
+Unimod accessions, names and masses come from pyopenms' ``ModificationsDB``
+(the Unimod release pyopenms ships), not from hand-written tables. Tool-specific
+parsing (MaxQuant short names such as ``ox``) stays in the converter's
+``constants.py``.
 """
 
 from __future__ import annotations
 
+import logging
+import math
 import re
+from bisect import bisect_left, bisect_right
+from collections.abc import Iterator, Mapping
 from functools import lru_cache
-from typing import Optional, Tuple
+from typing import NamedTuple, Optional, Tuple
 
 # ---------------------------------------------------------------------------
-# UNIMOD mass registry
+# Unimod lookups (pyopenms ModificationsDB)
 # ---------------------------------------------------------------------------
 
-UNIMOD_MASS: dict[int, float] = {
-    1: 42.010565,
-    4: 57.021464,
-    5: 43.005814,
-    7: 0.984016,
-    21: 79.966331,
-    28: -17.026549,
-    34: 14.015650,
-    35: 15.994915,
-    36: 28.031300,
-    37: 42.046950,
-    121: 114.042927,
-    122: 27.994915,
-    214: -18.010565,
-    312: 229.162932,
-    385: 304.207146,
-    730: 304.207146,
-    737: 229.162932,
-}
+logger = logging.getLogger(__name__)
 
 _MASS_TOL = 0.01
 
-_MASS_TO_UNIMOD: list[tuple[float, int]] = sorted((mass, uid) for uid, mass in UNIMOD_MASS.items())
+# OpenMS adds its own entries to ModificationsDB from ``CHEMISTRY/custom_mods.xml``
+# (CUSTOM0-9, PhosphoDecoy, ...) under record ids from 99900 up, which Unimod
+# leaves free. They are not Unimod accessions.
+_OPENMS_CUSTOM_RECORD_ID = 99900
+
+# Equal masses at the same site (same composition) are ambiguous. A tie goes to
+# the modification here when exactly one of the tied entries is listed; any other
+# tie stays unresolved and the mass is written. Listed are modifications search
+# engines are configured with, against isobaric amino-acid substitutions,
+# artefacts and cross-linker remnants: Acetyl 1 (Ser->Glu), Amidated 2,
+# Carbamidomethyl 4 (Gly 1263, Carbofuran), Carbamyl 5, Carboxymethyl 6,
+# Deamidated 7 (Asn->Asp 621, Gln->Glu 632), Methyl 34, Oxidation 35 (Phe->Tyr),
+# Dimethyl 36 (Ethyl 280, Delta:H(4)C(2) 255), Trimethyl 37 (Propyl 1305),
+# Propionyl 58, GG 121 (Dicarbamidomethyl 1290), Formyl 122, iTRAQ4plex 214
+# (mTRAQ:13C(3)15N(1) 889), mTRAQ 888 (Xlink:DMP[140]), Butyryl 1289
+# (Crotonaldehyde 253), Gluratylation 1848 (Xlink:BS2G[114]), Lactylation 2114
+# (Carboxyethyl 378) and Hexanoyl 2121 (MesitylOxide 1873).
+_PREFERRED_ON_TIE = frozenset({1, 2, 4, 5, 6, 7, 34, 35, 36, 37, 58, 121, 122, 214, 888, 1289, 1848, 2114, 2121})
+
+# Vendor modification names that are neither Unimod names nor ModificationsDB synonyms.
+_NAME_ALIASES: dict[str, str] = {
+    "glygly": "GG",
+    "tmt10plex": "TMT6plex",
+    "tmt11plex": "TMT6plex",
+    "tmt16plex": "TMTpro",
+    "tmt18plex": "TMTpro",
+}
+
+# MaxQuant/Spectronaut "Name (Sites)" suffix, e.g. " (STY)" or " (Protein N-term)".
+_SITE_SUFFIX_RE = re.compile(r"\s+\([^()]*\)$")
+_ACCESSION_RE = re.compile(r"(?i)unimod:(\d+)")
+_SIGNED_MASS_RE = re.compile(r"[+-]\d+(?:\.\d+)?")
 
 
-def mass_to_unimod(mass: float) -> Optional[int]:
-    """Find the UNIMOD accession whose delta is closest to *mass*.
+class _UnimodSite(NamedTuple):
+    """One site of a Unimod modification: ``residue`` is ``"X"`` for any residue, ``terminus`` "N", "C" or None."""
 
-    Returns ``None`` if no match within ``_MASS_TOL``.
+    accession: int
+    mass: float
+    residue: str
+    terminus: Optional[str]
+
+
+def _modification_names(mod) -> set[str]:
+    """Lower-cased names of a ``ResidueModification``: Unimod title, full id, full name and synonyms."""
+    names = {mod.getId(), mod.getFullId(), mod.getFullName()}
+    names.update(name.decode() if isinstance(name, bytes) else name for name in mod.getSynonyms())
+    return {name.lower() for name in names if name}
+
+
+class _UnimodIndex(NamedTuple):
+    """The Unimod entries of pyopenms' ``ModificationsDB``, sorted by delta mass and keyed by name."""
+
+    sites: list[_UnimodSite]
+    masses: list[float]
+    by_name: dict[str, list[_UnimodSite]]
+    mass_by_accession: dict[int, float]
+
+
+@lru_cache(maxsize=1)
+def _unimod_index() -> _UnimodIndex:
+    """Build the Unimod index once per process.
+
+    ModificationsDB holds one entry per Unimod accession and site, read from the
+    Unimod release that pyopenms ships. Entries without a Unimod accession (from
+    PSI-MOD or XLMOD only) and OpenMS' own entries (record id 99900 and up) are
+    left out.
     """
-    best_uid = None
-    best_diff = _MASS_TOL + 1
-    for ref_mass, uid in _MASS_TO_UNIMOD:
-        diff = abs(ref_mass - mass)
-        if diff < best_diff:
-            best_diff = diff
-            best_uid = uid
-    return best_uid if best_diff <= _MASS_TOL else None
+    import pyopenms as oms  # pylint: disable=import-outside-toplevel
+
+    spec = oms.ResidueModification.TermSpecificity
+    termini = {int(spec.N_TERM): "N", int(spec.PROTEIN_N_TERM): "N", int(spec.C_TERM): "C", int(spec.PROTEIN_C_TERM): "C"}
+    db = oms.ModificationsDB()
+    sites: list[_UnimodSite] = []
+    by_name: dict[str, list[_UnimodSite]] = {}
+    for index in range(db.getNumberOfModifications()):
+        mod = db.getModification(index)
+        if 0 < mod.getUniModRecordId() < _OPENMS_CUSTOM_RECORD_ID:
+            terminus = termini.get(int(mod.getTermSpecificity()))
+            sites.append(_UnimodSite(mod.getUniModRecordId(), mod.getDiffMonoMass(), mod.getOrigin(), terminus))
+            for name in _modification_names(mod):
+                by_name.setdefault(name, []).append(sites[-1])
+    sites.sort(key=lambda site: site.mass)
+    return _UnimodIndex(
+        sites=sites,
+        masses=[site.mass for site in sites],
+        by_name=by_name,
+        mass_by_accession={site.accession: site.mass for site in sites},
+    )
+
+
+class _UnimodMasses(Mapping):
+    """Read-only ``{Unimod accession: monoisotopic delta mass}`` view of ``ModificationsDB``."""
+
+    def __getitem__(self, accession: int) -> float:
+        return _unimod_index().mass_by_accession[accession]
+
+    def __iter__(self) -> Iterator[int]:
+        return iter(_unimod_index().mass_by_accession)
+
+    def __len__(self) -> int:
+        return len(_unimod_index().mass_by_accession)
+
+
+UNIMOD_MASS: Mapping[int, float] = _UnimodMasses()
+
+
+def _site_rank(site: _UnimodSite, residue: Optional[str], terminus: Optional[str]) -> Optional[int]:
+    """How well a Unimod site fits a modification at *residue* / *terminus*; ``None`` if it does not.
+
+    0: same placement (residue, or the N-/C-terminus) and the site names the residue;
+    1: same placement and the site allows any residue; 2: the site names the
+    residue but has the other placement, as when a tool reports pyro-Glu, which
+    Unimod defines on the N-terminal Q, on the Q itself. Without a residue and a
+    terminus every site fits; without a residue, every site of the placement.
+    """
+    if residue is None:
+        return 0 if terminus is None or site.terminus == terminus else None
+    same_placement = site.terminus == terminus
+    if site.residue == residue:
+        return 0 if same_placement else 2
+    return 1 if site.residue == "X" and same_placement else None
+
+
+def _break_tie(accessions: set[int]) -> Optional[int]:
+    """The accession of equally good candidates: the only one, or the only one in ``_PREFERRED_ON_TIE``."""
+    if len(accessions) == 1:
+        return next(iter(accessions))
+    preferred = accessions & _PREFERRED_ON_TIE
+    return next(iter(preferred)) if len(preferred) == 1 else None
+
+
+@lru_cache(maxsize=8192)
+def mass_to_unimod(mass: float, residue: Optional[str] = None, terminus: Optional[str] = None) -> Optional[int]:
+    """Find the Unimod accession of a delta *mass* at a residue or terminus.
+
+    Args:
+        mass: Monoisotopic delta mass in Da.
+        residue: One-letter code of the modified residue; for a terminal
+            modification the terminal residue. ``None`` when unknown.
+        terminus: ``"N"`` or ``"C"`` for a modification of the peptide
+            terminus, ``None`` for a residue modification.
+
+    The candidates are the Unimod sites within ``_MASS_TOL`` Da that fit the site
+    (see :func:`_site_rank`). The closest mass wins, then the better site fit.
+    Entries left equal have the same composition at the same site; they resolve
+    only to a modification in ``_PREFERRED_ON_TIE`` (iTRAQ4plex 214, not
+    mTRAQ:13C(3)15N(1) 889; Butyryl 1289, not Crotonaldehyde 253). Returns
+    ``None`` if no site matches, the tie stays open (Isovaleryl, 2-methylbutyryl
+    and Pentanoyl on K) or *mass* is not finite.
+    """
+    if not math.isfinite(mass):
+        return None
+    index = _unimod_index()
+    low = bisect_left(index.masses, mass - _MASS_TOL)
+    high = bisect_right(index.masses, mass + _MASS_TOL)
+    keys: dict[int, tuple[float, int]] = {}
+    for site in index.sites[low:high]:
+        rank = _site_rank(site, residue, terminus)
+        if rank is not None:
+            key = (round(abs(site.mass - mass), 6), rank)
+            keys[site.accession] = min(key, keys.get(site.accession, key))
+    if not keys:
+        return None
+    best = min(keys.values())
+    return _break_tie({accession for accession, key in keys.items() if key == best})
+
+
+def format_mass_delta(mass: float) -> str:
+    """Signed ProForma mass tag for a delta mass without a Unimod entry, e.g. ``+999.1234``."""
+    return f"+{mass}" if mass >= 0 else str(mass)
+
+
+def mass_tag(mass: float, residue: Optional[str] = None, terminus: Optional[str] = None) -> str:
+    """ProForma tag for a delta mass: ``UNIMOD:n`` (see :func:`mass_to_unimod`), else the signed mass."""
+    accession = mass_to_unimod(mass, residue, terminus)
+    return f"UNIMOD:{accession}" if accession is not None else format_mass_delta(mass)
+
+
+def _name_keys(name: str) -> list[str]:
+    """Lookup keys for a modification name: as given, without a vendor site suffix, and its alias."""
+    key = name.strip().lower()
+    base = _SITE_SUFFIX_RE.sub("", key)
+    keys = [key, base]
+    if base in _NAME_ALIASES:
+        keys.append(_NAME_ALIASES[base].lower())
+    return keys
+
+
+@lru_cache(maxsize=4096)
+def name_to_unimod(name: str, residue: Optional[str] = None, terminus: Optional[str] = None) -> Optional[int]:
+    """Find the Unimod accession of a modification name.
+
+    Accepts the Unimod names and synonyms ModificationsDB knows (``Phospho``,
+    ``Deamidation``, ``Pyro-glu from E``), the vendor form with a site suffix
+    (MaxQuant and Spectronaut ``Phospho (STY)``, ``Acetyl (Protein N-term)``) and
+    the vendor names in ``_NAME_ALIASES`` (``GlyGly``, ``TMT10plex``,
+    ``TMT16plex``). When a name has several accessions, those with a site fitting
+    *residue* / *terminus* (see :func:`mass_to_unimod`) win, then the lowest.
+    Returns ``None`` for an unknown name.
+    """
+    by_name = _unimod_index().by_name
+    for key in _name_keys(name):
+        sites = by_name.get(key)
+        if sites:
+            ranked = [(_site_rank(site, residue, terminus), site.accession) for site in sites]
+            fitting = [entry for entry in ranked if entry[0] is not None]
+            return min(fitting)[1] if fitting else min(site.accession for site in sites)
+    return None
+
+
+@lru_cache(maxsize=4096)
+def modification_tag(name: str, residue: Optional[str] = None, terminus: Optional[str] = None) -> str:
+    """ProForma tag for a vendor modification name at *residue* / *terminus*.
+
+    ``UNIMOD:n`` for a Unimod accession (``UniMod:35``) or name (see
+    :func:`name_to_unimod`); a signed mass (``+15.9949``) is resolved like a
+    FragPipe mass (see :func:`mass_tag`). Any other name is kept, with square
+    brackets replaced by parentheses so it cannot end the ProForma tag early,
+    and logged once.
+    """
+    match = _ACCESSION_RE.fullmatch(name.strip())
+    if match:
+        return f"UNIMOD:{int(match.group(1))}"
+    accession = name_to_unimod(name, residue, terminus)
+    if accession is not None:
+        return f"UNIMOD:{accession}"
+    if _SIGNED_MASS_RE.fullmatch(name.strip()):
+        return mass_tag(float(name), residue, terminus)
+    logger.warning("Modification %r has no Unimod entry; it is kept as a name in the peptidoform", name)
+    return name.replace("[", "(").replace("]", ")")
+
+
+def _group_end(text: str, start: int, open_char: str, close_char: str) -> Optional[int]:
+    """Index after the delimiter closing the one at *start*, counting nested pairs; ``None`` if unclosed."""
+    depth = 0
+    for index in range(start, len(text)):
+        if text[index] == open_char:
+            depth += 1
+        elif text[index] == close_char:
+            depth -= 1
+            if depth == 0:
+                return index + 1
+    return None
+
+
+def split_modified_sequence(modified: str, open_char: str = "(", close_char: str = ")") -> tuple[str, list[tuple[int, str]]]:
+    """Split a vendor modified sequence into its residues and ``(position, modification)`` pairs.
+
+    A modification gets the position of the residue before it, or 0 before the
+    first residue (the :func:`build_proforma` convention). Delimiters nest, so
+    MaxQuant ``M(Oxidation (M))`` gives ``Oxidation (M)``; an unclosed
+    delimiter takes the rest of the string.
+    """
+    residues: list[str] = []
+    mods: list[tuple[int, str]] = []
+    i = 0
+    while i < len(modified):
+        if modified[i] != open_char:
+            residues.append(modified[i])
+            i += 1
+            continue
+        end = _group_end(modified, i, open_char, close_char) or len(modified) + 1
+        mods.append((len(residues), modified[i + 1 : end - 1]))
+        i = end
+    return "".join(residues), mods
+
+
+def position_site(sequence: str, position: int) -> tuple[Optional[str], Optional[str]]:
+    """Residue and terminus of a :func:`build_proforma` position in *sequence*.
+
+    Position 0 is the N-terminus and ``len(sequence) + 1`` the C-terminus; both
+    return the terminal residue with ``"N"`` / ``"C"``.
+    """
+    if position <= 0:
+        return (sequence[:1] or None), "N"
+    if position > len(sequence):
+        return (sequence[-1:] or None), "C"
+    return sequence[position - 1], None
+
+
+def vendor_position(name: str, position: int, sequence: str) -> int:
+    """:func:`build_proforma` position of a MaxQuant or Spectronaut modification called *name*.
+
+    Both tools name the site (``Acetyl (Protein N-term)``, ``Amidated (C-term)``)
+    and write a C-terminal modification after the last residue, where
+    :func:`split_modified_sequence` gives it that residue's position. A name
+    for the N-terminus gets position 0, one for the C-terminus
+    ``len(sequence) + 1``; any other name keeps *position*.
+    """
+    if "N-term" in name:
+        return 0
+    if "C-term" in name:
+        return len(sequence) + 1
+    return position
 
 
 # Monoisotopic amino acid residue masses (Da)
@@ -91,7 +357,7 @@ def parse_unimod_delta(mod_str: str) -> Optional[float]:
     """Extract the mass delta from a modification token.
 
     Accepts:
-        - ``UniMod:35`` / ``UNIMOD:35`` -> lookup in ``UNIMOD_MASS``
+        - ``UniMod:35`` / ``UNIMOD:35`` -> Unimod delta mass (``UNIMOD_MASS``)
         - ``+15.9949`` / ``-17.0265`` -> parse directly
     """
     m = re.match(r"(?:UniMod|UNIMOD):(\d+)", mod_str, re.IGNORECASE)
@@ -171,46 +437,40 @@ def _normalize_peptidoform(peptidoform: str) -> str:
     ``C(Carbamidomethyl)R``), whereas ProForma uses square brackets.
     This function converts parenthetical mod tags that follow an amino-acid
     residue (or appear at position 0 for N-term mods) to bracket notation
-    so that :func:`_from_proforma_impl` can parse them.
+    so that :func:`_from_proforma_impl` can parse them. Only parentheses
+    outside square brackets are converted: a ProForma tag such as
+    ``K[GlyGly (K)]`` is copied as it is instead of becoming the nested
+    ``K[GlyGly [K]]``.
     """
     if "(" not in peptidoform:
         return peptidoform
-    out: list[str] = []
     peptidoform = peptidoform.removeprefix(".")
-    n = len(peptidoform)
+    out: list[str] = []
     i = 0
-    while i < n:
-        if peptidoform[i] == "(":
-            # Find matching closing parenthesis respecting nesting depth
-            depth = 1
-            j = i + 1
-            while j < n and depth > 0:
-                if peptidoform[j] == "(":
-                    depth += 1
-                elif peptidoform[j] == ")":
-                    depth -= 1
-                j += 1
-            if depth != 0:
-                out.append(peptidoform[i:])
-                break
-            # Convert outer delimiters; keep inner content as-is
-            out.append("[")
-            out.append(peptidoform[i + 1 : j - 1])
-            out.append("]")
-            i = j
-        else:
-            out.append(peptidoform[i])
+    while i < len(peptidoform):
+        char = peptidoform[i]
+        if char not in "([":
+            out.append(char)
             i += 1
+            continue
+        end = _group_end(peptidoform, i, char, ")" if char == "(" else "]")
+        if end is None:
+            out.append(peptidoform[i:])
+            break
+        # Convert the outer delimiters; keep the inner content as it is
+        out.append(f"[{peptidoform[i + 1 : end - 1]}]")
+        i = end
+    return _add_nterm_dash("".join(out))
 
-    result = "".join(out)
 
-    # For N-term
-    if result.startswith("["):
-        idx = result.find("]")
-        if idx != -1 and idx + 1 < len(result) and result[idx + 1] != "-":
-            result = result[: idx + 1] + "-" + result[idx + 1 :]
-
-    return result
+def _add_nterm_dash(peptidoform: str) -> str:
+    """Insert the ProForma ``-`` after the leading N-terminal tags when it is missing."""
+    end = 0
+    while end < len(peptidoform) and peptidoform[end] == "[":
+        end = _group_end(peptidoform, end, "[", "]") or len(peptidoform)
+    if 0 < end < len(peptidoform) and peptidoform[end] != "-":
+        return f"{peptidoform[:end]}-{peptidoform[end:]}"
+    return peptidoform
 
 
 def _modification_site(seq_pos: int, last_aa: str | None, cterm: bool, sequence_length: int) -> tuple[int, str | None]:
@@ -414,7 +674,14 @@ __all__ = [
     "WATER_MASS",
     "build_proforma",
     "compute_precursor_mz",
+    "format_mass_delta",
     "from_proforma",
+    "mass_tag",
     "mass_to_unimod",
+    "modification_tag",
+    "name_to_unimod",
     "parse_unimod_delta",
+    "position_site",
+    "split_modified_sequence",
+    "vendor_position",
 ]
