@@ -62,6 +62,8 @@ In a label-free quantification experiment, each feature row has a single intensi
 
 `label` takes the canonical names below, which come from the sdrf-pipelines channel map. Labels are compared exactly, case included: `iTRAQ114` and `ITRAQ114` give different `pg_id` values and only one joins its sample, so converters write the canonical spelling, and `qpxc validate` warns about any other label and names the canonical one when only the case differs.
 
+The SDRF readers bring common spellings to these names: `TMT10plex_126`, `TMTpro-134C`, `iTRAQ4plex-114`, the ontology form `NT=TMT126;AC=PRIDE:0000114` and a bare reporter mass (`126` is `TMT126`, `114` is `ITRAQ114`: iTRAQ reporters stop at 121 and TMT starts at 126). Any other spelling stays as written and no intensity joins to it.
+
 <!-- label-vocabulary -->
 | Family | Labels |
 |---|---|

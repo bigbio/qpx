@@ -64,31 +64,27 @@ In rare cases a single SDRF row may describe a sample derived from multiple orga
 
 ### Convention
 
-All biological property columns in `sample.parquet` use `list[string]` types. During SDRF ingestion, pipe-delimited values in the source TSV (e.g. `Homo sapiens|Saccharomyces cerevisiae`) are split and stored as proper list elements:
+Biological property columns in `sample.parquet` are strings. When several SDRF columns give different values for one sample (for example `characteristics[organism]` and a second organism column), the values are joined with `"; "`:
 
 ```python
 # Single-valued (most samples)
-organism = ["Homo sapiens"]
+organism = "Homo sapiens"
 
 # Multi-valued (spike-in / pooled samples)
-organism = ["Homo sapiens", "Saccharomyces cerevisiae"]
+organism = "Homo sapiens; Saccharomyces cerevisiae"
 ```
-
-This avoids delimiter conventions in the stored data and enables native list operations in query engines.
 
 ### SQL Queries
 
-When querying `sample.parquet` with DuckDB, use `UNNEST` to explode list columns or `list_contains` to filter:
-
 ```sql
 -- All unique organisms in the project
-SELECT DISTINCT UNNEST(organism) AS organism
+SELECT DISTINCT UNNEST(string_split(organism, '; ')) AS organism
 FROM 'PXD014414.sample.parquet';
 
 -- Samples with a specific disease
 SELECT sample_accession, disease
 FROM 'PXD014414.sample.parquet'
-WHERE list_contains(disease, 'breast cancer');
+WHERE list_contains(string_split(disease, '; '), 'breast cancer');
 ```
 
 ---

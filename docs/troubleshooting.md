@@ -201,6 +201,8 @@ qpxc validate --file ./data.feature.parquet
 
 **Missing required column**: A required column is absent from the Parquet file. Check the [schema reference](spec/schemas.md) for required fields.
 
+**Missing column ... (its values may be null, but the column must be present)**: `Required: no` in the view tables means the values may be null, not that the column may be left out. Only fields marked `optional` in the schema may be absent. The QPX writers add these columns for you; a producer writing Parquet itself writes them as all-null columns of the schema's type.
+
 **Type mismatch**: A column has a different Arrow type than the schema expects. This usually means the data was written with an older version of qpx or a different tool.
 
 **Null values in non-nullable columns**: Required columns should not contain null values. Check your input data and conversion pipeline.

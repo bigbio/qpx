@@ -1,7 +1,9 @@
 """CLI command tests — convert, transform, query, info, validate, ontology."""
 
+import json
 import re
 
+import pandas as pd
 import pytest
 from click.testing import CliRunner
 
@@ -557,3 +559,20 @@ class TestStructureChoicesMatchTheRegistry:
 
         assert "pepmap" in validate_structures
         assert "pepmap" in query_structures
+
+
+def test_query_json_writes_ids_as_decimal_strings():
+    """A JavaScript number rounds a 64-bit id, so JSON carries it as a string."""
+    from qpx.cli.query import _json_records
+
+    frame = pd.DataFrame(
+        {
+            "feature_id": pd.array([9007199254740993, None], dtype="Int64"),
+            "psm_ids": pd.Series([[9007199254740995], pd.NA], dtype=object),
+            "charge": [2, 3],
+        }
+    )
+    records = json.loads(_json_records(frame))
+    assert records[0] == {"feature_id": "9007199254740993", "psm_ids": ["9007199254740995"], "charge": 2}
+    assert records[1]["feature_id"] is None
+    assert records[1]["psm_ids"] is None

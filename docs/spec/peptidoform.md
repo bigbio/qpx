@@ -44,6 +44,8 @@ A name that resolves to no Unimod entry and comes with no mass is kept as
 written (`K[Custom (K)]`); parentheses inside a bracketed tag belong to the
 tag. Readers that accept other ProForma spellings can bring them to the
 canonical form with `qpx.converters.ptm.normalize_peptidoform`.
+[Scope](scope.md#proforma-subset) lists which ProForma constructs QPX parses and
+which it passes through.
 
 ### Examples
 

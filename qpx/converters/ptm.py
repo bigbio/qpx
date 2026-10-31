@@ -514,8 +514,13 @@ def _normalize_peptidoform(peptidoform: str) -> str:
         if end is None:
             out.append(peptidoform[i:])
             break
-        # Convert the outer delimiters; keep the inner content as it is
-        out.append(f"[{peptidoform[i + 1 : end - 1]}]")
+        inner = peptidoform[i + 1 : end - 1]
+        if char == "(" and peptidoform[end : end + 1] == "[" and inner.isalpha() and inner.isupper():
+            # A ProForma range, PRT(ES)[Phospho]EM, not an mzTab tag
+            out.append(peptidoform[i:end])
+        else:
+            # Convert the outer delimiters; keep the inner content as it is
+            out.append(f"[{inner}]")
         i = end
     return _add_nterm_dash("".join(out))
 
@@ -578,6 +583,10 @@ def normalize_peptidoform(peptidoform: str) -> str:
 
 
 _UNLOCALIZED_TAGS = re.compile(r"(?:\[[^\[\]]+\])+\?")
+# Constructs outside the subset docs/spec/scope.md declares: cross-links and
+# chimeric species (//, +), charge (/2), global (<...>), labile ({...}), groups
+# (#g1) and ranges ((ES)[...]).
+_UNPARSED_PROFORMA = re.compile(r"//|/\d|^<|^\{|#|\)\[")
 
 
 def _modification_site(seq_pos: int, last_aa: str | None, cterm: bool, sequence_length: int) -> tuple[int, str | None]:
@@ -626,7 +635,7 @@ def _from_proforma_impl(
     """
     # Normalise mzTab parenthetical notation to ProForma brackets
     peptidoform = _normalize_peptidoform(peptidoform)
-    if not peptidoform or peptidoform == sequence:
+    if not peptidoform or peptidoform == sequence or _UNPARSED_PROFORMA.search(peptidoform):
         return peptidoform, None
 
     mods: dict[str, dict] = {}

@@ -610,13 +610,19 @@ class ViewSchema:
             name = expected_field.name
             if name not in schema.names:
                 if not self._is_optional(name):
-                    issues.append(_issue(self._view_name, "missing_column", "error", name, f"Missing required column: {name}"))
+                    issues.append(_issue(self._view_name, "missing_column", "error", name, self._missing_message(name)))
                 continue
             actual = schema.field(name)
             if not _types_compatible(expected_field.type, actual.type):
                 message = f"Column '{name}': expected {expected_field.type}, got {actual.type}"
                 issues.append(_issue(self._view_name, "type_mismatch", "error", name, message))
         return issues
+
+    def _missing_message(self, field_name: str) -> str:
+        fdef = self._fields.get(field_name)
+        if fdef is not None and fdef.nullable:
+            return f"Missing column: {field_name} (its values may be null, but the column must be present)"
+        return f"Missing required column: {field_name}"
 
     def _is_optional(self, field_name: str) -> bool:
         fdef = self._fields.get(field_name)

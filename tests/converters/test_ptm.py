@@ -15,6 +15,7 @@ from qpx.converters.ptm import (
     mass_to_unimod,
     modification_tag,
     name_to_unimod,
+    normalize_peptidoform,
 )
 
 
@@ -529,3 +530,23 @@ def test_modification_of_unknown_position():
     bare = compute_precursor_mz("[UNIMOD:1]-PEPTM[UNIMOD:35]IDEK", 2)
     assert compute_precursor_mz(peptidoform, 2) == pytest.approx(bare + 129.0804 / 2)
     assert normalize_peptidoform(peptidoform) == peptidoform
+
+
+@pytest.mark.parametrize(
+    "peptidoform, sequence",
+    [
+        ("EMEVTK[XLMOD:02001#XL1]SESPEK//EMEVTK[#XL1]SESPEK", "EMEVTKSESPEK"),
+        ("PEPTIDE/2+SEQUENCE/3", "PEPTIDE"),
+        ("<[UNIMOD:4]@C>ACDEK", "ACDEK"),
+        ("{Glycan:Hex}PEPTIDE", "PEPTIDE"),
+        ("PEPT[Phospho#g1(0.9)]IDES[#g1(0.1)]K", "PEPTIDESK"),
+        ("PRT(ES)[+79.97]EM", "PRTESEM"),
+    ],
+)
+def test_constructs_outside_the_declared_subset_pass_through(peptidoform, sequence):
+    assert from_proforma(peptidoform, sequence) == (peptidoform, None)
+
+
+def test_mztab_parentheses_are_still_converted_next_to_a_range_lookalike():
+    assert normalize_peptidoform("C(Carbamidomethyl)R").startswith("C[UNIMOD:4]")
+    assert normalize_peptidoform("PRT(ES)[+79.97]EM") == "PRT(ES)[UNIMOD:21]EM"

@@ -341,6 +341,23 @@ def query_head_cmd(
 # ---------------------------------------------------------------------------
 
 
+def _json_records(df) -> str:
+    """JSON records with identity columns as decimal strings.
+
+    Identity columns are 64-bit: above 2**53 a JavaScript number rounds them and
+    lookups by id fail, so JSON carries them as strings.
+    """
+    import pandas as pd
+
+    ids = {}
+    for column in df.columns:
+        if column.endswith("_id") and pd.api.types.is_integer_dtype(df[column]):
+            ids[column] = df[column].astype("string")
+        elif column.endswith("_ids"):
+            ids[column] = df[column].map(lambda values: [str(value) for value in values], na_action="ignore")
+    return df.assign(**ids).to_json(orient="records", indent=2)
+
+
 def _write_output(df, path: Path, fmt: str):
     """Write a DataFrame to a file in the requested format."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -356,7 +373,7 @@ def _write_output(df, path: Path, fmt: str):
         table = pa.Table.from_pandas(df)
         pq.write_table(table, str(path), compression="zstd")
     elif fmt == "json":
-        df.to_json(path, orient="records", indent=2)
+        path.write_text(_json_records(df))
     else:
         df.to_csv(path, index=False)
 
@@ -368,6 +385,6 @@ def _print_dataframe(df, fmt: str):
     elif fmt == "tsv":
         sys.stdout.write(df.to_csv(index=False, sep="\t"))
     elif fmt == "json":
-        sys.stdout.write(df.to_json(orient="records", indent=2))
+        sys.stdout.write(_json_records(df))
     else:
         sys.stdout.write(df.to_csv(index=False))

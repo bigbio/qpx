@@ -521,3 +521,12 @@ def test_sdrf_labels_override_channel_count():
 def test_unresolvable_sdrf_labels_fall_back_to_count():
     labels = _resolve("TMT", list(range(1, 11)), sdrf_labels={"garbage", "nonsense"})
     assert labels[10] == "TMT131"  # fell back to count-based tmt10plex
+
+
+@pytest.mark.parametrize(
+    "raw, canonical",
+    [("126", "TMT126"), ("127N", "TMT127N"), ("TMT10plex_126", "TMT126"), ("114", "ITRAQ114"), ("121", "ITRAQ121")],
+)
+def test_sdrf_reporter_spellings_resolve_to_the_canonical_label(raw, canonical):
+    """iTRAQ reporters stop at 121 and TMT starts at 126, so a bare mass names one family."""
+    assert normalize_label(raw) == canonical

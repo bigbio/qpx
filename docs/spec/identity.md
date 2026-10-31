@@ -39,6 +39,10 @@ OpenMS `-out_qpx` files declare their own composite in the footer, and `qpxc con
 
 `qpxc convert mzidentml` supplies its `psm_id` values (`identity_source` `provided`): the hash of `[run_file_name, spectrum_identification_item_ids]`, because a spectrum can hold several hits of one peptidoform. Its footer still names the schema default, which does not reproduce them. On a cross-linked PSM the validator reads `crosslinked_peptidoform` in place of `peptidoform`, which names only the alpha peptide.
 
+## JSON and URLs
+
+Ids are signed 64-bit integers, and almost all of them lie beyond ±2^53, where a JavaScript number can no longer hold them exactly. Rounded ids do not collide; lookups simply fail. In JSON and in URLs an id is therefore a decimal string. `qpxc query --output-format json` writes every `*_id` and `*_ids` column this way; an alias in your own SQL (`SELECT feature_id AS f`) is an ordinary integer column, so cast it with `CAST(feature_id AS VARCHAR)`.
+
 ## How an id is derived
 
 1. Take the composite's values in composite order, **as persisted**: a `float32` column contributes the value it reads back, so `1234.56` hashes as `1234.56005859375`. Hashing the raw double gives another id.

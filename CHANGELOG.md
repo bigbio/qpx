@@ -70,6 +70,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `qpxc query --output-format json` writes `*_id` and `*_ids` columns as decimal strings, since a JavaScript number rounds a 64-bit id; the spec states this for JSON and URLs.
+- A bare reporter mass in an SDRF (`126`, `114`) now resolves to its canonical label, as `TMT10plex_126` already did.
+- A missing nullable column is reported as present-but-nullable instead of "Missing required column".
+- `from_proforma` no longer invents modifications from cross-link, chimeric, global, labile, group or range constructs: the peptidoform passes through. `PRT(ES)[+79.97]EM` keeps its range instead of becoming `PRT[ES][...]EM`.
+- `sdrf-mapping.md` said sample properties are `list[string]`; they are strings joined with `"; "`.
+
 - Run modification parameters come from that run's SDRF rows, not the first row of the study. MaxQuant `feature.rt` is the raw `Retention time`, as documented and as in `psm.rt`; the calibrated time, used until now, moves to `rt_aligned`. `feature_id` is unchanged, because the composite uses `rt_start` and `rt_stop`.
 - mz `isolation_window_target` is the window target, not the selected ion, and a zero window offset is 0 rather than null. The specification now says that the two window fields are offsets. `ion_mobility` is documented as 1/K0 (`MS:1002815`), which every converter writes, and FragPipe keeps `Compensation Voltage` in psm `cv_params`.
 - MaxQuant reads iTRAQ4 and other partial plexes from the columns of the plex with as many reporter columns as the table (`ITRAQ114` is column 2 of an 8-column table), and SDRF spellings such as `iTRAQ reagent 114` and `iTRAQ4plex-114` resolve to their channel. A MaxQuant pg zero `LFQ intensity` or `iBAQ` is null beside a positive intensity too, and a negative value in a DIA-NN pg matrix no longer becomes an intensity.

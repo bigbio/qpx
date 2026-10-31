@@ -282,3 +282,10 @@ def test_feature_schema_peptide_qvalue():
     qval = schema.field("peptide_qvalue")
     assert qval.type == pa.float64()
     assert qval.nullable is True
+
+
+def test_missing_nullable_column_says_it_must_be_present():
+    kept = [field for field in FeatureSchema.get_arrow_schema() if field.name != "modifications"]
+    table = pa.table({field.name: pa.nulls(1, type=field.type) for field in kept}, schema=pa.schema(kept))
+    messages = [issue.message for issue in FeatureSchema.validate_full(table).issues if issue.check == "missing_column"]
+    assert messages == ["Missing column: modifications (its values may be null, but the column must be present)"]

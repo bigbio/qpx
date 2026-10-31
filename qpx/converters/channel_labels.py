@@ -55,11 +55,18 @@ _CANONICAL_LABELS = {label.casefold(): label for channel_labels in CHANNEL_LABEL
 _SILAC_LABELS = set(CHANNEL_LABELS["silac3plex"].values())
 # TMTpro-134C, iTRAQ4plex-114, "iTRAQ reagent 114"
 _REPORTER_SPELLING = re.compile(r"(?i)(TMT|iTRAQ)(?:(\d+)plex|pro)?[\s_-]*(?:reagent)?[\s_-]*(\d{3}[NC]?)")
+_BARE_REPORTER = re.compile(r"\d{3}[NC]?D?")
+_FIRST_TMT_CHANNEL = 126
 _ONTOLOGY_NAME = re.compile(r"(?:^|;)\s*NT\s*=\s*([^;]+)", re.IGNORECASE)
 
 
 def _reporter_channel(text: str) -> str:
-    """``iTRAQ4plex-114`` -> ``ITRAQ114``; a channel its named plex does not have keeps its spelling."""
+    """``iTRAQ4plex-114`` -> ``ITRAQ114``; a channel its named plex does not have keeps its spelling.
+
+    A bare ``126`` names one family: iTRAQ reporters stop at 121, TMT starts at 126.
+    """
+    if _BARE_REPORTER.fullmatch(text):
+        return f"{'TMT' if int(text[:3]) >= _FIRST_TMT_CHANNEL else 'ITRAQ'}{text}"
     spelling = _REPORTER_SPELLING.fullmatch(text)
     if spelling is None:
         return text
