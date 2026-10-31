@@ -143,6 +143,7 @@ nav:
           - Run: spec/run.md
           - Provenance: spec/provenance.md
           - SDRF Mapping: spec/sdrf-mapping.md
+          - Extensions: spec/extensions.md
       - Technical:
           - Serialization & Parquet: spec/serialization.md
           - File Naming: spec/file-naming.md

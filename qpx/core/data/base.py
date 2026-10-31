@@ -15,6 +15,7 @@ from qpx.core.data.footer_validation import (
     footer_issues,
     mixed_identity_issues,
     stale_identity_issues,
+    undeclared_column_issues,
 )
 from qpx.core.data.label_validation import label_vocabulary_issues
 from qpx.core.data.schema import ValidationResult, pg_quantity_issues, pg_referential_issues_from_query
@@ -183,7 +184,7 @@ class BaseStructure:
             keys = self._engine.connection.sql(
                 sql_build("SELECT $columns FROM ($query)", columns=columns, query=query)
             ).to_arrow_table()
-        referential = footer_issues(view, footers, severity)
+        referential = footer_issues(view, footers, severity) + undeclared_column_issues(view, schema.names)
         referential += label_vocabulary_issues(self._engine, query, view.view_name, schema)
         if view.identity_composite is not None:
             referential += mixed_identity_issues(view, footers)

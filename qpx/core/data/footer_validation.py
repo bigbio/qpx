@@ -136,6 +136,15 @@ def _declared_composite(view, footers: list[tuple[str, dict]], columns: list[str
     return composite
 
 
+def undeclared_column_issues(view, columns: list[str]) -> list[ValidationIssue]:
+    """Columns outside the schema: no other reader knows what they mean, or that it is theirs to keep."""
+    undeclared = sorted(view.undeclared_columns(columns))
+    if not undeclared:
+        return []
+    message = f"Columns outside the schema, not named x_<namespace>_<name> (docs/spec/extensions.md): {undeclared}"
+    return [_issue(view.view_name, "undeclared_column", "warning", undeclared[0], message)]
+
+
 def _composite_key_sql(name: str, columns: list[str]) -> str:
     """One composite column as a grouping key; ``peptidoform`` names only the alpha peptide of a cross-link."""
     if name in SET_VALUED_FIELDS:

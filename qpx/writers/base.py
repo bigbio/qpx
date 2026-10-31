@@ -295,6 +295,16 @@ class BaseWriter:
             return table.set_column(table.schema.get_field_index(id_field), id_arrow_field, id_array)
         return table.add_column(0, id_arrow_field, id_array)
 
+    def _warn_about_dropped_columns(self, names) -> None:
+        """A column projected away is data lost, so say which; ``_`` marks a converter's transient hint."""
+        dropped = sorted(name for name in names if name not in self.arrow_schema.names and not name.startswith("_"))
+        if dropped:
+            logger.warning(
+                "%s writer drops columns outside the schema: %s. Declare extra_columns=['x_<namespace>_<name>'] to keep one.",
+                self._schema_class.view_name,
+                dropped,
+            )
+
     def align_table_to_schema(self, table: pa.Table) -> pa.Table:
         """Project *table* onto the schema: keep matching columns, fill absent ones
         (e.g. the derived id or the optional cross-ref columns) with nulls, then
@@ -304,6 +314,7 @@ class BaseWriter:
         """
         relaxed = self._relaxed_id_schema()
         present = set(table.schema.names)
+        self._warn_about_dropped_columns(present)
         n = table.num_rows
         columns = [_cast_column(table.column(f.name), f.type) if f.name in present else pa.nulls(n, type=f.type) for f in relaxed]
         return pa.Table.from_arrays(columns, schema=relaxed)
@@ -379,7 +390,10 @@ class BaseWriter:
         allowed = {*self.arrow_schema.names, *self._record_only_keys}
         unknown = {key for key in set().union(*records) if not key.startswith("_")} - allowed
         if unknown:
-            raise ValueError(f"{self._schema_class.view_name} records have keys outside the schema: {sorted(unknown)}")
+            raise ValueError(
+                f"{self._schema_class.view_name} records have keys outside the schema: {sorted(unknown)}. "
+                "Declare extra_columns=['x_<namespace>_<name>'] to keep a tool's own column."
+            )
 
     def _write_batch(self, records: list[dict]):
         self._buffer.extend(records)
@@ -421,6 +435,7 @@ class BaseWriter:
     def _write_dataframe(self, df: "pd.DataFrame"):
         id_field = self._id_field
         relaxed = self._relaxed_id_schema()
+        self._warn_about_dropped_columns(df.columns)
         missing = [f.name for f in relaxed if f.name not in df.columns and (f.nullable or f.name == id_field)]
         if missing:
             df = df.copy()

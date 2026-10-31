@@ -120,6 +120,8 @@ def _canonicalize_primary_key_column(column: pa.ChunkedArray) -> pa.Array | pa.C
 _SCAN_FORMATS = ("scan", "index", "nativeId")
 # The column a physical merge adds, naming the dataset a row came from.
 SOURCE_DATASET_COLUMN = "source_dataset"
+# The columns any view may carry beyond its schema: x_<namespace>_<name>.
+EXTENSION_COLUMN_PREFIX = "x_"
 
 
 def _declared_scan_format(schema: pa.Schema, structure: str) -> str | None:
@@ -483,15 +485,25 @@ class ViewSchema:
             self._arrow_schema_cache = pa.schema(arrow_fields)
         return self._arrow_schema_cache
 
+    def undeclared_columns(self, names) -> set[str]:
+        """Those of *names* that are neither in the schema nor a sanctioned extra column."""
+        if self._extra_columns:
+            return set()
+        known = {*self.get_arrow_schema().names, SOURCE_DATASET_COLUMN}
+        return {name for name in names if name not in known and not name.startswith(EXTENSION_COLUMN_PREFIX)}
+
     def get_extended_arrow_schema(self, extra_column_names: list[str]) -> pa.Schema:
         """Return the base schema extended with additional string columns.
 
         Only allowed when ``extra_columns=True`` in the YAML spec, except for
-        ``source_dataset``, which a merge adds to every view. Extra columns are
-        appended as nullable ``pa.string()`` fields.
+        ``source_dataset``, which a merge adds to every view, and ``x_<namespace>_<name>``
+        extension columns. Extra columns are appended as nullable ``pa.string()`` fields.
         """
-        if not self._extra_columns and set(extra_column_names) - {SOURCE_DATASET_COLUMN}:
-            raise ValueError(f"Schema '{self._view_name}' does not allow extra columns")
+        refused = sorted(self.undeclared_columns(extra_column_names))
+        if refused:
+            raise ValueError(
+                f"Schema '{self._view_name}' does not allow the extra columns {refused}: name them x_<namespace>_<name>"
+            )
         base = self.get_arrow_schema()
         known = set(base.names)
         extra_fields = [pa.field(name, pa.string(), nullable=True) for name in extra_column_names if name not in known]
