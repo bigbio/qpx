@@ -225,6 +225,7 @@ Each MODIFICATION struct contains:
 
 !!! tip "Reading run.parquet"
     ```python
+    import pyarrow.compute as pc
     import pyarrow.parquet as pq
 
     runs = pq.read_table("PXD014414.run.parquet")
@@ -233,7 +234,7 @@ Each MODIFICATION struct contains:
     #  'instrument', 'enzymes', ...]
 
     # Get all sample-channel mappings for a specific run
-    run_row = runs.filter(pq.compute.equal(runs.column("run_accession"), "Run_01")).to_pydict()
+    run_row = runs.filter(pc.equal(runs.column("run_accession"), "Run_01")).to_pydict()
     print(run_row["samples"])
     ```
 

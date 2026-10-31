@@ -86,6 +86,7 @@ def pdc2qpx_cmd(**kwargs):
             --download-dir ./downloads --output-folder ./qpx/PDC000109 \\
             --include-spectra
 
+    \b
         # Many studies from a CSV (each -> ./qpx/<study>/)
         qpxc pdc2qpx -a cptac_lfq.csv \\
             --download-dir ./downloads --output-folder ./qpx --max-cpus 24

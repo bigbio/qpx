@@ -146,7 +146,7 @@ print(generate_example(transform_gene_map_cmd, "Map gene information to parquet 
 
 ```bash
 qpxc transform gene-map \
-    --parquet-path ./output/feature.parquet \
+    --parquet-path ./output/diann.feature.parquet \
     --fasta tests/examples/fasta/Homo-sapiens.fasta \
     --output-folder ./output
 ```
@@ -358,7 +358,7 @@ When an SDRF has several `factor value[...]` columns, `--factor` chooses the con
 
 ```bash
 qpxc transform quantify \
-    --feature-path ./qpx_output/feature.parquet \
+    --feature-path ./qpx_output/diann.feature.parquet \
     --method directlfq \
     -o proteins_directlfq.parquet
 ```
@@ -367,7 +367,7 @@ qpxc transform quantify \
 
 ```bash
 qpxc transform quantify \
-    --feature-path ./qpx_output/feature.parquet \
+    --feature-path ./qpx_output/diann.feature.parquet \
     --method ibaq --fasta proteome.fasta \
     -o proteins_ibaq.tsv
 ```
@@ -376,7 +376,7 @@ qpxc transform quantify \
 
 ```bash
 qpxc transform quantify \
-    --feature-path ./qpx_output/feature.parquet \
+    --feature-path ./qpx_output/diann.feature.parquet \
     --method maxlfq --threads 8 \
     -o proteins_maxlfq.parquet
 ```
@@ -385,7 +385,7 @@ qpxc transform quantify \
 
 ```bash
 qpxc transform quantify \
-    --feature-path ./qpx_output/feature.parquet \
+    --feature-path ./qpx_output/diann.feature.parquet \
     --method topn --topn-n 5 --normalize \
     -o proteins_top5.parquet
 ```

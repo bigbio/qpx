@@ -70,6 +70,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The user guides run: the statistics, visualization and project guides described `.data`, `ds.identifications`, `ds.qc` and matplotlib figures that do not exist, and are rewritten against the real API; a test runs their blocks. The `qpx.core.models` import, `pq.compute`, the `issue=None` DE example, `savefig` on plotly figures and `psm-*` file names are corrected.
+- `docs/guide/convert.md` has a [Memory](docs/guide/convert.md#memory) section per converter. It replaces advice to raise `--max-memory`, which raises DIA-NN's peak and does nothing for MaxQuant, and the `--sdrf-path` flag and `{prefix}-{uuid}` file names, which do not exist.
+- The help of `convert spectronaut` and `convert openms` printed a literal `\b`; a second example in a command's help no longer collapses into one paragraph.
 - The spec pages agree with the schemas, and a test now holds them to it: `feature.pg_accessions`, `run_accession` (the file stem, not the primary key or the SDRF assay name) and `dataset.qpx_version` (a footer key, not a column) were wrong.
 - The changelog has a section per release from 1.1.0, with the breaking changes it left out: canonical labels, the MuData `obs` index and `uns` version, and renamed CLI options.
 - `qpxc query --output-format json` writes `*_id` and `*_ids` columns as decimal strings, since a JavaScript number rounds a 64-bit id; the spec states this for JSON and URLs.

@@ -79,16 +79,20 @@ def validate_cmd(
         # Validate an entire dataset
         qpxc validate --dataset-path ./PXD014414
 
+    \b
         # Validate specific structures
         qpxc validate --dataset-path ./PXD014414 --structure feature
         qpxc validate --dataset-path ./PXD014414 --structure feature --structure pg
 
+    \b
         # Validate a single Parquet file
         qpxc validate --file ./data.feature.parquet
 
+    \b
         # Also check peptidoforms, modification positions and m/z
         qpxc validate --dataset-path ./PXD014414 --semantic
 
+    \b
         # Also re-derive the ids from their composites
         qpxc validate --dataset-path ./PXD014414 --check-identity
     """

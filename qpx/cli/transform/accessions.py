@@ -97,11 +97,13 @@ def transform_normalize_accessions_cmd(
         qpxc transform normalize-accessions \\
             --dataset ./my_dataset --direction forward --in-place
 
+    \b
         # Reverse: restore full UniProt identifiers from FASTA
         qpxc transform normalize-accessions \\
             --dataset ./my_dataset --direction reverse \\
             --fasta proteins.fasta --in-place
 
+    \b
         # Forward to a new directory (non-destructive)
         qpxc transform normalize-accessions \\
             --dataset ./my_dataset --direction forward \\

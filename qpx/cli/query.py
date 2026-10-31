@@ -92,12 +92,14 @@ def query_sql_cmd(**kwargs):
             --dataset-path ./PXD014414 \\
             --sql "SELECT run_file_name, COUNT(*) AS n FROM feature GROUP BY 1"
 
+    \b
         # Join feature with run, export to CSV
         qpxc query sql \\
             --dataset-path ./PXD014414 \\
             --sql "SELECT f.sequence, r.run_file_name FROM feature f JOIN run r USING (run_file_name)" \\
             --output results.csv
 
+    \b
         # Query specific structures only
         qpxc query sql \\
             --dataset-path ./PXD014414 \\
@@ -186,6 +188,7 @@ def query_filter_cmd(**kwargs):
             --structure feature \\
             --condition "charge > 2 AND global_qvalue < 0.01"
 
+    \b
         # Filter PSMs, select specific columns
         qpxc query filter \\
             --dataset-path ./PXD014414 \\
@@ -194,6 +197,7 @@ def query_filter_cmd(**kwargs):
             --columns "sequence,charge,score" \\
             --limit 100
 
+    \b
         # Export filtered protein groups to parquet
         qpxc query filter \\
             --dataset-path ./PXD014414 \\
@@ -295,6 +299,7 @@ def query_head_cmd(
             --dataset-path ./PXD014414 \\
             --structure feature
 
+    \b
         # Show 5 PSM rows with specific columns
         qpxc query head \\
             --dataset-path ./PXD014414 \\

@@ -576,3 +576,21 @@ def test_query_json_writes_ids_as_decimal_strings():
     assert records[0] == {"feature_id": "9007199254740993", "psm_ids": ["9007199254740995"], "charge": 2}
     assert records[1]["feature_id"] is None
     assert records[1]["psm_ids"] is None
+
+
+def _commands(group, path=()):
+    for name in group.list_commands(None):
+        command = group.get_command(None, name)
+        if hasattr(command, "list_commands"):
+            yield from _commands(command, (*path, name))
+        else:
+            yield " ".join((*path, name)), command
+
+
+@pytest.mark.parametrize("name, command", list(_commands(qpx_main)), ids=lambda value: value if isinstance(value, str) else "")
+def test_help_keeps_each_example_on_its_own_line(name, command):
+    """Click rewraps a help paragraph unless it starts with the \\b control character."""
+    runner_result = CliRunner().invoke(qpx_main, [*name.split(), "--help"])
+    description = runner_result.output.split("Options:")[0]
+    assert "\\b" not in description
+    assert not re.search(r"\\ +--", description)

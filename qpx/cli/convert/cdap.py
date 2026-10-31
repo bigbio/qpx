@@ -68,6 +68,7 @@ def convert_cdap_cmd(**kwargs):
             --output-folder ./qpx_output/PDC000440 \\
             --project-accession PDC000440
 
+    \b
         # Only produce PSM and Feature (skip PG)
         qpxc convert cdap \\
             --psm-dir /data/CPTAC/PDC000440 \\

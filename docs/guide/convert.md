@@ -120,6 +120,21 @@ The `convert` command group provides converters for multiple proteomics software
 
 ---
 
+## Memory {#memory}
+
+`--max-memory` limits DuckDB's buffer pool. Above that limit DuckDB spills to `--temp-dir`, so a *lower* limit usually gives a lower peak, while the Python side of the converter comes on top in every case.
+
+| Converter | Options | What sets the peak | If it runs out of memory |
+|---|---|---|---|
+| `diann` | `--max-memory` | DuckDB, plus Python columns of about one million report rows at a time. A 10× Parquet report peaked at 3.8 GB by default or with `8GB`, and at 2.4 GB with `2GB` | Lower `--max-memory` and put `--temp-dir` on a large disk. Convert a Parquet report rather than a TSV one |
+| `spectronaut`, `cdap`, `quantms-msstats` | `--max-memory` | DuckDB plus one batch of Python rows | Lower `--max-memory` and put `--temp-dir` on a large disk |
+| `fragpipe` | `--max-memory` | DuckDB, batches in pandas and the protein table | Lower `--max-memory`, then use a machine with more RAM |
+| `maxquant` | `--max-memory`, with no real effect | Python batches of 100,000 rows and the deduplicated tables | Use a machine with more RAM; a larger `--max-memory` does not help |
+| `mzidentml` | None | The parsed document and the spectra index | Use a machine with more RAM |
+| `openms-consensus` | `--streaming` | The in-memory reader peaks near 7× the file size. The streaming reader is the default above 1 GB | Force `--streaming` |
+
+Writing the output as Hive partitions does not lower the conversion's peak: partition afterwards ([Hive partitioning](../spec/serialization.md#hive-partitioning)).
+
 ## diann
 
 Convert DIA-NN report files to QPX format.
@@ -186,8 +201,8 @@ qpxc convert diann \
 
 Output files generated:
 
-- **Feature**: `{output-prefix}-{uuid}.feature.parquet` (always produced)
-- **Protein Group**: `{output-prefix}-{uuid}.pg.parquet` (always produced)
+- **Feature**: `{output-prefix}.feature.parquet` (always produced)
+- **Protein Group**: `{output-prefix}.pg.parquet` (produced with `--pg-matrix-path`)
 - **Peptide-protein map**: `{output-prefix}.pepmap.parquet` (every protein in `Protein.Ids` for each converted peptidoform)
 - **Mass spectra**: `{output-prefix}.mz.parquet` (produced when `--mzml-info-folder` contains `*_ms2_info.parquet`; feature-matched MS2 spectra only)
 - **MuData**: `{output-prefix}.h5mu` (written by default; `--no-mudata` skips it)
@@ -196,7 +211,7 @@ Output files generated:
 
 **Issue**: Out of memory errors with large files
 
-- **Solution**: Increase `--max-memory` (e.g., `8GB`, `16GB`). It limits DuckDB's buffer pool, not the whole process: the converter processes the runs in batches of about one million report rows, and each batch's Python columns and output come on top, so a 5.4 million-row report converted with `--max-memory 2GB` peaks at about 4.3 GB. A Parquet report is read in place; a TSV report is first converted once to a temporary Parquet file in the temp directory (`--temp-dir`).
+- **Solution**: Lower `--max-memory`, do not raise it: see [Memory](#memory). A Parquet report is read in place; a TSV report is first converted once to a temporary Parquet file in the temp directory (`--temp-dir`).
 
 **Issue**: Slow processing
 
@@ -209,7 +224,7 @@ Output files generated:
 ### Best Practices {#diann-best-practices}
 
 - Use Q-value threshold of 0.05 or lower for high-confidence results
-- Set `--max-memory` for large reports, and see [Hive partitioning](../spec/serialization.md#hive-partitioning) for partitioning the output afterwards
+- See [Memory](#memory) for large reports, and [Hive partitioning](../spec/serialization.md#hive-partitioning) for partitioning the output afterwards
 - Use verbose mode during initial testing to diagnose issues
 - Ensure SDRF file correctly matches sample names in DIA-NN report
 - When passing a pg_matrix, ensure it comes from the same DIA-NN run as the report
@@ -321,7 +336,7 @@ The converter auto-detects column names from the Spectronaut report, supporting 
 
 **Issue**: Out of memory with large reports
 
-- **Solution**: Increase `--max-memory` (e.g., `16GB`) and `--max-cpus`
+- **Solution**: Lower `--max-memory` so DuckDB spills to disk, as [Memory](#memory) describes
 
 **Issue**: Missing modifications in output
 
@@ -332,7 +347,6 @@ The converter auto-detects column names from the Spectronaut report, supporting 
 - Export all required columns from Spectronaut (at minimum: `R.FileName`, `PEP.StrippedSequence`, `EG.ModifiedSequence`, `FG.Charge`, `FG.Quantity`, `PG.ProteinGroups`)
 - Provide SDRF file for complete sample and run metadata
 - Use Q-value threshold of 0.01 or 0.05 for high-confidence results
-- For large datasets (>10M rows), increase `--max-memory` and `--max-cpus`
 
 ---
 
@@ -418,15 +432,18 @@ qpxc convert maxquant \
 
 Depending on `--structures` parameter:
 
-- **PSM**: `{output-prefix}-{uuid}.psm.parquet`
-- **Feature**: `{output-prefix}-{uuid}.feature.parquet`
-- **Protein Group**: `{output-prefix}-{uuid}.pg.parquet`
+- **PSM**: `{output-prefix}.psm.parquet`
+- **Feature**: `{output-prefix}.feature.parquet`
+- **Protein Group**: `{output-prefix}.pg.parquet`
+- **Peptide-protein map**: `{output-prefix}.pepmap.parquet`, from `Proteins` of `evidence.txt`
+- **Protein**: `{output-prefix}.protein.parquet`, from `proteinGroups.txt`
+- **Site**: `{output-prefix}.site.parquet`, with `--sites-file`
 
 ### Common Issues {#maxquant-issues}
 
-**Issue**: Memory errors with compressed evidence files
+**Issue**: Memory errors with large evidence files
 
-- **Solution**: Increase available RAM
+- **Solution**: Use a machine with more RAM: `--max-memory` does not change MaxQuant's peak ([Memory](#memory))
 
 **Issue**: Missing Q-value information
 
@@ -483,7 +500,7 @@ qpxc convert fragpipe \
 
 ### Output Files {#fragpipe-output}
 
-- **Output**: `{output-prefix}-{uuid}.psm.parquet`
+- **Output**: `{output-prefix}.psm.parquet`
 - **Format**: Parquet file containing PSM data
 - **Schema**: Conforms to QPX PSM specification
 
@@ -545,7 +562,7 @@ The converter supports multiple native ID formats for scan number extraction:
 
 ### Output Files {#mzidentml-output}
 
-- **Output**: `{output-prefix}-{uuid}.psm.parquet`
+- **Output**: `{output-prefix}.psm.parquet`
 - **Format**: Parquet file containing PSM-level data
 - **Schema**: Conforms to QPX PSM specification
 
@@ -629,7 +646,7 @@ Depending on `--structures`:
 
 - Point `--psm-dir` to one CPTAC study directory containing `*.psm` files
 - Use `--structures` to skip views that are not needed
-- Increase `--max-memory` and `--max-cpus` for full-scale CPTAC studies
+- See [Memory](#memory) for full-scale CPTAC studies
 
 ---
 
@@ -722,8 +739,8 @@ print(generate_example(convert_sdrf_cmd, "Convert SDRF metadata with default set
 
 ### Output Files {#sdrf-output}
 
-- **Sample**: `{output-prefix}-{uuid}.sample.parquet`
-- **Run**: `{output-prefix}-{uuid}.run.parquet`
+- **Sample**: `{output-prefix}.sample.parquet`
+- **Run**: `{output-prefix}.run.parquet`
 - **Format**: Parquet files containing sample and run metadata
 - **Schema**: Conforms to QPX sample and run specifications
 

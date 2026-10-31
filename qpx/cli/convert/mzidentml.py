@@ -66,12 +66,14 @@ def convert_mzidentml_cmd(**kwargs):
             --mzid-path results.mzid \\
             --output-folder ./qpx_output
 
+    \b
         # Convert an XL-MS mzIdentML 1.3 file
         qpxc convert mzidentml \\
             --mzid-path crosslinks.mzid \\
             --output-folder ./qpx_output \\
             --output-prefix xl_experiment
 
+    \b
         # Convert with spectra from MGF
         qpxc convert mzidentml \\
             --mzid-path results.mzid \\
@@ -79,6 +81,7 @@ def convert_mzidentml_cmd(**kwargs):
             --include-spectra \\
             --output-folder ./qpx_output
 
+    \b
         # Convert with project accession
         qpxc convert mzidentml \\
             --mzid-path results.mzid \\

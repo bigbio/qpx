@@ -107,6 +107,7 @@ def convert_maxquant_cmd(**kwargs):
             --sdrf-file metadata.sdrf.tsv \\
             --output-folder ./qpx_output
 
+    \b
         # Convert PSMs only
         qpxc convert maxquant \\
             --msms-file msms.txt \\

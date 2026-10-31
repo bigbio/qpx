@@ -57,7 +57,7 @@ from .postprocess import _maybe_enrich_pride, _preserve_sdrf, _record_conversion
 @_compression_option
 @_verbose_option
 def convert_openms_cmd(**kwargs):
-    r"""[DEPRECATED] Enrich OpenMS ProteomicsLFQ -out_qpx output into a full QPX dataset.
+    """[DEPRECATED] Enrich OpenMS ProteomicsLFQ -out_qpx output into a full QPX dataset.
 
     DEPRECATED: Some OpenMS exporters assign PSMs to the first run or emit
     conflicting identities (OpenMS#9872, OpenMS#9871). Prefer
@@ -81,6 +81,7 @@ def convert_openms_cmd(**kwargs):
             --sdrf-file metadata.sdrf.tsv \\
             --output-folder ./qpx_full
 
+    \b
         # With project accession
         qpxc convert openms \\
             --qpx-dir ./openms_qpx_output \\

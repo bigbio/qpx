@@ -73,6 +73,7 @@ def convert_fragpipe_cmd(**kwargs):
             --psm-file psm.tsv \\
             --output-folder ./qpx_output
 
+    \b
         # Convert features + protein groups
         qpxc convert fragpipe \\
             --ion-file combined_ion.tsv \\

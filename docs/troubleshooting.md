@@ -94,31 +94,7 @@ pip install venn pyopenms
 
 **Problem**: `MemoryError` or system becomes unresponsive with large datasets.
 
-**Solutions**:
-
-1. Process files in batches if supported by the command
-
-2. Increase available memory or use a machine with more RAM
-
-3. For DIA-NN reports, use the `--qvalue-threshold` to filter data:
-
-   ```bash
-   qpxc convert diann \
-       --report-path report.tsv \
-       --sdrf-path metadata.sdrf.tsv \
-       --mzml-info-folder ./mzml_info \
-       --qvalue-threshold 0.01 \
-       --output-folder ./output
-   ```
-
-4. For MaxQuant, use the `--max-memory` option. It limits DuckDB's buffer pool, not the whole process: the converter builds rows in Python batches of 100,000 records, whose memory comes on top.
-
-   ```bash
-   qpxc convert maxquant \
-       --msms-file msms.txt \
-       --output-folder ./output \
-       --max-memory 8GB
-   ```
+Each converter uses memory differently, and for most of them a larger `--max-memory` makes the peak higher, not lower. See [Memory](guide/convert.md#memory) for what to do with each one.
 
 ### Invalid file format errors
 
@@ -319,41 +295,11 @@ qpxc convert sdrf \
        --temp-dir /scratch/qpx_spill
    ```
 
-3. Use `--limit` or SQL `LIMIT` to restrict results
-
-4. Export large results directly to Parquet:
-
-   ```bash
-   qpxc query sql \
-       --dataset-path ./PXD014414 \
-       --sql "SELECT * FROM feature" \
-       --output results.parquet \
-       --output-format parquet
-   ```
-
-## Performance Issues
-
-### Slow processing
-
-**Solutions**:
-
-1. Use SSD storage for input/output files
-
-2. Increase available RAM
-
-3. For large datasets, consider processing samples in parallel
-
-4. Use compressed input files (.gz) to reduce I/O
+3. Use SQL `LIMIT` and select only the columns you need. Parquet reads only those columns.
 
 ### High memory usage
 
-**Solutions**:
-
-1. Close other applications to free memory
-
-2. Process smaller batches of data
-
-3. Use streaming/chunked processing where available
+Close other applications, and for a conversion see [Memory](guide/convert.md#memory).
 
 ## Getting More Help
 

@@ -91,10 +91,11 @@ def transform_gene_map_cmd(
     Examples:
         # A single parquet file
         qpxc transform gene-map \\
-            --parquet-path ./output/psm.parquet \\
+            --parquet-path ./output/maxquant.psm.parquet \\
             --fasta proteins.fasta \\
             --output-folder ./output
 
+    \b
         # A whole QPX dataset, refreshing its h5mu in place
         qpxc transform gene-map \\
             --dataset ./qpx_output \\

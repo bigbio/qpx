@@ -132,7 +132,7 @@ qpxc convert maxquant \
 
 # 2. Protein quantification (DirectLFQ)
 qpxc transform quantify \
-    --feature-path ./output/feature.parquet \
+    --feature-path ./output/diann.feature.parquet \
     --method directlfq \
     -o ./output/proteins.parquet
 

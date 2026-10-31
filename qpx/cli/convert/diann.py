@@ -127,6 +127,7 @@ def convert_diann_cmd(**kwargs):
             --mzml-info-folder ./mzml_info \\
             --output-folder ./qpx_output
 
+    \b
         # With the protein-group matrix
         qpxc convert diann \\
             --report-path report.tsv \\

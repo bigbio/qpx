@@ -55,7 +55,7 @@ from .postprocess import _finish_conversion
 @_verbose_option
 @_dataset_metadata_options
 def convert_spectronaut_cmd(**kwargs):
-    r"""Convert Spectronaut report to QPX format.
+    """Convert Spectronaut report to QPX format.
 
     Reads a Spectronaut report TSV file and converts feature-level and
     protein-group quantification data into QPX Parquet format.
@@ -63,14 +63,15 @@ def convert_spectronaut_cmd(**kwargs):
     \b
     Examples:
         # Feature + protein groups
-        qpxc convert spectronaut \
-            --report-path report.tsv \
+        qpxc convert spectronaut \\
+            --report-path report.tsv \\
             --output-folder ./qpx_output
 
+    \b
         # With SDRF metadata
-        qpxc convert spectronaut \
-            --report-path report.tsv \
-            --sdrf-file data.sdrf.tsv \
+        qpxc convert spectronaut \\
+            --report-path report.tsv \\
+            --sdrf-file data.sdrf.tsv \\
             --output-folder ./qpx_output
     """
     report_path = kwargs["report_path"]

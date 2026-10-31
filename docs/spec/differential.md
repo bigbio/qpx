@@ -144,7 +144,7 @@ adata.uns["de_results"] = {
         "se": np.array([0.18, 0.206, 0.188]),
         "df": np.array([37.0, 35.0, 37.0]),
         "is_significant": np.array([True, True, True]),
-        "issue": np.array([None, None, None]),
+        "issue": np.array(["", "", ""]),
         "condition_test": "squamous cell carcinoma",
         "condition_reference": "normal",
     }

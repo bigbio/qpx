@@ -413,19 +413,21 @@ def transform_quantify_cmd(**kwargs):
     Examples:
         # DirectLFQ from QPX feature
         qpxc transform quantify \\
-            --feature-path ./qpx_output/feature.parquet \\
+            --feature-path ./qpx_output/diann.feature.parquet \\
             --method directlfq \\
             -o proteins_directlfq.parquet
 
+    \b
         # iBAQ (requires FASTA)
         qpxc transform quantify \\
-            --feature-path ./qpx_output/feature.parquet \\
+            --feature-path ./qpx_output/diann.feature.parquet \\
             --method ibaq --fasta proteome.fasta --sdrf experiment.sdrf.tsv \\
             -o proteins_ibaq.tsv
 
+    \b
         # MaxLFQ with 8 threads
         qpxc transform quantify \\
-            --feature-path ./qpx_output/feature.parquet \\
+            --feature-path ./qpx_output/diann.feature.parquet \\
             --method maxlfq --threads 8 \\
             -o proteins_maxlfq.parquet
     """
