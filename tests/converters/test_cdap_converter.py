@@ -15,6 +15,9 @@ from pathlib import Path
 
 import pyarrow.parquet as pq
 import pytest
+from sdrf_pipelines.converters.channel_map import CHANNEL_LABELS
+
+from qpx.converters.cdap import CdapConverter
 
 _FIXTURE_DIR = Path(__file__).resolve().parent.parent / "examples" / "cdap"
 _PSM_DIR = Path(os.environ.get("CDAP_TEST_DATA_DIR", str(_FIXTURE_DIR)))
@@ -136,7 +139,13 @@ class TestCdapFeatureConversion:
             if row_ints is None:
                 continue
             for entry in row_ints:
-                assert entry["intensity"] >= 0, f"Negative intensity: {entry}"
+                assert entry["intensity"] is None or entry["intensity"] > 0, f"Invalid intensity: {entry}"
+
+    def test_every_identified_row_lists_the_plex_channels(self, feature_table):
+        """A channel without signal is a null entry with its canonical label, not a missing one."""
+        rows = feature_table.column("intensities").to_pylist()
+        assert all([entry["label"] for entry in row] == list(CHANNEL_LABELS["tmt10plex"].values()) for row in rows)
+        assert any(entry["intensity"] is None for row in rows for entry in row)
 
     def test_intensities_have_tmt_labels(self, feature_table):
         """At least some features should have TMT10 labels."""
@@ -595,3 +604,59 @@ def test_cdap_labelled_calculated_mz_matches_pyopenms(tmp_path, peptide, label, 
         with adapter_cls() as adapter:
             adapter.convert(psm_dir=str(tmp_path / "psm"), output_path=str(out))
         assert pq.read_table(str(out)).column("calculated_mz").to_pylist() == [pytest.approx(expected, abs=1e-4)]
+
+
+class TestCdapPgUnits:
+    """pg rows are per plex or sample, not per fraction file."""
+
+    RUNS = ("01CPTAC_CompRef_UCEC_A_PNNL_20180621_B1S5_f01", "01CPTAC_CompRef_UCEC_A_PNNL_20180621_B1S5_f02")
+
+    @staticmethod
+    def _pg(tmp_path, **kwargs):
+        CdapConverter().convert(_FIXTURE_DIR, tmp_path, output_prefix="c", **kwargs)
+        return pq.read_table(tmp_path / "c.pg.parquet").to_pylist()
+
+    def test_fraction_suffix_groups_runs(self, tmp_path):
+        rows = self._pg(tmp_path)
+        assert {tuple(row["grouped_runs"]) for row in rows} == {self.RUNS}
+
+    def test_one_row_per_group_and_channel_without_null_labels(self, tmp_path):
+        rows = self._pg(tmp_path)
+        keys = [(tuple(str(member) for member in row["pg_accessions"]), row["label"]) for row in rows]
+        assert len(keys) == len(set(keys))
+        assert {row["label"] for row in rows} == set(CHANNEL_LABELS["tmt10plex"].values())
+        assert any(row["intensity"] is None for row in rows)
+
+    def test_explicit_units_take_precedence(self, tmp_path):
+        units = {run: [run] for run in self.RUNS}
+        assert {tuple(row["grouped_runs"]) for row in self._pg(tmp_path, run_units=units)} == {(run,) for run in self.RUNS}
+
+    def test_sdrf_defines_the_units(self, tmp_path):
+        sdrf = tmp_path / "study.sdrf.tsv"
+        columns = ("source name", "comment[data file]", "comment[label]", "comment[fraction identifier]")
+        columns += ("characteristics[biological replicate]", "comment[technical replicate]")
+        lines = ["\t".join(columns)]
+        lines += [f"s{i}\t{run}.raw\tTMT126\t1\t1\t1" for i, run in enumerate(self.RUNS)]
+        sdrf.write_text("\n".join(lines) + "\n")
+        assert {tuple(row["grouped_runs"]) for row in self._pg(tmp_path, sdrf_path=sdrf)} == {(run,) for run in self.RUNS}
+
+
+def test_runs_without_a_fraction_suffix_stay_separate():
+    from qpx.converters.cdap.pg_adapter import units_from_fraction_names
+
+    assert units_from_fraction_names(["a_f01", "a_F02", "b_f1", "c"]) == {
+        "a_F02": ["a_F02", "a_f01"],
+        "a_f01": ["a_F02", "a_f01"],
+        "b_f1": ["b_f1"],
+        "c": ["c"],
+    }
+
+
+def test_canonical_labels_follow_the_plex():
+    from qpx.converters.cdap.constants import CANONICAL_LABELS
+
+    assert CANONICAL_LABELS["TMT10-131"] == "TMT131"
+    assert CANONICAL_LABELS["TMT11-131N"] == "TMT131N"
+    assert CANONICAL_LABELS["TMT11-126C"] == "TMT126"
+    assert CANONICAL_LABELS["TMT18-135N"] == "TMT135N"
+    assert CANONICAL_LABELS["iTRAQ114"] == "ITRAQ114"

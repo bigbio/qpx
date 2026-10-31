@@ -22,6 +22,7 @@ import pandas as pd
 
 from qpx.converters.base import resolve_columns
 from qpx.converters.cdap.base_adapter import CdapBaseAdapter
+from qpx.converters.cdap.constants import CANONICAL_LABELS
 from qpx.converters.mappings import get_field_mappings
 from qpx.writers.feature import FeatureWriter
 
@@ -270,17 +271,19 @@ class CdapFeatureAdapter(CdapBaseAdapter):
         channel_cols: list[str],
         channel_aliases: list[str],
     ) -> list[dict]:
-        """Extract reporter-ion or LFQ intensities from the row."""
+        """Extract reporter-ion or LFQ intensities from the row.
+
+        A channel without signal is an identified, unquantified label: CDAP's 0
+        is a sentinel, so it becomes a null entry.
+        """
         intensities: list[dict] = []
         if channel_cols:
             for col, alias in zip(channel_cols, channel_aliases):
                 val = self._optional_float(row.get(alias))
-                if val is not None and val > 0:
-                    intensities.append({"label": col, "intensity": val})
+                intensities.append({"label": CANONICAL_LABELS[col], "intensity": val if val else None})
         elif "best_precursor_area" in row:
             val = self._optional_float(row.get("best_precursor_area"))
-            if val is not None and val > 0:
-                intensities.append({"label": "LFQ", "intensity": val})
+            intensities.append({"label": "LFQ", "intensity": val if val else None})
         return intensities
 
     _FEATURE_SCORE_DEFS: tuple[tuple[str, str, bool], ...] = (

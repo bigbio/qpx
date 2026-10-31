@@ -10,9 +10,9 @@ GraphQL API and is recovered here:
     plex          --studyExperimentalDesign--> {channel: aliquot}
     aliquot_id    --biospecimenPerStudy--> {organism, tissue, disease, case}
 
-The reporter channels are emitted in the **same CDAP label format**
-(``TMT10-126``, ``iTRAQ114``, ``LFQ`` for label-free) so that each
-``run.samples[].label`` joins directly to a ``feature.parquet`` intensity label.
+The reporter channels use the **canonical SDRF labels** (``TMT126``,
+``ITRAQ114``, ``LFQ`` for label-free), as ``feature.parquet`` does, so that each
+``run.samples[].label`` joins directly to an intensity label.
 
 This builder lives at the ``pdc2qpx`` layer (it needs network), not inside the
 offline :class:`~qpx.converters.cdap.converter.CdapConverter`.
@@ -24,7 +24,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from qpx.converters.cdap.constants import CHANNEL_DEFS
+from qpx.converters.cdap.constants import CANONICAL_LABELS, CHANNEL_DEFS
 from qpx.pdc.metadata import (
     DEFAULT_METADATA_THREADS,
     ITRAQ4_CHANNEL_FIELDS,
@@ -51,7 +51,7 @@ def _is_reference(aliquot_submitter_id: Optional[str]) -> bool:
 
 
 def _plex_channel_map(plex: dict) -> list[tuple[str, str, str]]:
-    """Map one plex to ``[(cdap_label, aliquot_id, aliquot_submitter_id)]``.
+    """Map one plex to ``[(label, aliquot_id, aliquot_submitter_id)]``.
 
     Aligns the plex's non-empty PDC channel fields (canonical mass order) with
     the CDAP channel labels for its ``experiment_type``. Label-free plexes yield
@@ -96,7 +96,9 @@ def _plex_channel_map(plex: dict) -> list[tuple[str, str, str]]:
     mapping: list[tuple[str, str, str]] = []
     for field, cdap_label in zip(present, expected_labels):
         entry = plex[field][0]
-        mapping.append((cdap_label, entry["aliquot_id"], entry.get("aliquot_submitter_id") or entry["aliquot_id"]))
+        mapping.append(
+            (CANONICAL_LABELS[cdap_label], entry["aliquot_id"], entry.get("aliquot_submitter_id") or entry["aliquot_id"])
+        )
     return mapping
 
 
@@ -205,6 +207,14 @@ def _pdc_run_records(run_to_plex: dict, plex_channels: dict) -> tuple[list[dict]
     return run_records, runs_without_channels
 
 
+def run_units_from_plexes(run_to_plex: dict[str, dict]) -> dict[str, list[str]]:
+    """Map each run to the runs of its plex: PDC's own quantification unit."""
+    plexes: dict[str, list[str]] = {}
+    for run, info in sorted(run_to_plex.items()):
+        plexes.setdefault(info["plex"], []).append(run)
+    return {run: plexes[info["plex"]] for run, info in run_to_plex.items()}
+
+
 def build_sample_run_from_pdc(
     pdc_study_id: str,
     output_folder: str | Path,
@@ -212,19 +222,22 @@ def build_sample_run_from_pdc(
     *,
     compression: str = "zstd",
     threads: int = DEFAULT_METADATA_THREADS,
+    run_to_plex: Optional[dict[str, dict]] = None,
 ) -> Optional[dict[str, Path]]:
     """Build ``<prefix>.sample.parquet`` and ``<prefix>.run.parquet`` from PDC.
 
     Returns ``{"sample": path, "run": path}`` on success or ``None`` when the
     run -> plex map is empty (study has no harmonized metadata / no raw files).
     Network errors propagate; the caller (pdc2qpx) wraps this in a warn-skip
-    guard so metadata failure never breaks the main conversion.
+    guard so metadata failure never breaks the main conversion. ``run_to_plex``
+    reuses a :func:`~qpx.pdc.metadata.map_runs_to_plex` result already fetched.
     """
     output_folder = Path(output_folder)
 
     design = fetch_experimental_design(pdc_study_id)
     biospecimen = fetch_biospecimen(pdc_study_id)
-    run_to_plex = map_runs_to_plex(pdc_study_id, threads=threads)
+    if run_to_plex is None:
+        run_to_plex = map_runs_to_plex(pdc_study_id, threads=threads)
 
     if not run_to_plex:
         logger.warning("No run->plex mapping for %s; skipping sample/run views", pdc_study_id)

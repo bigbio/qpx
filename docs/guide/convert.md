@@ -606,8 +606,8 @@ qpxc convert cdap \
 Depending on `--structures`:
 
 - **PSM**: `{output-prefix}.psm.parquet`
-- **Feature**: `{output-prefix}.feature.parquet`
-- **Protein Group**: `{output-prefix}.pg.parquet`
+- **Feature**: `{output-prefix}.feature.parquet`, one row per peptidoform, charge and fraction run, with one `intensities` entry per channel (null where CDAP reports no signal)
+- **Protein Group**: `{output-prefix}.pg.parquet`, one row per group, channel and quantification unit. `grouped_runs` is the plex: from `--sdrf-file`, else the runs that differ only in a `_fNN` suffix. `pdc2qpx` takes it from PDC metadata
 - **Ontology**: `{output-prefix}.ontology.parquet`
 - **Provenance**: `{output-prefix}.provenance.parquet`
 - **Dataset**: `{output-prefix}.dataset.parquet`

@@ -43,6 +43,11 @@ from .postprocess import _finish_conversion
     "--project-accession",
     help="PDC / ProteomeXchange accession (e.g. PDC000227)",
 )
+@click.option(
+    "--sdrf-file",
+    help="SDRF defining which runs form one quantification unit. Default: runs that differ only in a _fNN suffix.",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
 @_compression_option
 @_max_memory_option
 @_max_cpus_option
@@ -102,6 +107,7 @@ def convert_cdap_cmd(**kwargs):
         output_prefix=output_prefix,
         structures=requested,
         project_accession=project_accession,
+        sdrf_path=kwargs["sdrf_file"],
     )
 
     _finish_conversion(output_folder, output_prefix, project_accession, metadata)

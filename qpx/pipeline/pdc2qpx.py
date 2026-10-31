@@ -66,12 +66,25 @@ def _assert_cdap_psm(study_dir: Path) -> None:
         )
 
 
-def _add_pdc_metadata(study: str, output_folder: Path, download_threads: int, outputs: dict[str, Path]) -> None:
+def _fetch_run_to_plex(study: str, download_threads: int) -> Optional[dict[str, dict]]:
+    """The study's run -> plex map; a failure only logs a warning, and fraction names group the runs instead."""
+    try:
+        from qpx.pdc.metadata import map_runs_to_plex
+
+        return map_runs_to_plex(study, threads=download_threads)
+    except (OSError, RuntimeError, ValueError, KeyError, TypeError) as exc:
+        logger.warning("PDC run->plex map unavailable for %s: %s", study, exc)
+        return None
+
+
+def _add_pdc_metadata(
+    study: str, output_folder: Path, download_threads: int, outputs: dict[str, Path], run_to_plex: Optional[dict[str, dict]]
+) -> None:
     """Build the sample/run views from PDC metadata into ``outputs``; a failure only logs a warning."""
     try:
         from qpx.converters.cdap.pdc_sample_run import build_sample_run_from_pdc
 
-        built = build_sample_run_from_pdc(study, output_folder, prefix=study, threads=download_threads)
+        built = build_sample_run_from_pdc(study, output_folder, prefix=study, threads=download_threads, run_to_plex=run_to_plex)
         if built:
             outputs.update(built)
     except (OSError, RuntimeError, ValueError, KeyError, TypeError) as exc:
@@ -134,7 +147,9 @@ def run_pdc2qpx(
     _assert_cdap_psm(study_dir)
 
     from qpx.converters.cdap import CdapConverter
+    from qpx.converters.cdap.pdc_sample_run import run_units_from_plexes
 
+    run_to_plex = _fetch_run_to_plex(study, download_threads) if include_metadata else None
     logger.info("Converting CDAP .psm -> QPX base views (%s)", study)
     converter = CdapConverter(max_memory=max_memory, max_cpus=max_cpus)
     converter.convert(
@@ -142,12 +157,13 @@ def run_pdc2qpx(
         output_folder=output_folder,
         output_prefix=study,
         project_accession=study,
+        run_units=run_units_from_plexes(run_to_plex) if run_to_plex else None,
     )
     outputs: dict[str, Path] = {"base": output_folder}
 
     # 2. Optional sample/run views from PDC metadata (channel -> sample mapping).
     if include_metadata:
-        _add_pdc_metadata(study, output_folder, download_threads, outputs)
+        _add_pdc_metadata(study, output_folder, download_threads, outputs, run_to_plex)
 
     # 3. Optional full-spectra mz.parquet from mzML files.
     if include_spectra:
