@@ -164,7 +164,7 @@ class TestFragPipeToProforma:
         assert peptidoform == "PEPTIDEK-[UNIMOD:2]"
         assert modifications == [
             {
-                "name": "UNIMOD:2",
+                "name": "Amidated",
                 "accession": "UNIMOD:2",
                 "positions": [{"position": 9, "amino_acid": None, "scores": None}],
             }
@@ -511,7 +511,7 @@ class TestSiteProbabilities:
 
         assert feature_peptidoform == psm_peptidoform == "AAK[RGG (K)]PS[UNIMOD:21]TK"
         placed = {mod["name"]: [(p["position"], p["amino_acid"]) for p in mod["positions"]] for mod in modifications}
-        assert placed == {"RGG (K)": [(3, "K")], "UNIMOD:21": [(5, "S")]}
+        assert placed == {"RGG (K)": [(3, "K")], "Phospho": [(5, "S")]}
         assigned = [(c["position"], c["amino_acid"]) for c in candidates if c["assigned"]]
         assert assigned == [(5, "S")]
 

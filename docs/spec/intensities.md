@@ -183,3 +183,16 @@ additional_intensities: array[struct{
 
 - [Scores & CV Terms](scores.md) -- additional structured metadata for features and protein groups
 - [QPX Format Overview](index.md) -- full list of views and concepts
+
+## Reading intensities
+
+The nested layout costs nothing on disk but takes work to read, more for many labels. In a TMT16 feature view, selecting one channel with `list_filter` takes about 34 times as long as reading a flat column, and through Polars about 115 times.
+
+| Need | Use | Cost |
+|------|-----|------|
+| Long table: one row per feature and label | `feature.peptide_intensities()` | Unnests every row in DuckDB |
+| Wide table: one column per label | `feature.intensities_wide(labels=[...])` | Same; naming the labels spares a scan for them |
+| Whole view in pandas | `feature.to_df(dtype_backend="pyarrow")` | Columns stay in Arrow memory |
+| Whole view in pandas, as Python objects | `feature.to_df()` | About 8 KB per TMT16 row: 2.4 GB for 300,000 rows |
+
+Filter before reading: `feature.by_run(...)` and `feature.by_protein(...)` narrow the scan, which helps every option above.

@@ -38,6 +38,26 @@ retained even when its intensity is null. Fields marked with
 | `anchor_protein` | Representative protein of the group (leading protein); descriptive and not part of the default identity composite | `string` | Yes |
 | `grouped_runs` | The group of raw files aggregated into one quantification unit (fractions aggregated together; single-element for unfractionated/DIA). The sample is resolved downstream via `(any file in grouped_runs, label) -> run.samples[].sample_accession`; part of the default identity composite | `array[string]` | Yes |
 
+### Accession convention
+
+Every converter writes a UniProt id as its bare accession: `P04114`, not
+`sp|P04114|APOB_HUMAN`. The entry name goes to `pg_names` when the source has one.
+A decoy or contaminant marker from the search database stays on the accession
+(`DECOY_P04114`, `REV__P04114`, `CONTAM_P02768`), so that a decoy never shares an
+accession with its target, but `is_decoy` and `contaminant` state the status; do
+not parse it from the prefix. Non-UniProt accessions, such as RefSeq, are written
+as the source reports them.
+
+### What `intensity` holds
+
+`intensity` is the primary quantity of the producer, and differs between tools
+and tool versions: DIA-NN 1.8 reports `PG.Quantity` and DIA-NN 2.x `PG.MaxLFQ`,
+which differ by an order of magnitude on the same samples, and QPX versions before
+1.1 wrote MaxLFQ for most DIA-NN rows without marking it. Where a converter knows
+the method, the row's `cv_params` has a `quantification_method` entry. Compare
+`intensity` across datasets only when that entry agrees; merging datasets warns
+when it does not.
+
 ### Protein group semantics
 
 A `pg` row is an **analyte**: the quantified unit is the protein group *as a whole*, identified by `pg_id` (a function of the full `pg_accessions` membership together with `grouped_runs` and `label`). The group — not any single protein — is the object of downstream analysis. This follows the guidance of DIA-NN's author ([vdemichev/DiaNN#1149](https://github.com/vdemichev/DiaNN/issues/1149)) and the QPX design discussion ([bigbio/qpx#266](https://github.com/bigbio/qpx/issues/266)).

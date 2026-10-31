@@ -35,8 +35,8 @@ from qpx.converters.openms_consensus.feature_adapter import (
     qvalue_meta_of as _qvalue_meta_of,
 )
 from qpx.converters.openms_consensus.protein_groups import identification_identifier
+from qpx.converters.utils import canonical_accession, safe_float
 from qpx.converters.utils import mass_error_ppm as _mass_error_ppm
-from qpx.converters.utils import safe_float
 from qpx.core.cleavage import count_missed_cleavages
 from qpx.core.scan import scan_format_from_native_id, scan_from_native_id
 
@@ -76,7 +76,7 @@ def _protein_accessions(hits) -> list[str] | None:
     for hit in hits:
         for evidence in hit.getPeptideEvidences():
             raw = evidence.getProteinAccession()
-            accession = raw.decode() if isinstance(raw, (bytes, bytearray)) else str(raw or "")
+            accession = canonical_accession(raw.decode() if isinstance(raw, (bytes, bytearray)) else str(raw or ""))
             if accession and accession not in seen:
                 seen.add(accession)
                 accessions.append(accession)

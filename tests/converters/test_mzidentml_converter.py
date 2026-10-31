@@ -426,9 +426,9 @@ class TestMzIdentMLPgAdapter:
             adapter.convert(mzid_path=str(PXD054720_MZID), output_path=str(output))
         table = pq.read_table(str(output))
         df = table.to_pandas()
-        anchor_row = df[df["anchor_protein"] == "sp|P0A6Y8|DNAK_ECOLI"]
+        anchor_row = df[df["anchor_protein"] == "P0A6Y8"]
         assert len(anchor_row) > 0, (
-            f"Expected sp|P0A6Y8|DNAK_ECOLI as anchor protein in first PAG. Got anchors: {df['anchor_protein'].tolist()[:5]}"
+            f"Expected P0A6Y8 as anchor protein in first PAG. Got anchors: {df['anchor_protein'].tolist()[:5]}"
         )
 
     def test_pg_accessions_not_empty(self, tmp_path):

@@ -15,6 +15,7 @@ import pandas as pd
 from qpx.converters.base import resolve_columns
 from qpx.converters.cdap.base_adapter import CdapBaseAdapter
 from qpx.converters.mappings import get_field_mappings
+from qpx.core.files import RUN_FILE_SUFFIX_PATTERN
 from qpx.writers.psm import PsmWriter
 
 _PSM_MAP = get_field_mappings("cdap", "psm")
@@ -98,8 +99,7 @@ class CdapPsmAdapter(CdapBaseAdapter):
         cols: list[str] = [
             f'"{r.get("peptide_raw", "PeptideSequence")}" AS peptide_raw',
             f'CAST("{r.get("charge", "QueryCharge")}" AS INTEGER) AS charge',
-            # Pre-clean run file name: strip .raw/.mzML/.mgf extensions
-            f"regexp_replace(\"{r.get('run_file_name', 'FileName')}\", '\\.(raw|RAW|mzML|mzml|mgf)$', '') AS run_file_name",
+            f"regexp_replace(\"{r.get('run_file_name', 'FileName')}\", '{RUN_FILE_SUFFIX_PATTERN}', '') AS run_file_name",
             # Scan as integer
             f'TRY_CAST("{r.get("scan", "ScanNum")}" AS INTEGER) AS scan_num',
             # All numeric fields pre-cast to DOUBLE

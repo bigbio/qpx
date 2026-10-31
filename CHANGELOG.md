@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `DatasetCollection` registers one view per structure over all datasets, with a `source_dataset` column, next to the positional `feature_0` views, which change with the list order.
+- `to_df(dtype_backend="pyarrow")` keeps a view's columns in Arrow memory, and `Feature.intensities_wide(labels=...)` gives one intensity column per label. The cost of each way to read nested intensities is in the specification.
+- Conversions record the DuckDB and PyArrow versions in provenance, and CI runs the unit tests against DuckDB and pyOpenMS pre-releases.
+- Merging datasets warns when their pg `quantification_method` differs, because their `intensity` values are then not comparable.
 - **Specification 1.3: MS1-label multiplets.** SILAC, dimethyl and mTRAQ data have a normative encoding: one feature row per multiplet with one `intensities` entry per channel label and the lightest partner's peptidoform, the new optional `feature.identified_labels` (the partners identified by MS/MS) and `psm.label`, PSM peptidoforms that carry their partner's label, and ratios named `ratio_<num>_<den>` on the numerator label. See [MS1 labels](docs/spec/intensities.md#ms1-labels-silac-dimethyl-mtraq).
 - `qpxc validate --semantic` (`validate(semantic=True)`) checks PSM and feature peptidoforms (canonical ProForma, the sequence, Unimod accessions), modification positions, `calculated_mz` against the peptidoform's theoretical m/z and `observed_mz` against `calculated_mz`. Malformed ProForma, unknown accessions, a peptidoform that contradicts its sequence, a modification at position 42 of a 16-mer and a `calculated_mz` 50 Da off all passed before.
 - `--temp-dir` on every convert command, `pdc2qpx`, `validate`, `query sql` and `transform gene-map`/`protein-properties`, and `--duckdb-memory`/`--duckdb-threads` on `validate` and the two transforms; `Dataset` and `Collection` take `duckdb_temp_dir`. DuckDB spilled to `.tmp` in the working directory, which can be small or read-only; convert and transform commands now spill under their output folder, and a convert command's `--max-memory`/`--max-cpus` also apply to the post-conversion steps (MuData, integrity, protein properties), which ran with DuckDB's defaults.
@@ -47,6 +51,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- One rule strips run-file suffixes in every converter, including `.wiff2` and `.htrms`, so these runs join their SDRF rows wherever they are read.
+- Every converter writes UniProt ids as bare accessions: mzIdentML, `openms-consensus` and `quantms-msstats` wrote `sp|P1|NAME` and DIA-NN `DECOY_sp|P1|NAME`. mzIdentML now fills `pg_names` from the entry names, and `qpxc transform normalize-accessions` handles `DECOY_`/`REV__` ids and moves entry names into a null `pg_names` instead of dropping them.
+- `modifications.name` holds the Unimod title (`Carbamidomethyl`) where four converters wrote the accession (`UNIMOD:4`).
+- Relabelling an LFQ `openms` output keeps SILAC, dimethyl and mTRAQ labels, which collapsed to repeated `LFQ` entries.
 - **`transform quantify`:** `--method maxlfq` ran DirectLFQ whenever it was installed, and `--threads` was ignored; both now do what they say. `--method ibaq -o x.parquet` wrote tab-separated text under that name; it now writes the format the suffix names, including the absolute-expression view for `.h5ad`, and warns about proteins dropped for missing from the FASTA. Features are pre-aggregated in DuckDB, so `topn` and `top3` rank peptides rather than charge states. A dataset directory is accepted.
 - **AnnData views:** the MuData view reads the `uns["de_results"]` layout from the specification, which used to become a zero matrix, and reports untested proteins as NaN rather than a fold change and p-value of 0. `qpxc validate` checks `.ae.h5ad` and `.de.h5ad` files.
 

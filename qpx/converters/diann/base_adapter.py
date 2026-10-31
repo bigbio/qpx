@@ -15,6 +15,7 @@ from sdrf_pipelines.converters.diann.constants import PLEXDIA_REGISTRY
 
 from qpx.converters.base import BaseConverter
 from qpx.converters.channel_labels import normalize_label, read_sdrf_labels
+from qpx.core.files import RUN_FILE_SUFFIX_PATTERN
 from qpx.core.sql import escape_path, sql_build, validate_identifier
 
 # DIA-NN channel name and mass offset of each canonical plexDIA label, from the
@@ -32,12 +33,11 @@ _CHANNEL_MASSES = dict(_PLEXDIA_CHANNELS.values())
 BATCH_ROWS = 1_000_000
 
 # Raw-file extensions stripped from a report ``Run`` to give ``run_file_name``.
-RUN_EXTENSIONS = "mzML|raw|d|wiff|htrms"
 
 
 def run_name_sql(run_expr: str) -> str:
     """SQL for a report ``Run`` value without its raw-file extension."""
-    return f"regexp_replace(CAST({run_expr} AS VARCHAR), '(?i)\\.({RUN_EXTENSIONS})$', '')"
+    return f"regexp_replace(CAST({run_expr} AS VARCHAR), '{RUN_FILE_SUFFIX_PATTERN}', '')"
 
 
 def decoy_protein_group_sql(pg_expr: str, decoy_expr: str) -> str:
@@ -50,7 +50,7 @@ def decoy_protein_group_sql(pg_expr: str, decoy_expr: str) -> str:
     """
     prefixed = (
         f"array_to_string(list_transform(list_filter(string_split({pg_expr}, ';'), lambda x: trim(x) <> ''), "
-        "lambda x: 'DECOY_' || trim(x)), ';')"
+        "lambda x: 'DECOY_' || regexp_replace(trim(x), '^(?:sp|tr)\\|([^|]+)(?:\\|.*)?$', '\\1')), ';')"
     )
     return f"CASE WHEN CAST({decoy_expr} AS BOOLEAN) THEN {prefixed} ELSE {pg_expr} END"
 

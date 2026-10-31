@@ -63,6 +63,27 @@ class Feature(BaseStructure):
         )
         return QueryResult(self._engine.connection, stmt)
 
+    def intensities_wide(self, labels: list[str] | None = None) -> QueryResult:
+        """One row per feature with one intensity column per label; *labels* picks the columns, default all."""
+        if labels is None:
+            stmt = sql_build(
+                "SELECT DISTINCT i.label FROM $src, UNNEST(intensities) AS t(i) WHERE i.label IS NOT NULL ORDER BY 1",
+                src=self._query.source,
+            )
+            labels = [row[0] for row in self._engine.execute(stmt).fetchall()]
+        columns = "".join(
+            f""", MAX(i.intensity) FILTER (WHERE i.label = '{_escape_sql_string(label)}') AS "{label.replace('"', '""')}\""""
+            for label in labels
+        )
+        stmt = sql_build(
+            "SELECT feature_id, peptidoform, charge, anchor_protein, run_file_name$columns "
+            "FROM $src, UNNEST(intensities) AS t(i) "
+            "GROUP BY feature_id, peptidoform, charge, anchor_protein, run_file_name",
+            src=self._query.source,
+            columns=columns,
+        )
+        return QueryResult(self._engine.connection, stmt)
+
     def for_quantification(self, dataset: Dataset) -> QueryResult:
         """
         Return feature intensities in long format with sample metadata,

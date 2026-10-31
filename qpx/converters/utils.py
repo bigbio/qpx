@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Optional
 
 import pyarrow as pa
@@ -62,24 +63,22 @@ def is_contaminant_accession(accession) -> bool:
     return "CONTAM" in accession or accession.startswith(("CONT_", "SP|CONT_", "TR|CONT_"))
 
 
-def strip_uniprot_prefix(accession: str) -> str:
-    """Strip a leading ``sp|``/``tr|`` UniProt db prefix, returning the accession.
+_UNIPROT_ID = re.compile(r"^(?P<marker>[A-Za-z]+_{1,2})?(?:sp|tr)\|(?P<accession>[^|]+)(?:\|.*)?$")
 
-    ``sp|P55011|S12A2_HUMAN`` -> ``P55011``; ``tr|A0A..|..._HUMAN`` -> ``A0A..``;
-    ids without that prefix (bare accessions, ``CON__``/``REV__`` decoys) are
-    returned unchanged. Used by the MaxQuant adapters, whose FASTA prefixing is
-    the only case that should be stripped.
+
+def canonical_accession(accession: str) -> str:
+    """Return the accession of a UniProt ``db|ACCESSION|NAME`` id, keeping a decoy or contaminant marker.
+
+    ``sp|P55011|S12A2_HUMAN`` -> ``P55011``; ``REV__sp|Q00402|NUM1_YEAST`` ->
+    ``REV__Q00402``; ``CONTAM_sp|CONTAM_P1|X`` -> ``CONTAM_P1``. Any other id is
+    returned unchanged. The marker stays so that a decoy never shares an
+    accession with its target; ``is_decoy`` and ``contaminant`` state the status.
     """
-    if accession and accession.startswith(("sp|", "tr|")):
-        parts = accession.split("|")
-        if len(parts) >= 2:
-            return parts[1]
-    return accession
-
-
-# ------------------------------------------------------------------
-# MaxQuant helpers
-# ------------------------------------------------------------------
+    match = _UNIPROT_ID.match(accession) if accession else None
+    if match is None:
+        return accession
+    marker, bare = match.group("marker") or "", match.group("accession")
+    return bare if bare.startswith(marker) else marker + bare
 
 
 def mq_flag_to_bool(val) -> bool:

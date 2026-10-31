@@ -24,6 +24,7 @@ from qpx.converters.cdap.constants import (
 )
 from qpx.converters.cdap.peptidoform import cdap_to_proforma, strip_label_tags
 from qpx.converters.ptm import compute_precursor_mz, from_proforma
+from qpx.core.files import run_file_stem
 from qpx.core.sql import sql_build, validate_table
 
 if TYPE_CHECKING:
@@ -164,14 +165,8 @@ class CdapBaseAdapter(BaseConverter):
 
     @staticmethod
     def strip_run_extension(filename: object) -> str:
-        """Return the run stem with the trailing ``.raw``/``.mzML`` removed."""
-        if filename is None:
-            return ""
-        stem = str(filename).strip()
-        for ext in (".raw", ".RAW", ".mzML", ".mzml", ".mgf"):
-            if stem.endswith(ext):
-                return stem[: -len(ext)]
-        return stem
+        """Return the run stem without its acquisition-file suffix."""
+        return "" if filename is None else run_file_stem(filename)
 
     # ------------------------------------------------------------------
     # Shared record field builder

@@ -21,10 +21,18 @@ class QueryResult:
         """Keep the rows matching a SQL *condition*; DuckDB pushes it into the scans of the query."""
         return QueryResult(self._connection, f"SELECT * FROM ({self._sql}) WHERE {condition}")
 
-    def to_df(self) -> pd.DataFrame:
-        """Materialize as a pandas DataFrame."""
+    def to_df(self, dtype_backend: str | None = None) -> pd.DataFrame:
+        """Materialize as a pandas DataFrame.
+
+        A nested column becomes Python objects by default, about 8 KB per TMT16
+        row. ``dtype_backend="pyarrow"`` keeps columns in Arrow memory instead.
+        """
         if self._relation is None:
             return pd.DataFrame()
+        if dtype_backend == "pyarrow":
+            return self._relation.to_arrow_table().to_pandas(types_mapper=pd.ArrowDtype)
+        if dtype_backend is not None:
+            raise ValueError(f"Unknown dtype_backend {dtype_backend!r}; use 'pyarrow'")
         return self._relation.df()
 
     def to_arrow(self) -> pa.Table:

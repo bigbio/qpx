@@ -16,12 +16,14 @@ class DatasetCollection:
     """Analyze multiple QPX datasets together.
 
     Virtual mode: register all datasets in one DuckDB engine for cross-dataset SQL.
+    Each view is readable per dataset (``feature_0``) and over all datasets
+    (``feature``, whose ``source_dataset`` column names the row's dataset).
     Physical mode: merge structures from multiple datasets into a new output directory.
 
     Usage::
 
         coll = DatasetCollection([ds1, ds2])
-        coll.sql("SELECT COUNT(*) FROM feature_0 UNION ALL SELECT COUNT(*) FROM feature_1")
+        coll.sql("SELECT source_dataset, COUNT(*) FROM feature GROUP BY source_dataset")
 
         # Merge into a new dataset (refuses overlapping datasets; see ``merge``)
         coll.merge("merged_output/", structures=["feature"])
@@ -43,7 +45,7 @@ class DatasetCollection:
         self._register_all()
 
     def _register_all(self):
-        """Register all dataset structures with indexed names (e.g. feature_0, feature_1)."""
+        """Register all dataset structures with indexed names (e.g. feature_0, feature_1) and unified views."""
         for i, ds in enumerate(self.datasets):
             for name in ds.available_structures:
                 struct = ds._structures[name]
@@ -67,6 +69,27 @@ class DatasetCollection:
                         self._engine.register_partitioned_parquet(indexed_name, file_paths[0])
                     else:
                         self._engine.register_parquet_files(indexed_name, file_paths)
+        self._register_unified_views()
+
+    def _register_unified_views(self):
+        """Create one view per structure over every dataset that has it, keyed by ``source_dataset``."""
+        from qpx.core.dataset_merge import _quoted, _source_labels
+
+        labels = _source_labels(self.datasets)
+        for name in {name for ds in self.datasets for name in ds.available_structures}:
+            selects = " UNION ALL BY NAME ".join(
+                f"SELECT {self._source_key(f'{name}_{i}', label)}* FROM {_quoted(f'{name}_{i}')}"
+                for i, (label, ds) in enumerate(zip(labels, self.datasets))
+                if name in ds.available_structures
+            )
+            self._engine.connection.execute(f"CREATE VIEW {_quoted(name)} AS {selects}")
+
+    def _source_key(self, view: str, label: str) -> str:
+        """The select item naming a view's dataset; a merged dataset has the column already."""
+        from qpx.core.dataset_merge import SOURCE_COLUMN, _literal
+
+        columns = self._engine.connection.execute("SELECT name FROM pragma_table_info(?)", [view]).fetchall()
+        return "" if (SOURCE_COLUMN,) in columns else f"{_literal(label)} AS {SOURCE_COLUMN}, "
 
     def sql(self, query: str) -> QueryResult:
         """Execute SQL across all registered datasets."""

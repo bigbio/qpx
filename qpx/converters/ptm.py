@@ -589,6 +589,12 @@ def _modification_site(seq_pos: int, last_aa: str | None, cterm: bool, sequence_
     return seq_pos, last_aa
 
 
+def _unimod_title_of(accession: str) -> str:
+    """The Unimod title of ``UNIMOD:<n>``; the accession itself when Unimod has no such entry."""
+    number = accession.split(":", 1)[1]
+    return (unimod_title(int(number)) if number.isdigit() else None) or accession
+
+
 def _modification_identity(mod_str: str, aa: str | None, meta: Optional[dict]) -> tuple[str, str | None]:
     """Resolve a modification tag to its name and accession."""
     mod_str = mod_str.split("|", 1)[0]
@@ -596,12 +602,8 @@ def _modification_identity(mod_str: str, aa: str | None, meta: Optional[dict]) -
     accession = None
     if mod_str.startswith("UNIMOD:"):
         accession = mod_str
-        if meta:
-            entry = meta.get(accession)
-            if entry:
-                name = entry[0]
-        else:
-            name = accession
+        entry = meta.get(accession) if meta else None
+        name = entry[0] if entry else _unimod_title_of(accession)
     elif mod_str.startswith("+") or mod_str.startswith("-"):
         if meta:
             for acc, (mod_name, sites, _) in meta.items():

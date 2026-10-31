@@ -28,7 +28,7 @@ from qpx.converters.channel_labels import fraction_groups_from_sdrf
 from qpx.converters.openms_consensus.feature_adapter import is_decoy_hit, to_proforma
 from qpx.converters.openms_consensus.protein_groups import ProteinGroupIndex, identification_identifier
 from qpx.converters.openms_consensus.protein_quant import fraction_group_units, quant_by_unit
-from qpx.converters.utils import is_contaminant_accession, safe_float, uniprot_entry_name
+from qpx.converters.utils import canonical_accession, is_contaminant_accession, safe_float, uniprot_entry_name
 from qpx.core.protein_sequence import average_molecular_weight_kda
 
 _log = logging.getLogger(__name__)
@@ -401,16 +401,16 @@ def _pg_group_fields(accs, m, acc_decoy, acc_qvalue, acc_gene, properties) -> di
     member_names = [uniprot_entry_name(a) for a in accs]
     pg_names = member_names if all(member_names) else None
     return {
-        "pg_accessions": list(accs),
+        "pg_accessions": [canonical_accession(a) for a in accs],
         "pg_names": pg_names,
-        "anchor_protein": anchor,
+        "anchor_protein": canonical_accession(anchor),
         **properties.get(anchor, {}),
         "global_qvalue": global_qvalue,
         "is_decoy": is_decoy,
         "contaminant": any(_is_contaminant(a) for a in accs),
         "gg_accessions": genes,
         "gg_names": genes,
-        "peptides": [{"protein_name": a, "peptide_count": len(m.acc_to_pep.get(a, set()))} for a in accs],
+        "peptides": [{"protein_name": canonical_accession(a), "peptide_count": len(m.acc_to_pep.get(a, set()))} for a in accs],
     }
 
 

@@ -359,3 +359,25 @@ class TestWritePartitioned:
         FeatureWriter.write_partitioned(table, root / "feature")
         with qpx.open_dataset(str(root)) as ds:
             assert set(ds.feature.to_df()["run_file_name"]) == {run}
+
+
+def test_merge_warns_when_pg_quantities_differ(dataset_dir, tmp_path, caplog):
+    def with_method(name, accession, method):
+        target = _copy(dataset_dir, tmp_path, name, accession)
+        path = next(target.glob("*.pg.parquet"))
+        table = pq.read_table(path)
+        index = table.schema.get_field_index("cv_params")
+        field = table.schema.field(index)
+        entry = [{"cv_name": "quantification_method", "cv_value": method}]
+        pq.write_table(table.set_column(index, field, pa.array([entry] * table.num_rows, field.type)), path)
+        return qpx.open_dataset(str(target))
+
+    with (
+        with_method("q1", "PXD000001", "PG.Quantity") as first,
+        with_method("q2", "PXD000002", "PG.MaxLFQ") as second,
+        qpx.DatasetCollection([first, second]) as coll,
+        caplog.at_level(logging.WARNING, logger="qpx.core.dataset_merge"),
+    ):
+        coll.merge(tmp_path / "merged", structures=["pg"], on_collision="namespace")
+    assert "PG.Quantity" in caplog.text
+    assert "PG.MaxLFQ" in caplog.text

@@ -3,6 +3,7 @@
 import hashlib
 
 import click
+import duckdb
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
@@ -181,6 +182,8 @@ def test_conversion_records_options_checksums_and_the_sdrf(tmp_path):
     assert parameters["report_path"] == "pivot.tsv"
     assert parameters["report_path_sha256"] == hashlib.sha256(report.read_bytes()).hexdigest()
     assert parameters["sdrf_file_sha256"] == hashlib.sha256(sdrf.read_bytes()).hexdigest()
+    assert parameters["dependency_duckdb"] == duckdb.__version__
+    assert parameters["dependency_pyarrow"] == pa.__version__
     assert "output_folder" not in parameters
     assert (out / "sn.sdrf.tsv").read_bytes() == sdrf.read_bytes()
 

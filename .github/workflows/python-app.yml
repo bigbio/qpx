@@ -57,6 +57,32 @@ jobs:
       - name: Run unit tests
         run: uv run pytest -vv -n auto -m "not integration and not large_data"
 
+  unit-tests-prereleases:
+    # Early warning of breaking releases of DuckDB and pyOpenMS, which have broken every published QPX version before.
+    runs-on: ubuntu-latest
+    needs: pre-commit
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Sync workspace
+        run: uv sync --extra dev
+      - name: Install pre-releases
+        run: uv pip install --pre --upgrade duckdb pyopenms
+      - name: Show versions
+        run: uv run --no-sync python -c "import duckdb, pyopenms; print('duckdb', duckdb.__version__, 'pyopenms', pyopenms.__version__)"
+      - name: Run unit tests on pre-releases
+        run: uv run --no-sync pytest -vv -n auto -m "not integration and not large_data"
+
   unit-tests-duckdb-floor:
     # Exercise the declared DuckDB floor (pyproject: duckdb>=1.5.0) so the floor is
     # a real, tested contract — not just the latest resolved DuckDB. (The floor is

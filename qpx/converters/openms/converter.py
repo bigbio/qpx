@@ -32,6 +32,7 @@ from qpx.converters.orchestrator import BaseOrchestrator
 from qpx.converters.sdrf import SdrfConverter
 from qpx.core.constants import FEATURE, ONTOLOGY, PG, PSM, RUN, SAMPLE
 from qpx.core.data.loader import load_schema
+from qpx.core.files import run_file_stem
 from qpx.core.scores import score_ontology_entries
 from qpx.writers import FeatureWriter, PgWriter, PsmWriter
 
@@ -63,11 +64,6 @@ _VIEW_WRITERS = {
 # unambiguously under that name.
 FRACTION_GROUP_CV_NAME = "fraction_group"
 
-# Run-file extensions stripped when matching consensusXML ``<map name>`` values
-# against pg ``grouped_runs`` / feature ``run_file_name`` (which -out_qpx may
-# write with or without an extension).
-_RUN_EXTENSIONS = (".mzml", ".raw", ".mzxml", ".d.zip", ".d.tar.gz", ".d.tar", ".d", ".wiff", ".dia")
-
 
 def _run_key_candidates(name: str | None) -> list[str]:
     """Return match candidates for a run/map filename (raw, basename, stem)."""
@@ -80,13 +76,9 @@ def _run_key_candidates(name: str | None) -> list[str]:
     base = text.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
     if base and base not in candidates:
         candidates.append(base)
-    lower = base.lower()
-    for ext in _RUN_EXTENSIONS:
-        if lower.endswith(ext):
-            stem = base[: -len(ext)]
-            if stem and stem not in candidates:
-                candidates.append(stem)
-            break
+    stem = run_file_stem(base)
+    if stem and stem not in candidates:
+        candidates.append(stem)
     return candidates
 
 

@@ -16,7 +16,7 @@ from qpx.converters.base import BaseConverter
 from qpx.converters.channel_labels import label_unimod, normalize_label, read_sdrf_labels, resolve_channel_labels
 from qpx.converters.maxquant.constants import FixedMods, parameters_fixed_mods, sdrf_fixed_mods, summary_fixed_mods
 from qpx.converters.ptm import NTERM
-from qpx.converters.utils import strip_uniprot_prefix
+from qpx.converters.utils import canonical_accession
 from qpx.core.files import run_file_stem
 
 
@@ -36,13 +36,13 @@ class MaxQuantBaseAdapter(BaseConverter):
     def _norm_uniprot_id(pid: str) -> str:
         """Normalise a MaxQuant UniProt protein ID to its bare accession.
 
-        Thin wrapper over :func:`qpx.converters.utils.strip_uniprot_prefix`::
+        Thin wrapper over :func:`qpx.converters.utils.canonical_accession`::
 
             sp|P55011|S12A2_HUMAN  →  P55011
             tr|A0A3B3IS91|..._HUMAN  →  A0A3B3IS91
             P55011  →  P55011  (returned as-is)
         """
-        return strip_uniprot_prefix(pid)
+        return canonical_accession(pid)
 
     @staticmethod
     def _fixed_mods(sdrf_path: Optional[str], source_path: str) -> FixedMods:

@@ -2,6 +2,9 @@
 
 import shutil
 
+import duckdb
+import pytest
+
 
 class TestVirtualCollection:
     def test_sql_across_datasets(self, dataset_dir, tmp_path):
@@ -213,3 +216,59 @@ class TestShardedCollection:
         )
         assert struct.file_paths == ["s3://bucket/ds/*.feature.parquet"]
         assert str(struct.file_paths[0]).startswith("s3://")
+
+
+class TestUnifiedViews:
+    def test_rows_of_all_datasets_are_keyed_by_source(self, dataset_dir, tmp_path):
+        import qpx
+
+        ds2_dir = tmp_path / "ds2"
+        shutil.copytree(dataset_dir, ds2_dir)
+        with (
+            qpx.open_dataset(str(dataset_dir)) as first,
+            qpx.open_dataset(str(ds2_dir)) as second,
+            qpx.DatasetCollection([first, second]) as coll,
+        ):
+            per_source = coll.sql("SELECT source_dataset, COUNT(*) FROM feature GROUP BY 1").fetchall()
+            single = coll.sql("SELECT COUNT(*) FROM feature_0").fetchone()[0]
+        assert len(per_source) == 2
+        assert {count for _, count in per_source} == {single}
+
+    def test_schemas_that_do_not_unify_keep_the_positional_views(self, dataset_dir, tmp_path):
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+
+        import qpx
+
+        ds2_dir = tmp_path / "ds2"
+        shutil.copytree(dataset_dir, ds2_dir)
+        path = next(ds2_dir.glob("*.feature.parquet"))
+        table = pq.read_table(path)
+        index = table.schema.get_field_index("intensities")
+        pq.write_table(table.set_column(index, "intensities", pa.array([{"other": 1}] * table.num_rows)), path)
+        with (
+            qpx.open_dataset(str(dataset_dir)) as first,
+            qpx.open_dataset(str(ds2_dir)) as second,
+            qpx.DatasetCollection([first, second]) as coll,
+        ):
+            assert coll.sql("SELECT COUNT(*) FROM feature_1").fetchone()[0] == table.num_rows
+            with pytest.raises(duckdb.Error):
+                coll.sql("SELECT * FROM feature").fetchall()
+
+    def test_a_merged_dataset_keeps_its_own_sources(self, dataset_dir, tmp_path):
+        import qpx
+
+        ds2_dir = tmp_path / "ds2"
+        shutil.copytree(dataset_dir, ds2_dir)
+        with (
+            qpx.open_dataset(str(dataset_dir)) as first,
+            qpx.open_dataset(str(ds2_dir)) as second,
+            qpx.DatasetCollection([first, second]) as coll,
+        ):
+            coll.merge(tmp_path / "merged", structures=["feature"], on_collision="namespace")
+        with (
+            qpx.open_dataset(str(tmp_path / "merged")) as merged,
+            qpx.open_dataset(str(dataset_dir)) as third,
+            qpx.DatasetCollection([merged, third]) as coll,
+        ):
+            assert coll.sql("SELECT COUNT(DISTINCT source_dataset) FROM feature").fetchone()[0] >= 2

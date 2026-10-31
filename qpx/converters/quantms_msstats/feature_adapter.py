@@ -17,6 +17,7 @@ from qpx.converters.channel_labels import (
 )
 from qpx.converters.openms_consensus.feature_adapter import to_modifications, to_proforma
 from qpx.converters.quantms_msstats.queries import _NORMALIZED_SQL
+from qpx.converters.utils import canonical_accession
 from qpx.core.files import run_file_stem
 from qpx.core.sdrf import validate_sdrf_data_files
 from qpx.core.sql import escape_path, sql_build, validate_identifier, validate_table
@@ -69,7 +70,7 @@ def _split_proteins(values: Iterable[str]) -> list[str]:
     seen: set[str] = set()
     for raw in values:
         for value in str(raw).split(";"):
-            accession = value.strip()
+            accession = canonical_accession(value.strip())
             if accession and accession not in seen:
                 seen.add(accession)
                 accessions.append(accession)

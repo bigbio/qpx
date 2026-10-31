@@ -29,6 +29,16 @@ Common issues and solutions when using qpx.
    conda activate qpx
    ```
 
+### Older releases fail with DuckDB 2.0
+
+QPX 1.0.0 to 1.1.6 set no upper bound on DuckDB, so a fresh install takes DuckDB 2.0, which they do not support: the DIA-NN, MaxQuant and Spectronaut converters, `validate` and `to_arrow()` fail with `BinderException` or a missing `fetch_record_batch`. Upgrade to 1.2.0 or later, or pin the older DuckDB:
+
+```bash
+pip install "qpx<1.2" "duckdb<2"
+```
+
+A conversion records the DuckDB and PyArrow versions it ran with as `dependency_duckdb` and `dependency_pyarrow` in its provenance step.
+
 ### Python version incompatibility
 
 **Problem**: Installation fails with Python version errors.

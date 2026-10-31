@@ -416,8 +416,8 @@ def test_pg_names_come_from_uniprot_entry_names(tmp_path, streaming):
         .execute("SELECT DISTINCT pg_accessions, pg_names FROM read_parquet($1)", [str(written["pg"])])
         .fetchall()
     }
-    assert names[("sp|P11111|AAA_HUMAN", "sp|P22222|BBB_HUMAN")] in (["AAA_HUMAN", "BBB_HUMAN"], ["BBB_HUMAN", "AAA_HUMAN"])
-    assert names[("sp|P11111|AAA_HUMAN", "sp|P33333|CCC_HUMAN")] in (["AAA_HUMAN", "CCC_HUMAN"], ["CCC_HUMAN", "AAA_HUMAN"])
+    assert names[("P11111", "P22222")] in (["AAA_HUMAN", "BBB_HUMAN"], ["BBB_HUMAN", "AAA_HUMAN"])
+    assert names[("P11111", "P33333")] in (["AAA_HUMAN", "CCC_HUMAN"], ["CCC_HUMAN", "AAA_HUMAN"])
 
 
 @pytest.mark.parametrize("streaming", [False, True])

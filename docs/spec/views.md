@@ -221,12 +221,8 @@ ds2 = qpx.open_dataset("PXD016999/")
 
 coll = qpx.DatasetCollection([ds1, ds2])
 
-# Query across datasets using indexed table names
-result = coll.sql("""
-    SELECT 'PXD014414' AS dataset, COUNT(*) AS n_features FROM feature_0
-    UNION ALL
-    SELECT 'PXD016999' AS dataset, COUNT(*) AS n_features FROM feature_1
-""")
+# Query across datasets; feature_0 and feature_1 read one dataset each
+result = coll.sql("SELECT source_dataset, COUNT(*) AS n_features FROM feature GROUP BY source_dataset")
 print(result.to_df())
 
 # See what structures are available per dataset

@@ -24,13 +24,13 @@ import pandas as pd
 from qpx.converters.base import resolve_columns
 from qpx.converters.diann.base_adapter import (
     BATCH_ROWS,
-    RUN_EXTENSIONS,
     DiaNNBaseAdapter,
     decoy_protein_group_sql,
     run_name_sql,
 )
 from qpx.converters.mappings import get_field_mappings
 from qpx.converters.utils import is_contaminant_accession
+from qpx.core.files import RUN_FILE_SUFFIX_PATTERN
 from qpx.core.sql import sql_build, validate_identifier
 from qpx.writers.pg import PgWriter
 
@@ -46,7 +46,7 @@ _BATCH_SQL = """
               $qvalue_filter
             """
 
-_EXT_RE = re.compile(rf"\.({RUN_EXTENSIONS})$", re.IGNORECASE)
+_EXT_RE = re.compile(RUN_FILE_SUFFIX_PATTERN)
 
 # Extra columns needed for PG aggregation but not in the field mappings
 _PG_EXTRA_COLS = [

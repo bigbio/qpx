@@ -237,9 +237,28 @@ class _Merge:
             if batch.num_rows:
                 writer.write_table(writer.align_table_to_schema(pa.Table.from_batches([batch])))
 
+    def _warn_mixed_quantities(self, sources: list[int]) -> None:
+        """Warn when the pg ``intensity`` of the sources comes from different quantification methods."""
+        methods = {
+            index: {
+                row[0]
+                for row in self._conn.execute(
+                    f"SELECT DISTINCT unnest(list_transform(list_filter(cv_params, lambda c: "
+                    f"c.cv_name = 'quantification_method'), lambda c: c.cv_value)) FROM pg_{index}"
+                ).fetchall()
+            }
+            for index in sources
+            if "cv_params" in self._columns("pg", index)
+        }
+        if len({frozenset(found) for found in methods.values()}) > 1:
+            named = "; ".join(f"{self._labels[index]}: {sorted(found) or 'unmarked'}" for index, found in methods.items())
+            logger.warning("pg intensity comes from different quantification methods (%s), so values are not comparable", named)
+
     def _write_data_view(self, name: str) -> None:
         """Stream a view's rows from every source, one file per identity composite."""
         sources = self._sources(name)
+        if name == "pg":
+            self._warn_mixed_quantities(sources)
         extra = [SOURCE_COLUMN]
         if name == "sample":
             known = set(self._writer_class(name).view_schema().get_arrow_schema().names)

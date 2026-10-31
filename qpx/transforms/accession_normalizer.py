@@ -3,8 +3,9 @@
 Forward:  sp|P04114|APOB_HUMAN  →  P04114
 Reverse:  P04114  →  sp|P04114|APOB_HUMAN  (requires FASTA database)
 
-Handles prefixes: sp|, tr|, CONTAM_sp|, ENTRAP_sp|
-Contaminant/entrapment prefixes (CONTAM_, ENTRAP_) are preserved.
+Handles prefixes: sp|, tr|, CONTAM_sp|, ENTRAP_sp|, DECOY_sp|, REV__sp|, rev_sp|
+Decoy, contaminant and entrapment markers are preserved. The forward direction
+moves entry names into a null ``pg_names`` so they are not lost.
 """
 
 from __future__ import annotations
@@ -19,15 +20,19 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
+from qpx.converters.utils import canonical_accession, uniprot_entry_name
+
 logger = logging.getLogger(__name__)
 
 # Matches:  sp|ACCESSION|NAME  or  tr|ACCESSION|NAME
 # Also:     CONTAM_sp|CONTAM_ACCESSION|...  or  ENTRAP_sp|ENTRAP_ACCESSION|...
 _FULL_RE = re.compile(
-    r"^(?P<prefix>(?:CONTAM_|ENTRAP_)?(?:sp|tr))\|"
+    r"^(?P<prefix>(?:CONTAM_|ENTRAP_|DECOY_|REV__|rev_)?(?:sp|tr))\|"
     r"(?P<accession>[^|]+)\|"
     r"(?P<name>.+)$"
 )
+
+_DECOY_MARKER = re.compile(r"^(?:DECOY_|REV__|rev_)")
 
 _SCALAR_ACCESSION_COLUMNS = ("anchor_protein", "protein_accession", "accession", "family")
 
@@ -37,21 +42,20 @@ def to_bare(accession: str) -> str:
 
     sp|P04114|APOB_HUMAN           → P04114
     CONTAM_sp|CONTAM_P02768|...    → CONTAM_P02768
+    REV__sp|P04114|APOB_HUMAN      → REV__P04114
     tr|A0A123|A0A123_HUMAN         → A0A123
     P04114                         → P04114  (no-op)
     """
     if accession is None:
         return accession
-    m = _FULL_RE.match(accession)
-    if m:
-        return m.group("accession")
-    return accession
+    return canonical_accession(accession)
 
 
 def to_full(accession: str, lookup: dict[str, str]) -> str:
     """Convert bare accession to full UniProt format using a FASTA-derived lookup.
 
     P04114 → sp|P04114|APOB_HUMAN  (if in lookup)
+    REV__P04114 → REV__sp|P04114|APOB_HUMAN
     P04114 → P04114                (if not in lookup, returned as-is)
     """
     if accession is None:
@@ -59,7 +63,12 @@ def to_full(accession: str, lookup: dict[str, str]) -> str:
     # Already in full format?
     if _FULL_RE.match(accession):
         return accession
-    return lookup.get(accession, accession)
+    if accession in lookup:
+        return lookup[accession]
+    marker = _DECOY_MARKER.match(accession)
+    if marker and accession[marker.end() :] in lookup:
+        return marker.group() + lookup[accession[marker.end() :]]
+    return accession
 
 
 def parse_fasta_headers(fasta_path: str | Path) -> dict[str, str]:
@@ -132,7 +141,8 @@ def normalize_parquet(
     else:
         staging = output_path.with_name(f".{output_path.name}.normalizing")
         try:
-            _rewrite_view(parquet_path, staging, lambda table: _normalize_table(table, changes))
+            keep_names = direction == "forward"
+            _rewrite_view(parquet_path, staging, lambda table: _normalize_table(table, changes, keep_names))
             os.replace(staging, output_path)
         finally:
             staging.unlink(missing_ok=True)
@@ -180,8 +190,27 @@ def _member_accessions(column: pa.Array) -> pa.Array | None:
     return None
 
 
-def _normalize_table(table: pa.Table, changes: dict[str, str]) -> pa.Table:
+def _names_from_members(table: pa.Table) -> pa.Table:
+    """Fill a null ``pg_names`` with the entry names of ``db|ACC|NAME`` members, before those are stripped."""
+    index = table.schema.get_field_index("pg_names")
+    names = [
+        name if name is not None else _entry_names(members)
+        for name, members in zip(table.column(index).to_pylist(), table.column("pg_accessions").to_pylist())
+    ]
+    return table.set_column(index, table.schema.field(index), pa.array(names, type=table.schema.field(index).type))
+
+
+def _entry_names(members: list[str] | None) -> list[str] | None:
+    """Entry names aligned with *members*, or None unless every member has one."""
+    names = [uniprot_entry_name(member) for member in members or []]
+    return names if names and all(names) else None
+
+
+def _normalize_table(table: pa.Table, changes: dict[str, str], keep_names: bool = False) -> pa.Table:
     """Apply *changes* to scalar accession columns and the ``pg_accessions`` members of one batch."""
+    if keep_names and {"pg_names", "pg_accessions"} <= set(table.schema.names):
+        if _is_list_of_strings(table.schema.field("pg_accessions").type):
+            table = _names_from_members(table)
     for name in _SCALAR_ACCESSION_COLUMNS:
         if name in table.schema.names:
             index = table.schema.get_field_index(name)

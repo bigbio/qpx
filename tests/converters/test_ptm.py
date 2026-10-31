@@ -493,7 +493,7 @@ class TestBracketedTagsKeepParentheses:
         from qpx.converters.ptm import from_proforma
 
         _, mods = from_proforma("AK[Acetyl (K)]PS[UNIMOD:21]TR", "AKPSTR")
-        assert [(m["name"], m["positions"][0]["position"]) for m in mods] == [("Acetyl (K)", 2), ("UNIMOD:21", 4)]
+        assert [(m["name"], m["positions"][0]["position"]) for m in mods] == [("Acetyl (K)", 2), ("Phospho", 4)]
 
 
 @pytest.mark.parametrize(
@@ -523,8 +523,8 @@ def test_modification_of_unknown_position():
     _, modifications = from_proforma(peptidoform, "PEPTMIDEK")
     assert [(mod["name"], [pos["position"] for pos in mod["positions"]]) for mod in modifications] == [
         ("+129.0804", []),
-        ("UNIMOD:1", [0]),
-        ("UNIMOD:35", [5]),
+        ("Acetyl", [0]),
+        ("Oxidation", [5]),
     ]
     bare = compute_precursor_mz("[UNIMOD:1]-PEPTM[UNIMOD:35]IDEK", 2)
     assert compute_precursor_mz(peptidoform, 2) == pytest.approx(bare + 129.0804 / 2)

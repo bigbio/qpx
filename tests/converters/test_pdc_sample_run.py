@@ -211,13 +211,11 @@ def test_build_failure_preserves_existing_outputs(tmp_path):
 
 
 def test_strip_raw_extension_matches_cdap():
-    """metadata._strip_raw_extension must strip the exact same set as CDAP, so a
-    PDC-derived run_file_name matches the CDAP stem (else run<->feature joins break)."""
+    """A PDC-derived run_file_name matches the CDAP stem (else run<->feature joins break)."""
     from qpx.converters.cdap.base_adapter import CdapBaseAdapter
     from qpx.pdc.metadata import _strip_raw_extension
 
     for name in ("run_f01.raw", "run_f01.mzML", "run_f01.mgf", "run_f01.mzML.gz", "run_f01.d", "run_f01"):
         assert _strip_raw_extension(name) == CdapBaseAdapter.strip_run_extension(name)
-    # .mzML.gz / .d are intentionally left intact (CDAP does not strip them either)
-    assert _strip_raw_extension("run_f01.mzML.gz") == "run_f01.mzML.gz"
-    assert _strip_raw_extension("run_f01.d") == "run_f01.d"
+    assert _strip_raw_extension("run_f01.mzML.gz") == "run_f01"
+    assert _strip_raw_extension("run_f01.d") == "run_f01"

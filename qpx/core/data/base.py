@@ -110,9 +110,9 @@ class BaseStructure:
         return self._with_query(self._query.order_by(*columns, desc=desc))
 
     # --- Materialization (delegates to core.convert.QueryResult) ---
-    def to_df(self) -> pd.DataFrame:
-        """Execute query and return pandas DataFrame."""
-        return QueryResult(self._engine.connection, self._query.build_sql()).to_df()
+    def to_df(self, dtype_backend: str | None = None) -> pd.DataFrame:
+        """Execute query and return pandas DataFrame; ``dtype_backend="pyarrow"`` keeps nested columns in Arrow memory."""
+        return QueryResult(self._engine.connection, self._query.build_sql()).to_df(dtype_backend)
 
     def to_arrow(self) -> pa.Table:
         """Execute query and return Arrow Table."""

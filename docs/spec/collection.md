@@ -3,16 +3,20 @@
 !!! warning "Design proposal — not an implemented API"
 
     Except for **Current API** below, this page describes a proposed collection
-    API. Directory discovery, `qpx.open_collection()`, unified cross-dataset
-    views, `coll.summary()`, and collection indexes are not implemented. The
+    API. Directory discovery, `qpx.open_collection()`, `coll.summary()`, and
+    collection indexes are not implemented. The
     examples in the proposal are illustrative and cannot be run against the
     current QPX package.
 
 ## Current API
 
-Use `qpx.DatasetCollection` with an explicit list of opened datasets. Structures
-are registered with a dataset index, such as `pg_0` and `pg_1`, rather than a
-single unified `pg` view:
+Use `qpx.DatasetCollection` with an explicit list of opened datasets. Each
+structure is readable over all datasets, as `pg` with a `source_dataset` column
+holding the project accession or directory name of the row's dataset, and per
+dataset by list position, as `pg_0` and `pg_1`. Columns missing from a dataset
+read as null. A query on the unified view fails when a column has types that
+cannot be cast to one, as can happen between spec versions; the positional views
+still read those datasets. A merged dataset keeps its own `source_dataset` values.
 
 ```python
 import qpx
@@ -23,9 +27,7 @@ with (
     qpx.DatasetCollection([ds1, ds2]) as coll,
 ):
     result = coll.sql("""
-        SELECT 'PXD000561' AS dataset, COUNT(*) AS protein_group_rows FROM pg_0
-        UNION ALL
-        SELECT 'PXD002137' AS dataset, COUNT(*) AS protein_group_rows FROM pg_1
+        SELECT source_dataset, COUNT(*) AS protein_group_rows FROM pg GROUP BY source_dataset
     """)
     print(result.to_df())
 ```

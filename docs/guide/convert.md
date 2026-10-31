@@ -783,12 +783,17 @@ qpxc convert quantms-msstats \
 - Resolves `Run` and `Reference` through SDRF aliases and rejects missing, ambiguous, or conflicting mappings.
 - Collapses TMT/iTRAQ channel rows into one Feature while retaining RT and scan location when present.
 - Rejects conflicting intensity values for the same Feature and channel instead of selecting or summing them.
+- Ignores MSstats `IsotopeLabelType`. A labelled table needs a `Channel` column holding the SDRF labels: `H` in MSstats means a reference standard, not a heavy channel of the experiment, so it cannot be aliased to a label.
 
 ---
 
 ## openms
 
 Enrich native OpenMS `-out_qpx` Parquet output into a full QPX dataset.
+
+!!! warning "Deprecated"
+
+    Use [`openms-consensus`](#openms-consensus), which reads the consensusXML and is the supported OpenMS route. What OpenMS calls a "QPX collection" is the files of one dataset, not a [collection](../spec/collection.md). OpenMS quantification tools write no run, sample or provenance view, so without this enrichment `pg` rows cannot be mapped to samples and `design_matrix` raises.
 
 ### Description {#openms-description}
 

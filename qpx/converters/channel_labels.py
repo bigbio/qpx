@@ -34,6 +34,8 @@ from sdrf_pipelines.converters.openms.utils import infer_itraqplex, infer_tmtple
 from qpx.core.files import run_file_stem
 from qpx.writers.base import parquet_write_options
 
+_MS1_LABEL = re.compile(r"(?i)^(?:silac|dimethyl|mtraq)")
+
 __all__ = [
     "read_sdrf_labels",
     "experiment_runs_from_sdrf",
@@ -434,6 +436,11 @@ def fraction_groups_from_consensusxml(
     return groups
 
 
+def _is_ms1_label(text: str) -> bool:
+    """A SILAC, dimethyl or mTRAQ label names its quantity already, whatever the experiment type says."""
+    return _MS1_LABEL.match(text) is not None
+
+
 def _relabel_entries(column, channel_labels: dict[int, str], is_lfq: bool) -> pa.Array:
     """
     Relabel the ``label`` field of a list<struct> intensities column.
@@ -455,7 +462,14 @@ def _relabel_entries(column, channel_labels: dict[int, str], is_lfq: bool) -> pa
     positions = np.arange(len(entries)) - np.repeat(offsets[:-1], lengths) + 1
     # A numeric label fixes the channel; any other label takes its position's channel.
     fixed = [
-        "LFQ" if is_lfq else channel_labels.get(int(text), normalize_label(text)) if text.isdigit() else None for text in texts
+        text
+        if _is_ms1_label(text)
+        else "LFQ"
+        if is_lfq
+        else channel_labels.get(int(text), normalize_label(text))
+        if text.isdigit()
+        else None
+        for text in texts
     ]
     width = int(positions.max()) + 1 if len(positions) else 1
     keys = np.where(np.array([label is not None for label in fixed], dtype=bool)[codes], codes * width, codes * width + positions)
@@ -488,7 +502,13 @@ def _relabel_scalar_labels(column, channel_labels: dict[int, str], is_lfq: bool)
     """
     encoded = column.combine_chunks().dictionary_encode()
     labels = [
-        "LFQ" if is_lfq else channel_labels.get(int(text), normalize_label(text)) if text.isdigit() else normalize_label(text)
+        text
+        if _is_ms1_label(text)
+        else "LFQ"
+        if is_lfq
+        else channel_labels.get(int(text), normalize_label(text))
+        if text.isdigit()
+        else normalize_label(text)
         for text in encoded.dictionary.to_pylist()
     ]
     return pa.array(labels, type=column.type).take(encoded.indices)

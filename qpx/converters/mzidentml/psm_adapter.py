@@ -16,6 +16,7 @@ from qpx.converters.base import BaseConverter
 from qpx.converters.mzidentml.document import MzidDocument, stream_results
 from qpx.converters.mzidentml.psm_records import _build_psm_records, declare_scan_format, scan_schemes
 from qpx.converters.ptm import build_proforma, canonical_mod_tag
+from qpx.converters.utils import canonical_accession
 from qpx.core.cv_terms import (
     CV_MODIFICATION_INDEX,
     CV_SCAN_START_TIME,
@@ -116,7 +117,7 @@ class MzIdentMLPsmAdapter(BaseConverter):
         """Map DBSequence id → protein accession."""
         result = {}
         for db in root.iter(f"{{{ns}}}DBSequence"):
-            result[db.get("id")] = db.get("accession", "")
+            result[db.get("id")] = canonical_accession(db.get("accession", ""))
         return result
 
     def _parse_peptides(self, root, ns: str) -> dict[str, dict]:

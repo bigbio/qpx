@@ -111,11 +111,7 @@ ds2 = qpx.open_dataset("PXD016999/")
 
 # Virtual mode — cross-dataset SQL
 coll = qpx.DatasetCollection([ds1, ds2])
-result = coll.sql("""
-    SELECT 'PXD014414' AS dataset, COUNT(*) AS n_features FROM feature_0
-    UNION ALL
-    SELECT 'PXD016999' AS dataset, COUNT(*) AS n_features FROM feature_1
-""")
+result = coll.sql("SELECT source_dataset, COUNT(*) AS n_features FROM feature GROUP BY source_dataset")
 print(result.to_df())
 
 # Physical merge — combine structures into a new directory

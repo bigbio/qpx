@@ -6,6 +6,7 @@ import hashlib
 import logging
 import shutil
 from http.client import HTTPException
+from importlib.metadata import version
 from pathlib import Path
 from typing import Optional
 
@@ -171,6 +172,9 @@ def _path_option_parameters(name: str, values: list) -> list[dict]:
     return parameters
 
 
+_RECORDED_DEPENDENCIES = ("duckdb", "pyarrow")
+
+
 def _effective_parameters(ctx: click.Context) -> list[dict]:
     """Return the provenance parameters of the options a command ran with, defaults included."""
     parameters: list[dict] = []
@@ -209,6 +213,9 @@ def _record_conversion_options(output_folder: Path, prefix: str) -> None:
             steps.append(conversion)
         recorded = {parameter["key"]: parameter for parameter in conversion["parameters"] or []}
         recorded.update({parameter["key"]: parameter for parameter in _effective_parameters(ctx)})
+        recorded.update(
+            {f"dependency_{name}": {"key": f"dependency_{name}", "value": version(name)} for name in _RECORDED_DEPENDENCIES}
+        )
         conversion["parameters"] = list(recorded.values())
         ds.save_structure(steps, "provenance", prefix=prefix)
 

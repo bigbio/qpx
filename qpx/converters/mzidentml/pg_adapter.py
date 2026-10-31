@@ -11,6 +11,7 @@ from pathlib import Path
 
 from qpx.converters.base import BaseConverter
 from qpx.converters.mzidentml.document import MzidDocument, stream_results
+from qpx.converters.utils import canonical_accession, uniprot_entry_name
 from qpx.core.files import run_file_stem
 from qpx.core.scores import normalize_score_name
 from qpx.writers.pg import PgWriter
@@ -173,12 +174,15 @@ class MzIdentMLPgAdapter(BaseConverter):
     def _pag_members(self, pdhs, ns: str, dbseq_map: dict, additional_scores: list) -> tuple:
         """Collect member accessions, peptide counts, representative and scores."""
         pg_accessions: list[str] = []
+        member_names: list[str | None] = []
         anchor_protein: str | None = None
         peptides: list[dict] = []
         for pdh in pdhs:
-            acc = dbseq_map.get(pdh.get("dBSequence_ref", ""), pdh.get("dBSequence_ref", ""))
+            source_id = dbseq_map.get(pdh.get("dBSequence_ref", ""), pdh.get("dBSequence_ref", ""))
+            acc = canonical_accession(source_id)
             if acc:
                 pg_accessions.append(acc)
+                member_names.append(uniprot_entry_name(source_id))
 
             # Count PeptideHypothesis elements as peptide count for this protein
             pep_count = len(pdh.findall(f"{{{ns}}}PeptideHypothesis"))
@@ -205,7 +209,7 @@ class MzIdentMLPgAdapter(BaseConverter):
                             }
                         )
 
-        return pg_accessions, anchor_protein, peptides
+        return pg_accessions, member_names if all(member_names) else None, anchor_protein, peptides
 
     def _build_pag_record(self, pag, ns: str, dbseq_map: dict[str, str], grouped_runs: list[str]) -> dict | None:
         """Build a single pg record from a ProteinAmbiguityGroup element."""
@@ -215,7 +219,7 @@ class MzIdentMLPgAdapter(BaseConverter):
 
         global_qvalue, additional_scores = self._extract_pag_scores(pag, ns)
 
-        pg_accessions, anchor_protein, peptides = self._pag_members(pdhs, ns, dbseq_map, additional_scores)
+        pg_accessions, pg_names, anchor_protein, peptides = self._pag_members(pdhs, ns, dbseq_map, additional_scores)
 
         if not pg_accessions:
             return None
@@ -228,7 +232,7 @@ class MzIdentMLPgAdapter(BaseConverter):
 
         return {
             "pg_accessions": pg_accessions,
-            "pg_names": None,
+            "pg_names": pg_names,
             "gg_accessions": None,
             "gg_names": None,
             "gg_qvalue": None,

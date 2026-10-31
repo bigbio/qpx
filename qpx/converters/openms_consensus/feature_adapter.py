@@ -20,7 +20,7 @@ from qpx.converters.channel_labels import normalize_label
 from qpx.converters.openms_consensus.channels import Ms1Channels, column_labels, label_state_params, list_value, ratio_name
 from qpx.converters.openms_consensus.modifications import localization_scores, to_modifications
 from qpx.converters.openms_consensus.protein_groups import ProteinGroupIndex, identification_identifier
-from qpx.converters.utils import mass_error_ppm, safe_float
+from qpx.converters.utils import canonical_accession, mass_error_ppm, safe_float
 from qpx.core.cleavage import count_missed_cleavages
 from qpx.core.files import run_file_stem as _run_stem
 
@@ -456,8 +456,10 @@ def _protein_group_fields(pid, group_map, group_meta) -> dict:
     group = group_map.resolve(accessions, identification_identifier(pid)) if group_map is not None else None
     qvalue, genes = (group_meta or {}).get(group, (None, None)) if group else (None, None)
     return {
-        "anchor_protein": group[0] if group else (next(iter(accessions)) if len(accessions) == 1 else None),
-        "pg_accessions": [{"accession": a, "start": None, "end": None, "pre": None, "post": None} for a in group]
+        "anchor_protein": canonical_accession(group[0] if group else (next(iter(accessions)) if len(accessions) == 1 else None)),
+        "pg_accessions": [
+            {"accession": canonical_accession(a), "start": None, "end": None, "pre": None, "post": None} for a in group
+        ]
         if group
         else None,
         "unique": len(group) == 1 if group else None,
@@ -488,7 +490,7 @@ def _peptide_positions(hit) -> set[tuple[str, int, int]]:
     positions: set[tuple[str, int, int]] = set()
     for evidence in hit.getPeptideEvidences():
         accession = evidence.getProteinAccession()
-        accession = accession.decode() if isinstance(accession, bytes) else accession
+        accession = canonical_accession(accession.decode() if isinstance(accession, bytes) else accession)
         start, end = evidence.getStart(), evidence.getEnd()
         if accession and 0 <= start <= end:
             positions.add((accession, start + 1, end + 1))

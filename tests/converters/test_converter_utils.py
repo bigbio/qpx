@@ -10,7 +10,7 @@ import pytest
 
 from qpx.converters.maxquant.feature_adapter import MaxQuantFeatureAdapter
 from qpx.converters.maxquant.pg_adapter import MaxQuantPgAdapter
-from qpx.converters.utils import parse_uniprot_id, strip_uniprot_prefix
+from qpx.converters.utils import canonical_accession, parse_uniprot_id
 from qpx.core.files import run_file_stem
 
 
@@ -245,13 +245,14 @@ class TestStripUniprotPrefix:
             ("tr|A0A3B3IS91|X_HUMAN", "A0A3B3IS91"),
             ("P55011", "P55011"),  # bare accession untouched
             ("CON__P1", "CON__P1"),  # contaminant prefix, no sp|/tr| -> verbatim
-            ("REV__sp|P1|N", "REV__sp|P1|N"),  # decoy: not a leading sp|/tr| -> verbatim
+            ("REV__sp|P1|N", "REV__P1"),  # the decoy marker stays on the bare accession
+            ("CONTAM_sp|CONTAM_P1|N", "CONTAM_P1"),  # the marker is not doubled
             ("xyz|abc", "xyz|abc"),  # pipe but not a UniProt db prefix -> verbatim
             ("", ""),
         ],
     )
     def test_strip(self, entry, expected):
-        assert strip_uniprot_prefix(entry) == expected
+        assert canonical_accession(entry) == expected
 
 
 def test_uniprot_entry_name_only_for_three_field_ids():

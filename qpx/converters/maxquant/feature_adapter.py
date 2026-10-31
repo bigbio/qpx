@@ -42,7 +42,7 @@ from qpx.converters.maxquant.silac import (
     ratio_letters,
 )
 from qpx.converters.ptm import from_proforma
-from qpx.converters.utils import mass_error_ppm, mq_flag_to_bool, safe_float, strip_uniprot_prefix
+from qpx.converters.utils import canonical_accession, mass_error_ppm, mq_flag_to_bool, safe_float
 from qpx.core.files import run_file_stem
 from qpx.core.sql import sql_build, validate_identifier
 from qpx.writers.feature import FeatureWriter, derive_feature_ids
@@ -372,7 +372,7 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         for acc_raw, qval, gene_raw, fasta_raw, group_id in zip(
             acc_vals, qval_vals, values(gene_col), values("Fasta headers"), values("id")
         ):
-            accs = [strip_uniprot_prefix(a.strip()) for a in acc_raw.split(";") if a.strip()]
+            accs = [canonical_accession(a.strip()) for a in acc_raw.split(";") if a.strip()]
             if not accs:
                 continue
             value = {"qvalue": safe_float(qval), "genes": self._parse_genes(gene_raw, fasta_raw)}
