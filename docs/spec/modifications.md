@@ -104,6 +104,8 @@ Each position can carry one or more scores that describe the confidence in placi
 - **localization_probability**: The probability that this modification is correctly assigned to this specific residue. A value of 0.99 means 99% confidence.
 - **higher_better**: Indicates score direction. For localization probability, this is `true` (higher is better).
 
+The [site localization table](converter-coverage.md#site-localization) lists where each converter takes these values from.
+
 Multiple scores can be attached to a single position -- for example, both a localization probability and a tool-specific confidence metric.
 
 ## Competing interpretations

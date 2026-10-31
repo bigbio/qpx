@@ -24,9 +24,16 @@ import duckdb
 import pandas as pd
 
 from qpx.converters.base import resolve_columns
+from qpx.converters.localization import localize_modifications
 from qpx.converters.mappings import get_field_mappings
 from qpx.converters.maxquant.base_adapter import MaxQuantBaseAdapter
-from qpx.converters.maxquant.constants import mq_calculated_mz, mq_observed_mz, to_proforma
+from qpx.converters.maxquant.constants import (
+    localization_columns,
+    localization_sites,
+    mq_calculated_mz,
+    mq_observed_mz,
+    to_proforma,
+)
 from qpx.converters.maxquant.silac import (
     identified_labels,
     identified_states,
@@ -97,6 +104,8 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         self.evidence_feature_ids: dict[int, int] = {}
         # SILAC: evidence ``id`` -> labeling states identified by MS/MS.
         self._states_by_evidence: dict[int, list[int]] = {}
+        # The batch's ``<mod> Probabilities`` columns and their modification names.
+        self._localization_columns: list[tuple[str, str]] = []
 
     def convert(
         self,
@@ -448,6 +457,7 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         ri_offset = self._detect_ri_offset(df.columns)
         # Warn (once) about SDRF channels with no reporter column in evidence.txt
         self._warn_dropped_tmt_channels(df.columns, channels, ri_offset)
+        self._localization_columns = localization_columns(df.columns)
         # Pre-extract column arrays for faster per-row access than to_dict("records")
         col_arrays = {col: df[col].values for col in df.columns}
         n_rows = len(df)
@@ -471,6 +481,8 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         sequence = str(row.get(r.get("sequence", "Sequence"), ""))
         peptidoform = to_proforma(str(row.get(r.get("modified_sequence", "Modified sequence"), "")), self._fixed)
         _, modifications = from_proforma(peptidoform, sequence) if peptidoform else (None, None)
+        sites = localization_sites(row, self._localization_columns, sequence)
+        modifications, candidates = localize_modifications(modifications, sequence, sites)
         charge = int(row.get(r.get("charge", "Charge"), 0))
         run_file_name = str(row.get(r.get("run_file_name", "Raw file"), ""))
 
@@ -494,6 +506,7 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
             "sequence": sequence,
             "peptidoform": peptidoform,
             "modifications": modifications,
+            "modification_candidates": candidates,
             "charge": charge,
             "is_decoy": is_decoy,
             "additional_scores": additional_scores or None,

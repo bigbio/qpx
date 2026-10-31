@@ -331,6 +331,7 @@ class TestIndexFallback:
             "peptides": {"Pep1": {"sequence": "PEPTIDE", "peptidoform": "PEPTIDE", "modifications": None, "xl_mods": {}}},
             "peptide_evidence": {},
             "linker_info": {},
+            "modification_tags": {},
             "spectrum_results": [
                 {
                     "spectrum_id": "index=1",  # the 2nd spectrum (position 1)

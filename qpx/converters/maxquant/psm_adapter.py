@@ -19,15 +19,16 @@ from typing import Optional
 import pandas as pd
 
 from qpx.converters.base import resolve_columns
+from qpx.converters.localization import localize_modifications
 from qpx.converters.mappings import get_field_mappings
 from qpx.converters.maxquant.base_adapter import MaxQuantBaseAdapter
 from qpx.converters.maxquant.constants import (
     MQ_LABEL_LETTERS,
     FixedMods,
+    localization_columns,
+    localization_sites,
     mq_calculated_mz,
     mq_observed_mz,
-    parse_phospho_probabilities,
-    phospho_candidates,
     summary_label_mods,
     to_proforma,
 )
@@ -40,19 +41,6 @@ logger = logging.getLogger(__name__)
 
 # Derive expected columns from central mappings
 _PSM_MAP = get_field_mappings("maxquant", "psm")
-
-# MaxQuant columns to read from msms.txt (derived from constants)
-_MQ_PSM_USECOLS = list({candidates[0] for candidates in _PSM_MAP.values()}) + [
-    "Proteins",  # protein accessions (not in FIELD_MAPPINGS)
-    "Mass",  # neutral mass for calculated_mz computation
-    "PIF",  # parent ion fraction score
-    "Masses",  # spectral masses
-    "Intensities",  # spectral intensities
-    "Number of matches",
-    "1/K0",  # ion mobility
-    "Phospho (STY) Probabilities",  # per-site phospho localization
-    "Phospho (STY) Score Diffs",  # per-site phospho score differences
-]
 
 # Optional spectral data columns
 _MQ_PSM_SPECTRAL_COLS = [
@@ -78,6 +66,9 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
                 output_path="psm.parquet",
             )
     """
+
+    # Site-probability columns of the current batch.
+    _localization_columns: list[tuple[str, str]] = []
 
     _evidence_feature_ids: dict[int, int] = {}
     # Raw file -> (label, label modifications) of each SILAC labeling state.
@@ -184,6 +175,7 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
         # Pre-extract column arrays for faster per-row access than to_dict("records")
         col_arrays = {col: df[col].values for col in df.columns}
         n_rows = len(df)
+        self._localization_columns = localization_columns(df.columns)
         for i in range(n_rows):
             row = {col: vals[i] for col, vals in col_arrays.items()}
             rec = self._transform_row(row, spectral_data)
@@ -198,7 +190,7 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
         identity = self._psm_identity(row)
         if identity is None:
             return None
-        sequence, peptidoform, modifications, site_scores, label = identity
+        sequence, peptidoform, modifications, candidates, label = identity
         charge_raw = row.get(r.get("charge", "Charge"), 0)
         charge = int(charge_raw) if pd.notna(charge_raw) else 0
 
@@ -234,7 +226,7 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
             "sequence": sequence,
             "peptidoform": peptidoform,
             "modifications": modifications,
-            "modification_candidates": phospho_candidates(site_scores, sequence, modifications),
+            "modification_candidates": candidates,
             "charge": charge,
             "is_decoy": is_decoy,
             "additional_scores": additional_scores or None,
@@ -251,37 +243,25 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
         }
 
     def _psm_identity(self, row: dict) -> tuple | None:
-        """Parse the peptide identity and phospho localization."""
+        """Parse the peptide identity and its site localization."""
         r = self._resolved
         sequence = str(row.get(r.get("sequence", "Sequence"), ""))
         label, label_mods = self._psm_label(row)
         peptidoform = to_proforma(str(row.get(r.get("modified_sequence", "Modified sequence"), "")), self._fixed, label_mods)
 
-        # Parse phospho site localization probabilities (if available)
-        phospho_raw = row.get("Phospho (STY) Probabilities")
-        site_scores = None
-        if pd.notna(phospho_raw) and phospho_raw:
-            site_scores = parse_phospho_probabilities(str(phospho_raw))
-
         # Mirror the feature adapter: an empty/missing "Modified sequence"
         # yields no peptidoform, and the tuple-unpack must degrade to
         # (None, None) rather than a bare None (which raises TypeError and
         # aborts the whole PSM view).
-        peptidoform, modifications = (
-            from_proforma(
-                peptidoform,
-                sequence,
-                site_scores=site_scores,
-            )
-            if peptidoform
-            else (None, None)
-        )
+        peptidoform, modifications = from_proforma(peptidoform, sequence) if peptidoform else (None, None)
         if peptidoform is None:
             # PsmSchema requires a peptidoform; a row with an empty/missing
             # "Modified sequence" is skipped rather than aborting the whole view.
             self.logger.debug("Skipping PSM row with empty modified sequence (sequence=%r)", sequence)
             return None
-        return sequence, peptidoform, modifications, site_scores, label
+        sites = localization_sites(row, self._localization_columns, sequence)
+        modifications, candidates = localize_modifications(modifications, sequence, sites)
+        return sequence, peptidoform, modifications, candidates, label
 
     def _psm_spectrum_fields(self, row: dict, charge: int, peptidoform: str) -> dict:
         """Extract PSM spectrum, m/z, and retention-time fields."""

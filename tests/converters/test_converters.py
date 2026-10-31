@@ -3,6 +3,8 @@
 import pyarrow.parquet as pq
 import pytest
 
+from qpx.converters.localization import parse_site_probabilities
+
 # ---------------------------------------------------------------------------
 # ProForma conversion unit tests
 # ---------------------------------------------------------------------------
@@ -469,39 +471,24 @@ class TestFragPipePsmAdapter:
         assert peptidoform == "PEPTM[UNIMOD:35]IDEK"
 
 
-class TestMaxQuantPhosphoProbabilities:
-    """Test parse_phospho_probabilities from maxquant.constants."""
+class TestSiteProbabilities:
+    """parse_site_probabilities reads MaxQuant's <mod> Probabilities and PTMProphet's columns."""
 
     def test_basic_phospho(self):
-        from qpx.converters.maxquant.constants import parse_phospho_probabilities
+        assert parse_site_probabilities("_PEPS(0.95)T(0.03)Y(0.02)K_", "PEPSTYK") == {4: 0.95, 5: 0.03, 6: 0.02}
 
-        result = parse_phospho_probabilities("_PEPS(0.95)T(0.03)Y(0.02)K_")
-        assert result is not None
-        # S is at position 4, T at 5, Y at 6 (1-indexed)
-        assert 4 in result
-        assert result[4][0]["score_value"] == 0.95
-        assert result[4][0]["score_name"] == "phospho_sty_probability"
-
-    def test_zero_probabilities_excluded(self):
-        from qpx.converters.maxquant.constants import parse_phospho_probabilities
-
-        result = parse_phospho_probabilities("_PEPS(1.0)T(0)Y(0)K_")
-        assert result is not None
-        assert 4 in result  # S(1.0) -> position 4
-        assert 5 not in result  # T(0) excluded
-        assert 6 not in result  # Y(0) excluded
+    def test_ptmprophet_termini(self):
+        assert parse_site_probabilities("n(0.75)PEPTK(0.2)c(0.05)", "PEPTK") == {0: 0.75, 5: 0.2, 6: 0.05}
 
     def test_empty_string(self):
-        from qpx.converters.maxquant.constants import parse_phospho_probabilities
-
-        assert parse_phospho_probabilities("") is None
-        assert parse_phospho_probabilities(None) is None
+        assert parse_site_probabilities("", "PEPK") == {}
+        assert parse_site_probabilities(None, "PEPK") == {}
 
     def test_no_probabilities(self):
-        from qpx.converters.maxquant.constants import parse_phospho_probabilities
+        assert parse_site_probabilities("_PEPTIDEK_", "PEPTIDEK") == {}
 
-        # No parenthetical probabilities -> None
-        assert parse_phospho_probabilities("_PEPTIDEK_") is None
+    def test_other_sequence(self):
+        assert parse_site_probabilities("S(1.0)PEP", "PEPS") == {}
 
     def test_unknown_name_keeps_psm_peptidoform_and_phospho_site(self):
         """A name with parentheses stays one tag in the PSM peptidoform; later positions do not shift.
@@ -511,20 +498,21 @@ class TestMaxQuantPhosphoProbabilities:
         and every later position one residue too far (the phosphate on S5
         reported on T6, and T6 marked as the assigned candidate).
         """
-        from qpx.converters.maxquant.constants import parse_phospho_probabilities, phospho_candidates, to_proforma
+        from qpx.converters.localization import localize_modifications
+        from qpx.converters.maxquant.constants import localization_sites, to_proforma
         from qpx.converters.ptm import from_proforma
 
         sequence = "AAKPSTK"
         feature_peptidoform = to_proforma("_AAK(RGG (K))PS(Phospho (STY))TK_")
-        site_scores = parse_phospho_probabilities("_AAKPS(0.9)T(0.1)K_")
-        psm_peptidoform, modifications = from_proforma(feature_peptidoform, sequence, site_scores=site_scores)
+        row = {"Phospho (STY) Probabilities": "_AAKPS(0.9)T(0.1)K_"}
+        sites = localization_sites(row, [("Phospho (STY) Probabilities", "Phospho (STY)")], sequence)
+        psm_peptidoform, modifications = from_proforma(feature_peptidoform, sequence)
+        modifications, candidates = localize_modifications(modifications, sequence, sites)
 
         assert feature_peptidoform == psm_peptidoform == "AAK[RGG (K)]PS[UNIMOD:21]TK"
-        sites = {mod["name"]: [(p["position"], p["amino_acid"]) for p in mod["positions"]] for mod in modifications}
-        assert sites == {"RGG (K)": [(3, "K")], "UNIMOD:21": [(5, "S")]}
-        assigned = [
-            (c["position"], c["amino_acid"]) for c in phospho_candidates(site_scores, sequence, modifications) if c["assigned"]
-        ]
+        placed = {mod["name"]: [(p["position"], p["amino_acid"]) for p in mod["positions"]] for mod in modifications}
+        assert placed == {"RGG (K)": [(3, "K")], "UNIMOD:21": [(5, "S")]}
+        assigned = [(c["position"], c["amino_acid"]) for c in candidates if c["assigned"]]
         assert assigned == [(5, "S")]
 
 
@@ -647,7 +635,7 @@ class TestTrackScoresFromModifications:
                                 "position": 3,
                                 "scores": [
                                     {
-                                        "score_name": "phospho_sty_probability",
+                                        "score_name": "localization_probability",
                                         "score_value": 0.95,
                                         "higher_better": True,
                                     },
@@ -660,7 +648,7 @@ class TestTrackScoresFromModifications:
         ]
         adapter._track_scores(records)
         assert "andromeda_score" in adapter._discovered_scores
-        assert "phospho_sty_probability" in adapter._discovered_scores
+        assert "localization_probability" in adapter._discovered_scores
 
     def test_no_modifications_still_works(self):
         from qpx.converters.base import BaseConverter

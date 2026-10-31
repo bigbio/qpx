@@ -23,9 +23,12 @@ from qpx.converters.fragpipe.constants import (
     name_glycan,
     place_mass_shift,
     protein_accessions,
+    ptmprophet_columns,
+    ptmprophet_sites,
     to_proforma,
     unassigned_mass_shift,
 )
+from qpx.converters.localization import localize_modifications
 from qpx.converters.mappings import get_field_mappings
 from qpx.converters.ptm import compute_precursor_mz, from_proforma
 from qpx.converters.utils import safe_float
@@ -66,6 +69,9 @@ class FragPipePsmAdapter(BaseConverter):
                 output_path="psm.parquet",
             )
     """
+
+    # Site-probability columns of the current batch.
+    _ptmprophet_columns: list[tuple[str, float]] = []
 
     def convert(
         self,
@@ -131,6 +137,7 @@ class FragPipePsmAdapter(BaseConverter):
     def _transform_batch(self, df: pd.DataFrame) -> list[dict]:
         # Pre-extract column arrays for faster per-row access than to_dict("records")
         col_arrays = {col: df[col].values for col in df.columns}
+        self._ptmprophet_columns = ptmprophet_columns(df.columns)
         rows = ({col: vals[i] for col, vals in col_arrays.items()} for i in range(len(df)))
         return self._transform_rows_with_skip(rows, self._transform_row, "FragPipe PSM")
 
@@ -191,9 +198,8 @@ class FragPipePsmAdapter(BaseConverter):
             "ion_mobility_array": None,
         }
 
-    @staticmethod
-    def _psm_modifications(row: dict, sequence: str) -> tuple:
-        """Peptidoform, modifications and candidates from Assigned Modifications and any unassigned mass shift."""
+    def _psm_modifications(self, row: dict, sequence: str) -> tuple:
+        """Peptidoform, modifications and candidates from Assigned Modifications, any mass shift and PTMProphet."""
         assigned_mods_raw = row.get("Assigned Modifications")
         assigned_mods = str(assigned_mods_raw) if pd.notna(assigned_mods_raw) and assigned_mods_raw else ""
         peptidoform = to_proforma(assigned_mods, sequence)
@@ -207,6 +213,13 @@ class FragPipePsmAdapter(BaseConverter):
         if shift is not None:
             peptidoform, candidates = place_mass_shift(assigned_mods, sequence, shift, row.get("MSFragger Localization"))
         _, modifications = from_proforma(peptidoform, sequence, meta=None)
+        modifications, localized = localize_modifications(
+            modifications,
+            sequence,
+            ptmprophet_sites(row, self._ptmprophet_columns, sequence),
+            first_group=2 if candidates else 1,
+        )
+        candidates = [*(candidates or []), *(localized or [])] or None
         return peptidoform, name_glycan(modifications, row.get("Total Glycan Composition")), candidates
 
     def _psm_spectrum_fields(self, row: dict) -> dict:

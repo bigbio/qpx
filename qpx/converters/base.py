@@ -261,8 +261,8 @@ class BaseConverter(ABC):
         """Collect score names from a batch of records into ``_discovered_scores``.
 
         Scans both ``additional_scores`` and per-position scores inside
-        ``modifications`` so that phospho site localization scores (e.g.
-        phospho_sty_probability) are included in ontology.parquet.
+        ``modifications`` so that site localization scores (e.g.
+        localization_probability) are included in ontology.parquet.
         """
         for rec in records:
             scores = rec.get("additional_scores")

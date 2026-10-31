@@ -88,6 +88,7 @@ class _UnimodIndex(NamedTuple):
     masses: list[float]
     by_name: dict[str, list[_UnimodSite]]
     mass_by_accession: dict[int, float]
+    title_by_accession: dict[int, str]
 
 
 @lru_cache(maxsize=1)
@@ -106,11 +107,13 @@ def _unimod_index() -> _UnimodIndex:
     db = oms.ModificationsDB()
     sites: list[_UnimodSite] = []
     by_name: dict[str, list[_UnimodSite]] = {}
+    titles: dict[int, str] = {}
     for index in range(db.getNumberOfModifications()):
         mod = db.getModification(index)
         if 0 < mod.getUniModRecordId() < _OPENMS_CUSTOM_RECORD_ID:
             terminus = termini.get(int(mod.getTermSpecificity()))
             sites.append(_UnimodSite(mod.getUniModRecordId(), mod.getDiffMonoMass(), mod.getOrigin(), terminus))
+            titles[mod.getUniModRecordId()] = mod.getId()
             for name in _modification_names(mod):
                 by_name.setdefault(name, []).append(sites[-1])
     sites.sort(key=lambda site: site.mass)
@@ -119,6 +122,7 @@ def _unimod_index() -> _UnimodIndex:
         masses=[site.mass for site in sites],
         by_name=by_name,
         mass_by_accession={site.accession: site.mass for site in sites},
+        title_by_accession=titles,
     )
 
 
@@ -202,6 +206,11 @@ def mass_to_unimod(mass: float, residue: Optional[str] = None, terminus: Optiona
 def format_mass_shift(mass: float) -> str:
     """Return the canonical ProForma tag body for an unknown mass shift, e.g. ``+79.9663``."""
     return f"{mass:+.4f}"
+
+
+def unimod_title(uid: int) -> Optional[str]:
+    """Unimod title of an accession, e.g. ``Phospho`` for 21."""
+    return _unimod_index().title_by_accession.get(uid)
 
 
 def unimod_mass(uid: int) -> Optional[float]:
@@ -789,5 +798,6 @@ __all__ = [
     "position_site",
     "split_modified_sequence",
     "unimod_mass",
+    "unimod_title",
     "vendor_position",
 ]

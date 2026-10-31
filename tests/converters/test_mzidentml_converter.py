@@ -8,6 +8,7 @@ import pytest
 from qpx.converters.mzidentml.crosslinks import _group_siis
 from qpx.converters.mzidentml.psm_adapter import MzIdentMLPsmAdapter
 from qpx.converters.mzidentml.psm_records import _build_psm_records, _parse_native_id
+from qpx.converters.mzidentml.scores import _attach_site_localization_scores
 
 lxml = pytest.importorskip("lxml", reason="lxml required for mzIdentML tests")
 
@@ -583,6 +584,7 @@ class TestSharedModificationsNoCrossContamination:
             },
             "peptide_evidence": {},
             "linker_info": {},
+            "modification_tags": {},
             "spectrum_results": [
                 {
                     "spectrum_id": "index=1",
@@ -622,3 +624,52 @@ class TestSharedModificationsNoCrossContamination:
         # The Peptide's shared modification list must remain pristine — scoring
         # happened on per-PSM copies, not on this source object.
         assert shared[0]["positions"][0]["scores"] is None
+
+
+class TestSiteLocalizationScores:
+    """MS:1002505 scores: every scored residue is kept, under the modification its index names."""
+
+    @staticmethod
+    def _peptide_mods():
+        return [
+            {
+                "name": "Carbamidomethyl",
+                "accession": "UNIMOD:4",
+                "positions": [{"position": 1, "amino_acid": "C", "scores": None}],
+            },
+            {"name": "Phospho", "accession": "UNIMOD:21", "positions": [{"position": 3, "amino_acid": "S", "scores": None}]},
+        ]
+
+    def test_probabilities_cover_every_residue_of_the_indexed_modification(self):
+        params = [
+            {"accession": "MS:1001971", "name": "phosphoRS site probability", "value": "2:0.9:3:true"},
+            {"accession": "MS:1001971", "name": "phosphoRS site probability", "value": "2:0.1:4:false"},
+        ]
+        mods, candidates = _attach_site_localization_scores(self._peptide_mods(), "CPSTK", params, {2: "UNIMOD:21"})
+        assert [(c["position"], c["probability"], c["assigned"], c["alternative_group"]) for c in candidates] == [
+            (3, 0.9, True, 1),
+            (4, 0.1, False, 1),
+        ]
+        assert mods[0]["positions"][0]["scores"] is None
+        assert mods[1]["positions"][0]["scores"][0]["score_name"] == "localization_probability"
+
+    def test_tied_positions_and_non_probability_scores_become_candidate_scores(self):
+        params = [{"accession": "MS:1001985", "name": "Ascore", "value": "2:0.8:3|4:true"}]
+        mods, candidates = _attach_site_localization_scores(self._peptide_mods(), "CPSTK", params, {2: "UNIMOD:21"})
+        assert [(c["position"], c["probability"], c["assigned"], c["scores"][0]["score_value"]) for c in candidates] == [
+            (3, None, True, 0.8),
+            (4, None, False, 0.8),
+        ]
+        assert mods[1]["positions"][0]["scores"][0]["score_value"] == 0.8
+
+    def test_scalar_value_is_not_put_on_the_first_modification(self):
+        params = [{"accession": "MS:1001985", "name": "Ascore", "value": "12.5"}]
+        mods, candidates = _attach_site_localization_scores(self._peptide_mods(), "CPSTK", params, {})
+        assert candidates is None
+        assert all(pos["scores"] is None for mod in mods for pos in mod["positions"])
+
+    def test_unknown_index_still_scores_the_placed_site(self):
+        params = [{"accession": "MS:1001971", "name": "phosphoRS site probability", "value": "9:0.9:3:true"}]
+        mods, candidates = _attach_site_localization_scores(self._peptide_mods(), "CPSTK", params, {})
+        assert candidates is None
+        assert mods[1]["positions"][0]["scores"][0]["score_value"] == 0.9

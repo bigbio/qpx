@@ -68,13 +68,16 @@ def _build_one_psm(group: dict, context: _SpectrumContext, parsed: dict) -> Opti
     peptidoform = alpha_pep["peptidoform"]
 
     # Peptide modifications are shared across PSMs; copy before adding per-SII scores.
-    modifications = _attach_site_localization_scores(copy.deepcopy(alpha_pep.get("modifications")), alpha_sii["cv_params"])
+    modifications, candidates = _attach_site_localization_scores(
+        copy.deepcopy(alpha_pep.get("modifications")), sequence, alpha_sii["cv_params"], parsed["modification_tags"]
+    )
     spectrum_fields = _psm_spectrum_fields(alpha_sii, context)
     source_fields = _psm_source_fields(context.run_file, alpha_sii, beta_sii, parsed["peptide_evidence"])
     return {
         "sequence": sequence,
         "peptidoform": peptidoform,
         "modifications": modifications,
+        "modification_candidates": candidates,
         **confidence_fields,
         **spectrum_fields,
         **source_fields,

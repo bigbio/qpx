@@ -28,6 +28,11 @@ _SCORE_MAPPINGS = [
     ("Decoy.Evidence", "diann_decoy_evidence", True),
     ("Translated.Quality", "diann_translated_quality", True),
     ("Translated.Q.Value", "diann_translated_qvalue", False),
+    ("PTM.Site.Confidence", "diann_ptm_site_confidence", True),
+    ("Lib.PTM.Site.Confidence", "diann_lib_ptm_site_confidence", True),
+    ("Peptidoform.Q.Value", "diann_peptidoform_qvalue", False),
+    ("Global.Peptidoform.Q.Value", "diann_global_peptidoform_qvalue", False),
+    ("Lib.Peptidoform.Q.Value", "diann_lib_peptidoform_qvalue", False),
 ]
 
 # CV param mappings: (DIA-NN column, output cv_name)
@@ -399,6 +404,8 @@ def _build_batch_sql(
     chg_col = r["charge"]
     parts.append(f'r."{mod_col}" AS _modified_sequence')
     parts.append(f"{pg_group} AS _pg_group")
+    occupancy = 'r."Site.Occupancy.Probabilities"' if has_column("Site.Occupancy.Probabilities") else "NULL"
+    parts.append(f"CAST({occupancy} AS VARCHAR) AS _site_occupancy")
     parts.extend(channel_helper_parts)
 
     # --- Build full query ---
@@ -463,8 +470,8 @@ def _aggregate_channel_rows_sql(row_sql: str, target_schema: pa.Schema) -> str:
         "feature_id",
         "psm_ids",
         "pg_ids",
-        # Producer-specific optional fields not emitted by DIA-NN.
         "modification_candidates",
+        # Producer-specific optional fields not emitted by DIA-NN.
         "identified_labels",
         "quantification_unit_id",
         "compensation_voltage",
@@ -492,7 +499,9 @@ def _aggregate_channel_rows_sql(row_sql: str, target_schema: pa.Schema) -> str:
         else:
             select_parts.append(f"FIRST({quoted} ORDER BY _qvalue NULLS LAST, intensities[1].label) AS {quoted}")
 
-    select_parts.extend(["_modified_sequence", "_pg_group"])
+    select_parts.extend(
+        ["_modified_sequence", "_pg_group", "FIRST(_site_occupancy ORDER BY _qvalue NULLS LAST) AS _site_occupancy"]
+    )
     select_clause = ",\n            ".join(select_parts)
     return sql_build(
         _CHANNEL_ROWS_SQL,

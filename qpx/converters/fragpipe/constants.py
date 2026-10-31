@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from functools import lru_cache
 
+from qpx.converters.localization import parse_site_probabilities
 from qpx.converters.ptm import (
     PROTON_MASS,
     build_proforma,
@@ -170,6 +171,25 @@ def place_mass_shift(assigned_mods: str, sequence: str, shift: float, localizati
         for position in sites
     ]
     return f"[{tag}]?{to_proforma(assigned_mods, sequence)}", candidates or None
+
+
+# PTMProphet adds one column per modification: STY:79.9663 = S(0.0614)RT(0.9386)PPRR
+_PTMPROPHET_COLUMN_RE = re.compile(r"[A-Za-z]+:(-?\d+(?:\.\d+)?)")
+
+
+def ptmprophet_columns(columns) -> list[tuple[str, float]]:
+    """The PTMProphet site-probability columns of a psm.tsv, with their mass shifts."""
+    matches = ((column, _PTMPROPHET_COLUMN_RE.fullmatch(column)) for column in columns)
+    return [(column, float(match.group(1))) for column, match in matches if match]
+
+
+def ptmprophet_sites(row: dict, columns: list[tuple[str, float]], sequence: str) -> dict[str, dict[int, float]]:
+    """Per-modification site probabilities of a psm.tsv row, keyed by canonical tag."""
+    sites: dict[str, dict[int, float]] = {}
+    for column, mass in columns:
+        for position, probability in parse_site_probabilities(row.get(column), sequence).items():
+            sites.setdefault(mass_tag(mass, *position_site(sequence, position)), {})[position] = probability
+    return sites
 
 
 # Total Glycan Composition of PTM-Shepherd: HexNAc(2)Hex(9) % 1864.6341

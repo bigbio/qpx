@@ -5,7 +5,14 @@ from __future__ import annotations
 import re
 from functools import lru_cache
 
-from qpx.converters.ptm import build_proforma, format_mass_shift, from_proforma, normalize_peptidoform
+from qpx.converters.ptm import (
+    build_proforma,
+    format_mass_shift,
+    from_proforma,
+    modification_tag,
+    normalize_peptidoform,
+    position_site,
+)
 
 # DIA-NN's plexDIA SILAC channels tag every labelled residue with a zero-mass
 # (SILAC) modification; the feature peptidoform is the light partner's and has
@@ -66,6 +73,29 @@ def to_proforma(modified_sequence: str, mod_masses: tuple[tuple[str, float], ...
 
     plain_seq = "".join(plain_chars)
     return normalize_peptidoform(build_proforma(plain_seq, mods))
+
+
+# Site.Occupancy.Probabilities: S(UniMod:21){0.92}T(UniMod:21){0.08}K
+_OCCUPANCY_TOKEN_RE = re.compile(r"([A-Z])|\(([^()]*)\)(?:\{([\d.eE+-]+)\})?")
+
+
+def occupancy_sites(occupancy: str, sequence: str, mod_masses: tuple[tuple[str, float], ...] = ()) -> dict[str, dict[int, float]]:
+    """Per-modification site occupancy probabilities from ``Site.Occupancy.Probabilities``.
+
+    Keys are the canonical tags of :func:`to_proforma`. Only variable modifications
+    have a probability in curly brackets.
+    """
+    masses = dict(mod_masses)
+    sites: dict[str, dict[int, float]] = {}
+    position = 0
+    for residue, name, probability in _OCCUPANCY_TOKEN_RE.findall(occupancy):
+        if residue:
+            position += 1
+        elif probability:
+            mass = masses.get(name)
+            tag = format_mass_shift(mass) if mass is not None else modification_tag(name, *position_site(sequence, position))
+            sites.setdefault(tag, {})[position] = float(probability)
+    return sites
 
 
 def to_modifications(

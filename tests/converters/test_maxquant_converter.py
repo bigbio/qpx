@@ -706,3 +706,33 @@ def test_pg_counts_are_per_experiment(tmp_path):
     assert row["additional_intensities"] == [
         {"label": "LFQ", "intensities": [{"intensity_name": "spectral_count", "intensity_value": 3.0}]}
     ]
+
+
+def test_every_mod_probabilities_column_reaches_psm_and_feature(tmp_path):
+    """Oxidation (M) Probabilities in msms.txt and evidence.txt, not only Phospho (STY) in msms.txt."""
+    from qpx.converters.maxquant.feature_adapter import MaxQuantFeatureAdapter
+    from qpx.converters.maxquant.psm_adapter import MaxQuantPsmAdapter
+
+    psm_path = tmp_path / "t.psm.parquet"
+    feature_path = tmp_path / "t.feature.parquet"
+    with MaxQuantPsmAdapter() as adapter:
+        adapter.convert(str(EXAMPLES_DIR / "msms.txt"), str(psm_path))
+    with MaxQuantFeatureAdapter() as adapter:
+        adapter.convert(str(EXAMPLES_DIR / "evidence.txt"), str(feature_path))
+
+    for path in (psm_path, feature_path):
+        rows = pq.read_table(path, columns=["peptidoform", "modifications", "modification_candidates"]).to_pylist()
+        localized = [row for row in rows if row["modification_candidates"]]
+        assert localized, path.name
+        for row in localized:
+            assigned = [c for c in row["modification_candidates"] if c["assigned"]]
+            assert all(c["name"] == "Oxidation" and c["accession"] == "UNIMOD:35" for c in row["modification_candidates"])
+            assert assigned and "M[UNIMOD:35]" in row["peptidoform"]
+        placed = next(
+            pos
+            for row in localized
+            for mod in row["modifications"]
+            if mod["accession"] == "UNIMOD:35"
+            for pos in mod["positions"]
+        )
+        assert placed["scores"][0]["score_name"] == "localization_probability"

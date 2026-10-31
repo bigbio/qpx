@@ -296,3 +296,38 @@ def test_pepmap_lists_every_protein_of_the_converted_peptidoforms(tmp_path):
         for row in pq.read_table(pepmap).to_pylist()
     }
     assert entries == {"PEPTIDEK": (["P1", "P8", "P9"], False), "SAMPLER": (["P2"], True)}
+
+
+def test_site_occupancy_probabilities_become_scores_and_candidates(tmp_path):
+    """Site.Occupancy.Probabilities, PTM.Site.Confidence and Peptidoform.Q.Value reach the feature."""
+    row = _row(
+        **{
+            "Modified.Sequence": "PEPS(UniMod:21)TK",
+            "Stripped.Sequence": "PEPSTK",
+            "Precursor.Id": "PEPS(UniMod:21)TK2",
+            "Site.Occupancy.Probabilities": "PEPS(UniMod:21){0.92}T(UniMod:21){0.08}K",
+            "PTM.Site.Confidence": 0.92,
+            "Peptidoform.Q.Value": 0.004,
+        }
+    )
+    feature = _features(tmp_path, [row])[0]
+
+    assert [(c["position"], c["amino_acid"], c["name"], c["probability"], c["assigned"], c["alternative_group"])
+            for c in feature["modification_candidates"]] == [
+        (4, "S", "Phospho", 0.92, True, 1),
+        (5, "T", "Phospho", 0.08, False, 1),
+    ]  # fmt: skip
+    score = feature["modifications"][0]["positions"][0]["scores"][0]
+    assert (score["score_name"], score["score_value"]) == ("localization_probability", pytest.approx(0.92))
+    scores = {s["score_name"]: s["score_value"] for s in feature["additional_scores"]}
+    assert scores["diann_ptm_site_confidence"] == pytest.approx(0.92)
+    assert scores["diann_peptidoform_qvalue"] == pytest.approx(0.004)
+
+
+def test_occupancy_of_a_fixed_modification_and_declared_mass(tmp_path):
+    """Only bracketed values are sites; a name declared in the log resolves to its mass."""
+    from qpx.converters.diann.constants import occupancy_sites
+
+    assert occupancy_sites("C(UniMod:4)PM(UniMod:35){1.0}K", "CPMK") == {"UNIMOD:35": {3: 1.0}}
+    assert occupancy_sites("(Custom){0.5}PK(Custom){0.5}", "PK", (("Custom", 12.5),)) == {"+12.5000": {0: 0.5, 2: 0.5}}
+    assert occupancy_sites("PEPK", "PEPK") == {}

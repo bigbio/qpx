@@ -220,6 +220,27 @@ as a deamidation that Assigned Modifications do not list, cannot be told apart
 from it. The glycan composition is the name of the `modifications` entry of the
 PSM; feature entries name the mass, and join the PSM through the peptidoform.
 
+### Site localization
+
+Per-site probabilities go to `modification_candidates`, one entry per scored
+residue, and to a `localization_probability` score on the sites the peptidoform
+occupies. A modification placed once whose probabilities sum to about 1 is one
+alternative group; several placements, or independent occupancies that sum to
+more, stay ungrouped.
+
+| Converter | View | Source |
+| --------- | ---- | ------ |
+| MaxQuant | PSM, feature | every `<mod> Probabilities` column of `msms.txt` and `evidence.txt` |
+| FragPipe | PSM | PTMProphet columns such as `STY:79.9663`; `MSFragger Localization` for a mass shift |
+| DIA-NN | feature | `Site.Occupancy.Probabilities`; `PTM.Site.Confidence` and the `Peptidoform.Q.Value` columns are `additional_scores` |
+| Spectronaut | feature | `EG.PTMLocalizationProbabilities`; `EG.PTMAssayProbability` is an `additional_scores` entry |
+| mzIdentML | PSM | PSM-level statistics in the MS:1002505 format. Probabilities and other scores of unassigned residues need the `modification index` of a `SearchModification`; without it only the assigned residue is scored, under the term's own name. A scalar value stays in `additional_scores` |
+| OpenMS | PSM, feature | the per-site values its idXML meta values hold |
+
+FragPipe's feature view has no localization because `combined_ion.tsv` carries
+none. The site reports of DIA-NN and Spectronaut are not converted to
+[`site.parquet`](site.md).
+
 `consensus_rt` (an OpenMS consensusXML field), `ion_mobility_start` and
 `ion_mobility_stop` are null for all five converters. `psm_ids` and `pg_ids` are
 computed links that no converter materializes.

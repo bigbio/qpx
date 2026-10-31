@@ -698,3 +698,24 @@ def test_feature_is_not_enriched_from_a_mass_shifted_psm(tmp_path):
     assert record["peptidoform"] == "PEPTIDEK"
     assert record["scan"] == []
     assert record["observed_mz"] is None
+
+
+def test_ptmprophet_site_probabilities_in_scores_and_candidates():
+    """STY:79.9663 = HS(0.08)CS(0.85)GS(0.04)S(0.03)PPR gives one candidate per scored residue."""
+    from qpx.converters.fragpipe.constants import ptmprophet_columns, ptmprophet_sites
+    from qpx.converters.localization import localize_modifications
+    from qpx.converters.ptm import from_proforma
+
+    columns = ptmprophet_columns(["Peptide", "STY:79.9663", "STY:79.9663 Best Localization", "M:15.9949", "Delta Mass"])
+    assert columns == [("STY:79.9663", 79.9663), ("M:15.9949", 15.9949)]
+
+    sequence = "HSCSGSSPPR"
+    row = {"STY:79.9663": "HS(0.08)CS(0.85)GS(0.04)S(0.03)PPR", "M:15.9949": float("nan")}
+    sites = ptmprophet_sites(row, columns, sequence)
+    assert sites == {"UNIMOD:21": {2: 0.08, 4: 0.85, 6: 0.04, 7: 0.03}}
+
+    _, modifications = from_proforma("HSCS[UNIMOD:21]GSSPPR", sequence)
+    localized, candidates = localize_modifications(modifications, sequence, sites)
+    assert [c["position"] for c in candidates if c["assigned"]] == [4]
+    assert {c["alternative_group"] for c in candidates} == {1}
+    assert localized[0]["positions"][0]["scores"][0]["score_value"] == 0.85

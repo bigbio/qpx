@@ -17,9 +17,10 @@ from typing import Optional
 import pyarrow as pa
 
 from qpx.converters.base import resolve_columns
+from qpx.converters.localization import LOCALIZATION_SCORE, localize_modifications
 from qpx.converters.mappings import get_field_mappings
 from qpx.converters.spectronaut.base_adapter import SpectronautBaseAdapter
-from qpx.converters.spectronaut.constants import to_modifications, to_proforma
+from qpx.converters.spectronaut.constants import localization_sites, to_modifications, to_proforma
 from qpx.converters.utils import pg_accessions_array
 from qpx.core.data import FeatureSchema
 from qpx.core.query import _escape_sql_string
@@ -36,6 +37,7 @@ _SCORE_MAPPINGS = [
     ("EG.Cscore", "spectronaut_cscore", True),
     ("PG.Cscore", "spectronaut_pg_cscore", True),
     ("PG.Cscore (Run-Wise)", "spectronaut_pg_cscore_runwise", True),
+    ("EG.PTMAssayProbability", "spectronaut_ptm_assay_probability", True),
 ]
 
 # CV param mappings: (Spectronaut column, output cv_name)
@@ -304,6 +306,7 @@ class SpectronautFeatureAdapter(SpectronautBaseAdapter):
         pg_col = r["pg_accessions"]
         parts.append(f'FIRST(r."{mod_col}") AS _modified_sequence')
         parts.append(f'FIRST(r."{pg_col}") AS _pg_group')
+        parts.append(self._ptm_localization_sql(report_cols))
 
         select_clause = ",\n        ".join(parts)
 
@@ -375,6 +378,13 @@ class SpectronautFeatureAdapter(SpectronautBaseAdapter):
         )
 
     @staticmethod
+    def _ptm_localization_sql(report_cols: set[str]) -> str:
+        """Build SQL for the helper column of ``EG.PTMLocalizationProbabilities``."""
+        column = "EG.PTMLocalizationProbabilities"
+        value = f'FIRST(r."{column}")' if column in report_cols else "NULL"
+        return f"CAST({value} AS VARCHAR) AS _ptm_localization"
+
+    @staticmethod
     def _build_additional_scores_sql(report_cols: set[str]) -> str:
         """Build SQL for the additional_scores nested column."""
         entries, checks = [], []
@@ -431,6 +441,24 @@ class SpectronautFeatureAdapter(SpectronautBaseAdapter):
         mods_list = [mods_lookup.get((str(ms), str(s), int(c))) for ms, s, c in zip(mod_seqs, seqs, charges)]
         return pa.array(mods_list, type=mods_type)
 
+    def _localized(self, table: pa.Table, mods_array: pa.Array, target_schema: pa.Schema) -> tuple[pa.Array, pa.Array]:
+        """Modifications with their site scores, and the candidates, from each row's localization probabilities."""
+        localized = [
+            localize_modifications(mods, sequence, localization_sites(localization, sequence))
+            if localization and "%" in localization
+            else (mods, None)
+            for mods, sequence, localization in zip(
+                mods_array.to_pylist(), table.column("sequence").to_pylist(), table.column("_ptm_localization").to_pylist()
+            )
+        ]
+        candidates = [row_candidates for _, row_candidates in localized]
+        if any(candidates):
+            self._discovered_scores.add(LOCALIZATION_SCORE)
+        return (
+            pa.array([mods for mods, _ in localized], type=mods_array.type),
+            pa.array(candidates, type=target_schema.field("modification_candidates").type),
+        )
+
     def _process_batch_arrow(
         self,
         runs: list[str],
@@ -450,7 +478,9 @@ class SpectronautFeatureAdapter(SpectronautBaseAdapter):
 
         mods_array = self._build_modifications_array(table, mods_lookup, mods_type)
         pg_array = pg_accessions_array(table.column("_pg_group"), pg_acc_type)
+        mods_array, candidates = self._localized(table, mods_array, target_schema)
 
-        table = table.drop("_modified_sequence").drop("_pg_group")
+        table = table.drop("_modified_sequence").drop("_pg_group").drop("_ptm_localization")
+        table = table.append_column("modification_candidates", candidates)
 
         return self._assemble_feature_table(table, target_schema, mods_array, pg_array)

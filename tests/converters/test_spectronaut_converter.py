@@ -7,6 +7,7 @@ written with correct schemas and plausible values.
 
 from pathlib import Path
 
+import pandas as pd
 import pyarrow.parquet as pq
 import pytest
 
@@ -254,3 +255,36 @@ class TestRunNameNormalization:
                 assert feat_val == pg_val == feat_id_val
         finally:
             con.close()
+
+
+def test_ptm_localization_probabilities_become_scores_and_candidates(tmp_path):
+    """EG.PTMLocalizationProbabilities holds percentages; EG.PTMAssayProbability is an additional score."""
+    from qpx.converters.spectronaut.converter import SpectronautConverter
+
+    report = pd.read_csv(_REPORT, sep="\t", nrows=1, low_memory=False)
+    report["EG.ModifiedSequence"] = "_PVS[Phospho (STY)]PSK_"
+    report["PEP.StrippedSequence"] = "PVSPSK"
+    report["EG.PTMLocalizationProbabilities"] = "_PVS[Phospho (STY): 92.3%]PS[Phospho (STY): 7.7%]K_"
+    report["EG.PTMAssayProbability"] = 0.95
+    path = tmp_path / "report.tsv"
+    report.to_csv(path, sep="\t", index=False)
+
+    converter = SpectronautConverter(report_path=str(path))
+    converter.convert_features(qvalue_threshold=1.0, output_folder=str(tmp_path), output_prefix="sn")
+    feature = pq.read_table(next(tmp_path.glob("sn*feature*.parquet"))).to_pylist()[0]
+
+    assert [(c["position"], c["amino_acid"], c["probability"], c["assigned"], c["alternative_group"])
+            for c in feature["modification_candidates"]] == [
+        (3, "S", pytest.approx(0.923), True, 1),
+        (5, "S", pytest.approx(0.077), False, 1),
+    ]  # fmt: skip
+    site_scores = feature["modifications"][0]["positions"][0]["scores"]
+    assert site_scores[0]["score_name"] == "localization_probability"
+    assert {s["score_name"] for s in feature["additional_scores"]} >= {"spectronaut_ptm_assay_probability"}
+
+
+def test_localization_of_an_unlocalized_modification_is_skipped():
+    from qpx.converters.spectronaut.constants import localization_sites
+
+    assert localization_sites("_C[Carbamidomethyl (C)]PEK_", "CPEK") == {}
+    assert localization_sites("_PS[Phospho (STY): 100%]K_", "OTHER") == {}

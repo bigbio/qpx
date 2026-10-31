@@ -24,8 +24,9 @@ import pyarrow.parquet as pq
 
 from qpx.converters.base import resolve_columns
 from qpx.converters.diann.base_adapter import BATCH_ROWS, DiaNNBaseAdapter, run_name_sql
-from qpx.converters.diann.constants import to_modifications, to_proforma
+from qpx.converters.diann.constants import occupancy_sites, to_modifications, to_proforma
 from qpx.converters.diann.feature_sql import _SCORE_MAPPINGS, _build_batch_sql, build_pepmap_sql
+from qpx.converters.localization import LOCALIZATION_SCORE, localize_modifications
 from qpx.converters.mappings import get_field_mappings
 from qpx.converters.utils import pg_accessions_array
 from qpx.core.query import _escape_sql_string
@@ -130,6 +131,7 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
             partial(to_proforma, mod_masses=mod_masses),
             partial(to_modifications, mod_masses=mod_masses),
         )
+        self._mod_masses = mod_masses
 
         # 5. Get target Arrow schema
         target_schema = FeatureWriter._schema_class.get_arrow_schema()
@@ -322,7 +324,10 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
         charges = table.column("charge").to_pylist()
 
         mods_list = [mods_lookup.get((str(ms), str(s), int(c))) for ms, s, c in zip(mod_seqs, seqs, charges)]
+        mods_list, candidates = self._localized(mods_list, seqs, table.column("_site_occupancy").to_pylist())
         mods_array = pa.array(mods_list, type=target_schema.field("modifications").type)
+        candidates_type = target_schema.field("modification_candidates").type
+        table = table.append_column("modification_candidates", pa.array(candidates, type=candidates_type))
 
         # --- Build pg_accessions column ---
         pg_array = pg_accessions_array(table.column("_pg_group"), target_schema.field("pg_accessions").type)
@@ -333,8 +338,22 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
         # --- Drop helper columns ---
         table = table.drop("_modified_sequence")
         table = table.drop("_pg_group")
+        table = table.drop("_site_occupancy")
 
         return self._assemble_feature_table(table, target_schema, mods_array, pg_array)
+
+    def _localized(self, modifications: list, sequences: list, occupancies: list) -> tuple[list, list]:
+        """Modifications with their site scores, and the candidates, from each row's occupancy probabilities."""
+        localized = [
+            localize_modifications(mods, sequence, occupancy_sites(occupancy, sequence, self._mod_masses))
+            if occupancy and "{" in occupancy
+            else (mods, None)
+            for mods, sequence, occupancy in zip(modifications, sequences, occupancies)
+        ]
+        candidates = [row_candidates for _, row_candidates in localized]
+        if any(candidates):
+            self._discovered_scores.add(LOCALIZATION_SCORE)
+        return [mods for mods, _ in localized], candidates
 
     def _merge_scan_info_arrow(self, table: pa.Table, mzml_info_folder: str) -> pa.Table:
         """Merge MS scan info from mzml files into the Arrow table.

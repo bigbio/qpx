@@ -20,7 +20,7 @@ except ImportError:
 from qpx.converters.base import BaseConverter
 from qpx.converters.mzidentml.psm_records import _build_psm_records
 from qpx.converters.ptm import build_proforma, canonical_mod_tag
-from qpx.core.cv_terms import CV_SCAN_START_TIME, CV_XL_ACCEPTOR, CV_XL_DONOR
+from qpx.core.cv_terms import CV_MODIFICATION_INDEX, CV_SCAN_START_TIME, CV_XL_ACCEPTOR, CV_XL_DONOR
 from qpx.core.files import run_file_stem
 from qpx.writers.psm import PsmWriter
 
@@ -81,6 +81,7 @@ class MzIdentMLPsmAdapter(BaseConverter):
             "peptides": self._parse_peptides(root, ns),
             "peptide_evidence": self._parse_peptide_evidence(root, ns),
             "linker_info": self._parse_linker_info(root, ns),
+            "modification_tags": self._parse_modification_tags(root, ns),
             "spectrum_results": self._parse_spectrum_results(root, ns),
         }
 
@@ -129,6 +130,8 @@ class MzIdentMLPsmAdapter(BaseConverter):
         mod_name = ""
         mod_accession = None
         for cv in mod.findall(f"{{{ns}}}cvParam"):
+            if cv.get("accession") == CV_MODIFICATION_INDEX:
+                continue
             mod_name = cv.get("name", "")
             mod_accession = cv.get("accession")
             break  # Take first cvParam as the mod identity
@@ -202,6 +205,26 @@ class MzIdentMLPsmAdapter(BaseConverter):
                 "post": pe.get("post", None),
             }
         return result
+
+    @staticmethod
+    def _parse_modification_tags(root, ns: str) -> dict[int, str]:
+        """Canonical tag of each SearchModification with a ``modification index``, the key of MS:1002505 scores."""
+        tags: dict[int, str] = {}
+        for search_mod in root.iter(f"{{{ns}}}SearchModification"):
+            params = {cv.get("accession"): cv for cv in search_mod.findall(f"{{{ns}}}cvParam")}
+            index = params.pop(CV_MODIFICATION_INDEX, None)
+            if index is None or not params:
+                continue
+            identity = next(iter(params.values()))
+            residue = search_mod.get("residues", ".")[0]
+            tag = canonical_mod_tag(
+                identity.get("accession"),
+                identity.get("name", ""),
+                float(search_mod.get("massDelta", "0")),
+                None if residue == "." else residue,
+            )
+            tags[int(index.get("value"))] = tag.split("|", 1)[0]
+        return tags
 
     def _parse_linker_info(self, root, ns: str) -> dict:
         """Extract cross-linker name, accession and mass from SearchModification elements."""
