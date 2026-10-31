@@ -60,6 +60,10 @@ provenance_schema = pa.schema(
 
     **`config`** is the complete reference -- the full tool configuration as a JSON string. Use it when you need every setting, not just the highlights. For a quantms pipeline, this would be the Nextflow `params.json`; for a Comet search, the full `comet.params` converted to JSON.
 
+## Recorded conversion options
+
+`qpxc convert` adds the options a conversion ran with to the `parameters` of its `format_conversion` step, defaults included: every option that shapes the output, such as `qvalue_threshold` (`none` when unset, so "not filtered" is on record), `structures` or `rank1_only`. An input path is recorded by file name, and an input file also by its SHA-256 as `<option>_sha256`. Output locations and resource limits are not recorded.
+
 ## Step Categories
 
 Each processing step belongs to a category that groups steps by function.

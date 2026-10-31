@@ -75,18 +75,21 @@ def _local_ms(local_ms_ontology):
     )
 
 
-def _run_ontology_by_field(tmp_path, instrument, dissociation):
-    """Convert a one-run SDRF and return its run ontology entries keyed by ``field_name``."""
-    _, entries = _convert_sdrf(
+def _run_terms(tmp_path, instrument, dissociation):
+    """Convert a one-run SDRF and return its run's ontology terms keyed by the SDRF value."""
+    rows, _ = _convert_sdrf(
         tmp_path,
         ["source name", "comment[data file]", "comment[label]", "comment[instrument]", "comment[dissociation method]"],
         [["S1", "run_01.raw", "label free sample", instrument, dissociation]],
     )
-    return {entry["field_name"]: entry for entry in entries}
+    return {
+        next(prop["value"] for prop in term["properties"] if prop["key"] == "sdrf_value"): term
+        for term in rows[0]["additional_terms"]
+    }
 
 
 @pytest.mark.parametrize(
-    ("dissociation", "field_name", "accession", "ontology_name"),
+    ("dissociation", "sdrf_value", "accession", "ontology_name"),
     [
         ("NT=CID;AC=MS:1000133", "CID", "MS:1000133", "collision-induced dissociation"),
         ("NT=HCD;AC=MS:1000422", "HCD", "MS:1000422", "beam-type collision-induced dissociation"),
@@ -100,18 +103,18 @@ def _run_ontology_by_field(tmp_path, instrument, dissociation):
         ),
     ],
 )
-def test_dissociation_resolves_by_accession_before_name(local_ms, tmp_path, dissociation, field_name, accession, ontology_name):
+def test_dissociation_resolves_by_accession_before_name(local_ms, tmp_path, dissociation, sdrf_value, accession, ontology_name):
     """The SDRF accession wins over the name, and the name is the fallback when no accession exists."""
-    entries = _run_ontology_by_field(tmp_path, instrument="not applicable", dissociation=dissociation)
+    terms = _run_terms(tmp_path, instrument="not applicable", dissociation=dissociation)
 
-    assert entries[field_name]["ontology_accession"] == accession
-    assert entries[field_name]["ontology_name"] == ontology_name
-    assert entries[field_name]["view"] == "run"
+    assert terms[sdrf_value]["accession"] == accession
+    assert terms[sdrf_value]["name"] == ontology_name
+    assert {"key": "field", "value": "dissociation_method"} in terms[sdrf_value]["properties"]
 
 
-def test_shared_name_resolves_to_the_sorted_first_accession(local_ms, tmp_path):
-    """One name with two resolvable accessions yields one entry, independent of set iteration order."""
-    _, entries = _convert_sdrf(
+def test_each_run_keeps_the_accession_of_its_own_row(local_ms, tmp_path):
+    """One name with two accessions resolves per run, not to one dataset-wide term."""
+    rows, _ = _convert_sdrf(
         tmp_path,
         ["source name", "comment[data file]", "comment[label]", "comment[dissociation method]"],
         [
@@ -119,18 +122,39 @@ def test_shared_name_resolves_to_the_sorted_first_accession(local_ms, tmp_path):
             ["S2", "run_02.raw", "label free sample", "NT=HCD;AC=MS:1000133"],
         ],
     )
-    hcd_entries = [entry for entry in entries if entry["field_name"] == "HCD"]
 
-    assert [entry["ontology_accession"] for entry in hcd_entries] == ["MS:1000133"]
+    assert [row["additional_terms"][0]["accession"] for row in rows] == ["MS:1000422", "MS:1000133"]
 
 
 def test_instrument_resolves_by_accession(local_ms, tmp_path):
     """An instrument ``AC=`` accession resolves its PSI-MS term when the name alone does not match a term."""
-    entries = _run_ontology_by_field(
+    terms = _run_terms(tmp_path, instrument="NT=Lumos;AC=MS:1002732", dissociation="not applicable")
+
+    assert terms["Lumos"]["accession"] == "MS:1002732"
+    assert terms["Lumos"]["name"] == "Orbitrap Fusion Lumos"
+
+
+def test_accession_of_another_ontology_is_kept_with_the_sdrf_name(local_ms, tmp_path):
+    """A non PSI-MS term cannot be checked against the vocabulary, so the SDRF's pair is kept."""
+    rows, entries = _convert_sdrf(
         tmp_path,
-        instrument="NT=Lumos;AC=MS:1002732",
-        dissociation="not applicable",
+        ["source name", "comment[data file]", "comment[label]", "comment[proteomics data acquisition method]"],
+        [["S1", "run_01.raw", "label free sample", "NT=Tailored Window Acquisition;AC=NCIT:C999"]],
     )
 
-    assert entries["Lumos"]["ontology_accession"] == "MS:1002732"
-    assert entries["Lumos"]["ontology_name"] == "Orbitrap Fusion Lumos"
+    assert rows[0]["additional_terms"][0]["accession"] == "NCIT:C999"
+    assert rows[0]["additional_terms"][0]["name"] == "Tailored Window Acquisition"
+    assert [entry["field_name"] for entry in entries] == ["acquisition_method"]
+
+
+def test_ontology_rows_describe_run_fields_not_their_values(local_ms, tmp_path):
+    """The ontology view names columns; a value such as ``HCD`` is not a field."""
+    _, entries = _convert_sdrf(
+        tmp_path,
+        ["source name", "comment[data file]", "comment[label]", "comment[dissociation method]"],
+        [["S1", "run_01.raw", "label free sample", "NT=HCD;AC=MS:1000422"]],
+    )
+
+    assert [(entry["field_name"], entry["view"], entry["source_column_name"]) for entry in entries] == [
+        ("dissociation_method", "run", "comment[dissociation method]")
+    ]

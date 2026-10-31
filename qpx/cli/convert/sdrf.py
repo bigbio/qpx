@@ -8,6 +8,7 @@ from pathlib import Path
 import click
 
 from .options import _compression_option, _output_folder_option, _sdrf_file_option, _verbose_option
+from .postprocess import _preserve_sdrf
 
 
 @click.command("sdrf")
@@ -51,5 +52,7 @@ def convert_sdrf_cmd(
             sample_output=str(output_folder / f"{output_prefix}.sample.parquet"),
             run_output=str(output_folder / f"{output_prefix}.run.parquet"),
         )
+
+    _preserve_sdrf(output_folder, output_prefix)
 
     click.echo(f"SDRF conversion complete. Output: {output_folder}")

@@ -171,20 +171,20 @@ def is_higher_better(normalized_name: str) -> Optional[bool]:
 # Standard QPX fields with known PSI-MS CV accessions
 _FIELD_CV_MAP: dict[str, dict] = {
     "posterior_error_probability": {
-        "ontology_name": "posterior error probability",
+        "ontology_name": "percolator:PEP",
         "ontology_accession": "MS:1001493",
         "ontology_source": "MS",
         "description": "Posterior error probability (PEP) for PSM correctness",
     },
     "observed_mz": {
         "ontology_name": "selected ion m/z",
-        "ontology_accession": "MS:1001475",
+        "ontology_accession": "MS:1000744",
         "ontology_source": "MS",
         "description": "Experimentally measured precursor m/z",
     },
     "calculated_mz": {
-        "ontology_name": "calculated mass to charge ratio",
-        "ontology_accession": "MS:1001234",
+        "ontology_name": "theoretical monoisotopic m/z",
+        "ontology_accession": "MS:1003053",
         "ontology_source": "MS",
         "description": "Theoretically calculated m/z of the peptide",
     },
@@ -200,9 +200,27 @@ _FIELD_CV_MAP: dict[str, dict] = {
         "ontology_source": "MS",
         "description": "Precursor ion charge state",
     },
+    "instrument": {
+        "ontology_name": "instrument model",
+        "ontology_accession": "MS:1000031",
+        "ontology_source": "MS",
+        "description": "Instrument model of the run",
+    },
+    "enzymes": {
+        "ontology_name": "cleavage agent name",
+        "ontology_accession": "MS:1001045",
+        "ontology_source": "MS",
+        "description": "Cleavage agents used for the run",
+    },
+    "dissociation_method": {
+        "ontology_name": "dissociation method",
+        "ontology_accession": "MS:1000044",
+        "ontology_source": "MS",
+        "description": "Fragmentation method of the run",
+    },
     "intensity": {
-        "ontology_name": "MS1 feature area",
-        "ontology_accession": "MS:1002498",
+        "ontology_name": "LC-MS feature intensity",
+        "ontology_accession": "MS:1001840",
         "ontology_source": "MS",
         "description": "Primary precursor intensity",
     },
@@ -363,3 +381,18 @@ def score_ontology_entries(
             }
         )
     return entries
+
+
+def unresolved_field_entry(field_name: str, view: str) -> dict:
+    """Return the ontology row of an emitted name that no converter mapping or CV term describes."""
+    return {
+        "field_name": field_name,
+        "ontology_name": None,
+        "ontology_accession": None,
+        "ontology_source": None,
+        "ontology_version": None,
+        "view": view,
+        "description": f"{field_name} (no CV term)",
+        "source_column_name": None,
+        "source_tool": None,
+    }

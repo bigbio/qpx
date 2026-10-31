@@ -109,7 +109,24 @@ def _save_result(result_df, output: Path) -> None:
         result_df.to_csv(str(output), index=False)
 
 
-def _quantify_sdrf_mapping(sdrf_path: Path):
+def _condition_column(columns, factor: Optional[str]) -> Optional[str]:
+    """Return the SDRF factor column to use as the condition; several without ``--factor`` warn on the first."""
+    factor_columns = [column for column in columns if column.startswith("factor value[")]
+    if factor is not None:
+        wanted = factor if factor.startswith("factor value[") else f"factor value[{factor.lower()}]"
+        if wanted not in factor_columns:
+            raise click.UsageError(f"--factor {factor!r} is not in the SDRF; it has: {', '.join(factor_columns) or 'none'}")
+        return wanted
+    if len(factor_columns) > 1:
+        click.echo(
+            f"WARNING: the SDRF has {len(factor_columns)} factor columns; using {factor_columns[0]!r} as the "
+            "condition. Choose one with --factor.",
+            err=True,
+        )
+    return factor_columns[0] if factor_columns else None
+
+
+def _quantify_sdrf_mapping(sdrf_path: Path, factor: Optional[str] = None):
     """Build an unambiguous QPX run/channel to sample/condition mapping."""
     import pandas as pd
 
@@ -132,8 +149,8 @@ def _quantify_sdrf_mapping(sdrf_path: Path):
     if sample_ids.isna().any() or sample_ids.eq("").any():
         raise click.UsageError("SDRF column 'source name' contains missing or blank values")
 
-    factor_columns = [column for column in sdrf.columns if column.startswith("factor value[")]
-    conditions = sdrf[factor_columns[0]].astype("string").str.strip() if factor_columns else sample_ids
+    condition_column = _condition_column(sdrf.columns, factor)
+    conditions = sdrf[condition_column].astype("string").str.strip() if condition_column else sample_ids
     conditions = conditions.mask(conditions.isna() | conditions.eq(""), sample_ids)
 
     mapping = pd.DataFrame(
@@ -203,7 +220,7 @@ def _run_label_pairs(runs, labels):
     )
 
 
-def _sdrf_samples(runs: list, labels: list, sdrf_path: Path):
+def _sdrf_samples(runs: list, labels: list, sdrf_path: Path, factor: Optional[str] = None):
     """Resolve each distinct ``(run, label)`` pair to its SDRF sample and condition."""
     import pandas as pd
 
@@ -216,7 +233,7 @@ def _sdrf_samples(runs: list, labels: list, sdrf_path: Path):
             "_label_key": [normalize_label(label) for label in labels],
         }
     ).merge(
-        _quantify_sdrf_mapping(sdrf_path),
+        _quantify_sdrf_mapping(sdrf_path, factor),
         on=["_run_key", "_label_key"],
         how="left",
         validate="many_to_one",
@@ -229,7 +246,7 @@ def _sdrf_samples(runs: list, labels: list, sdrf_path: Path):
     return pairs["SampleID"].array, pairs["Condition"].array
 
 
-def _qpx_feature_to_peptide_df(feature_path: Path, sdrf_path: Optional[Path] = None):
+def _qpx_feature_to_peptide_df(feature_path: Path, sdrf_path: Optional[Path] = None, factor: Optional[str] = None):
     """Read QPX feature.parquet and flatten to mokume peptide DataFrame.
 
     Mokume expects columns: ``ProteinName``, ``PeptideCanonical``,
@@ -276,7 +293,7 @@ def _qpx_feature_to_peptide_df(feature_path: Path, sdrf_path: Optional[Path] = N
 
     pair_runs, pair_labels, pair_index = _run_label_pairs(entries["run_file_name"], entries["label"])
     if sdrf_path is not None:
-        sample_ids, conditions = _sdrf_samples(pair_runs, pair_labels, sdrf_path)
+        sample_ids, conditions = _sdrf_samples(pair_runs, pair_labels, sdrf_path, factor)
     else:
         sample_ids = pd.array(
             [run if not label else f"{run}::{label}" for run, label in zip(pair_runs, pair_labels)], dtype=object
@@ -359,6 +376,11 @@ def _qpx_feature_to_peptide_df(feature_path: Path, sdrf_path: Optional[Path] = N
     required=True,
     type=click.Path(path_type=Path),
 )
+@click.option(
+    "--factor",
+    help="SDRF factor used as the condition, e.g. 'disease' for 'factor value[disease]' (default: the first factor column)",
+    default=None,
+)
 @click.option("--normalize", help="Normalize quantification values", is_flag=True)
 @click.option("--organism", help="Organism for iBAQ (default: human)", default="human")
 @click.option("--ploidy", help="Ploidy for iBAQ ruler (default: 2)", default=2, type=int)
@@ -419,7 +441,7 @@ def transform_quantify_cmd(**kwargs):
 
     # Step 1: Read QPX feature and flatten to mokume format
     click.echo(f"Reading QPX feature data from {feature_path}")
-    peptide_df = _qpx_feature_to_peptide_df(feature_path, sdrf)
+    peptide_df = _qpx_feature_to_peptide_df(feature_path, sdrf, kwargs["factor"])
     if peptide_df.empty:
         raise click.UsageError("No valid peptide intensities found in the feature file")
 

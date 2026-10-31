@@ -315,6 +315,8 @@ print(generate_params_table(transform_quantify_cmd))
 | `ibaq` | Intensity-Based Absolute Quantification | `pip install "qpx[quantify]"` + `--fasta` |
 | `sum` | Sum of all peptide intensities | `pip install "qpx[quantify]"` |
 
+When an SDRF has several `factor value[...]` columns, `--factor` chooses the condition (`--factor disease`). Without it the first column is used, with a warning.
+
 ### Usage Examples {#quantify-examples}
 
 #### DirectLFQ (default) {#quantify-example-directlfq}

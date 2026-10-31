@@ -38,26 +38,23 @@ Run columns describe technical and instrument-related properties of the data acq
 | `comment[fraction identifier]` | `fraction` | run.parquet |
 | `characteristics[biological replicate]` | `biological_replicate` (inside `samples` list) | run.parquet |
 | `comment[technical replicate]` | `technical_replicate` (inside `samples` list) | run.parquet |
-| `comment[instrument]` | `instrument` (as ONTOLOGY_TERM) | run.parquet |
-| `comment[cleavage agent details]` | `enzymes` (as list of ONTOLOGY_TERM) | run.parquet |
+| `comment[instrument]` | `instrument` (plain string; the term is in `additional_terms`) | run.parquet |
+| `comment[cleavage agent details]` | `enzymes` (list of plain strings; the terms are in `additional_terms`) | run.parquet |
 | `comment[proteomics data acquisition method]` | `acquisition_method` (plain string; also resolved into `additional_terms` as ONTOLOGY_TERM) | run.parquet |
-| `comment[dissociation method]` | `dissociation_method` (as ONTOLOGY_TERM) | run.parquet |
+| `comment[dissociation method]` | `dissociation_method` (plain string; the term is in `additional_terms`) | run.parquet |
 | `comment[modification parameters]` | `modification_parameters` (as list of MODIFICATION) | run.parquet |
 
-### Factor Columns (planned `factor.parquet`)
+### Factor Columns
 
-Factor columns capture experimental design variables from `factor value[X]` columns in the SDRF.
+Factor columns capture experimental design variables from `factor value[X]` columns in the SDRF. Each one becomes a `factor_X` column of `sample.parquet` (lower-case, with runs of other characters replaced by an underscore), so a factor stays distinguishable from a characteristic of the same name. `qpxc transform quantify --factor X` chooses the factor used as the condition.
 
-!!! warning "Planned view -- not yet serialized"
-    `factor.parquet` is a **planned** view. QPX 1.1 does not ship a `factor.yaml` schema or write a `factor.parquet` file. Experimental-design / factor information is currently carried in the differential-expression view (`factor_names` in the [DE](differential.md) AnnData `uns`), and factor values remain available in the source `.sdrf.tsv` preserved alongside the Parquet files. The mapping below documents the intended field naming for a future release.
-
-| SDRF Column | QPX Field Name | Status |
+| SDRF Column | QPX Field Name | View |
 |---|---|---|
-| `factor value[disease]` | `factor_disease` | planned |
-| `factor value[organism part]` | `factor_organism_part` | planned |
+| `factor value[disease]` | `factor_disease` | sample.parquet |
+| `factor value[organism part]` | `factor_organism_part` | sample.parquet |
 
 !!! note
-    Factor columns are open-ended. Any `factor value[X]` column in the SDRF is intended to map to `factor_X` (with spaces replaced by underscores). Replicate identifiers (`biological_replicate`, `technical_replicate`) are stored in the `samples` struct of [run.parquet](run.md), so replicate structure is already self-contained there.
+    Factor columns are open-ended: any `factor value[X]` column maps to `factor_X`. A planned `factor.parquet` view may later add the factor's type and unit. Replicate identifiers (`biological_replicate`, `technical_replicate`) are stored in the `samples` struct of [run.parquet](run.md), so replicate structure is already self-contained there.
 
 ---
 
@@ -104,8 +101,10 @@ At ingestion time, the SDRF TSV is split into `sample.parquet` and `run.parquet`
 2. **Rename** columns using the field registry above
 3. **Extract sample-level columns** -- deduplicate rows by `sample_accession` (= `source name`) to produce `sample.parquet`
 4. **Extract run-level columns** -- one row per `run_accession` (= `assay name`), with the `samples` list linking to sample accessions, labels, and replicate numbers, to produce `run.parquet`
-5. **Parse ontology terms** -- instrument, enzyme, modification parameter cells are parsed into `ONTOLOGY_TERM` structs
-6. **Preserve provenance** -- the original `.sdrf.tsv` file is kept alongside the Parquet files
+5. **Parse ontology terms** -- instrument, enzyme, dissociation and acquisition cells become plain strings on the run, and their resolved terms go to `additional_terms`
+6. **Preserve provenance** -- the SDRF the conversion was given is copied to `{prefix}.sdrf.tsv`, and its SHA-256 is recorded in `provenance.parquet`
+
+A blank required `organism` or `organism_part` is written as `not available` with a warning, so one incomplete row does not lose the views. Run-level `comment[...]` columns that have no QPX field stay available in the SDRF copy.
 
 ### Project Layout
 

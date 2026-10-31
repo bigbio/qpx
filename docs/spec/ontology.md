@@ -28,6 +28,10 @@ Fields without a CV mapping and tool-specific scores without an ontology accessi
 
 The CV versions declared by an input file describe that producer's vocabulary. They must not replace the version of a different ontology resource used by QPX to resolve an output mapping.
 
+A row describes a name the view emits: a column, a score, a CV parameter or an additional intensity. Converters reconcile the rows with the written files, dropping rows for names that were never written and adding rows for emitted scores, CV parameters, intensity names and CV-mapped columns without one (with a null accession when no term exists). `qpxc validate` warns with `ontology_unknown_field` on a row that names nothing its view emits.
+
+Values are not fields. The term of a value such as an instrument model is in `run.additional_terms`, whose `properties` name the field it resolves (`{"key": "field", "value": "instrument"}`) and the SDRF value (`{"key": "sdrf_value", "value": "Lumos"}`).
+
 !!! note "Primary key"
     Rows are unique on `(field_name, view)`. Converters collapse duplicates
     (first-wins) when the same field is accumulated both as a discovered score

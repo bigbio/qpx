@@ -91,14 +91,15 @@ class BaseOrchestrator:
         prefix: str,
         ontology_entries: list[dict],
     ) -> Path | None:
-        """Write combined ontology.parquet. Returns path if written, else None."""
-        if not ontology_entries:
-            return None
-        from qpx.converters.ontology_util import dedupe_ontology_entries
+        """Write ontology.parquet for the views already written. Returns path if written, else None."""
+        from qpx.converters.ontology_util import dedupe_ontology_entries, reconcile_ontology_entries
         from qpx.writers.ontology import OntologyWriter
 
-        entries = dedupe_ontology_entries(ontology_entries)
-        dropped = len(ontology_entries) - len(entries)
+        deduped = dedupe_ontology_entries(ontology_entries)
+        dropped = len(ontology_entries) - len(deduped)
+        entries = reconcile_ontology_entries(deduped, output_folder, prefix)
+        if not entries:
+            return None
         onto_path = output_folder / f"{prefix}.ontology.parquet"
         with OntologyWriter(onto_path, creator="qpx", compression=self._compression) as writer:
             writer.write_batch(entries)

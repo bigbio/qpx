@@ -59,5 +59,6 @@ def test_run_versions_use_the_loaded_resource(loaded_ms_version, tmp_path):
         entries = converter.run_ontology_entries()
 
     assert len(entries) == 1
-    assert entries[0]["ontology_accession"] == "MS:1001251"
+    assert entries[0]["field_name"] == "enzymes"
+    assert entries[0]["ontology_accession"] == "MS:1001045"
     assert entries[0]["ontology_version"] == loaded_ms_version

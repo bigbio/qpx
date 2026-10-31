@@ -10,7 +10,7 @@ import click
 from qpx.converters.openms import OpenMSConverter
 
 from .options import _compression_option, _openms_project_accession_option, _verbose_option
-from .postprocess import _maybe_enrich_pride
+from .postprocess import _maybe_enrich_pride, _preserve_sdrf, _record_conversion_options
 
 
 @click.command("openms", deprecated=True)
@@ -115,6 +115,8 @@ def convert_openms_cmd(**kwargs):
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
 
+    _preserve_sdrf(output_folder, output_prefix)
+    _record_conversion_options(output_folder, output_prefix)
     _maybe_enrich_pride(output_folder, project_accession, enrich_pride, output_prefix)
 
     click.echo(f"OpenMS QPX enrichment complete. Output: {output_folder}")

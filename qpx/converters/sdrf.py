@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
+from functools import cached_property
 from pathlib import Path
 
 import pandas as pd
@@ -16,6 +17,8 @@ import pandas as pd
 from qpx.converters.base import BaseConverter
 from qpx.converters.channel_labels import normalize_label
 from qpx.core.files import run_file_stem
+from qpx.core.ontology import PublicOntology
+from qpx.core.scores import field_ontology_entries
 from qpx.core.sdrf import get_name_from_complex_sdrf_value, parse_sdrf_kv, validate_sdrf_data_files
 from qpx.writers.run import RunWriter
 from qpx.writers.sample import SampleWriter
@@ -71,6 +74,20 @@ _COL_DISSOC = "comment[dissociation method]"
 _COL_ACQUISITION = "comment[proteomics data acquisition method]"
 _COL_MOD_PARAM = "comment[modification parameter"  # prefix, may have ]s suffix
 
+# Sample fields the schema requires; a blank value becomes "not available" rather than losing the views
+_REQUIRED_SAMPLE_FIELDS = {
+    "organism": _COL_ORGANISM,
+    "organism_part": _COL_ORGANISM_PART,
+}
+
+# Run fields whose SDRF values are ontology terms
+_RUN_TERM_COLUMNS = {
+    "instrument": _COL_INSTRUMENT,
+    "enzymes": _COL_ENZYME,
+    "dissociation_method": _COL_DISSOC,
+    "acquisition_method": _COL_ACQUISITION,
+}
+
 
 def _extract_nt(value: str) -> str:
     """Extract the ``NT=`` name from a complex SDRF value."""
@@ -122,12 +139,12 @@ def _all_sentinels(sdrf_df: pd.DataFrame, col_pattern: str) -> bool:
 
 
 def _normalize_char_name(sdrf_col: str) -> str:
-    """Convert an SDRF ``characteristics[X]`` column name to snake_case.
+    """Convert an SDRF ``characteristics[X]`` or ``factor value[X]`` column name to snake_case.
 
     Example: ``characteristics[biological replicate]`` -> ``biological_replicate``
     """
     # Extract the name inside brackets
-    m = re.match(r"characteristics\[(.+)\]", sdrf_col)
+    m = re.match(r"(?:characteristics|factor value)\[(.+)\]", sdrf_col)
     name = m.group(1) if m else sdrf_col
     # Convert to snake_case
     name = re.sub(r"[^a-z0-9]+", "_", name.lower().strip())
@@ -160,12 +177,6 @@ def _add_unique_run_label(
 
 def _sample_characteristic_maps(sdrf_df: pd.DataFrame, skip_empty_properties: bool) -> tuple[dict, dict]:
     """Resolve standard and extra sample characteristic columns."""
-    # Required fields — always written
-    _required_fields = {
-        "organism": _COL_ORGANISM,
-        "organism_part": _COL_ORGANISM_PART,
-    }
-
     # Optional fields — only written when SDRF has meaningful values
     _optional_fields = {
         "disease": _COL_DISEASE,
@@ -186,12 +197,12 @@ def _sample_characteristic_maps(sdrf_df: pd.DataFrame, skip_empty_properties: bo
         active_optional[field_name] = col_pattern
 
     # Combine into the full char_map for per-sample extraction
-    char_map = {**_required_fields, **active_optional}
+    char_map = {**_REQUIRED_SAMPLE_FIELDS, **active_optional}
 
     # Discover extra characteristics columns not in the standard set
     # biological replicate belongs in run.parquet, not sample.parquet
     known_prefixes = (
-        set(_required_fields.values())
+        set(_REQUIRED_SAMPLE_FIELDS.values())
         | set(_optional_fields.values())
         | {
             "characteristics[sample description",
@@ -205,6 +216,9 @@ def _sample_characteristic_maps(sdrf_df: pd.DataFrame, skip_empty_properties: bo
     extra_col_map: dict[str, list[str]] = {}
     for col in extra_char_cols:
         extra_col_map.setdefault(_normalize_char_name(col), []).append(col)
+    for col in sdrf_df.columns:
+        if col.startswith("factor value["):
+            extra_col_map.setdefault(f"factor_{_normalize_char_name(col)}", []).append(col)
     return char_map, extra_col_map
 
 
@@ -249,15 +263,11 @@ def _run_samples(group: pd.DataFrame, run_file: str) -> list[dict]:
     return samples
 
 
-def _run_term(group: pd.DataFrame, column: str, terms: set[tuple[str, str]]) -> str | None:
-    """Extract one run term and collect its ontology accession."""
-    name = None
-    values = _collect_column_values(group, column)
-    if values:
-        name = _extract_nt(str(values[0]))
-        if name:
-            terms.add((name, _extract_ac(str(values[0]))))
-    return name
+def _term_pairs(group: pd.DataFrame, column: str) -> list[tuple[str, str]]:
+    """Return the ``(name, accession)`` pairs of a run's SDRF term column, in file order."""
+    values = [str(value) for value in _collect_column_values(group, column) if pd.notna(value)]
+    pairs = ((_extract_nt(value), _extract_ac(value)) for value in values)
+    return [pair for pair in pairs if pair[0]]
 
 
 class SdrfConverter(BaseConverter):
@@ -275,10 +285,9 @@ class SdrfConverter(BaseConverter):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        # Track unique run metadata values for ontology enrichment
-        self._run_instruments: set[tuple[str, str]] = set()
-        self._run_enzymes: set[tuple[str, str]] = set()
-        self._run_dissociation: set[tuple[str, str]] = set()
+        # Run fields that hold values, and the SDRF column each came from, for the ontology view
+        self._run_field_sources: dict[str, str] = {}
+        self._term_cache: dict[tuple[str, str], tuple[str, str] | None] = {}
 
     def convert(
         self,
@@ -355,6 +364,10 @@ class SdrfConverter(BaseConverter):
             for field_name, col_pattern in char_map.items():
                 vals = _collect_column_values(group, col_pattern)
                 rec[field_name] = _join_values(vals)
+            blank = [field for field in _REQUIRED_SAMPLE_FIELDS if not rec[field]]
+            for field_name in blank:
+                self.logger.warning("Sample %s has no %s in the SDRF; writing 'not available'", sample_name, field_name)
+                rec[field_name] = "not available"
 
             # Free-text description
             desc_col = "characteristics[sample description"
@@ -432,7 +445,7 @@ class SdrfConverter(BaseConverter):
         self.logger.info(f"Wrote {len(records)} runs to {output_path}")
 
     def _run_acquisition_fields(self, group: pd.DataFrame) -> dict:
-        """Extract acquisition fields and collect their ontology terms."""
+        """Extract acquisition fields as plain strings, with their resolved terms in ``additional_terms``."""
         # Fraction
         fraction = None
         if _COL_FRACTION in group.columns:
@@ -440,78 +453,66 @@ class SdrfConverter(BaseConverter):
             if len(frac_vals) > 0:
                 fraction = str(frac_vals[0])
 
-        # Instrument (plain string; CV mapping in ontology.parquet)
-        instrument = _run_term(group, _COL_INSTRUMENT, self._run_instruments)
+        pairs = {field: _term_pairs(group, column) for field, column in _RUN_TERM_COLUMNS.items()}
+        for field, values in pairs.items():
+            if values:
+                self._run_field_sources[field] = _RUN_TERM_COLUMNS[field]
 
-        # Enzymes (list of plain strings)
-        enzymes = None
-        enz_vals = _collect_column_values(group, _COL_ENZYME)
-        if enz_vals:
-            enzyme_pairs = [(_extract_nt(str(v)), _extract_ac(str(v))) for v in enz_vals if pd.notna(v)]
-            enzymes = [name for name, _ in enzyme_pairs]
-            self._run_enzymes.update(pair for pair in enzyme_pairs if pair[0])
-
-        # Dissociation method (plain string)
-        dissoc = _run_term(group, _COL_DISSOC, self._run_dissociation)
-
-        # Acquisition method (plain string; e.g. DDA / DIA)
-        acquisition_method = None
-        acq_vals = _collect_column_values(group, _COL_ACQUISITION)
-        if acq_vals:
-            acquisition_method = _extract_nt(str(acq_vals[0])) or None
+        def first(field: str) -> str | None:
+            return pairs[field][0][0] if pairs[field] else None
 
         return {
             "fraction": fraction,
-            "instrument": instrument,
-            "enzymes": enzymes,
-            "dissociation_method": dissoc,
-            "acquisition_method": acquisition_method,
+            "instrument": first("instrument"),
+            "enzymes": [name for name, _ in pairs["enzymes"]] or None,
+            "dissociation_method": first("dissociation_method"),
+            "acquisition_method": first("acquisition_method"),
+            "additional_terms": self._additional_terms(pairs) or None,
         }
 
     # ------------------------------------------------------------------
     # Ontology enrichment — resolve run metadata to CV accessions
     # ------------------------------------------------------------------
 
-    def run_ontology_entries(self) -> list[dict]:
-        """Generate ontology.parquet entries for run metadata terms.
+    @cached_property
+    def _psi_ms(self) -> PublicOntology:
+        """The PSI-MS vocabulary, loaded once per conversion."""
+        return PublicOntology("psi_ms", auto_update=False)
 
-        Resolves instrument, enzyme, and dissociation method terms to
-        PSI-MS CV accessions using ``PublicOntology``. The SDRF ``AC=``
-        accession takes precedence over the ``NT=`` name.
+    def _resolve_term(self, name: str, accession: str) -> tuple[str, str] | None:
+        """Resolve an SDRF term to ``(accession, name)``, trying the ``AC=`` accession before the ``NT=`` name.
+
+        A PSI-MS accession must exist in the vocabulary. An accession of another
+        ontology cannot be checked here, so it is kept with the SDRF's name.
         """
-        from qpx.core.ontology import PublicOntology
+        key = (name, accession)
+        if key not in self._term_cache:
+            term = (self._psi_ms.lookup(accession) if accession else None) or self._psi_ms.lookup_name(name)
+            if term is not None:
+                self._term_cache[key] = (term["accession"], term["name"])
+            else:
+                self._term_cache[key] = (accession, name) if accession and not accession.startswith("MS:") else None
+        return self._term_cache[key]
 
-        ms = PublicOntology("psi_ms", auto_update=False)
+    def _additional_terms(self, pairs: dict[str, list[tuple[str, str]]]) -> list[dict]:
+        """Build the run's ontology terms; ``properties`` names the plain field each one resolves."""
+        terms = []
+        for field, values in pairs.items():
+            for name, accession in values:
+                resolved = self._resolve_term(name, accession)
+                if resolved is not None:
+                    terms.append(
+                        {
+                            "accession": resolved[0],
+                            "name": resolved[1],
+                            "properties": [{"key": "field", "value": field}, {"key": "sdrf_value", "value": name}],
+                        }
+                    )
+        return terms
 
-        entries: list[dict] = []
-        seen: set[str] = set()
-
-        # A name with an accession sorts before the same name without one, so the accession is tried first.
-        run_terms = self._run_instruments | self._run_enzymes | self._run_dissociation
-        for name, accession in sorted(run_terms, key=lambda term: (term[0], not term[1], term[1])):
-            if not name or name in seen:
-                continue
-
-            term = ms.lookup(accession) if accession else None
-            if term is None:
-                term = ms.lookup_name(name)
-            if term is None:
-                continue
-            seen.add(name)
-
-            entries.append(
-                {
-                    "field_name": name,
-                    "ontology_name": term["name"],
-                    "ontology_accession": term["accession"],
-                    "ontology_source": term["source"],
-                    "ontology_version": ms.version if ms.version != "unknown" else None,
-                    "view": "run",
-                    "description": term["definition"],
-                }
-            )
-
-        return entries
+    def run_ontology_entries(self) -> list[dict]:
+        """Return ontology rows for the run fields this SDRF filled; their values resolve in ``additional_terms``."""
+        return field_ontology_entries(view="run", resolved_mappings=self._run_field_sources, tool_name="SDRF")
 
     # ------------------------------------------------------------------
     # Modification parsing

@@ -26,6 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `BaseWriter.write_partitioned(mode=..., identity_composite=...)`: `"error"` (default), `"append"` or `"replace_partitions"`. `FeatureWriter.derive_ids()` returns the ids a writer would derive. `qpxc transform quantify --feature-path` accepts a directory partitioned by `run_file_name`.
 - `qpxc validate` reports a directory without QPX views, and a dataset view with more than one row, as errors.
 
+- `qpxc convert` records provenance of the conversion itself: the effective options in the `parameters` of the `format_conversion` step (`qvalue_threshold` is `none` when unset) and the SHA-256 of each input file. It copies the SDRF to `{prefix}.sdrf.tsv`, as the specification always promised.
+- `factor value[X]` SDRF columns are written as `factor_X` columns of the sample view, and `qpxc transform quantify --factor X` chooses the condition. Several factors without a choice now warn; the first column used to be taken silently.
+- `run.additional_terms` holds the resolved ontology term of each instrument, enzyme, dissociation and acquisition value, per run.
+- `qpxc validate` warns (`ontology_unknown_field`) on an ontology row naming nothing its view emits.
+
 ### Changed
 
 - **Specification 1.3: canonical peptidoform.** Converters write fixed modifications and labels inline, `UNIMOD:n` accessions and signed four-decimal mass shifts (no `CHEMMOD:`), and `calculated_mz` is the theoretical m/z of the peptidoform. MaxQuant peptidoforms now carry the fixed modifications from the SDRF (`MT=fixed`) or `parameters.txt` and the isobaric label implied by the SDRF channels. `feature_id`/`psm_id` change for affected rows.
@@ -38,6 +43,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`convert maxquant` reads its SDRF before writing anything** — an SDRF whose labels match no plex now fails before `sample`, `run` and `psm` are written.
 
 ### Fixed
+
+- **The ontology view describes what was written.** Rows for names never written (`cscore` next to the emitted `diann_cscore`) are gone, emitted scores, CV names and intensity names get rows (an mzIdentML pg view had none), and SDRF values no longer appear as `field_name`. Wrong terms are corrected: `observed_mz` was MS:1001475 (OMSSA), `calculated_mz` MS:1001234, `intensity` MS:1002498.
+- A blank `organism` or `organism_part` in an SDRF writes `not available` with a warning; it used to discard both the sample and the run view.
 
 - **`DatasetCollection.merge` double-counted overlapping datasets.** Two analyses of the same runs gave a merged design matrix about twice as large and generic sample names collapsed into one row. A merge now refuses datasets that share a run, a sample or a primary key unless `on_collision` says how to treat them. It writes one `dataset` row, numbers `provenance` through and keeps one `ontology` row per key, so the output validates; before, every default merge was invalid.
 - **`merge` read every dataset into memory and dropped all footers.** It now streams through the QPX writers (row groups of the writer, within the memory limit of the collection), and footers keep the identity composite, with one file per composite when the datasets differ. `source_dataset` is the project accession or directory name rather than a path. Views left out by default, and a requested view that a dataset lacks, are named in a warning; an unknown structure or an empty result raises.
