@@ -33,9 +33,10 @@ tool produced it:
 5. A modification whose position is unknown, such as the mass shift of an open
    search that is not localized to one residue, comes first and ends with a
    question mark: `[+129.0804]?[UNIMOD:1]-PEPTIDE`.
-6. A glycan is written as its mass, `N[+1864.6342]`, so every reader can parse
-   it. Its composition, when the producer reports one, is the name of its
-   entry in `modifications` (`Glycan:HexNAc2Hex9`).
+6. A glycan follows rule 2: its Unimod accession when one matches its mass and
+   residue (`N[UNIMOD:1531]`), otherwise its mass (`N[+2715.9624]`), so every
+   reader can parse it. Its composition, when the producer reports one, is the
+   name of its entry in `modifications` (`Glycan:HexNAc2Hex9`).
 7. `calculated_mz` is the theoretical m/z of the peptidoform at the reported
    charge whenever every modification in it has a known mass.
 

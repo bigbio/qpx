@@ -182,7 +182,7 @@ class CdapFeatureAdapter(CdapBaseAdapter):
 
         observed_mz = self._finite_float(row.get("best_observed_mz"))
         # ``calculated_mz`` is a THEORETICAL mass. When the peptidoform carries
-        # an unparseable token (e.g. a CHEMMOD unknown-mass tag), keep it NULL
+        # an unparseable token (e.g. a name without a known mass), keep it NULL
         # rather than falling back to a measured precursor m/z, which would
         # silently corrupt the theoretical-mass semantics (bigbio/qpx#250).
         calculated_mz = self._calculated_mz(peptidoform, charge)

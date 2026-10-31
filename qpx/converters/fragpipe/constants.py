@@ -5,7 +5,16 @@ from __future__ import annotations
 import re
 from functools import lru_cache
 
-from qpx.converters.ptm import PROTON_MASS, build_proforma, compute_precursor_mz, format_mass_shift, from_proforma, mass_to_unimod
+from qpx.converters.ptm import (
+    PROTON_MASS,
+    build_proforma,
+    compute_precursor_mz,
+    format_mass_shift,
+    from_proforma,
+    mass_tag,
+    parse_unimod_delta,
+    position_site,
+)
 from qpx.converters.utils import parse_uniprot_id
 
 # ---------------------------------------------------------------------------
@@ -55,6 +64,30 @@ def protein_accessions(*fields: object) -> list[str]:
 _FP_MOD_TOKEN_RE = re.compile(r"(?:(\d+)([A-Z])|([NC]-term))\(([^)]+)\)")
 
 
+def _token_modification(token: str, sequence: str) -> tuple[int, str] | None:
+    """Position and ProForma tag of one Assigned Modifications token, or ``None`` if unparseable.
+
+    The mass is resolved to a Unimod accession at the token's residue or terminus
+    (see :func:`qpx.converters.ptm.mass_to_unimod`); a mass without a Unimod
+    entry there is kept as the signed mass.
+    """
+    m = _FP_MOD_TOKEN_RE.match(token.strip())
+    if not m:
+        return None
+    pos_str, _aa, terminus, mass_str = m.groups()
+    try:
+        mass = float(mass_str)
+    except ValueError:
+        return None
+    if terminus == "N-term":
+        position = 0
+    elif terminus == "C-term":
+        position = len(sequence) + 1
+    else:
+        position = int(pos_str)
+    return position, mass_tag(mass, *position_site(sequence, position))
+
+
 @lru_cache(maxsize=8192)
 def to_proforma(assigned_mods: str, sequence: str) -> str:
     """Build ProForma from a FragPipe sequence and Assigned Modifications string.
@@ -71,38 +104,7 @@ def to_proforma(assigned_mods: str, sequence: str) -> str:
         return ""
     if not assigned_mods or not assigned_mods.strip():
         return sequence
-
-    mods: list[tuple[int, str]] = []
-
-    for token in assigned_mods.split(","):
-        token = token.strip()
-        if not token:
-            continue
-
-        m = _FP_MOD_TOKEN_RE.match(token)
-        if not m:
-            continue
-
-        pos_str, aa, terminus, mass_str = m.groups()
-        try:
-            mass = float(mass_str)
-        except ValueError:
-            continue
-
-        nterm = terminus == "N-term"
-        unimod_id = mass_to_unimod(mass, residue=aa or (sequence[0] if nterm else None), nterm=nterm)
-        tag = f"UNIMOD:{unimod_id}" if unimod_id is not None else format_mass_shift(mass)
-
-        if terminus == "N-term":
-            position = 0
-        elif terminus == "C-term":
-            position = len(sequence) + 1
-        elif pos_str is not None:
-            position = int(pos_str)
-        else:
-            continue
-        mods.append((position, tag))
-
+    mods = [mod for token in assigned_mods.split(",") if (mod := _token_modification(token, sequence)) is not None]
     return build_proforma(sequence, mods)
 
 
@@ -180,7 +182,9 @@ _GLYCAN_MASS_TOL = 0.001
 def name_glycan(modifications: list[dict] | None, composition: object) -> list[dict] | None:
     """Name the modification that holds a glycan's mass after its ProForma composition, ``Glycan:HexNAc2Hex9``.
 
-    The input list comes from the ``from_proforma`` cache and is not changed.
+    The modification is found by mass, whether the peptidoform holds it as a mass or
+    a Unimod accession. The input list comes from the ``from_proforma`` cache and is
+    not changed.
     """
     match = _GLYCAN_COMPOSITION_RE.fullmatch(composition) if isinstance(composition, str) else None
     if not match or not modifications:
@@ -188,8 +192,7 @@ def name_glycan(modifications: list[dict] | None, composition: object) -> list[d
     name = "Glycan:" + "".join(f"{residue}{count}" for residue, count in _GLYCAN_RESIDUE_RE.findall(match.group(1)))
     mass = float(match.group(2))
     return [
-        {**mod, "name": name} if mod["accession"] is None and abs(float(mod["name"]) - mass) <= _GLYCAN_MASS_TOL else mod
-        for mod in modifications
+        {**mod, "name": name} if abs(parse_unimod_delta(mod["name"]) - mass) <= _GLYCAN_MASS_TOL else mod for mod in modifications
     ]
 
 

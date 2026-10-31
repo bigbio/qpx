@@ -7,16 +7,25 @@ import re
 from functools import lru_cache
 from typing import Optional
 
-from qpx.converters.ptm import NTERM, build_proforma, compute_precursor_mz, unimod_from_name
+from qpx.converters.ptm import (
+    NTERM,
+    build_proforma,
+    compute_precursor_mz,
+    modification_tag,
+    name_to_unimod,
+    position_site,
+    split_modified_sequence,
+    vendor_position,
+)
 
 PROTON_MASS: float = 1.007_276_466_77
 
 # ---------------------------------------------------------------------------
-# MaxQuant modification name -> UNIMOD accession mapping
+# MaxQuant modification names
 # ---------------------------------------------------------------------------
 
-# Older MaxQuant versions abbreviate modifications in "Modified sequence"; full
-# names such as "Oxidation (M)" resolve through :func:`unimod_from_name`.
+# Short forms of older MaxQuant versions. Full names (``Oxidation (M)``) are
+# resolved through Unimod by :func:`qpx.converters.ptm.modification_tag`.
 MQ_SHORT_TO_UNIMOD: dict[str, int] = {
     "ox": 35,
     "ac": 1,
@@ -27,21 +36,16 @@ MQ_SHORT_TO_UNIMOD: dict[str, int] = {
 }
 
 
-def _resolve_mq_mod(tag: str) -> str:
-    """Resolve a MaxQuant modification name to ``UNIMOD:N`` or return as-is.
+def _resolve_mq_mod(tag: str, residue: Optional[str] = None, terminus: Optional[str] = None) -> str:
+    """Resolve a MaxQuant modification name at *residue* / *terminus* to a ProForma tag.
 
-    Handles full names (``Oxidation (M)``), short forms (``ac``),
-    and already-resolved ``UNIMOD:`` prefixes.
+    Handles short forms (``ac``), full names (``Oxidation (M)``, ``GlyGly (K)``),
+    ``UniMod:N`` accessions and signed masses; an unknown name is kept as a name.
     """
-    m = re.match(r"(?i)unimod:(\d+)", tag)
-    if m:
-        return f"UNIMOD:{m.group(1)}"
-
-    uid = MQ_SHORT_TO_UNIMOD.get(tag.lower()) or unimod_from_name(tag)
+    uid = MQ_SHORT_TO_UNIMOD.get(tag.lower())
     if uid is not None:
         return f"UNIMOD:{uid}"
-
-    return tag
+    return modification_tag(tag, residue, terminus)
 
 
 FixedMods = tuple[tuple[str, str], ...]
@@ -67,7 +71,7 @@ def sdrf_fixed_mods(entries: Optional[list[dict]]) -> FixedMods:
         if not entry["fixed"]:
             continue
         accession = re.match(r"(?i)unimod:(\d+)$", entry["accession"] or "")
-        uid = int(accession.group(1)) if accession else unimod_from_name(entry["name"] or "")
+        uid = int(accession.group(1)) if accession else name_to_unimod(entry["name"] or "")
         if uid is None:
             continue
         position = (entry["position"] or "").strip().lower()
@@ -86,7 +90,7 @@ def _named_fixed_mods(names: str) -> FixedMods:
     fixed: list[tuple[str, str]] = []
     for name in names.strip().split(";"):
         match = re.match(r"(.+?)\s+\(([^()]*)\)$", name.strip())
-        uid = unimod_from_name(name) if match else None
+        uid = name_to_unimod(name) if match else None
         if uid is not None:
             fixed.extend((site, f"UNIMOD:{uid}") for site in _site_list(match.group(2)))
     return tuple(fixed)
@@ -178,6 +182,8 @@ def to_proforma(modified_sequence: Optional[str], fixed_mods: FixedMods = (), la
         _PEPTM(Oxidation (M))IDEK_         -> PEPTM[UNIMOD:35]IDEK
         _(Acetyl (Protein N-term))PEPTIDEK_ -> [UNIMOD:1]-PEPTIDEK
         _(ac)PEPTIDEK_                      -> [UNIMOD:1]-PEPTIDEK
+        _PEPK(GlyGly (K))R_                 -> PEPK[UNIMOD:121]R
+        _PEPK(Amidated (Protein C-term))_   -> PEPK-[UNIMOD:2]
 
     *fixed_mods* (``(site, tag)`` pairs) are written inline, since MaxQuant
     omits fixed modifications and isobaric labels from the sequence. The SILAC
@@ -186,41 +192,13 @@ def to_proforma(modified_sequence: Optional[str], fixed_mods: FixedMods = (), la
     """
     if not isinstance(modified_sequence, str) or not modified_sequence:
         return ""
-
-    seq = modified_sequence.strip("_")
-    if not seq:
-        return ""
-
-    mods: list[tuple[int, str]] = []
-    plain_chars: list[str] = []
-    i = 0
-    n = len(seq)
-    seq_pos = 0
-
-    while i < n:
-        if seq[i] == "(":
-            # Walk forward tracking parenthesis depth to handle nested parens
-            depth = 1
-            j = i + 1
-            while j < n and depth > 0:
-                if seq[j] == "(":
-                    depth += 1
-                elif seq[j] == ")":
-                    depth -= 1
-                j += 1
-            mod_name = seq[i + 1 : j - 1]
-            tag = _resolve_mq_mod(mod_name)
-            position = 0 if seq_pos == 0 else seq_pos
-            mods.append((position, tag))
-            i = j
-        else:
-            plain_chars.append(seq[i])
-            seq_pos += 1
-            i += 1
-
-    plain_seq = "".join(plain_chars)
-    labels = [(position, tag) for position, aa in enumerate(plain_seq, start=1) for site, tag in label_mods if site == aa]
-    return build_proforma(plain_seq, labels + _with_fixed_mods(plain_seq, mods, fixed_mods))
+    sequence, mods = split_modified_sequence(modified_sequence.strip("_"))
+    tags: list[tuple[int, str]] = []
+    for position, name in mods:
+        position = vendor_position(name, position, sequence)
+        tags.append((position, _resolve_mq_mod(name, *position_site(sequence, position))))
+    labels = [(position, tag) for position, aa in enumerate(sequence, start=1) for site, tag in label_mods if site == aa]
+    return build_proforma(sequence, labels + _with_fixed_mods(sequence, tags, fixed_mods))
 
 
 def mq_calculated_mz(peptidoform: Optional[str], charge: int, neutral_mass: Optional[float]) -> Optional[float]:

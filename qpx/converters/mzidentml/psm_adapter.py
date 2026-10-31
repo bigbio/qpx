@@ -133,7 +133,9 @@ class MzIdentMLPsmAdapter(BaseConverter):
             mod_accession = cv.get("accession")
             break  # Take first cvParam as the mod identity
         residue = sequence[location - 1] if 0 < location <= len(sequence) else None
-        tag = canonical_mod_tag(mod_accession, mod_name, float(mass_text) if mass_text else None, residue, location == 0)
+        mass = float(mass_text) if mass_text else None
+        terminus = "N" if location == 0 else "C" if location > len(sequence) else None
+        tag = canonical_mod_tag(mod_accession, mod_name, mass, residue, terminus)
         head = tag.split("|", 1)[0]
         is_unimod = head.startswith("UNIMOD:")
         return {
