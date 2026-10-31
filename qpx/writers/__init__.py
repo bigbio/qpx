@@ -3,6 +3,7 @@
 from qpx.writers.base import BaseWriter
 from qpx.writers.dataset import DatasetWriter
 from qpx.writers.feature import FeatureWriter
+from qpx.writers.fragment import FragmentWriter
 from qpx.writers.mz import MzWriter
 from qpx.writers.ontology import OntologyWriter
 from qpx.writers.pepmap import PepMapWriter
@@ -28,6 +29,7 @@ __all__ = [
     "ProvenanceWriter",
     "PepMapWriter",
     "SiteWriter",
+    "FragmentWriter",
     "ProteinWriter",
     "ProteoformWriter",
 ]

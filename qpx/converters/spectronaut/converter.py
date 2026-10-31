@@ -54,6 +54,7 @@ class SpectronautConverter(BaseOrchestrator):
         qvalue_threshold=None,
         output_folder=".",
         output_prefix=None,
+        fragments=False,
     ):
         """Convert Spectronaut features to feature.parquet."""
         output_folder = Path(output_folder)
@@ -72,6 +73,8 @@ class SpectronautConverter(BaseOrchestrator):
             self._ontology_entries.extend(score_ontology_entries(adapter.get_discovered_scores(), view=FEATURE))
             cols = adapter.get_table_columns("report")
             self._resolved_mappings_by_view[FEATURE] = resolve_columns(get_field_mappings("spectronaut", "feature"), cols)
+            if fragments:
+                adapter.write_fragments(str(output_folder / f"{prefix}.fragment.parquet"))
         logger.info("Spectronaut feature conversion complete")
 
     def convert_pg(

@@ -38,6 +38,7 @@ def _write_diann_views(converter, options: dict, prefix: str) -> None:
         qvalue_threshold=qvalue_threshold,
         output_folder=output_folder,
         output_prefix=output_prefix,
+        fragments=options["fragments"],
     )
     converter.convert_pg(
         pg_matrix_path=pg_matrix_path,
@@ -87,6 +88,7 @@ def _write_diann_views(converter, options: dict, prefix: str) -> None:
     type=float,
 )
 @_output_folder_option
+@click.option("--fragments", is_flag=True, help="Also write Fragment.Quant.* as the fragment view")
 @_output_prefix_option
 @click.option(
     "--pg-matrix-path",

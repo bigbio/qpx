@@ -5,6 +5,7 @@
 from qpx.core.data.base import BaseStructure
 from qpx.core.data.dataset import DatasetMeta, DatasetSchema
 from qpx.core.data.feature import Feature, FeatureSchema
+from qpx.core.data.fragment import Fragment, FragmentSchema
 from qpx.core.data.loader import load_schema
 from qpx.core.data.mz import MzSchema, MzSpectra
 from qpx.core.data.ontology import Ontology, OntologySchema
@@ -39,6 +40,8 @@ __all__ = [
     "Provenance",
     "PepMap",
     "Site",
+    "Fragment",
+    "FragmentSchema",
     "Protein",
     "ProteinSchema",
     "Proteoform",

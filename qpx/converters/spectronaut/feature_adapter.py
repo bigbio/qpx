@@ -18,10 +18,12 @@ import pyarrow as pa
 
 from qpx.converters.base import resolve_columns
 from qpx.converters.channel_labels import read_sdrf_labels
+from qpx.converters.fragments import write_fragment_view
 from qpx.converters.localization import LOCALIZATION_SCORE, localize_modifications
 from qpx.converters.mappings import get_field_mappings
 from qpx.converters.spectronaut.base_adapter import SpectronautBaseAdapter
 from qpx.converters.spectronaut.constants import localization_sites, to_modifications, to_proforma
+from qpx.converters.spectronaut.fragments import fragment_sql
 from qpx.converters.spectronaut.report_layout import channel_columns, channel_labels
 from qpx.converters.utils import pg_accessions_array
 from qpx.core.constants import FEATURE
@@ -172,6 +174,19 @@ class SpectronautFeatureAdapter(SpectronautBaseAdapter):
                     writer.write_table(table)
 
         self.logger.info("Spectronaut feature conversion complete -> %s", output_path)
+
+    def write_fragments(self, output_path: str) -> bool:
+        """Write the report's fragment rows as the fragment view; False when it has none."""
+        report_cols = self._get_report_columns()
+        sql = fragment_sql(self._resolved, report_cols, labelled=bool(self._label_columns))
+        if sql is None:
+            self.logger.warning("The report has no F.FrgIon or F.PeakArea column: no fragment view")
+            return False
+        rows = write_fragment_view(
+            self._conn, sql, output_path, _FEATURE_IDENTITY_COMPOSITE, creator="spectronaut", compression=self._compression
+        )
+        self.logger.info("Wrote %d fragment rows to %s", rows, output_path)
+        return True
 
     # ------------------------------------------------------------------
     # Data loading helpers

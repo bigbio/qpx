@@ -186,6 +186,17 @@ def feature_label_issues(engine) -> list[ValidationIssue]:
     return issues
 
 
+def fragment_link_issues(engine, severity: str) -> list[ValidationIssue]:
+    """Fragments that name a feature the feature view does not have."""
+    (count,) = engine.execute(
+        'SELECT count(*) FROM "fragment" v WHERE NOT EXISTS (SELECT 1 FROM feature f WHERE f.feature_id = v.feature_id)'
+    ).fetchall()[0]
+    if not count:
+        return []
+    message = f"{count} fragment row(s) have a feature_id that is not in the feature view"
+    return [_issue("fragment", "dangling_feature_id", severity, "feature_id", message)]
+
+
 def psm_label_issues(engine, severity: str) -> list[ValidationIssue]:
     """PSMs whose label is not among the identified labels of the feature they link to."""
     psm_columns = {row[0] for row in engine.execute('DESCRIBE "psm"').fetchall()}

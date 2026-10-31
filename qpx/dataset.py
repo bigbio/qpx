@@ -13,6 +13,7 @@ from qpx.core.data import (
     BaseStructure,
     DatasetMeta,
     Feature,
+    Fragment,
     MzSpectra,
     Ontology,
     PepMap,
@@ -50,7 +51,33 @@ def _require_local_directory(path: str | Path) -> None:
         raise FileNotFoundError(f"QPX dataset directory not found: {path}")
 
 
-class Dataset(_DatasetValidationMixin, _DatasetQueryMixin, _DatasetWriteMixin):
+class _OptionalViews:
+    """The views only some datasets have."""
+
+    _structures: dict
+
+    @property
+    def site(self) -> Site | None:
+        """The site view, or None when the dataset has no site.parquet."""
+        return self._structures.get("site")
+
+    @property
+    def fragment(self) -> Fragment | None:
+        """The fragment view, or None when the dataset has no fragment.parquet."""
+        return self._structures.get("fragment")
+
+    @property
+    def protein(self) -> Protein | None:
+        """The protein view, or None when the dataset has no protein.parquet."""
+        return self._structures.get("protein")
+
+    @property
+    def proteoform(self) -> Proteoform | None:
+        """The proteoform view, or None when the dataset has no proteoform.parquet."""
+        return self._structures.get("proteoform")
+
+
+class Dataset(_OptionalViews, _DatasetValidationMixin, _DatasetQueryMixin, _DatasetWriteMixin):
     """
     A QPX dataset — a directory of related Parquet/H5AD files.
 
@@ -78,6 +105,7 @@ class Dataset(_DatasetValidationMixin, _DatasetQueryMixin, _DatasetWriteMixin):
         "site": (Site, ".site.parquet"),
         "proteoform": (Proteoform, ".proteoform.parquet"),
         "protein": (Protein, ".protein.parquet"),
+        "fragment": (Fragment, ".fragment.parquet"),
     }
 
     @classmethod
@@ -281,21 +309,6 @@ class Dataset(_DatasetValidationMixin, _DatasetQueryMixin, _DatasetWriteMixin):
     @property
     def pepmap(self) -> PepMap | None:
         return self._structures.get("pepmap")
-
-    @property
-    def site(self) -> Site | None:
-        """The site view, or None when the dataset has no site.parquet."""
-        return self._structures.get("site")
-
-    @property
-    def protein(self) -> Protein | None:
-        """The protein view, or None when the dataset has no protein.parquet."""
-        return self._structures.get("protein")
-
-    @property
-    def proteoform(self) -> Proteoform | None:
-        """The proteoform view, or None when the dataset has no proteoform.parquet."""
-        return self._structures.get("proteoform")
 
     @property
     def available_structures(self) -> list[str]:

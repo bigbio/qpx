@@ -11,6 +11,7 @@ from qpx.collection import DatasetCollection
 
 # --- Data structure classes ---
 from qpx.core.data.feature import Feature
+from qpx.core.data.fragment import Fragment
 from qpx.core.data.mz import MzSpectra
 from qpx.core.data.pepmap import PepMap
 from qpx.core.data.pg import PG
@@ -28,6 +29,7 @@ from qpx.writers.dataset import DatasetWriter
 
 # --- Writing ---
 from qpx.writers.feature import FeatureWriter
+from qpx.writers.fragment import FragmentWriter
 from qpx.writers.mz import MzWriter
 from qpx.writers.ontology import OntologyWriter
 from qpx.writers.pepmap import PepMapWriter
@@ -48,6 +50,7 @@ __all__ = [
     "MzSpectra",
     "PepMap",
     "PG",
+    "Fragment",
     "Protein",
     "Proteoform",
     "PSM",
@@ -63,6 +66,7 @@ __all__ = [
     "OntologyWriter",
     "PepMapWriter",
     "PgWriter",
+    "FragmentWriter",
     "ProteinWriter",
     "ProteoformWriter",
     "ProvenanceWriter",

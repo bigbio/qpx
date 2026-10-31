@@ -31,7 +31,7 @@ QPX has no Skyline converter and no field for a spiked amount, and a heavy chann
 
 - Give the standard a channel and its own row in the `sample` view, `sample_accession` `SIS-1`, with `x_` or `factor_` columns for the amount and unit.
 - On the feature row, the heavy peptidoform's `cv_params` holds `spiked_amount`, `spiked_amount_unit` and `paired_peptidoform`, the endogenous peptide it stands for.
-- A transition's area has no home until a fragment view exists: keep them outside, or sum them into the precursor's `intensities`.
+- A transition's area is a row of the [fragment view](fragment.md).
 
 ## Curve fits: thermal profiling and dose response
 

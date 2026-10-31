@@ -65,6 +65,7 @@ class DiaNNConverter(BaseOrchestrator):
         qvalue_threshold=None,
         output_folder=".",
         output_prefix=None,
+        fragments=False,
     ):
         output_folder = Path(output_folder)
         prefix = output_prefix or "diann"
@@ -87,6 +88,8 @@ class DiaNNConverter(BaseOrchestrator):
             self._written_views.append(FEATURE)
             if adapter.write_pepmap(str(output_folder / f"{prefix}.pepmap.parquet")):
                 self._written_views.append(PEPMAP)
+            if fragments and adapter.write_fragments(str(output_folder / f"{prefix}.fragment.parquet"), qvalue_threshold):
+                self._written_views.append("fragment")
         logger.info("DIA-NN feature conversion complete")
 
     def convert_pg(

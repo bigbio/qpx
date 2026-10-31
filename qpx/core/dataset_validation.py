@@ -16,6 +16,7 @@ from qpx.core.label_validation import (
     dangling_run_issues,
     feature_label_issues,
     fraction_order_issues,
+    fragment_link_issues,
     grouped_run_sample_issues,
     psm_label_issues,
     skipped_check_reason,
@@ -352,8 +353,12 @@ class _DatasetValidationMixin:
                 self._cross_view_issues(results["feature"], "label-sample", partial(feature_label_issues, self._engine), strict)
             if "pg" in present:
                 self._cross_view_issues(results["pg"], "fraction order", partial(fraction_order_issues, self._engine), strict)
+        severity = "error" if strict else "warning"
+        if {"feature", "fragment"} <= present:
+            self._cross_view_issues(
+                results["fragment"], "fragment link", partial(fragment_link_issues, self._engine, severity), strict
+            )
         if {"feature", "psm"} <= present:
-            severity = "error" if strict else "warning"
             self._cross_view_issues(results["psm"], "psm label", partial(psm_label_issues, self._engine, severity), strict)
 
     @staticmethod

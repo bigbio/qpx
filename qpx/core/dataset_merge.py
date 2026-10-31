@@ -29,13 +29,14 @@ _RUN_VIEWS = {
     "feature": "run_file_name",
     "psm": "run_file_name",
     "mz": "run_file_name",
+    "fragment": "run_file_name",
     "run": "run_file_name",
     "pg": "unnest(grouped_runs)",
     "site": "unnest(grouped_runs)",
     "proteoform": "unnest(grouped_runs)",
 }
 # Namespacing: every id and every name that links rows of one source to each other.
-_NAMESPACED_IDS = ("feature_id", "psm_id", "pg_id", "site_id", "proteoform_id", "best_psm_id")
+_NAMESPACED_IDS = ("feature_id", "psm_id", "pg_id", "site_id", "proteoform_id", "best_psm_id", "fragment_id")
 _NAMESPACED_NAMES = ("run_file_name", "id_run_file_name", "quantification_unit_id", "run_accession", "sample_accession", "id")
 _ONTOLOGY_FIRST = ("ontology_name", "ontology_accession", "ontology_source", "ontology_version", "description")
 

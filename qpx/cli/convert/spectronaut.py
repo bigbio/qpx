@@ -45,6 +45,7 @@ from .postprocess import _finish_conversion
     type=float,
 )
 @_output_folder_option
+@click.option("--fragments", is_flag=True, help="Also write the report's F.* columns as the fragment view")
 @_output_prefix_option
 @_max_memory_option
 @_max_cpus_option
@@ -106,6 +107,7 @@ def convert_spectronaut_cmd(**kwargs):
             qvalue_threshold=qvalue_threshold,
             output_folder=output_folder,
             output_prefix=prefix,
+            fragments=kwargs["fragments"],
         )
     if PG in views:
         converter.convert_pg(

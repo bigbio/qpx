@@ -26,6 +26,8 @@ from qpx.converters.base import resolve_columns
 from qpx.converters.diann.base_adapter import BATCH_ROWS, DiaNNBaseAdapter, run_name_sql
 from qpx.converters.diann.constants import occupancy_sites, to_modifications, to_proforma
 from qpx.converters.diann.feature_sql import _SCORE_MAPPINGS, _build_batch_sql, build_pepmap_sql
+from qpx.converters.diann.fragment_sql import build_fragment_sql
+from qpx.converters.fragments import write_fragment_view
 from qpx.converters.localization import LOCALIZATION_SCORE, localize_modifications
 from qpx.converters.mappings import get_field_mappings
 from qpx.converters.utils import pg_accessions_array
@@ -83,6 +85,9 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
             )
     """
 
+    # The report column naming channels of a plexDIA report, read by write_fragments().
+    _channel_col: Optional[str] = None
+
     # Pepmap query of the converted runs, run by write_pepmap().
     _pepmap_query: str | None = None
 
@@ -123,6 +128,7 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
         decoy_col = self._resolved.get("decoy")
         has_decoy_col = decoy_col is not None
         channel_col = self._register_channel_labels(report_cols, sdrf_path)
+        self._channel_col = channel_col
 
         # 4. Pre-compute precursors: DuckDB temp table + Python modifications dict
         mods_lookup = self._register_precursor_lookup(
@@ -166,6 +172,18 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
                 writer.write_table(table)
 
         self.logger.info(f"DIA-NN feature conversion complete -> {output_path}")
+
+    def write_fragments(self, output_path: str, qvalue_threshold: Optional[float] = None) -> bool:
+        """Write the ``Fragment.Quant.*`` lists of the report as the fragment view; False when it has none."""
+        sql = build_fragment_sql(self._resolved, self._get_report_columns(), self._channel_col, qvalue_threshold)
+        if sql is None:
+            self.logger.warning("The report has no Fragment.Quant.Raw column: no fragment view")
+            return False
+        rows = write_fragment_view(
+            self._conn, sql, output_path, _FEATURE_IDENTITY_COMPOSITE, creator="diann", compression=self._compression
+        )
+        self.logger.info("Wrote %d fragment rows to %s", rows, output_path)
+        return True
 
     def write_pepmap(self, output_path: str, creator: str = "diann") -> bool:
         """Write the proteins each converted peptidoform maps to (``Protein.Ids``) as the pepmap view.
