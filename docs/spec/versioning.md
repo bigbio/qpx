@@ -60,6 +60,7 @@ This version defines all core serialized views (PSM, Feature, PG, MZ), the deriv
       theoretical m/z of that peptidoform. `feature_id` and `psm_id` hash the
       peptidoform, so they change wherever a 1.2 producer left fixed
       modifications out (MaxQuant) or spelled a modification differently.
+      A mass shift of unknown position is written `[+129.0804]?PEPTIDE`.
       Re-convert from the source files.
     - **Missing values.** An `intensities` entry may have a null `intensity`:
       the feature was identified in that label but not quantified

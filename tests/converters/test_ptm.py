@@ -326,3 +326,19 @@ def test_normalize_peptidoform(raw, canonical):
     from qpx.converters.ptm import normalize_peptidoform
 
     assert normalize_peptidoform(raw) == canonical
+
+
+def test_modification_of_unknown_position():
+    """ProForma ``[mod]?SEQ``: the mass counts, the modification lists no position, and the tag survives normalisation."""
+    from qpx.converters.ptm import normalize_peptidoform
+
+    peptidoform = "[+129.0804]?[UNIMOD:1]-PEPTM[UNIMOD:35]IDEK"
+    _, modifications = from_proforma(peptidoform, "PEPTMIDEK")
+    assert [(mod["name"], [pos["position"] for pos in mod["positions"]]) for mod in modifications] == [
+        ("+129.0804", []),
+        ("UNIMOD:1", [0]),
+        ("UNIMOD:35", [5]),
+    ]
+    bare = compute_precursor_mz("[UNIMOD:1]-PEPTM[UNIMOD:35]IDEK", 2)
+    assert compute_precursor_mz(peptidoform, 2) == pytest.approx(bare + 129.0804 / 2)
+    assert normalize_peptidoform(peptidoform) == peptidoform

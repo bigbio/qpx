@@ -12,9 +12,16 @@ from typing import NamedTuple, Optional
 import pandas as pd
 
 from qpx.converters.base import BaseConverter, resolve_columns
-from qpx.converters.fragpipe.constants import is_decoy_accession, protein_accessions, to_modifications, to_proforma
+from qpx.converters.fragpipe.constants import (
+    is_decoy_accession,
+    protein_accessions,
+    to_modifications,
+    to_proforma,
+    unassigned_mass_shift,
+)
 from qpx.converters.fragpipe.pg_adapter import normalize_run_name, require_label_free, resolve_experiment_runs
 from qpx.converters.mappings import get_field_mappings
+from qpx.converters.ptm import compute_precursor_mz
 from qpx.converters.utils import safe_float
 from qpx.core.sql import escape_path, sql_build
 from qpx.writers.feature import FeatureWriter
@@ -33,7 +40,9 @@ _PSM_LOOKUP_SQL = """
                 $pp_expr AS pp_prob,
                 CAST("Protein" AS VARCHAR) AS protein,
                 $im_expr AS ion_mobility,
-                $mc_expr AS missed_cleavages
+                $mc_expr AS missed_cleavages,
+                $mass_expr AS calculated_mass,
+                $delta_expr AS delta_mass
             FROM _fp_psm_lookup"""
 
 # Derive field map from central YAML mappings
@@ -47,7 +56,7 @@ _FEATURE_IDENTITY_COMPOSITE = (
 
 
 class _PsmInfo(NamedTuple):
-    """Fields a feature takes from its first PSM; tuples keep a million-PSM lookup small."""
+    """Fields a feature takes from its best PSM; tuples keep a million-PSM lookup small."""
 
     observed_mz: float | None
     calculated_mz: float | None
@@ -398,6 +407,11 @@ class FragPipeFeatureAdapter(BaseConverter):
         has_mc = "Number of Missed Cleavages" in actual_cols
         mc_expr = 'TRY_CAST("Number of Missed Cleavages" AS INTEGER)' if has_mc else "NULL"
 
+        # Mass shift of an open or mass-offset search
+        has_shift = {"Calculated Peptide Mass", "Delta Mass"} <= actual_cols
+        mass_expr = 'TRY_CAST("Calculated Peptide Mass" AS DOUBLE)' if has_shift else "NULL"
+        delta_expr = 'TRY_CAST("Delta Mass" AS DOUBLE)' if has_shift else "NULL"
+
         sql = sql_build(
             _PSM_LOOKUP_SQL,
             obs_expr=obs_expr,
@@ -405,6 +419,8 @@ class FragPipeFeatureAdapter(BaseConverter):
             pp_expr=pp_expr,
             im_expr=im_expr,
             mc_expr=mc_expr,
+            mass_expr=mass_expr,
+            delta_expr=delta_expr,
         )
         return sql
 
@@ -435,11 +451,16 @@ class FragPipeFeatureAdapter(BaseConverter):
             protein,
             ion_mobility,
             missed_cleavages_val,
+            calculated_mass,
+            delta_mass,
         ) = values
         source_file, scan_number = self._psm_source_scan(spectrum)
 
         sequence = str(sequence) if sequence else ""
         assigned_mods = str(assigned_mods) if assigned_mods else ""
+        # A PSM with an unassigned mass shift is another molecule than the ion.
+        if unassigned_mass_shift(assigned_mods, sequence, calculated_mass, delta_mass) is not None:
+            return
         peptidoform = to_proforma(assigned_mods, sequence)
         charge_str = str(charge) if charge is not None else "0"
 
@@ -452,7 +473,8 @@ class FragPipeFeatureAdapter(BaseConverter):
         if current is None or _psm_rank(pep, scan_number) < _psm_rank(current.pep, current.scan):
             lookup[key] = _PsmInfo(
                 observed_mz=float(obs_mz) if obs_mz is not None else None,
-                calculated_mz=float(calc_mz) if calc_mz is not None else None,
+                calculated_mz=compute_precursor_mz(peptidoform, int(charge_str))
+                or (float(calc_mz) if calc_mz is not None else None),
                 pep=pep,
                 is_decoy=is_decoy_accession(protein),
                 scan=scan_number,

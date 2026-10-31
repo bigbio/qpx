@@ -204,7 +204,21 @@ FragPipe features take PEP, mass error, scan, ion mobility and missed cleavages
 from the best `psm.tsv` PSM (lowest PEP, then lowest scan) with the same
 peptidoform and charge in the experiment's raw file. These fields are null
 without `--psm-file`, for an experiment that maps to more than one raw file,
-and when that raw file has no such PSM.
+and when that raw file has no such PSM. A PSM with an unassigned mass shift is
+not used, since the ion does not carry the shift.
+
+A FragPipe PSM whose measured mass (`Calculated Peptide Mass` + `Delta Mass`)
+differs from its peptidoform carries the difference as a mass shift, as in an
+open or mass-offset search: on the residue when `MSFragger Localization` marks
+one, otherwise at an unknown position with any marked residues as
+`modification_candidates`. Its `calculated_mz` includes the shift, so
+`mass_error_ppm` says nothing about the instrument for such a PSM. A difference
+within 0.1 Da (or 20 ppm, the wider) of −1 to 3 <sup>13</sup>C spacings is an
+isotope error of the precursor selection, not a modification: the peptidoform
+leaves it out and `mass_error_ppm` shows it. Real shifts inside that window, such
+as a deamidation that Assigned Modifications do not list, cannot be told apart
+from it. The glycan composition is the name of the `modifications` entry of the
+PSM; feature entries name the mass, and join the PSM through the peptidoform.
 
 `consensus_rt` (an OpenMS consensusXML field), `ion_mobility_start` and
 `ion_mobility_stop` are null for all five converters. `psm_ids` and `pg_ids` are
@@ -218,7 +232,7 @@ Spectronaut and QuantMS MSstats produce no PSM view.
 | ------- | ---------- | ---------- | ------ | ----------- |
 | `posterior_error_probability` | Filled from `PEP`. | Filled: 1 − `PeptideProphet Probability` (`Probability` in FragPipe 22). | Not provided. | A PSI-MS PEP term (`MS:1001493`, `MS:1002352`) on the identification item, when present. |
 | `mass_error_ppm` | From the experimental and calculated m/z; null for `Type` `MSMS` rows, where MaxQuant reports no mass error. | Filled. | Filled. | From the experimental and calculated m/z. Null when the file omits the calculated m/z. |
-| `additional_scores` | Filled. | `Hyperscore`, `Expectation` and `Purity` (as `parent_ion_fraction`). | Filled. | Score terms on the identification item. Null when it has none. |
+| `additional_scores` | Filled. | `Hyperscore`, `Expectation`, `Purity` (as `parent_ion_fraction`), and `Glycan Score` and `Glycan q-value` (as `glycan_score` and `glycan_qvalue`). | Filled. | Score terms on the identification item. Null when it has none. |
 | `rt` | Filled. | Filled. | Filled. | The `scan start time` of the spectrum result. Null when the file omits it. |
 | `ion_mobility` | `1/K0`, when present. | `Ion Mobility`, when present. | Not provided. | Not implemented. |
 | `missed_cleavages` | Filled from `Missed cleavages`. | Filled from `Number of Missed Cleavages`. | Not implemented: no enzyme is declared to the converter. | Only the `MS:1003044` term on the identification item. Not calculated from the enzyme that the file declares. |

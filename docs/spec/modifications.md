@@ -26,7 +26,12 @@ Inline modifications follow the [canonical form](peptidoform.md#canonical-form):
 !!! note "Unknown modifications"
     In the structured representation of a modification without a Unimod
     entry, the `name` field carries the mass with sign (e.g., `"+79.9663"`)
-    and the `accession` field is `null`.
+    and the `accession` field is `null`. The exception is a glycan whose
+    composition the producer reports, named by its ProForma composition
+    (e.g., `"Glycan:HexNAc2Hex9"`). A modification of
+    [unknown position](peptidoform.md#canonical-form) has an empty `positions`
+    list; candidate sites go in `modification_candidates`, with `assigned`
+    false and `probability` null when the producer only names them.
 
 ## Structured representation
 

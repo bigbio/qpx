@@ -342,7 +342,7 @@ def _normalize_peptidoform(peptidoform: str) -> str:
     # For N-term
     if result.startswith("["):
         idx = result.find("]")
-        if idx != -1 and idx + 1 < len(result) and result[idx + 1] != "-":
+        if idx != -1 and idx + 1 < len(result) and result[idx + 1] not in "-?":
             result = result[: idx + 1] + "-" + result[idx + 1 :]
 
     return result
@@ -388,6 +388,9 @@ def normalize_peptidoform(peptidoform: str) -> str:
             out.append(text[i])
             i += 1
     return "".join(out)
+
+
+_UNLOCALIZED_TAGS = re.compile(r"(?:\[[^\[\]]+\])+\?")
 
 
 def _modification_site(seq_pos: int, last_aa: str | None, cterm: bool, sequence_length: int) -> tuple[int, str | None]:
@@ -443,7 +446,14 @@ def _from_proforma_impl(
     last_aa = None
     cterm = False
 
+    # Tags before "?" have an unknown position, so they list no positions.
     i = 0
+    unlocalized = _UNLOCALIZED_TAGS.match(peptidoform)
+    if unlocalized:
+        for mod_str in re.findall(r"\[([^\[\]]+)\]", unlocalized.group()):
+            name, accession = _modification_identity(mod_str, None, meta)
+            mods.setdefault(accession or name, {"name": name, "accession": accession, "positions": []})
+        i = unlocalized.end()
     while i < n:
         if peptidoform[i] == "[":
             try:
@@ -531,7 +541,8 @@ def _sum_sequence_mass(modified_seq: str) -> Optional[float]:
     """Sum residue + modification masses for a modified sequence string.
 
     Supports ``(UniMod:N)`` and ``[UNIMOD:N]`` bracket formats,
-    as well as the ProForma N-term separator ``-``.
+    as well as the ProForma N-term separator ``-`` and the ``?`` that ends
+    modifications of unknown position.
     """
     mass = 0.0
     i = 0
@@ -547,7 +558,7 @@ def _sum_sequence_mass(modified_seq: str) -> Optional[float]:
                 return None
             mass += delta
             i = end + 1
-        elif ch == "-":
+        elif ch in "-?":
             i += 1
         else:
             aa_mass = AA_MASS.get(ch.upper())

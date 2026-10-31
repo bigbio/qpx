@@ -310,6 +310,8 @@ Fields defined by QPX without standardized ontology terms.
 | `protein_accessions` | PSM | Protein accessions (optional column) |
 | `charge_array` / `ion_type_array` / `ion_mobility_array` | PSM | Fragment ion annotation arrays |
 | `parent_ion_fraction` | Score | Fraction of target peak intensity in the isolation window |
+| `glycan_score` | Score | Score of the glycan composition assignment (higher is better) |
+| `glycan_qvalue` | Score | Q-value of the glycan composition assignment (lower is better) |
 | `precursor_quantification_score` | Score | QuantUMS-derived quantification confidence: 1.0 / (1.0 + SD) |
 
 ---

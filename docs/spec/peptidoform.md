@@ -30,7 +30,13 @@ tool produced it:
    of keeps the reported mass after a pipe, `[UNIMOD:1842|+54.0106]`.
 4. N-terminal modifications precede the sequence and a hyphen,
    `[UNIMOD:1]-PEPTIDE`; C-terminal ones follow a hyphen, `PEPTIDE-[UNIMOD:2]`.
-5. `calculated_mz` is the theoretical m/z of the peptidoform at the reported
+5. A modification whose position is unknown, such as the mass shift of an open
+   search that is not localized to one residue, comes first and ends with a
+   question mark: `[+129.0804]?[UNIMOD:1]-PEPTIDE`.
+6. A glycan is written as its mass, `N[+1864.6342]`, so every reader can parse
+   it. Its composition, when the producer reports one, is the name of its
+   entry in `modifications` (`Glycan:HexNAc2Hex9`).
+7. `calculated_mz` is the theoretical m/z of the peptidoform at the reported
    charge whenever every modification in it has a known mass.
 
 A name that resolves to no Unimod entry and comes with no mass is kept as
@@ -79,6 +85,12 @@ iTRAQ8plex 730.
 
 ```text
 PEPTIDK[+54.0106]R
+```
+
+**Mass shift of unknown position**
+
+```text
+[+129.0804]?PEPTIDEK
 ```
 
 ## Where peptidoform is used

@@ -20,6 +20,7 @@ PEPTIDEK_MZ = (PEPTIDEK_MASS + 2 * PROTON_MASS) / 2
         ("PEPTIDEK-[UNIMOD:2]", "PEPTIDEK", -0.984016),
         ("PEPT[+79.9663]IDEK", "PEPTIDEK", 79.9663),
         ("PEPTIDEK[UNIMOD:1842|+54.0106]", "PEPTIDEK", 54.0106),
+        ("[+129.0804]?PEPTIDEK", "PEPTIDEK", 129.0804),
     ],
 )
 def test_canonical_peptidoforms_and_their_mass(peptidoform, sequence, delta):

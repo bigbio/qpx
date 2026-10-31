@@ -17,10 +17,10 @@ _CALCULATED_MZ_PPM = 20.0
 # A wider window for measured precursors.
 _MASS_ERROR_PPM = 50.0
 # Canonical ProForma of the specification (docs/spec/peptidoform.md): optional
-# N-terminal tags and a hyphen, residues each followed by tags, optional
-# hyphen and C-terminal tags.
+# tags of unknown position and "?", optional N-terminal tags and a hyphen,
+# residues each followed by tags, optional hyphen and C-terminal tags.
 _TAGS = r"(?:\[[^\[\]]+\])"
-_CANONICAL = re.compile(rf"(?:{_TAGS}+-)?(?:[A-Z]{_TAGS}*)+(?:-{_TAGS}+)?")
+_CANONICAL = re.compile(rf"(?:{_TAGS}+\?)?(?:{_TAGS}+-)?(?:[A-Z]{_TAGS}*)+(?:-{_TAGS}+)?")
 _TAG = re.compile(r"\[([^\[\]]+)\]")
 _MASS_SHIFT = re.compile(r"[+-]\d+(?:\.\d+)?")
 _UNIMOD_TAG = re.compile(r"UNIMOD:(\d+)(?:\|([+-]\d+(?:\.\d+)?))?")
@@ -81,7 +81,7 @@ def peptidoform_problem(peptidoform: str, sequence: str | None) -> tuple[str | N
     """The first problem of a peptidoform ("malformed", "sequence" or "accession"), and its neutral mass when known."""
     if not _CANONICAL.fullmatch(peptidoform):
         return "malformed", None
-    if re.sub(rf"{_TAGS}|-", "", peptidoform) != sequence:
+    if re.sub(rf"{_TAGS}|[-?]", "", peptidoform) != sequence:
         return "sequence", None
     mass = WATER_MASS + sum(AA_MASS.get(residue, math.nan) for residue in sequence)
     for tag in _TAG.findall(peptidoform):

@@ -15,6 +15,7 @@ import pytest
 from qpx.converters.fragpipe.feature_adapter import FragPipeFeatureAdapter
 from qpx.converters.fragpipe.pg_adapter import FragPipePgAdapter
 from qpx.converters.fragpipe.psm_adapter import FragPipePsmAdapter
+from qpx.converters.ptm import PROTON_MASS, compute_precursor_mz
 
 _COMBINED_PROTEIN_TSV = (
     "Protein\tGene\tDescription\t"
@@ -327,7 +328,8 @@ def test_feature_psm_enrichment_uses_experiment_annotation(tmp_path):
     rec = df.iloc[0]
     assert rec["posterior_error_probability"] == pytest.approx(1.0 - 0.99)
     assert list(rec["scan"]) == [500]
-    assert rec["mass_error_ppm"] == pytest.approx(1e6 * (500.001 - 500.000) / 500.000)
+    theoretical = compute_precursor_mz("PEPTIDEK", 2)
+    assert rec["mass_error_ppm"] == pytest.approx(1e6 * (500.001 - theoretical) / theoretical, rel=1e-4)
     assert bool(rec["is_decoy"]) is True
 
 
@@ -588,3 +590,111 @@ def test_psm_decoy_prefixes_consistent(tmp_path, protein, expected):
         adapter.convert(psm_path=str(psm), output_path=str(out))
     df = pq.read_table(str(out)).to_pandas()
     assert bool(df.iloc[0]["is_decoy"]) is expected
+
+
+_PEPTIDEK_MASS = compute_precursor_mz("PEPTIDEK", 1) - PROTON_MASS
+_OPEN_COLUMNS = "Spectrum\tPeptide\tCharge\tAssigned Modifications\tCalculated Peptide Mass\tCalculated M/Z\tDelta Mass\tCalibrated Observed M/Z"
+
+
+def _open_search_row(scan: int, delta: float, localization: str, extra: str = "") -> str:
+    observed = (_PEPTIDEK_MASS + delta + 2 * PROTON_MASS) / 2
+    calculated = (_PEPTIDEK_MASS + 2 * PROTON_MASS) / 2
+    return (
+        f"run_01.{scan:05d}.{scan:05d}.2\tPEPTIDEK\t2\t\t{_PEPTIDEK_MASS:.4f}\t{calculated:.4f}\t{delta}\t{observed:.4f}"
+        f"\t{localization}\tsp|P1|A_HUMAN{extra}\n"
+    )
+
+
+def _convert_psm_rows(tmp_path, header: str, rows: list[str]) -> list[dict]:
+    psm = tmp_path / "psm.tsv"
+    psm.write_text(header + "\n" + "".join(rows))
+    out = tmp_path / "psm.parquet"
+    with FragPipePsmAdapter() as adapter:
+        adapter.convert(psm_path=str(psm), output_path=str(out))
+    return sorted(pq.read_table(out).to_pylist(), key=lambda row: row["scan"])
+
+
+def test_open_search_mass_shift_is_part_of_the_peptidoform(tmp_path):
+    """Delta Mass goes on the one site MSFragger localized, or to an unknown position with
+    the tied sites as candidates; calculated_mz includes it, so it is no mass error."""
+    rows = _convert_psm_rows(
+        tmp_path,
+        _OPEN_COLUMNS + "\tMSFragger Localization\tProtein",
+        [
+            _open_search_row(1, 129.0804, "PEPtIDEK"),
+            _open_search_row(2, 129.0804, "PEPtiDEK"),
+            _open_search_row(3, 129.0804, "PEPTIDEK"),
+        ],
+    )
+    assert [row["peptidoform"] for row in rows] == [
+        "PEPT[+129.0804]IDEK",
+        "[+129.0804]?PEPTIDEK",
+        "[+129.0804]?PEPTIDEK",
+    ]
+    assert rows[0]["modification_candidates"] is None
+    candidates = rows[1]["modification_candidates"]
+    assert [(c["position"], c["amino_acid"], c["assigned"], c["alternative_group"]) for c in candidates] == [
+        (4, "T", False, 1),
+        (5, "I", False, 1),
+    ]
+    assert candidates[0]["mass_delta"] == pytest.approx(129.0804, abs=1e-3)
+    assert rows[2]["modification_candidates"] is None
+    assert rows[1]["modifications"][0]["name"] == "+129.0804"
+    assert rows[1]["modifications"][0]["positions"] == []
+    for row in rows:
+        assert row["calculated_mz"] == pytest.approx(compute_precursor_mz("[+129.0804]?PEPTIDEK", 2), abs=1e-3)
+        assert abs(row["mass_error_ppm"]) < 1
+
+
+@pytest.mark.parametrize("delta", [0.0012, 1.0041, 2.0071, -1.0029, 3.0098])
+def test_isotope_error_is_not_a_mass_shift(tmp_path, delta):
+    """A precursor picked on a 13C peak is the same molecule, as in a closed search with isotope_error."""
+    rows = _convert_psm_rows(
+        tmp_path, _OPEN_COLUMNS + "\tMSFragger Localization\tProtein", [_open_search_row(1, delta, "PEPtIDEK")]
+    )
+    assert rows[0]["peptidoform"] == "PEPTIDEK"
+    assert rows[0]["modification_candidates"] is None
+
+
+_GLYCAN_MASS = 1864.6342
+
+
+@pytest.mark.parametrize("moved_to_calculated", [True, False])
+def test_glycan_composition_and_fdr_are_kept(tmp_path, moved_to_calculated):
+    """PTM-Shepherd writes the glycan to Assigned Modifications and, by default, moves it from
+    Delta Mass to Calculated M/Z; the glycan counts once either way."""
+    glycan_peptide_mass = _PEPTIDEK_MASS + _GLYCAN_MASS
+    peptide_mass = glycan_peptide_mass if moved_to_calculated else _PEPTIDEK_MASS
+    observed = (glycan_peptide_mass + 3 * PROTON_MASS) / 3
+    row = (
+        f"run_01.00001.00001.3\tPEPTIDEK\t3\t5I({_GLYCAN_MASS:.4f})\t{peptide_mass:.4f}\t{(peptide_mass + 3 * PROTON_MASS) / 3:.4f}"
+        f"\t{glycan_peptide_mass - peptide_mass:.4f}\t{observed:.4f}\tHexNAc(2)Hex(9) % 1864.6341\t5.33\t0.002\tsp|P1|A_HUMAN\n"
+    )
+    rows = _convert_psm_rows(tmp_path, _OPEN_COLUMNS + "\tTotal Glycan Composition\tGlycan Score\tGlycan q-value\tProtein", [row])
+    assert rows[0]["peptidoform"] == "PEPTI[+1864.6342]DEK"
+    assert rows[0]["modifications"][0]["name"] == "Glycan:HexNAc2Hex9"
+    assert rows[0]["modifications"][0]["positions"][0]["position"] == 5
+    assert abs(rows[0]["mass_error_ppm"]) < 1
+    scores = {score["score_name"]: score for score in rows[0]["additional_scores"]}
+    assert scores["glycan_score"]["score_value"] == pytest.approx(5.33)
+    assert scores["glycan_score"]["higher_better"] is True
+    assert scores["glycan_qvalue"]["score_value"] == pytest.approx(0.002)
+    assert scores["glycan_qvalue"]["higher_better"] is False
+
+
+def test_feature_is_not_enriched_from_a_mass_shifted_psm(tmp_path):
+    """A PSM with an unassigned mass shift is another molecule than the ion of its bare peptidoform."""
+    ion = tmp_path / "combined_ion.tsv"
+    ion.write_text(
+        "Peptide Sequence\tModified Sequence\tCharge\tM/Z\tProtein\tA Intensity\n"
+        "PEPTIDEK\tPEPTIDEK\t2\t500.0\tsp|P1|A_HUMAN\t100\n"
+    )
+    psm = tmp_path / "psm.tsv"
+    psm.write_text(_OPEN_COLUMNS + "\tMSFragger Localization\tProtein\n" + _open_search_row(7, 129.0804, "PEPtIDEK"))
+    out = tmp_path / "feature.parquet"
+    with FragPipeFeatureAdapter() as adapter:
+        adapter.convert(feature_path=str(ion), output_path=str(out), psm_path=str(psm), experiment_to_runs={"A": ["run_01"]})
+    record = pq.read_table(out).to_pylist()[0]
+    assert record["peptidoform"] == "PEPTIDEK"
+    assert record["scan"] == []
+    assert record["observed_mz"] is None
