@@ -2,57 +2,19 @@
 
 from __future__ import annotations
 
-import re
 from functools import lru_cache
 from typing import Optional
 
-from qpx.converters.ptm import build_proforma
+from qpx.converters.ptm import build_proforma, modification_tag, position_site, split_modified_sequence, vendor_position
 
 PROTON_MASS: float = 1.007_276_466_77
 
 # ---------------------------------------------------------------------------
-# MaxQuant modification name -> UNIMOD accession mapping
+# MaxQuant modification names
 # ---------------------------------------------------------------------------
 
-MQ_MOD_TO_UNIMOD: dict[str, int] = {
-    "oxidation (m)": 35,
-    "acetyl (protein n-term)": 1,
-    "carbamidomethyl (c)": 4,
-    "phospho (sty)": 21,
-    "phospho (s)": 21,
-    "phospho (t)": 21,
-    "phospho (y)": 21,
-    "deamidation (nq)": 7,
-    "deamidation (n)": 7,
-    "deamidation (q)": 7,
-    "gln->pyro-glu": 28,
-    "methyl (kr)": 34,
-    "methyl (k)": 34,
-    "methyl (r)": 34,
-    "dimethyl (kr)": 36,
-    "dimethyl (k)": 36,
-    "dimethyl (r)": 36,
-    "trimethyl (k)": 37,
-    "gg (k)": 121,
-    "formyl (protein n-term)": 122,
-    "carbamyl (protein n-term)": 5,
-    "tmt6plex (k)": 737,
-    "tmt6plex (n-term)": 737,
-    "tmt10plex (k)": 737,
-    "tmt10plex (n-term)": 737,
-    "tmt11plex (k)": 737,
-    "tmt11plex (n-term)": 737,
-    "tmt16plex (k)": 730,
-    "tmt16plex (n-term)": 730,
-    "tmtpro (k)": 730,
-    "tmtpro (n-term)": 730,
-    "itraq4plex (k)": 214,
-    "itraq4plex (n-term)": 214,
-    "itraq8plex (k)": 385,
-    "itraq8plex (n-term)": 385,
-    "pyro-glu from e": 214,
-}
-
+# Short forms of older MaxQuant versions. Full names (``Oxidation (M)``) are
+# resolved through Unimod by :func:`qpx.converters.ptm.modification_tag`.
 MQ_SHORT_TO_UNIMOD: dict[str, int] = {
     "ox": 35,
     "ac": 1,
@@ -63,23 +25,16 @@ MQ_SHORT_TO_UNIMOD: dict[str, int] = {
 }
 
 
-def _resolve_mq_mod(tag: str) -> str:
-    """Resolve a MaxQuant modification name to ``UNIMOD:N`` or return as-is.
+def _resolve_mq_mod(tag: str, residue: Optional[str] = None, terminus: Optional[str] = None) -> str:
+    """Resolve a MaxQuant modification name at *residue* / *terminus* to a ProForma tag.
 
-    Handles full names (``Oxidation (M)``), short forms (``ac``),
-    and already-resolved ``UNIMOD:`` prefixes.
+    Handles short forms (``ac``), full names (``Oxidation (M)``, ``GlyGly (K)``),
+    ``UniMod:N`` accessions and signed masses; an unknown name is kept as a name.
     """
-    m = re.match(r"(?i)unimod:(\d+)", tag)
-    if m:
-        return f"UNIMOD:{m.group(1)}"
-
-    uid = MQ_MOD_TO_UNIMOD.get(tag.lower())
-    if uid is None:
-        uid = MQ_SHORT_TO_UNIMOD.get(tag.lower())
+    uid = MQ_SHORT_TO_UNIMOD.get(tag.lower())
     if uid is not None:
         return f"UNIMOD:{uid}"
-
-    return tag
+    return modification_tag(tag, residue, terminus)
 
 
 @lru_cache(maxsize=8192)
@@ -92,43 +47,17 @@ def to_proforma(modified_sequence: Optional[str]) -> str:
         _PEPTM(Oxidation (M))IDEK_         -> PEPTM[UNIMOD:35]IDEK
         _(Acetyl (Protein N-term))PEPTIDEK_ -> [UNIMOD:1]-PEPTIDEK
         _(ac)PEPTIDEK_                      -> [UNIMOD:1]-PEPTIDEK
+        _PEPK(GlyGly (K))R_                 -> PEPK[UNIMOD:121]R
+        _PEPK(Amidated (Protein C-term))_   -> PEPK-[UNIMOD:2]
     """
     if not isinstance(modified_sequence, str) or not modified_sequence:
         return ""
-
-    seq = modified_sequence.strip("_")
-    if not seq:
-        return ""
-
-    mods: list[tuple[int, str]] = []
-    plain_chars: list[str] = []
-    i = 0
-    n = len(seq)
-    seq_pos = 0
-
-    while i < n:
-        if seq[i] == "(":
-            # Walk forward tracking parenthesis depth to handle nested parens
-            depth = 1
-            j = i + 1
-            while j < n and depth > 0:
-                if seq[j] == "(":
-                    depth += 1
-                elif seq[j] == ")":
-                    depth -= 1
-                j += 1
-            mod_name = seq[i + 1 : j - 1]
-            tag = _resolve_mq_mod(mod_name)
-            position = 0 if seq_pos == 0 else seq_pos
-            mods.append((position, tag))
-            i = j
-        else:
-            plain_chars.append(seq[i])
-            seq_pos += 1
-            i += 1
-
-    plain_seq = "".join(plain_chars)
-    return build_proforma(plain_seq, mods)
+    sequence, mods = split_modified_sequence(modified_sequence.strip("_"))
+    tags: list[tuple[int, str]] = []
+    for position, name in mods:
+        position = vendor_position(name, position, sequence)
+        tags.append((position, _resolve_mq_mod(name, *position_site(sequence, position))))
+    return build_proforma(sequence, tags)
 
 
 def parse_phospho_probabilities(

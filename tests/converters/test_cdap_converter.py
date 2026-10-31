@@ -529,3 +529,67 @@ class TestCdapPeptidoform:
 
         result = cdap_to_proforma("PEPTIDEK")
         assert result == "PEPTIDEK"
+
+    @pytest.mark.parametrize(
+        ("peptide", "expected"),
+        [
+            # Every delta-mass token of the CPTAC survey, at the residue it modifies
+            ("+229.163PEPTIDEK+229.163", "[UNIMOD:737]-PEPTIDEK[UNIMOD:737]"),
+            ("+304.207PEPTIDEK+304.207", "[UNIMOD:2016]-PEPTIDEK[UNIMOD:2016]"),
+            ("+144.102PEPTIDEK+144.102", "[UNIMOD:214]-PEPTIDEK[UNIMOD:214]"),
+            ("PEPTC+57.021K", "PEPTC[UNIMOD:4]K"),
+            ("PEPS+79.966T+79.966Y+79.966K", "PEPS[UNIMOD:21]T[UNIMOD:21]Y[UNIMOD:21]K"),
+            ("PEPM+15.995K", "PEPM[UNIMOD:35]K"),
+            ("+42.011PEPTIDEK", "[UNIMOD:1]-PEPTIDEK"),
+            ("+42.010PEPTIDEK", "[UNIMOD:1]-PEPTIDEK"),
+            ("PEPK+114.043R", "PEPK[UNIMOD:121]R"),
+            ("PEPN+0.984Q+0.984K", "PEPN[UNIMOD:7]Q[UNIMOD:7]K"),
+            ("-17.027QPEPTIDEK", "[UNIMOD:28]-QPEPTIDEK"),
+            # Butyryl, not the equally heavy Crotonaldehyde (UNIMOD:253)
+            ("PEPK+70.042R", "PEPK[UNIMOD:1289]R"),
+            ("PEP+123.456TIDEK", "PEP[CHEMMOD:+123.456]TIDEK"),
+        ],
+    )
+    def test_mass_tokens_resolve_to_unimod(self, peptide, expected):
+        """TMTpro is UNIMOD:2016; the hand-written table mapped it to iTRAQ8plex (UNIMOD:730)."""
+        from qpx.converters.cdap.peptidoform import cdap_to_proforma
+
+        assert cdap_to_proforma(peptide) == expected
+
+
+@pytest.mark.parametrize(
+    ("peptide", "label"),
+    [
+        ("+144.102PEPTIDEK+144.102", "iTRAQ4plex"),
+        ("+304.207PEPTIDEK+304.207", "TMTpro"),
+        ("+229.163PEPTIDEK+229.163", "TMT6plex"),
+    ],
+)
+@pytest.mark.parametrize("charge", [2, 3])
+def test_cdap_labelled_calculated_mz_matches_pyopenms(tmp_path, peptide, label, charge):
+    """``calculated_mz`` of labelled peptides equals the pyopenms ``AASequence`` m/z.
+
+    iTRAQ4plex peptides were 162.11 Da per label too light because the Unimod
+    table gave UNIMOD:214 the Glu->pyro-Glu mass (-18.0106 instead of +144.1021).
+    """
+    import pyopenms as oms
+
+    from qpx.converters.cdap.feature_adapter import CdapFeatureAdapter
+    from qpx.converters.cdap.psm_adapter import CdapPsmAdapter
+
+    expected = oms.AASequence.fromString(f"({label})PEPTIDEK({label})").getMZ(charge)
+    precursor = f"{expected:.4f}"
+    row = _base_row(
+        PeptideSequence=peptide,
+        QueryCharge=str(charge),
+        OriginalCharge=str(charge),
+        QueryPrecursorMz=precursor,
+        OriginalPrecursorMz=precursor,
+    )
+    _write_psm(tmp_path / "psm", "label.psm", [row])
+
+    for adapter_cls, name in [(CdapPsmAdapter, "psm"), (CdapFeatureAdapter, "feature")]:
+        out = tmp_path / f"label.{name}.parquet"
+        with adapter_cls() as adapter:
+            adapter.convert(psm_dir=str(tmp_path / "psm"), output_path=str(out))
+        assert pq.read_table(str(out)).column("calculated_mz").to_pylist() == [pytest.approx(expected, abs=1e-4)]
