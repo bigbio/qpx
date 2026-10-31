@@ -110,7 +110,7 @@ diann:
       ms1_area: ["Ms1.Area"]
       lfq_maxlfq: ["PG.MaxLFQ"]
       precursor_quantification_score: ["Quantity.Quality"]
-      ms2_scan: ["MS2.Scan"]
+      ms2_scan: ["MS2.Scan", "Ms2.Scan"]
       ion_mobility: ["IM"]
       mass_error_ppm: ["Mass.Error (ppm)"]
       ion_mobility_start: ["IM.Start"]

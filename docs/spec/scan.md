@@ -108,7 +108,7 @@ flowchart TD
 
 ## DIA
 
-In a DIA run no scan belongs to one precursor. `scan` on a DIA feature is the MS2 scan at the precursor's apex: the report's `MS2.Scan` for DIA-NN, else the MS2 scan nearest to `rt` when `--mzml-info-folder` gives the scan list. Spectronaut reports have no scan, so it is empty.
+In a DIA run no scan belongs to one precursor. `scan` on a DIA feature is the MS2 scan at the precursor's apex: the report's `MS2.Scan` (`Ms2.Scan` in a 2.x report written with `--export-quant`) for DIA-NN, else the MS2 scan nearest to `rt` when `--mzml-info-folder` gives the scan list. Spectronaut reports have no scan, so it is empty.
 
 ## Where scan is used
 

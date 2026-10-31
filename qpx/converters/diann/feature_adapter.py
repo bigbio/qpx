@@ -401,7 +401,7 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
     def _merge_scan_info(self, run_data: pd.DataFrame, ms_info_path: Path) -> pd.DataFrame:
         """Fill feature scans from one run's MS-info table.
 
-        A DIA-NN 1.8 ``MS2.Scan`` position selects that run's MS2 spectrum in
+        A DIA-NN ``MS2.Scan`` (``Ms2.Scan`` in 2.x) position selects that run's MS2 spectrum in
         acquisition order. Rows without one take the nearest MS2 entry by RT (by
         window among entries sharing that time), never past the measured
         acquisition range. The window is chosen by the theoretical m/z, or the

@@ -173,7 +173,7 @@ def _build_acquisition_select_parts(resolved: dict, report_cols: set[str]) -> li
     run_col = "r." + validate_identifier(resolved["run_file_name"])
     parts.append(f"{run_name_sql(run_col)} AS run_file_name")
 
-    # MS2.Scan (DIA-NN 1.8) is a 0-based position among the run's MS2 spectra,
+    # MS2.Scan (Ms2.Scan in 2.x --export-quant) is a 0-based position among the run's MS2 spectra,
     # not a native scan number: it becomes a scan only through the MS-info table.
     parts.append("[]::INTEGER[] AS scan")
     ms2_col = resolved.get("ms2_scan")

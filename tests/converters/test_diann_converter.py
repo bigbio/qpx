@@ -1460,9 +1460,10 @@ def test_nearest_ms2_picks_the_precursor_window_among_spectra_sharing_a_time():
     assert nearest.to_dict() == {0: 2.0, 1: 1.0, 2: 1.0}
 
 
+@pytest.mark.parametrize("scan_column", ["MS2.Scan", "Ms2.Scan"])
 @pytest.mark.parametrize("with_ms_info", [False, True])
-def test_diann_ms2_scan_position_becomes_a_scan_only_through_ms_info(tmp_path, with_ms_info):
-    """DIA-NN 1.8 MS2.Scan counts the run's MS2 spectra from 0. Without MS info it
+def test_diann_ms2_scan_position_becomes_a_scan_only_through_ms_info(tmp_path, with_ms_info, scan_column):
+    """DIA-NN 1.8 MS2.Scan and 2.x Ms2.Scan count the run's MS2 spectra from 0. Without MS info it
     names no native scan, so feature.scan stays empty; with it, the position selects
     the scan. The MS-info precursor m/z is a DIA window centre and never fills
     observed_mz."""
@@ -1481,7 +1482,7 @@ def test_diann_ms2_scan_position_becomes_a_scan_only_through_ms_info(tmp_path, w
                 "Q.Value": 0.002,
                 "Precursor.Quantity": 100.0,
                 "RT": 10.0,
-                "MS2.Scan": 2,
+                scan_column: 2,
             }
         ]
     ).to_csv(report_path, sep="\t", index=False)
