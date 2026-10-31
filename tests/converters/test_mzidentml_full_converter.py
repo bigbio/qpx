@@ -247,6 +247,10 @@ class TestPXD054720WithSpectra:
         with_spectra = sum(1 for v in mz_col if v is not None and len(v) > 0)
         assert with_spectra > 0, "Expected some PSMs with attached spectra"
 
+    def test_footer_states_what_the_arrays_hold(self, converted_dataset):
+        metadata = pq.read_metadata(str(converted_dataset / "PXD054720_sp.psm.parquet")).metadata
+        assert metadata[b"spectrum_content"] == b"all_peaks"
+
     def test_spectra_arrays_match_length(self, converted_dataset):
         table = pq.read_table(str(converted_dataset / "PXD054720_sp.psm.parquet"))
         mz_col = table.column("mz_array").to_pylist()

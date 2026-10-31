@@ -78,7 +78,7 @@ class MgfSpectraIndex:
 
     def __init__(self, mgf_path: str | Path, keep_peaks: bool = True) -> None:
         self.path = Path(mgf_path)
-        self._keep_peaks = keep_peaks
+        self.keep_peaks = keep_peaks
         self._index: dict[int, dict] = {}
         self._by_position: dict[int, dict] = {}
         self._position_counter: int = 0
@@ -214,8 +214,8 @@ class MgfSpectraIndex:
 
         scan = _extract_scan(title or "", scans_value)
         spectrum = {
-            "mz_array": array("d", mz_list) if self._keep_peaks else None,
-            "intensity_array": array("d", int_list) if self._keep_peaks else None,
+            "mz_array": array("d", mz_list) if self.keep_peaks else None,
+            "intensity_array": array("d", int_list) if self.keep_peaks else None,
             "rt": rt_value,
             # A TITLE with index=N names a file position, not an acquisition scan.
             "scan": None if scans_value is None and _POSITION_TITLE.search(title or "") else scan,

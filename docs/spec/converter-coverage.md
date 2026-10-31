@@ -266,6 +266,7 @@ Spectronaut and QuantMS MSstats produce no PSM view.
 | `missed_cleavages` | Filled from `Missed cleavages`. | Filled from `Number of Missed Cleavages`. | Not implemented: no enzyme is declared to the converter. | Only the `MS:1003044` term on the identification item. Not calculated from the enzyme that the file declares. |
 | `protein_accessions` | `Proteins`, which MaxQuant leaves blank for some reverse hits. | `Protein` and `Mapped Proteins`. | Filled. | Filled. |
 | `cross_links` | Out of scope. | Out of scope. | Out of scope. | Cross-linking identifications only. |
+| `ion_type_array` / `charge_array` | `Matches` of `msms.txt`, with `--spectral-data`, when it has one token per peak. | Not implemented. | Not implemented. | Not implemented. |
 | `mz_array` / `intensity_array` | `Masses` / `Intensities` of `msms.txt`, with `--spectral-data`. | Not provided: `psm.tsv` has no spectra. | Not provided. | From the MGF, with `--mgf-path` and `--include-spectra`. |
 | `feature_id` | Not implemented: the `Evidence ID` of `msms.txt` is not read. | Not implemented. | Not implemented: features are aggregated from PSMs, but the link is not recorded. | Out of scope: there is no feature view. |
 

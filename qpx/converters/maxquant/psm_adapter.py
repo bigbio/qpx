@@ -32,6 +32,7 @@ from qpx.converters.maxquant.constants import (
     summary_label_mods,
     to_proforma,
 )
+from qpx.converters.maxquant.evidence_fields import peak_annotations
 from qpx.converters.maxquant.silac import multiplet_labels
 from qpx.converters.ptm import from_proforma
 from qpx.converters.utils import mass_error_ppm, mq_flag_to_bool, safe_float
@@ -120,6 +121,8 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
                 if records:
                     self._track_scores(records)
                     writer.write_batch(records)
+            if spectral_data:
+                writer.add_footer_metadata({b"spectrum_content": b"matched_peaks"})
 
         self.logger.info(f"MaxQuant PSM conversion complete -> {output_path}")
 
@@ -217,6 +220,11 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
         additional_scores, cv_params = self._psm_annotations(row)
 
         mz_array, intensity_array = self._spectral_arrays(row, spectral_data)
+        ion_types, charges = (
+            peak_annotations(row.get("Matches") if pd.notna(row.get("Matches")) else None, len(mz_array))
+            if mz_array
+            else (None, None)
+        )
 
         evidence_id = row.get("Evidence ID")
         return {
@@ -237,8 +245,8 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
             "protein_accessions": protein_accessions or None,
             "mz_array": mz_array,
             "intensity_array": intensity_array,
-            "charge_array": None,
-            "ion_type_array": None,
+            "charge_array": charges,
+            "ion_type_array": ion_types,
             "ion_mobility_array": None,
         }
 

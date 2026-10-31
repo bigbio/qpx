@@ -773,3 +773,26 @@ def test_every_mod_probabilities_column_reaches_psm_and_feature(tmp_path):
             for pos in mod["positions"]
         )
         assert placed["scores"][0]["score_name"] == "localization_probability"
+
+
+def test_msms_matches_annotate_the_peaks_of_spectral_arrays(tmp_path):
+    from qpx.converters.maxquant.psm_adapter import MaxQuantPsmAdapter
+
+    output = tmp_path / "x.psm.parquet"
+    with MaxQuantPsmAdapter() as adapter:
+        adapter.convert(str(_MSMS), str(output), spectral_data=True)
+
+    table = pq.read_table(output, columns=["mz_array", "ion_type_array", "charge_array"]).to_pylist()
+    annotated = [row for row in table if row["ion_type_array"]]
+    assert annotated
+    assert all(len(row["ion_type_array"]) == len(row["charge_array"]) == len(row["mz_array"]) for row in annotated)
+    assert pq.read_metadata(output).metadata[b"spectrum_content"] == b"matched_peaks"
+
+
+def test_peak_annotations_split_charge_from_ion_type():
+    from qpx.converters.maxquant.evidence_fields import peak_annotations
+
+    assert peak_annotations("y3;b4(2+);y5-H2O;a2-NH3(3+)", 4) == (["y3", "b4", "y5-H2O", "a2-NH3"], [1, 2, 1, 3])
+    # Tokens that do not line up with the peaks cannot annotate them.
+    assert peak_annotations("y3;b4", 3) == (None, None)
+    assert peak_annotations(None, 0) == (None, None)

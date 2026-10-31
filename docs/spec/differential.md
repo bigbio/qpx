@@ -8,11 +8,10 @@ The differential expression (DE) view stores statistical results comparing prote
 - Enable visualization using [Volcano Plots](https://en.wikipedia.org/wiki/Volcano_plot_(statistics)) and other statistical plots.
 - Enable integration with other omics data for multi-omics analysis.
 - Store metadata about the statistical method and contrast definitions alongside the results.
-- Integrate with scanpy plotting functions (`sc.pl.rank_genes_groups`, `sc.pl.rank_genes_groups_volcano`).
 
 ## Format
 
-The differential expression view uses **AnnData** (`.h5ad`) as its primary format. DE results are stored in AnnData's `uns` (unstructured metadata) slot, following scanpy's `rank_genes_groups` convention. The AnnData object can optionally include an expression matrix in `X` (from the AE view) alongside the DE results.
+The differential expression view uses **AnnData** (`.h5ad`) as its primary format. DE results are stored in AnnData's `uns` (unstructured metadata) slot, with the field names of scanpy's `rank_genes_groups`, but not its layout. The AnnData object can optionally include an expression matrix in `X` (from the AE view) alongside the DE results.
 
 For general AnnData concepts and conventions shared with the absolute expression view, see [AnnData Concepts](anndata.md).
 
@@ -28,7 +27,7 @@ AnnData (n_obs x n_vars = samples x proteins)
 
 ### DE results in `uns`
 
-DE results are stored in `uns["de_results"]` as a dictionary keyed by contrast identifier. Each contrast contains structured arrays following scanpy's `rank_genes_groups` convention, extended with QPX-specific fields.
+DE results are stored in `uns["de_results"]` as a dictionary keyed by contrast identifier: one entry per contrast, each a set of arrays parallel to `names`. A contrast is one test, whatever it compares, so an F test or an interaction is an entry too.
 
 ```python
 adata.uns["de_results"] = {
@@ -40,7 +39,7 @@ adata.uns["de_results"] = {
         "pvals": np.array([0.0001, 0.002, ...]),  # raw p-values
         "pvals_adj": np.array([0.005, 0.045, ...]),  # adjusted p-values (BH)
         "se": np.array([0.18, 0.206, ...]),  # standard error
-        "df": np.array([37, 35, ...]),  # degrees of freedom
+        "df": np.array([29.05, 35.0, ...]),  # degrees of freedom
         "is_significant": np.array([True, True, ...]),  # pre-computed significance
         "issue": np.array([None, None, ...]),  # inference issues
         "condition_test": "squamous cell carcinoma",  # test condition
@@ -53,18 +52,23 @@ adata.uns["de_results"] = {
 
 | Field | Description | Type | Required |
 |-------|-------------|------|----------|
-| `names` | Protein accessions (sorted by p-value) | `array[string]` | Yes |
+| `names` | Tested entities, of the type `uns["entity_type"]` states (sorted by p-value) | `array[string]` | Yes |
 | `gene_names` | Gene symbols corresponding to each protein | `array[string]` | No |
-| `logfoldchanges` | Log2 fold change (test / reference) | `array[float64]` | Yes |
-| `scores` | Test statistic (t-value or equivalent) | `array[float64]` | No |
+| `logfoldchanges` | Log2 fold change (test / reference). Not required for an F or likelihood-ratio test, which has no single fold change | `array[float64]` | Yes |
+| `scores` | Test statistic, of the type `statistic_type` states | `array[float64]` | No |
+| `statistic_type` | `t`, `z`, `F` or `LRT` | `string` | No |
 | `pvals` | Raw p-values | `array[float64]` | Yes |
 | `pvals_adj` | Adjusted p-values (multiple testing corrected) | `array[float64]` | Yes |
 | `se` | Standard error of the log2 fold change | `array[float64]` | No |
-| `df` | Degrees of freedom | `array[int32]` | No |
+| `df` | Degrees of freedom; moderated tests give fractions, such as limma's 29.05 | `array[float64]` | No |
+| `ave_expr` | Mean log2 abundance over the samples of the contrast | `array[float64]` | No |
+| `n_test`, `n_reference` | Samples with a value in the test and the reference condition | `array[int32]` | No |
+| `missing_fraction` | Fraction of the contrast's samples without a value, 0-1 | `array[float64]` | No |
 | `is_significant` | Pre-computed significance at the stored FDR threshold | `array[bool]` | No |
 | `issue` | Issue with protein quantification, if any | `array[string]` | No |
-| `condition_test` | Test condition in the contrast | `string` | Yes |
-| `condition_reference` | Reference/control condition in the contrast | `string` | Yes |
+| `condition_test` | Test condition in the contrast. Required without `contrast_definition` | `string` | Yes |
+| `condition_reference` | Reference/control condition in the contrast. Required without `contrast_definition` | `string` | Yes |
+| `contrast_definition` | The tested hypothesis as the tool states it, for what is not a pair of conditions: `(A_treated-A_control)-(B_treated-B_control)` for an interaction, or the dropped terms of an F test | `string` | No |
 
 ### uns (file-level metadata)
 
@@ -73,6 +77,8 @@ adata.uns["de_results"] = {
 | `qpx_version` | Version of the QPX format | `string` |
 | `file_type` | Always `"differential_expression"` | `string` |
 | `project_accession` | Project accession in PRIDE Archive | `string` |
+| `entity_type` | What `names` holds: `protein_group` (the default), `gene_group`, `peptidoform`, `site` or `proteoform` | `string` |
+| `method_details` | JSON object of the model: tool, version, design formula, covariates, normalization, imputation | `string` |
 | `statistical_method` | Statistical method used (e.g., `msstats_group_comparison`, `limma`, `deqms`) | `string` |
 | `correction_method` | Multiple testing correction method (e.g., `BH`) | `string` |
 | `fdr_threshold` | FDR threshold used for `is_significant` | `string` |
@@ -97,7 +103,7 @@ QPX's DE fields map to common statistical tool outputs:
 
 ## Reading and checking the file
 
-`qpxc validate --dataset-path` checks a `.de.h5ad` file it finds in the dataset. The MuData view reshapes `uns["de_results"]` into a contrasts x proteins matrix, where a protein a contrast did not test is NaN.
+`qpxc validate --dataset-path` checks a `.de.h5ad` file it finds in the dataset: unique indexes, the required fields, arrays of one length, p-values in [0, 1] and `entity_type`. The MuData view reshapes `uns["de_results"]` into a contrasts x entities matrix, where an entity a contrast did not test is NaN, as is the fold change of an F test. It also reads a long `pandas.DataFrame` in `uns["de_results"]` with the columns `contrast`, `protein` and `log2FC`, and optionally `pvals_adj`, `scores`, `pvals` and `se`.
 
 ## Example
 
@@ -136,7 +142,7 @@ adata.uns["de_results"] = {
         "pvals": np.array([0.0001, 0.002, 0.00001]),
         "pvals_adj": np.array([0.005, 0.045, 0.001]),
         "se": np.array([0.18, 0.206, 0.188]),
-        "df": np.array([37, 35, 37]),
+        "df": np.array([37.0, 35.0, 37.0]),
         "is_significant": np.array([True, True, True]),
         "issue": np.array([None, None, None]),
         "condition_test": "squamous cell carcinoma",
@@ -154,28 +160,6 @@ adata.uns["contrasts"] = '["cancer_vs_normal"]'
 
 # Save
 adata.write("PXD000000.de.h5ad")
-```
-
-### Using with scanpy
-
-```python
-import scanpy as sc
-
-adata = ad.read_h5ad("PXD000000.de.h5ad")
-
-# Convert to scanpy rank_genes_groups format for plotting
-adata.uns["rank_genes_groups"] = {
-    "params": {"reference": "normal", "method": "t-test"},
-}
-for contrast_id, contrast_data in adata.uns["de_results"].items():
-    adata.uns["rank_genes_groups"]["names"] = contrast_data["names"]
-    adata.uns["rank_genes_groups"]["logfoldchanges"] = contrast_data["logfoldchanges"]
-    adata.uns["rank_genes_groups"]["scores"] = contrast_data["scores"]
-    adata.uns["rank_genes_groups"]["pvals"] = contrast_data["pvals"]
-    adata.uns["rank_genes_groups"]["pvals_adj"] = contrast_data["pvals_adj"]
-
-# scanpy plotting functions work directly
-sc.pl.rank_genes_groups(adata, n_genes=20)
 ```
 
 ### Querying DE results
@@ -218,8 +202,8 @@ Example: `PXD000000.de.h5ad`
 !!! note "Bundling AE and DE"
     AE and DE results can be stored in the same AnnData file. The expression matrix (`X` and `layers`) comes from the AE view, and DE results are added to `uns["de_results"]`. This enables a single file that contains both the expression data and the statistical comparisons.
 
-!!! tip "QPX is richer than scanpy"
-    Fields like `se`, `gene_names`, `condition_test`, `condition_reference`, and `is_significant` have no direct equivalent in scanpy's `rank_genes_groups` format. QPX preserves more statistical detail.
+!!! note "scanpy"
+    `de_results` shares field names with scanpy's `rank_genes_groups` but not its layout, which has one structured array per field with a column per group, so `sc.pl.rank_genes_groups` does not read it. Build `uns["rank_genes_groups"]` from it to use scanpy's plots.
 
 !!! note "Relationship to other views"
     The DE view takes as input the protein quantification from the [Protein Group View](pg.md) or the [Absolute Expression View](absolute.md). For absolute expression values per sample, see the [Absolute Expression View](absolute.md).

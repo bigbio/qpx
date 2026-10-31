@@ -507,31 +507,18 @@ from qpx.cli.convert import convert_mzidentml_cmd
 print(generate_example(convert_mzidentml_cmd, "Convert an mzIdentML file with default settings:"))
 ```
 
-#### With Spectral Data from Single mzML {#mzidentml-example-spectral}
+#### With Spectral Data from an MGF {#mzidentml-example-spectral}
 
 ```bash
 qpxc convert mzidentml \
-    --mzid-file /path/to/results.mzid \
-    --mzml-file /path/to/spectra.mzML \
+    --mzid-path /path/to/results.mzid \
+    --mgf-path /path/to/spectra.mgf \
+    --include-spectra \
     --output-folder ./output \
-    --spectral-data \
     --output-prefix psm_with_spectra
 ```
 
-#### With Spectral Data from Multiple mzML Files {#mzidentml-example-multi-mzml}
-
-When your mzIdentML references multiple mzML files, use the `--mzml-folder` option:
-
-```bash
-qpxc convert mzidentml \
-    --mzid-file /path/to/results.mzid.gz \
-    --mzml-folder /path/to/mzml_files/ \
-    --output-folder ./output \
-    --spectral-data \
-    --output-prefix psm_multi_mzml
-```
-
-The converter automatically matches PSMs to mzML files based on the `run_file_name` field in the mzIdentML. File matching is case-insensitive and supports both `.mzML` and `.mzML.gz` extensions.
+`--mgf-path` alone fills scan numbers and m/z; `--include-spectra` also attaches the whole spectrum of each PSM as `mz_array` and `intensity_array`.
 
 ### Supported Native ID Formats {#mzidentml-native-id}
 
@@ -560,20 +547,14 @@ The converter supports multiple native ID formats for scan number extraction:
 
 ### Best Practices {#mzidentml-best-practices}
 
-- Use `--mzml-folder` when mzIdentML references multiple mzML files
-- Ensure mzML file names match those referenced in mzIdentML (case-insensitive)
 - Use compressed `.mzid.gz` files to save disk space
-- Enable `--spectral-data` only when spectral arrays are needed for downstream analysis
+- Enable `--include-spectra` only when spectral arrays are needed for downstream analysis
 
 ### Common Issues {#mzidentml-issues}
 
-**Issue**: No spectra attached from mzML folder
+**Issue**: No spectra attached from the MGF
 
-- **Solution**: Verify mzML file names match `run_file_name` in mzIdentML
-
-**Issue**: zlib errors when reading mzML.gz files
-
-- **Solution**: Decompress mzML.gz files or re-download if corrupted
+- **Solution**: Pass `--include-spectra` with `--mgf-path`, and check that the MGF's `index=` values match the spectrum references of the mzIdentML
 
 **Issue**: Scan numbers not extracted correctly
 

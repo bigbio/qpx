@@ -133,6 +133,8 @@ class MzIdentMLConverter(BaseOrchestrator):
                 writer.write_batch(records)
                 total += len(records)
             declare_scan_format(writer, formats)
+            if mgf_index is not None and mgf_index.keep_peaks:
+                writer.add_footer_metadata({b"spectrum_content": b"all_peaks"})
         logger.info("Wrote %d PSMs to %s", total, psm_path)
         return pepforms
 

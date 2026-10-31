@@ -599,7 +599,9 @@ def _long_de_results(contrasts: dict) -> pd.DataFrame:
     """Flatten the specification's ``{contrast: {names, logfoldchanges, ...}}`` layout into long form."""
     frames = []
     for contrast, fields in contrasts.items():
-        frame = pd.DataFrame({"contrast": contrast, "protein": list(fields["names"]), "log2FC": fields["logfoldchanges"]})
+        frame = pd.DataFrame(
+            {"contrast": contrast, "protein": list(fields["names"]), "log2FC": fields.get("logfoldchanges", np.nan)}
+        )
         for column in ("pvals_adj", "scores", "pvals", "se"):
             if column in fields:
                 frame[column] = fields[column]

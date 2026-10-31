@@ -1,5 +1,6 @@
 """``transform quantify`` runs the named method and writes the named format; AnnData views read and validate."""
 
+import json
 import sys
 from types import ModuleType
 
@@ -130,6 +131,9 @@ def test_ibaq_writes_the_format_the_suffix_names(tmp_path, fake_mokume):
     assert view.layers["ibaq_raw"].tolist() == [[8.0]]
     assert view.layers["ibaq_ppb"].tolist() == [[100.0]]
     assert view.uns["file_type"] == "absolute_expression"
+    assert view.uns["log_base"] == 2
+    assert view.uns["var_key"] == "anchor_protein"
+    assert json.loads(view.uns["quantification_parameters"])["method"] == "ibaq"
     assert not validate_anndata_view(tmp_path / "o.ae.h5ad", "ae").issues
 
 
@@ -222,3 +226,88 @@ def test_validate_reports_a_de_view_without_results(tmp_path):
 
     assert [issue.check for issue in result.errors] == ["anndata_layout"]
     assert [issue.check for issue in result.warnings] == ["anndata_file_type"]
+
+
+def _ae_view(path, x=(3.0,), raw=(8.0,), **uns):
+    adata = ad.AnnData(
+        X=np.array([x], dtype="float64"),
+        obs=pd.DataFrame(index=["S1"]),
+        var=pd.DataFrame(index=[f"P{i}" for i in range(len(x))]),
+    )
+    adata.layers["ibaq_raw"] = np.array([raw], dtype="float64")
+    adata.uns.update({"file_type": "absolute_expression", "log_base": 2, "var_key": "pg_accessions", "aggregation": "x", **uns})
+    adata.write_h5ad(path)
+    return path
+
+
+def test_ae_validation_reads_what_x_is_declared_to_be(tmp_path):
+    assert not validate_anndata_view(_ae_view(tmp_path / "ok.ae.h5ad"), "ae").issues
+
+    wrong_base = validate_anndata_view(_ae_view(tmp_path / "base.ae.h5ad", log_base=10), "ae")
+    assert [issue.message for issue in wrong_base.issues] == ["base.ae.h5ad: X is not the base 10 logarithm of layer ibaq_raw"]
+
+    # A protein not detected in a sample is NaN whatever ibaq_raw says.
+    undetected = _ae_view(tmp_path / "nan.ae.h5ad", x=(3.0, np.nan), raw=(8.0, 0.0))
+    assert not validate_anndata_view(undetected, "ae").issues
+
+
+def test_ae_validation_reports_unusable_values_and_metadata(tmp_path):
+    infinite = validate_anndata_view(_ae_view(tmp_path / "inf.ae.h5ad", x=(np.inf,)), "ae")
+    assert any("infinite" in issue.message for issue in infinite.issues)
+
+    negative = validate_anndata_view(_ae_view(tmp_path / "neg.ae.h5ad", raw=(-1.0,)), "ae")
+    assert any("layer ibaq_raw has negative" in issue.message for issue in negative.issues)
+
+    key = validate_anndata_view(_ae_view(tmp_path / "key.ae.h5ad", var_key="pg_id"), "ae")
+    assert any("var_key" in issue.message for issue in key.issues)
+
+    table = pd.DataFrame({"protein": ["S1"], "amount": [50.0]})
+    standards = validate_anndata_view(_ae_view(tmp_path / "std.ae.h5ad", standards=table), "ae")
+    assert any("standards" in issue.message for issue in standards.issues)
+
+
+def test_ae_validation_warns_about_unrecorded_metadata(tmp_path):
+    adata = ad.read_h5ad(_ae_view(tmp_path / "w.ae.h5ad"))
+    del adata.uns["log_base"], adata.uns["var_key"], adata.uns["aggregation"]
+    adata.write_h5ad(tmp_path / "w.ae.h5ad")
+
+    result = validate_anndata_view(tmp_path / "w.ae.h5ad", "ae")
+
+    assert not result.errors
+    assert [issue.message for issue in result.warnings] == [
+        "w.ae.h5ad: uns has no log_base",
+        "w.ae.h5ad: uns has no var_key",
+        "w.ae.h5ad: uns has no aggregation",
+    ]
+
+
+def _omnibus_view(path, **uns):
+    adata = ad.AnnData(X=np.zeros((1, 1)), obs=pd.DataFrame(index=["S1"]), var=pd.DataFrame(index=["P1"]))
+    adata.uns.update({"file_type": "differential_expression", **uns})
+    adata.uns["de_results"] = {
+        "any_dose": {
+            "names": np.array(["P1"]),
+            "pvals": np.array([0.01]),
+            "pvals_adj": np.array([0.02]),
+            "df": np.array([29.05]),
+            "statistic_type": "F",
+            "contrast_definition": "dose_low=dose_high=0",
+        }
+    }
+    adata.write_h5ad(path)
+    return path
+
+
+def test_de_validation_accepts_an_f_test_without_a_fold_change_or_a_pair_of_conditions(tmp_path):
+    path = _omnibus_view(tmp_path / "f.de.h5ad", entity_type="site")
+
+    assert not validate_anndata_view(path, "de").issues
+    matrix = _build_differential_adata(tmp_path, "f")
+    assert np.isnan(matrix["any_dose", "P1"].X[0, 0])
+    assert matrix["any_dose", "P1"].layers["pvals_adj"][0, 0] == pytest.approx(0.02)
+
+
+def test_de_validation_reports_an_unknown_entity_type(tmp_path):
+    result = validate_anndata_view(_omnibus_view(tmp_path / "e.de.h5ad", entity_type="transcript"), "de")
+
+    assert any("entity_type" in issue.message for issue in result.errors)

@@ -1,5 +1,6 @@
 """Transform CLI quantify implementation."""
 
+import json
 import logging
 from pathlib import Path
 from typing import Optional
@@ -68,7 +69,8 @@ def _run_ibaq(peptide_df, options: dict) -> None:
     dropped = peptide_df["ProteinName"].nunique() - result["ProteinName"].nunique()
     if dropped:
         click.echo(f"WARNING: {dropped} protein(s) were not in the FASTA or had no iBAQ value and were dropped", err=True)
-    _save_result(result, output)
+    recorded = ("enzyme", "normalize", "min_aa", "max_aa", "ploidy", "cpc", "organism")
+    _save_result(result, output, {"method": "ibaq", **{name: options[name] for name in recorded}})
     click.echo(f"iBAQ results saved to {output}")
 
 
@@ -106,7 +108,7 @@ def _run_generic_quantify(peptide_df, method_lower, method, topn_n, threads, nor
     return result_df
 
 
-def _save_ae_anndata(result_df, output: Path) -> None:
+def _save_ae_anndata(result_df, output: Path, parameters: dict) -> None:
     """Write iBAQ results as the absolute-expression AnnData view: ``X`` is log2 iBAQ, with raw values in a layer."""
     import anndata as ad
     import numpy as np
@@ -138,17 +140,22 @@ def _save_ae_anndata(result_df, output: Path) -> None:
     adata.uns["qpx_version"] = QPX_SPEC_VERSION
     adata.uns["writer_version"] = __version__
     adata.uns["file_type"] = "absolute_expression"
+    adata.uns["log_base"] = 2
+    # quantify sums a peptide over the runs of a sample and treats all groups led by one protein as that protein.
+    adata.uns["var_key"] = "anchor_protein"
+    adata.uns["aggregation"] = "mokume_peptides_to_protein_per_sample"
+    adata.uns["quantification_parameters"] = json.dumps(parameters, sort_keys=True)
     adata.write_h5ad(output)
 
 
-def _save_result(result_df, output: Path) -> None:
+def _save_result(result_df, output: Path, parameters: dict | None = None) -> None:
     """Save quantification results to the specified output format."""
     suffix = output.suffix.lower()
     if suffix not in _SUPPORTED_SUFFIXES:
         raise click.UsageError(f"Unsupported output format '{suffix}'. Use .parquet, .tsv, .csv, or .h5ad for iBAQ")
     output.parent.mkdir(parents=True, exist_ok=True)
     if suffix == ".h5ad":
-        _save_ae_anndata(result_df, output)
+        _save_ae_anndata(result_df, output, parameters or {})
     elif suffix == ".parquet":
         result_df.to_parquet(str(output), index=False)
     elif suffix == ".tsv":
