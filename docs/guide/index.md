@@ -14,6 +14,7 @@ Convert various mass spectrometry data formats to the QPX standard format:
 - **DIA-NN Conversion**: Convert DIA-NN reports to feature and protein group formats
 - **MaxQuant Conversion**: Convert MaxQuant PSM, feature, and protein group data
 - **FragPipe Conversion**: Convert FragPipe PSM data to QPX format
+- **Proteome Discoverer Conversion**: Convert PD PSM and protein exports to QPX format
 - **mzIdentML Conversion**: Convert mzIdentML format PSM data
 - **SDRF Conversion**: Convert SDRF metadata to QPX sample/run format
 

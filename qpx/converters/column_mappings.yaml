@@ -38,6 +38,49 @@ fragpipe:
       sequence_coverage: ["Percent Coverage", "Coverage"]
       molecular_weight: ["Protein Molecular Weight (Da)"]
 
+proteome_discoverer:
+  tool_name: "Proteome Discoverer"
+  tool_versions: "2.2+"
+  rt_unit: "minute"
+  column_mapping:
+    psm:
+      sequence: ["Annotated Sequence", "Sequence"]
+      modifications: ["Modifications"]
+      charge: ["Charge"]
+      scan: ["First Scan"]
+      run_file_name: ["Spectrum File"]
+      file_id: ["File ID"]
+      observed_mz: ["m/z [Da]", "mz in Da"]
+      mass_error_ppm: ["DeltaM [ppm]", "Delta M in ppm"]
+      rt: ["RT [min]", "RT in min"]
+      apex_rt: ["Apex RT [min]", "Apex RT in min"]
+      rank: ["Rank"]
+      qvalue: ["Percolator q-Value", "q-Value"]
+      posterior_error_probability: ["Percolator PEP", "PEP"]
+      missed_cleavages: ["# Missed Cleavages", "Number of Missed Cleavages"]
+      ion_mobility: ["Ion Mobility", "1/K0"]
+      protein_accessions: ["Protein Accessions"]
+      anchor_protein: ["Master Protein Accessions"]
+      confidence: ["Confidence"]
+      psm_ambiguity: ["PSM Ambiguity"]
+      identifying_node: ["Identifying Node"]
+      isolation_interference: ["Isolation Interference [%]", "Isolation Interference in Percent"]
+      quan_info: ["Quan Info"]
+      ms1_abundance: ["Precursor Abundance", "Intensity"]
+    pg:
+      anchor_protein: ["Accession"]
+      protein_group_ids: ["Protein Group IDs"]
+      pg_names: ["Description"]
+      gg_names: ["Gene Symbol"]
+      pg_qvalue: ["Exp. q-value: Combined", "Exp Protein Group q-value Combined", "Exp q-value Combined", "Exp Protein q-value Combined"]
+      contaminant: ["Contaminant"]
+      peptide_count_total: ["# Peptides", "Number of Peptides"]
+      peptide_count_unique: ["# Unique Peptides", "Number of Unique Peptides"]
+      sequence_coverage: ["Coverage [%]", "Coverage in Percent"]
+      molecular_weight: ["MW [kDa]", "MW in kDa"]
+      sequence_length: ["# AAs", "Number of AAs"]
+      sum_pep_score: ["Sum PEP Score"]
+
 diann:
   tool_name: "DIA-NN"
   tool_versions: "1.8+"

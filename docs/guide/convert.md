@@ -112,6 +112,7 @@ The `convert` command group provides converters for multiple proteomics software
 - [spectronaut](#spectronaut) - Convert Spectronaut report to QPX format
 - [maxquant](#maxquant) - Convert MaxQuant output to QPX format
 - [fragpipe](#fragpipe) - Convert FragPipe output to QPX format
+- [proteome-discoverer](#proteome-discoverer) - Convert Proteome Discoverer text exports to QPX format
 - [mzidentml](#mzidentml) - Convert mzIdentML file to PSM format
 - [cdap](#cdap) - Convert CPTAC CDAP `.psm` files to QPX format
 - [mz](#mz) - Convert an mzML spectra directory to QPX `mz.parquet` (full spectra)
@@ -128,6 +129,7 @@ The `convert` command group provides converters for multiple proteomics software
 |---|---|---|---|
 | `diann` | `--max-memory` | DuckDB, plus Python columns of about one million report rows at a time. A 10× Parquet report peaked at 3.8 GB by default or with `8GB`, and at 2.4 GB with `2GB` | Lower `--max-memory` and put `--temp-dir` on a large disk. Convert a Parquet report rather than a TSV one |
 | `spectronaut`, `cdap`, `quantms-msstats` | `--max-memory` | DuckDB plus one batch of Python rows | Lower `--max-memory` and put `--temp-dir` on a large disk |
+| `proteome-discoverer` | `--max-memory` | DuckDB holds the PSM export twice, once per view; `Proteins.txt` is read whole in pandas | Lower `--max-memory`, then use a machine with more RAM |
 | `fragpipe` | `--max-memory` | DuckDB, batches in pandas and the protein table | Lower `--max-memory`, then use a machine with more RAM |
 | `maxquant` | `--max-memory`, with no real effect | Python batches of 100,000 rows and the deduplicated tables | Use a machine with more RAM; a larger `--max-memory` does not help |
 | `mzidentml` | None | The parsed document and the spectra index | Use a machine with more RAM |
@@ -521,6 +523,33 @@ The labels come from the channel of each annotation line (`127N` is `TMT127N`), 
 - **Output**: `{output-prefix}.psm.parquet`
 - **Format**: Parquet file containing PSM data
 - **Schema**: Conforms to QPX PSM specification
+
+---
+
+## proteome-discoverer
+
+Convert the text exports of a Proteome Discoverer consensus result to QPX format. Export `PSMs`, `Proteins` and `Input Files` from the result; the `.pdResult` file itself is not read.
+
+### Parameters {#proteome-discoverer-parameters}
+
+```python exec="1" session="doc_utils" html="1"
+from qpx.cli.convert import convert_proteome_discoverer_cmd
+
+print(generate_params_table(convert_proteome_discoverer_cmd))
+```
+
+### Usage Examples {#proteome-discoverer-examples}
+
+```bash
+qpxc convert proteome-discoverer \
+    --psm-file study_PSMs.txt \
+    --proteins-file study_Proteins.txt \
+    --input-files study_InputFiles.txt \
+    --sdrf-file study.sdrf.tsv \
+    --output-folder ./output
+```
+
+What each view takes from the exports is in [Converter coverage](../spec/converter-coverage.md#proteome-discoverer).
 
 ---
 

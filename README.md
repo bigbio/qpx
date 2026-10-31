@@ -12,7 +12,7 @@ A Python package for working with mass spectrometry data in the QPX format.
 
 ## Features
 
-- **Convert** data from OpenMS (native QPX and consensusXML), DIA-NN, MaxQuant, Spectronaut, FragPipe, CPTAC CDAP (`.psm`), mzIdentML, and SDRF to QPX Parquet format
+- **Convert** data from OpenMS (native QPX and consensusXML), DIA-NN, MaxQuant, Spectronaut, FragPipe, Proteome Discoverer, CPTAC CDAP (`.psm`), mzIdentML, and SDRF to QPX Parquet format
 - **Transform** QPX data: gene mapping, protein quantification (DirectLFQ, MaxLFQ, iBAQ, TopN, …), accession normalization, metadata updates
 - **Query** datasets with SQL, filter rows, or preview with `head`
 - **Inspect** dataset summaries, Arrow schemas, and Parquet metadata
@@ -202,7 +202,7 @@ qpxc pdc2qpx -a cptac_lfq.csv --download-dir ./downloads --output-folder ./qpx
 ### Convert
 
 ```bash
-qpxc convert [openms | openms-consensus | diann | maxquant | spectronaut | fragpipe | mzidentml | cdap | mz | sdrf] [OPTIONS]
+qpxc convert [openms | openms-consensus | diann | maxquant | spectronaut | fragpipe | proteome-discoverer | mzidentml | cdap | mz | sdrf] [OPTIONS]
 ```
 
 ### Transform
@@ -257,6 +257,7 @@ qpx/
 │   ├── maxquant/           # MaxQuant converter
 │   ├── spectronaut/        # Spectronaut converter
 │   ├── fragpipe/           # FragPipe converter
+│   ├── proteome_discoverer/ # Proteome Discoverer exports converter
 │   ├── mzidentml/          # mzIdentML converter
 │   ├── quantms_msstats/    # QuantMS *_msstats_in.csv + SDRF converter
 │   └── sdrf.py             # Shared SDRF converter

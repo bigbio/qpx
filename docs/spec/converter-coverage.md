@@ -8,6 +8,7 @@ This page lists which QPX data views each converter produces and explains the so
 | ----------- | :---: | :-------: | :--: | :------: | :------: | :---: | :-------: | :--------: | :----------: | :--: |
 | **MaxQuant** | Yes | Yes | Yes | If `Proteins` | If SDRF | If SDRF | Yes | If terms | Yes | No |
 | **FragPipe** | Yes | Yes | Yes | Yes | If SDRF | If SDRF | Yes | If terms | Yes | No |
+| **Proteome Discoverer** | Yes | If abundances | If Proteins.txt | If abundances | If SDRF | If SDRF | Yes | If terms | Yes | No |
 | **DIA-NN** | No | Yes | Yes | Yes | Yes | Yes | Yes | If terms | Yes | If MS2 info |
 | **Spectronaut** | No | Yes | Yes | No | If SDRF | If SDRF | Yes | Yes | Yes | No |
 | **OpenMS native QPX** | Yes | Yes | Yes | No | Yes | Yes | Yes | Yes | Yes | No |
@@ -307,12 +308,25 @@ dataset. With the search FASTA they fill null `pg.sequence_coverage`,
 `pg.molecular_weight`, `feature.pg_positions` and `gg_names`. See the
 [transform guide](../guide/transform.md#protein-properties).
 
+## Proteome Discoverer
+
+`qpxc convert proteome-discoverer` reads the text exports of a consensus result, not the `.pdResult` file. Both header spellings of PD are accepted (`m/z [Da]` and `mz in Da`, `Abundance: 126` and `Abundance 126`). It was measured on PXD081613 (TMTpro 18-plex, Sequest and Comet with ptmRS; the first 16,421 PSMs of the phosphoproteome), PXD073725 (TMT10, older headers, grouped abundances only; 58,948 PSMs), PXD046576 (Minora label-free; 16,359 PSMs) and PXD083739 (identification only; 29,218 PSMs). Labelled MS1 exports (`Abundance: Light`) stop the conversion.
+
+| View | Source |
+| ---- | ------ |
+| `psm` | One row per run, scan, peptidoform and charge of `PSMs.txt`. Of several hits on one spectrum with the same identity, as from two search engines, the lowest rank then the lowest q-value stays, and `Identifying Node` says which. `pass_threshold` is `Confidence` = High, ranks stay as the `rank` score, and `--rank1-only` keeps only the first-ranked hits. `ptmRS <mod> Site Probabilities` give `modification_candidates`, and `Isolation Interference` gives the `parent_ion_fraction` score. |
+| `feature` | The rank 1 PSMs of a precursor in a run, leaving out those `PSM Ambiguity` calls Rejected and `Quan Info` calls excluded. Reporter channels are summed over them. A label-free feature takes the largest `Precursor Abundance` (`Intensity` in an export without it), its PSM count as `spectral_count` and its `Apex RT`. The identification fields are those of the lowest q-value PSM. An export without abundance columns writes no feature view. |
+| `pg` | One row per quantified file group and channel of the `IsMasterProtein` rows of `Proteins.txt`. The members of `pg_accessions` are the rows sharing its `Protein Group IDs`. `Abundance: F1: 126, Sample` is the intensity, or `Abundances (Grouped): F1, 126` when PD did not write the per-file column, and that value is normalized and scaled if the consensus step was set so. `grouped_runs` holds the fractions of the file group (`F16.1`, `F16.2`) in fraction order. An identification-only export has one `LFQ` row per protein with a null intensity. |
+
+Reporter labels come from the column (`127N` is `TMT127N`), and must match the SDRF `comment[label]` values, which `--sdrf-file` converts to the sample and run views.
+
 ## CLI commands
 
 | Converter | Command |
 | ----------- | --------- |
 | MaxQuant | `qpxc convert maxquant` |
 | FragPipe | `qpxc convert fragpipe` |
+| Proteome Discoverer | `qpxc convert proteome-discoverer` |
 | DIA-NN | `qpxc convert diann` |
 | Spectronaut | `qpxc convert spectronaut` |
 | OpenMS native QPX | `qpxc convert openms` |
@@ -327,6 +341,7 @@ dataset. With the search FASTA they fill null `pg.sequence_coverage`,
 | Converter | Typical inputs |
 | ----------- | ---------------- |
 | MaxQuant | msms.txt, evidence.txt, proteinGroups.txt |
+| Proteome Discoverer | PSMs.txt; optional Proteins.txt, InputFiles.txt (when PSMs.txt has no Spectrum File) and SDRF |
 | FragPipe | psm.tsv, combined_ion, combined_protein; for one TMT/iTRAQ plex, psm.tsv, ion.tsv, protein.tsv, annotation.txt and optionally a TMT-Integrator abundance_protein report |
 | DIA-NN | report (TSV or Parquet), pg_matrix (optional); required SDRF; optional mzML statistics folder (`--mzml-info-folder`) for feature scans and the `mz` view |
 | Spectronaut | report.tsv; optional SDRF |
