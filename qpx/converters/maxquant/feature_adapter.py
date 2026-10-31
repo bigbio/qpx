@@ -17,7 +17,6 @@ Key schema changes:
 from __future__ import annotations
 
 import logging
-import re
 from typing import Optional
 
 import duckdb
@@ -34,6 +33,7 @@ from qpx.converters.maxquant.constants import (
     mq_observed_mz,
     to_proforma,
 )
+from qpx.converters.maxquant.protein_fields import group_ids, parse_genes
 from qpx.converters.maxquant.silac import (
     identified_labels,
     identified_states,
@@ -180,7 +180,7 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
 
     def _load_labels(self, sdrf_path: Optional[str], evidence_path: str, columns: set[str]) -> list[tuple[str, int]]:
         """Load the SDRF run labels, SILAC labels and fixed modifications; return the isobaric channels."""
-        self._run_labels, experiment_type, channels = self._load_sdrf(sdrf_path)
+        self._run_labels, experiment_type, channels = self._load_sdrf(sdrf_path, columns)
         self._multiplet = multiplet_labels(ratio_letters(columns), self._run_labels, experiment_type)
         self._states_by_evidence = identified_states(self._conn, columns, evidence_path) if self._multiplet else {}
         self._fixed = self._fixed_mods(sdrf_path, evidence_path)
@@ -346,16 +346,6 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         """Order-independent key for a protein-group membership."""
         return frozenset(a.strip() for a in accessions if a and a.strip())
 
-    @staticmethod
-    def _parse_genes(gene_raw, fasta_raw) -> Optional[list[str]]:
-        """Parse gene names from a proteinGroups row (Gene names, else Fasta headers)."""
-        genes: list[str] | None = None
-        if gene_raw is not None and pd.notna(gene_raw) and str(gene_raw).strip():
-            genes = [g.strip() for g in str(gene_raw).split(";") if g.strip()] or None
-        if not genes and fasta_raw is not None and pd.notna(fasta_raw) and str(fasta_raw).strip():
-            genes = MaxQuantFeatureAdapter._genes_from_headers(fasta_raw)
-        return genes
-
     def _build_pg_lookup(self, df: pd.DataFrame, acc_col: str, qval_col: Optional[str], gene_col: Optional[str]) -> dict:
         """Build the ``by_id``/``by_group``/``by_accession`` lookup maps (see caller)."""
         by_id: dict[int, dict] = {}
@@ -375,7 +365,7 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
             accs = [canonical_accession(a.strip()) for a in acc_raw.split(";") if a.strip()]
             if not accs:
                 continue
-            value = {"qvalue": safe_float(qval), "genes": self._parse_genes(gene_raw, fasta_raw)}
+            value = {"qvalue": safe_float(qval), "genes": parse_genes(gene_raw, fasta_raw)}
             if pd.notna(group_id):
                 by_id[int(group_id)] = {**value, "accessions": accs}
             key = self._canonical_group_key(accs)
@@ -524,6 +514,22 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
             "gg_names": gg_names,
         }
 
+    def write_pepmap(self, output_path: str) -> bool:
+        """Write every protein ``Proteins`` lists for each target peptidoform of the converted evidence."""
+        columns = self.get_table_columns("evidence")
+        r = self._resolved
+        sequence, modified = r.get("sequence", "Sequence"), r.get("modified_sequence", "Modified sequence")
+        if "Proteins" not in columns:
+            return False
+        target = "" if "Reverse" not in columns else """WHERE COALESCE("Reverse", '') <> '+'"""
+        rows = self._conn.execute(f"""SELECT DISTINCT "{sequence}", "{modified}", "Proteins" FROM evidence {target}""").fetchall()
+        pepmap: dict[str, tuple[str, list[str]]] = {}
+        for seq, mod, proteins in rows:
+            peptidoform = to_proforma(str(mod), self._fixed)
+            if proteins and peptidoform:
+                pepmap.setdefault(peptidoform, (seq, [self._norm_uniprot_id(p) for p in proteins.split(";")]))
+        return self._write_pepmap(output_path, pepmap, "maxquant")
+
     def _build_intensities(
         self,
         row,
@@ -547,7 +553,11 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         raw_val = safe_float(row.get(_FEATURE_MAP["intensity"][0]))
         intensity_val = lfq_val if (lfq_val is not None and lfq_val > 0) else raw_val
         quantified = intensity_val is not None and intensity_val > 0
-        return [{"label": "LFQ", "intensity": intensity_val if quantified else None}], None
+        count = safe_float(row.get("MS/MS count"))
+        additional = None
+        if count is not None:
+            additional = [{"label": "LFQ", "intensities": [{"intensity_name": "spectral_count", "intensity_value": count}]}]
+        return [{"label": "LFQ", "intensity": intensity_val if quantified else None}], additional
 
     def _reporter_intensities(self, row, run_file_name: str, channels: list[tuple[str, int]], ri_offset: int) -> tuple:
         """One intensity per channel the SDRF assigns in this run, read from its plex position."""
@@ -571,17 +581,6 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
                     }
                 )
         return intensities, additional_intensities
-
-    @staticmethod
-    def _genes_from_headers(fasta_raw: str) -> Optional[list[str]]:
-        """Extract distinct gene symbols from FASTA headers."""
-        genes = []
-        for hdr in str(fasta_raw).split(";"):
-            m = re.search(r"GN=([^\s;]+)", hdr)
-            if m and m.group(1) not in genes:
-                genes.append(m.group(1))
-        genes = genes or None
-        return genes
 
     def _evidence_spectrum_fields(self, row: dict, charge: int, peptidoform: str) -> dict:
         """Extract the spectrum, m/z, and retention-time fields."""
@@ -628,14 +627,6 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
             "ion_mobility": ion_mobility,
         }
 
-    @staticmethod
-    def _group_ids(value) -> list[int]:
-        """Parse an evidence ``Protein group IDs`` cell (``"12"`` or ``"12;40"``)."""
-        if value is None or (not isinstance(value, str) and pd.isna(value)):
-            return []
-        text = value if isinstance(value, str) else str(int(value))
-        return [int(part) for part in text.split(";") if part.strip()]
-
     def _assigned_group(self, row: dict, pg_maps: dict | None, razor: str) -> tuple[Optional[dict], bool]:
         """The proteinGroups.txt entry MaxQuant assigns an evidence row, and whether its peptide is shared.
 
@@ -644,7 +635,7 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         groups are not in proteinGroups.txt or no group holds the razor protein.
         """
         by_id = (pg_maps or {}).get("by_id")
-        ids = self._group_ids(row.get("Protein group IDs")) if by_id else []
+        ids = group_ids(row.get("Protein group IDs")) if by_id else []
         groups = [by_id[group_id] for group_id in ids if group_id in by_id]
         if len(ids) == 1:
             return (groups[0] if groups else None), False

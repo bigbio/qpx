@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `qpxc convert maxquant` writes the pepmap view from `Proteins` of `evidence.txt`, and each LFQ feature's `MS/MS count` as `spectral_count`.
 - `DatasetCollection` registers one view per structure over all datasets, with a `source_dataset` column, next to the positional `feature_0` views, which change with the list order.
 - `to_df(dtype_backend="pyarrow")` keeps a view's columns in Arrow memory, and `Feature.intensities_wide(labels=...)` gives one intensity column per label. The cost of each way to read nested intensities is in the specification.
 - Conversions record the DuckDB and PyArrow versions in provenance, and CI runs the unit tests against DuckDB and pyOpenMS pre-releases.
@@ -51,6 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- MaxQuant reads iTRAQ4 and other partial plexes from the columns of the plex with as many reporter columns as the table (`ITRAQ114` is column 2 of an 8-column table), and SDRF spellings such as `iTRAQ reagent 114` and `iTRAQ4plex-114` resolve to their channel. A MaxQuant pg zero `LFQ intensity` or `iBAQ` is null beside a positive intensity too, and a negative value in a DIA-NN pg matrix no longer becomes an intensity.
 - One rule strips run-file suffixes in every converter, including `.wiff2` and `.htrms`, so these runs join their SDRF rows wherever they are read.
 - Every converter writes UniProt ids as bare accessions: mzIdentML, `openms-consensus` and `quantms-msstats` wrote `sp|P1|NAME` and DIA-NN `DECOY_sp|P1|NAME`. mzIdentML now fills `pg_names` from the entry names, and `qpxc transform normalize-accessions` handles `DECOY_`/`REV__` ids and moves entry names into a null `pg_names` instead of dropping them.
 - `modifications.name` holds the Unimod title (`Carbamidomethyl`) where four converters wrote the accession (`UNIMOD:4`).

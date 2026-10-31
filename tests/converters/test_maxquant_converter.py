@@ -249,6 +249,43 @@ def test_feature_reads_reporter_columns_by_plex_position(tmp_path, labels, n_col
         assert intensities[label] == value
 
 
+@pytest.mark.parametrize("spelling", ["ITRAQ{}", "iTRAQ reagent {}", "iTRAQ4plex-{}"])
+def test_itraq4_labels_read_the_columns_of_an_8_column_table(tmp_path, spelling):
+    """ITRAQ114 is the first channel of iTRAQ4 but the second of the 8-plex the table has."""
+    labels = [spelling.format(channel) for channel in (114, 115, 116, 117)]
+    assert _reporter_features(tmp_path, labels, 8) == {
+        "ITRAQ114": 200.0,
+        "ITRAQ115": 300.0,
+        "ITRAQ116": 400.0,
+        "ITRAQ117": 500.0,
+    }
+    assert _reporter_features(tmp_path, labels, 4)["ITRAQ114"] == 100.0
+
+
+def test_lfq_feature_spectral_count_and_pepmap_from_evidence(tmp_path):
+    from qpx.converters.maxquant.feature_adapter import MaxQuantFeatureAdapter
+
+    evidence = tmp_path / "evidence.txt"
+    evidence.write_text(
+        _EVIDENCE_HEADER.rstrip("\n") + "\tMS/MS count\tProteins\tReverse\n"
+        "PEPTIDEK\t_PEPTIDEK_\t2\trun1\tMULTI-MSMS\t10\t500.0\t10.0\t9.9\t10.1\t0.01\tP1\tP1\t1000\t998.0\t0\t3\tsp|P1|A_HUMAN;P2\t\n"
+        "PEPTIDER\t_PEPTIDER_\t2\trun1\tMULTI-MSMS\t11\t510.0\t11.0\t10.9\t11.1\t0.01\tP3\tP3\t1000\t998.0\t0\t0\tP3\t\n"
+        "REDITPEK\t_REDITPEK_\t2\trun1\tMULTI-MSMS\t12\t520.0\t12.0\t11.9\t12.1\t0.01\tREV__P1\tREV__P1\t1000\t998.0\t0\t1\tREV__P1\t+\n"
+    )
+    output, pepmap = tmp_path / "feature.parquet", tmp_path / "pepmap.parquet"
+    with MaxQuantFeatureAdapter() as adapter:
+        adapter.convert(str(evidence), str(output))
+        assert adapter.write_pepmap(str(pepmap))
+    counts = {row["sequence"]: row["additional_intensities"][0]["intensities"][0] for row in pq.read_table(output).to_pylist()}
+    assert counts["PEPTIDEK"] == {"intensity_name": "spectral_count", "intensity_value": 3.0}
+    assert counts["PEPTIDER"]["intensity_value"] == 0.0
+    mapped = {row["sequence"]: row for row in pq.read_table(pepmap).to_pylist()}
+    assert set(mapped) == {"PEPTIDEK", "PEPTIDER"}
+    assert [entry["accession"] for entry in mapped["PEPTIDEK"]["pg_accessions"]] == ["P1", "P2"]
+    assert mapped["PEPTIDEK"]["is_unique"] is False
+    assert mapped["PEPTIDER"]["is_unique"] is True
+
+
 def test_feature_rejects_labels_outside_any_plex(tmp_path):
     with pytest.raises(ValueError, match="match no TMT plex"):
         _reporter_features(tmp_path, ["TMT126", "TMT10plex-127"], 10)

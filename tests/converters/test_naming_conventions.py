@@ -6,7 +6,7 @@ import pyarrow.parquet as pq
 import pytest
 
 from qpx.converters.cdap.base_adapter import CdapBaseAdapter
-from qpx.converters.channel_labels import relabel_intensities_parquet
+from qpx.converters.channel_labels import normalize_label, plex_for_columns, relabel_intensities_parquet
 from qpx.converters.diann.base_adapter import decoy_protein_group_sql, run_name_sql
 from qpx.converters.diann.pg_adapter import _EXT_RE
 from qpx.converters.openms.converter import _run_key_candidates
@@ -89,3 +89,24 @@ def test_lfq_relabelling_keeps_ms1_labels(tmp_path):
     relabel_intensities_parquet(str(source), str(output), {}, is_lfq=True)
     labels = [item["label"] for item in pq.read_table(output).column("intensities").to_pylist()[0]]
     assert labels == ["DIMETHYL0", "DIMETHYL4", "DIMETHYL8"]
+
+
+@pytest.mark.parametrize(
+    "spelling, label",
+    [
+        ("iTRAQ reagent 114", "ITRAQ114"),
+        ("iTRAQ4plex-114", "ITRAQ114"),
+        ("TMTpro-134C", "TMT134C"),
+        ("TMT6plex-127", "TMT127"),
+        ("TMT10plex-127", "TMT10plex-127"),  # not a channel of the plex it names
+        ("label free sample", "LFQ"),
+    ],
+)
+def test_reporter_spellings_resolve_to_their_channel(spelling, label):
+    assert normalize_label(spelling) == label
+
+
+def test_partial_plex_takes_the_position_of_the_table_size():
+    labels = {"ITRAQ114", "ITRAQ115", "ITRAQ116", "ITRAQ117"}
+    assert {v: k for k, v in plex_for_columns("iTRAQ", labels, 4).items()}["ITRAQ114"] == 1
+    assert {v: k for k, v in plex_for_columns("iTRAQ", labels, 8).items()}["ITRAQ114"] == 2

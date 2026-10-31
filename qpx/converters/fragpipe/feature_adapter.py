@@ -25,7 +25,6 @@ from qpx.converters.ptm import compute_precursor_mz
 from qpx.converters.utils import safe_float
 from qpx.core.sql import escape_path, sql_build
 from qpx.writers.feature import FeatureWriter
-from qpx.writers.pepmap import PepMapWriter
 
 logger = logging.getLogger(__name__)
 
@@ -367,21 +366,7 @@ class FragPipeFeatureAdapter(BaseConverter):
         peptide maps to. Returns whether a file was written: not for an ion table
         without ``Mapped Proteins`` or without features.
         """
-        if not self._pepmap:
-            return False
-        records = [
-            {
-                "sequence": sequence,
-                "peptidoform": peptidoform,
-                "pg_accessions": _pg_proteins(accessions),
-                "is_unique": len(accessions) == 1,
-            }
-            for peptidoform, (sequence, accessions) in self._pepmap.items()
-        ]
-        with PepMapWriter(output_path, creator=creator, compression=self._compression) as writer:
-            writer.write_batch(records)
-        self.logger.info("Wrote %d pepmap entries to %s", len(records), output_path)
-        return True
+        return self._write_pepmap(output_path, self._pepmap, creator)
 
     @staticmethod
     def _psm_lookup_query(actual_cols: set[str]) -> str:

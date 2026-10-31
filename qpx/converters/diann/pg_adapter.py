@@ -195,7 +195,7 @@ def _matrix_fallback(groups: pd.DataFrame, pg_matrix_indexed: pd.DataFrame) -> l
         cols = pd.Index(matrix_runs).get_indexer(runs)
         found = (rows >= 0) & (cols >= 0)
         values[found] = pg_matrix_indexed[matrix_runs].to_numpy(dtype="float64")[rows[found], cols[found]]
-    return [None if math.isnan(value) or value == 0 else value for value in values.tolist()]
+    return [None if math.isnan(value) or value <= 0 else value for value in values.tolist()]
 
 
 def _channel_quantities(label: str, values: dict[str, float | None]) -> tuple[dict, dict | None]:

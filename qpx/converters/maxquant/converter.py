@@ -10,7 +10,7 @@ from qpx.converters.maxquant.pg_adapter import MaxQuantPgAdapter
 from qpx.converters.maxquant.psm_adapter import MaxQuantPsmAdapter
 from qpx.converters.orchestrator import BaseOrchestrator
 from qpx.converters.sdrf import convert_sdrf_views
-from qpx.core.constants import FEATURE, ONTOLOGY, PG, PSM, RUN, SAMPLE
+from qpx.core.constants import FEATURE, ONTOLOGY, PEPMAP, PG, PSM, RUN, SAMPLE
 from qpx.core.scores import field_ontology_entries, score_ontology_entries
 from qpx.core.sdrf import SDRFHandler
 
@@ -55,7 +55,7 @@ class MaxQuantConverter(BaseOrchestrator):
         # Features go first: each PSM links to its feature through msms.txt "Evidence ID".
         evidence_feature_ids = None
         if FEATURE in structures and evidence_file:
-            evidence_feature_ids = self._convert_features(
+            evidence_feature_ids, wrote_pepmap = self._convert_features(
                 evidence_file,
                 protein_groups_file,
                 sdrf_file,
@@ -63,6 +63,8 @@ class MaxQuantConverter(BaseOrchestrator):
                 ontology_entries,
                 link_evidence=PSM in structures and bool(msms_file),
             )
+            if wrote_pepmap:
+                structures = [*structures, PEPMAP]
             logger.info("MaxQuant feature conversion complete")
 
         if PSM in structures and msms_file:
@@ -141,7 +143,7 @@ class MaxQuantConverter(BaseOrchestrator):
             self._resolved_mappings_by_view[PSM] = adapter.get_resolved_columns()
 
     def _convert_features(self, evidence_file, protein_groups_file, sdrf_file, output_path, ontology_entries, link_evidence):
-        """Write features, collect their ontology and source mappings, and return the evidence id -> feature_id map."""
+        """Write features and their pepmap; return the evidence id -> feature_id map and whether a pepmap was written."""
         with MaxQuantFeatureAdapter(
             duckdb_memory=self._memory,
             duckdb_threads=self._cpus,
@@ -157,7 +159,8 @@ class MaxQuantConverter(BaseOrchestrator):
             )
             ontology_entries.extend(score_ontology_entries(adapter.get_discovered_scores(), view=FEATURE))
             self._resolved_mappings_by_view[FEATURE] = adapter.get_resolved_columns()
-            return adapter.evidence_feature_ids
+            wrote_pepmap = adapter.write_pepmap(str(output_path).replace(".feature.parquet", ".pepmap.parquet"))
+            return adapter.evidence_feature_ids, wrote_pepmap
 
     def _convert_pg(self, protein_groups_file, evidence_file, sdrf_file, output_path, ontology_entries):
         """Write protein groups and collect their source mappings."""

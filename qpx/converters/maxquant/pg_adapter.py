@@ -100,7 +100,7 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
         self._resolved = resolve_columns(_PG_MAP, actual_cols)
 
         # Step 3: Load SDRF mapping and the SILAC labels
-        self._run_labels, experiment_type, channels = self._load_sdrf(sdrf_path)
+        self._run_labels, experiment_type, channels = self._load_sdrf(sdrf_path, actual_cols)
         self._multiplet = multiplet_labels(ratio_letters(actual_cols), self._run_labels, experiment_type)
 
         # Step 4: Detect intensity columns in the data, and require every
@@ -588,11 +588,9 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
                     continue
                 # Global counts cannot establish identification in this unit.
                 intensity_val = None
-            lfq_val = safe_float(row.get(f"LFQ intensity {run_name}"))
-            ibaq_val = safe_float(row.get(f"iBAQ {run_name}"))
-            if intensity_val is None:
-                # Beside a missing intensity, zero LFQ and iBAQ are MaxQuant's sentinels.
-                lfq_val, ibaq_val = lfq_val or None, ibaq_val or None
+            # Zero LFQ and iBAQ are MaxQuant's sentinels for no value.
+            lfq_val = safe_float(row.get(f"LFQ intensity {run_name}")) or None
+            ibaq_val = safe_float(row.get(f"iBAQ {run_name}")) or None
             extra_vals = []
             if lfq_val is not None:
                 extra_vals.append({"intensity_name": "lfq", "intensity_value": float(lfq_val)})

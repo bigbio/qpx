@@ -8,16 +8,18 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Optional
+from typing import Iterable, Optional
 
 import pandas as pd
 
 from qpx.converters.base import BaseConverter
-from qpx.converters.channel_labels import label_unimod, normalize_label, read_sdrf_labels, resolve_channel_labels
+from qpx.converters.channel_labels import label_unimod, normalize_label, plex_for_columns, read_sdrf_labels
 from qpx.converters.maxquant.constants import FixedMods, parameters_fixed_mods, sdrf_fixed_mods, summary_fixed_mods
 from qpx.converters.ptm import NTERM
 from qpx.converters.utils import canonical_accession
 from qpx.core.files import run_file_stem
+
+_REPORTER_COLUMN = re.compile(r"Reporter intensity (\d+)(?: .+)?")
 
 
 class MaxQuantBaseAdapter(BaseConverter):
@@ -72,13 +74,16 @@ class MaxQuantBaseAdapter(BaseConverter):
         return fixed
 
     @staticmethod
-    def _load_sdrf(sdrf_path: Optional[str]) -> tuple[dict[str, set[str]], str, list[tuple[str, int]]]:
+    def _load_sdrf(
+        sdrf_path: Optional[str], columns: Iterable[str] = ()
+    ) -> tuple[dict[str, set[str]], str, list[tuple[str, int]]]:
         """Load SDRF and return ``(run_labels, experiment_type, channels)``.
 
         When *sdrf_path* is ``None`` the method returns LFQ defaults.
 
         Args:
             sdrf_path: Filesystem path to the SDRF file, or ``None``.
+            columns: Columns of the MaxQuant table; its reporter columns size the plex.
 
         Returns:
             A 3-tuple of:
@@ -105,6 +110,7 @@ class MaxQuantBaseAdapter(BaseConverter):
         if family:
             labels = set().union(*run_labels.values())
             # MaxQuant numbers reporter columns by plex position, N-isomer before C-isomer.
-            index = {label: position - 1 for position, label in resolve_channel_labels(family, labels).items()}
+            n_columns = len({match.group(1) for column in columns if (match := _REPORTER_COLUMN.fullmatch(column))})
+            index = {label: position - 1 for position, label in plex_for_columns(family, labels, n_columns).items()}
             channels = sorted(((label, index[label]) for label in labels), key=lambda channel: channel[1])
         return run_labels, experiment_type, channels

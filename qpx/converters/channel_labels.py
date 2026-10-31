@@ -53,7 +53,20 @@ __all__ = [
 _FAMILY_PREFIX = {"TMT": "tmt", "ITRAQ": "itraq", "iTRAQ": "itraq"}
 _CANONICAL_LABELS = {label.casefold(): label for channel_labels in CHANNEL_LABELS.values() for label in channel_labels.values()}
 _SILAC_LABELS = set(CHANNEL_LABELS["silac3plex"].values())
+# TMTpro-134C, iTRAQ4plex-114, "iTRAQ reagent 114"
+_REPORTER_SPELLING = re.compile(r"(?i)(TMT|iTRAQ)(?:(\d+)plex|pro)?[\s_-]*(?:reagent)?[\s_-]*(\d{3}[NC]?)")
 _ONTOLOGY_NAME = re.compile(r"(?:^|;)\s*NT\s*=\s*([^;]+)", re.IGNORECASE)
+
+
+def _reporter_channel(text: str) -> str:
+    """``iTRAQ4plex-114`` -> ``ITRAQ114``; a channel its named plex does not have keeps its spelling."""
+    spelling = _REPORTER_SPELLING.fullmatch(text)
+    if spelling is None:
+        return text
+    family, plex_size, channel = spelling.groups()
+    label = f"{family}{channel}".upper()
+    plex = CHANNEL_LABELS.get(f"{family}{plex_size}plex".lower())
+    return text if plex is not None and label not in plex.values() else label
 
 
 def normalize_label(label: str) -> str:
@@ -62,7 +75,7 @@ def normalize_label(label: str) -> str:
     match = _ONTOLOGY_NAME.search(text)
     if match:
         text = match.group(1).strip()
-    normalized = _normalize_label(text)
+    normalized = _normalize_label(_reporter_channel(text))
     return _CANONICAL_LABELS.get(normalized.casefold(), normalized)
 
 
@@ -238,6 +251,20 @@ def label_unimod(sdrf_labels: Optional[set[str]]) -> Optional[int]:
         return _PLEX_UNIMOD.get(infer(canonical))
     except ValueError:
         return None
+
+
+def plex_for_columns(family: str, labels: set[str], n_columns: int) -> dict[int, str]:
+    """``{1-based position: label}`` of the plex holding *labels*, sized *n_columns* when one is.
+
+    A label's position depends on the plex: ``ITRAQ114`` is channel 1 of iTRAQ4
+    and channel 2 of iTRAQ8, so four labels in an 8-column table read 8-plex columns.
+    """
+    plex = resolve_channel_labels(family, labels)
+    if n_columns and len(plex) != n_columns:
+        for name, channels in CHANNEL_LABELS.items():
+            if name.startswith(_FAMILY_PREFIX[family]) and len(channels) == n_columns and labels <= set(channels.values()):
+                return channels
+    return plex
 
 
 def _channel_indices(channel_indices: Optional[Iterable]) -> set[int]:

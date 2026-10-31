@@ -6,7 +6,7 @@ This page lists which QPX data views each converter produces and explains the so
 
 | Converter | PSM | Feature | PG | Pepmap | Sample | Run | Dataset | Ontology | Provenance | mz |
 | ----------- | :---: | :-------: | :--: | :------: | :------: | :---: | :-------: | :--------: | :----------: | :--: |
-| **MaxQuant** | Yes | Yes | Yes | No | If SDRF | If SDRF | Yes | If terms | Yes | No |
+| **MaxQuant** | Yes | Yes | Yes | If `Proteins` | If SDRF | If SDRF | Yes | If terms | Yes | No |
 | **FragPipe** | Yes | Yes | Yes | Yes | If SDRF | If SDRF | Yes | If terms | Yes | No |
 | **DIA-NN** | No | Yes | Yes | Yes | Yes | Yes | Yes | If terms | Yes | If MS2 info |
 | **Spectronaut** | No | Yes | Yes | No | If SDRF | If SDRF | Yes | Yes | Yes | No |
@@ -20,6 +20,7 @@ This page lists which QPX data views each converter produces and explains the so
 - **Yes** — the converter produces this view.
 - **No** — the converter does not produce this view (e.g. DIA-NN has no PSM view; mzIdentML has no Feature).
 - **If SDRF** — the view is produced only when an SDRF file is provided. Whether SDRF is optional or required depends on the converter; see its CLI contract below.
+- **If `Proteins`** — the view is produced when `evidence.txt` has a `Proteins` column.
 - **If terms** — the view is produced when the converter discovers resolvable ontology entries.
 - **If in file** — the view is produced only when the input contains the source section (mzIdentML: a `ProteinDetectionList`).
 - **If MS2 info** — the view is produced only when `--mzml-info-folder` contains `*_ms2_info.parquet` files (quantms-utils mzML statistics run with `--ms2_file`) and the generated feature view can be read. It holds the MS2 spectra matched to features; if no spectrum matches, no file is written.
@@ -183,7 +184,7 @@ mzIdentML produces no feature view.
 | `compensation_voltage` | Not implemented. | `Compensation Voltage`; 0 when the column is absent, because the field is part of FragPipe's feature identity. | Not implemented. | Not provided. | Not provided. |
 | `missed_cleavages` | Filled from `Missed cleavages`. | From the matching PSM. | Calculated from the peptide sequence and the SDRF enzyme; null without `--sdrf-file`. `PEP.NrOfMissedCleavages` is not read. | Not implemented: no enzyme is declared to the converter. | Not implemented, although the required SDRF declares the enzyme. |
 | `intensities` | TMT: one entry per channel the SDRF assigns in the run. SILAC: one entry per label (`Intensity L/M/H`); null for a label MaxQuant did not quantify, and for both labels of a peptide without a labelled residue. | Label-free `<exp> Intensity` only: TMT/iTRAQ reporter channels are not converted, and an isobaric SDRF or a one-experiment `ion.tsv` stops the conversion. | `FG.Quantity`, or one entry per `EG.Channel<N>Quantity`: the report does not name its channels, so they take the SDRF's SILAC labels lightest first, or `SILAC light`/`medium`/`heavy` without an SDRF. Null for a value Spectronaut reports as `Filtered`. | Null when no reporter channel (TMT) or precursor area (label-free) is positive. | Filled. |
-| `additional_intensities` | TMT corrected reporter intensities; SILAC `ratio_h_l` and `ratio_h_l_normalized` on the heavy label. Null for label-free input and when no reporter intensity is positive. | Not implemented. | `PG.Quantity`, when exported. Null for a report with channels, where it belongs to no single label. | Not implemented. | Not provided. |
+| `additional_intensities` | TMT corrected reporter intensities; SILAC `ratio_h_l` and `ratio_h_l_normalized` on the heavy label; `MS/MS count` as `spectral_count` for label-free input. Null when no reporter intensity is positive. | Not implemented. | `PG.Quantity`, when exported. Null for a report with channels, where it belongs to no single label. | Not implemented. | Not provided. |
 | `pg_global_qvalue` | `Q-value` of the feature's group in `proteinGroups.txt`. Null without `--protein-groups-file`. | Not implemented. | `PG.Qvalue`, when exported. | Not provided: `.psm` files have no protein-level q-value. | Not provided. |
 | `pg_positions` | Not implemented: `evidence.txt` has no coordinates, and the `Start position` / `End position` of `peptides.txt` are not read. | Not implemented. | Not implemented. | Not provided: protein cells give the flanking residues, stored as `pre` / `post` in `pg_accessions`, but no coordinates. | Not provided. |
 | `gg_accessions` / `gg_names` | `Gene names`, or the group's genes from `proteinGroups.txt` (`Gene names`, or `GN=` in `Fasta headers`). Both fields hold gene symbols. | `gg_names` from `Gene`. `gg_accessions`: not implemented. | `PG.Genes`, when exported. | Not provided: RefSeq accessions without gene names. | Not provided. |
