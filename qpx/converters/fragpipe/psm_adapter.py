@@ -18,7 +18,7 @@ from typing import Optional, Tuple
 import pandas as pd
 
 from qpx.converters.base import BaseConverter, resolve_columns
-from qpx.converters.fragpipe.constants import is_decoy_accession, to_modifications, to_proforma
+from qpx.converters.fragpipe.constants import is_decoy_accession, protein_accessions, to_modifications, to_proforma
 from qpx.converters.mappings import get_field_mappings
 from qpx.converters.utils import safe_float
 from qpx.core.scores import normalize_score_name
@@ -137,13 +137,13 @@ class FragPipePsmAdapter(BaseConverter):
         observed_mz = spectrum_fields["observed_mz"]
         calculated_mz = spectrum_fields["calculated_mz"]
 
-        # Protein accessions
-        protein_id = str(row.get(r.get("pg_accessions", "Protein"), ""))
-        protein_accessions = [protein_id] if protein_id else []
+        # Protein accessions: the razor protein and every other protein the peptide maps to
+        protein_raw = row.get(r.get("pg_accessions", "Protein"))
+        accessions = protein_accessions(protein_raw, row.get("Mapped Proteins"))
 
         # Is decoy (bool) -- decoy prefix on any accession in the RAW protein field
         # (rev_/REV_/DECOY_/decoy_), kept consistent with the feature/pg adapters.
-        is_decoy = is_decoy_accession(protein_id)
+        is_decoy = is_decoy_accession(protein_raw)
 
         # Peptidoform -- build ProForma from sequence + Assigned Modifications
         assigned_mods_raw = row.get("Assigned Modifications")
@@ -180,7 +180,7 @@ class FragPipePsmAdapter(BaseConverter):
             "cv_params": cv_params or None,
             "ion_mobility": ion_mobility,
             "missed_cleavages": missed_cleavages,
-            "protein_accessions": protein_accessions or None,
+            "protein_accessions": accessions or None,
             "mz_array": None,
             "intensity_array": None,
             "charge_array": None,
@@ -202,22 +202,14 @@ class FragPipePsmAdapter(BaseConverter):
         scan = [scan_number] if scan_number > 0 else []
 
         # m/z
-        observed_mz = (
-            safe_float(
-                row.get(
-                    "Calibrated Observed M/Z",
-                    row.get(r.get("observed_mz", "Observed M/Z")),
-                )
-            )
-            or 0.0
-        )
+        observed_mz = safe_float(row.get("Calibrated Observed M/Z", row.get(r.get("observed_mz", "Observed M/Z"))))
         calculated_mz = safe_float(row.get(r.get("calculated_mz", "Calculated M/Z")))
 
         # RT (FragPipe Retention is already in seconds)
         rt = safe_float(row.get(r.get("rt", "Retention")))
 
-        # PEP (FragPipe uses PeptideProphet Probability; convert to 1-prob)
-        pp_prob = safe_float(row.get("PeptideProphet Probability"))
+        # PEP (PeptideProphet Probability, "Probability" in FragPipe 22; convert to 1-prob)
+        pp_prob = safe_float(row.get("PeptideProphet Probability", row.get("Probability")))
         pep = None
         if pp_prob is not None:
             pep = 1.0 - pp_prob if pp_prob <= 1.0 else pp_prob

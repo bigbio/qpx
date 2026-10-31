@@ -45,7 +45,10 @@ from .postprocess import _finish_conversion
 )
 @click.option(
     "--experiment-annotation-file",
-    help=("FragPipe experiment_annotation.tsv mapping experiments to member raw files"),
+    help=(
+        "FragPipe experiment_annotation.tsv mapping experiments to member raw files; "
+        "--ion-file and --pg-file need it unless the SDRF source names are the experiments"
+    ),
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
 )
 @_output_folder_option

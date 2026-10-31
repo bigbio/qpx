@@ -17,7 +17,7 @@ import pandas as pd
 
 from qpx.converters.base import BaseConverter, resolve_columns
 from qpx.converters.channel_labels import experiment_runs_from_sdrf
-from qpx.converters.fragpipe.constants import is_decoy_accession
+from qpx.converters.fragpipe.constants import is_decoy_accession, protein_accessions
 from qpx.converters.mappings import get_field_mappings
 from qpx.converters.utils import safe_float
 from qpx.core.files import run_file_stem
@@ -97,6 +97,39 @@ def load_experiment_annotation(path: str) -> dict[str, list[str]]:
     return normalize_experiment_mapping(mapping)
 
 
+def resolve_experiment_runs(
+    experiments: list[str],
+    experiment_to_runs: dict[str, list[str]] | None,
+    experiment_annotation_path: str | None,
+    sdrf_path: str | None,
+) -> dict[str, list[str]]:
+    """Map each FragPipe experiment to its raw runs, raising when one has none.
+
+    The results mapping (``experiment_annotation.tsv`` or an explicit
+    ``experiment_to_runs``) comes first, then the SDRF ``source name`` of the same
+    name. An experiment in neither cannot be tied to run.parquet, so conversion
+    fails with the full list rather than writing the experiment as a run.
+    """
+    if experiment_to_runs is not None and experiment_annotation_path is not None:
+        raise ValueError("Provide either experiment_to_runs or experiment_annotation_path, not both")
+    if experiment_annotation_path is not None:
+        mapping = load_experiment_annotation(experiment_annotation_path)
+    else:
+        mapping = normalize_experiment_mapping(experiment_to_runs or {})
+    sdrf_mapping = experiment_runs_from_sdrf(sdrf_path) or {}
+    runs = {experiment: mapping.get(experiment) or sdrf_mapping.get(experiment) for experiment in experiments}
+    missing = sorted(experiment for experiment, members in runs.items() if not members)
+    if missing:
+        raise ValueError(
+            "No raw runs for FragPipe experiment(s) "
+            + ", ".join(missing)
+            + ": no experiment->runs mapping. Provide experiment_annotation.tsv "
+            "(experiment_annotation_path), an explicit experiment_to_runs mapping, "
+            "or an SDRF (sdrf_path) whose 'source name' matches the experiment(s)."
+        )
+    return runs
+
+
 class FragPipePgAdapter(BaseConverter):
     """Convert FragPipe ``combined_protein.tsv`` to ``pg.parquet``.
 
@@ -111,8 +144,7 @@ class FragPipePgAdapter(BaseConverter):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self._experiment_to_runs: dict[str, list[str]] = {}
-        self._sdrf_experiment_to_runs: dict[str, list[str]] | None = None
+        self._experiment_runs: dict[str, list[str]] = {}
 
     def convert(
         self,
@@ -136,10 +168,7 @@ class FragPipePgAdapter(BaseConverter):
                 ``combined_protein.tsv``) to its member ``run_file_name`` values.
                 A FragPipe experiment can aggregate several raw files (fractions),
                 whereas run.parquet is keyed by raw file, so ``grouped_runs`` must
-                be expanded to those files to survive the sample join. When the
-                mapping is absent, ``grouped_runs`` falls back to the single
-                experiment token, which is correct only when experiment equals the
-                raw-file name (no fractions).
+                be expanded to those files to survive the sample join.
             experiment_annotation_path: Optional FragPipe
                 ``experiment_annotation.tsv``. Its ``sample`` column names the
                 experiment and ``file`` lists the member raw files.
@@ -151,14 +180,6 @@ class FragPipePgAdapter(BaseConverter):
                 SDRF resolves an experiment, conversion raises rather than emitting
                 a dangling experiment token.
         """
-        if experiment_to_runs is not None and experiment_annotation_path is not None:
-            raise ValueError("Provide either experiment_to_runs or experiment_annotation_path, not both")
-        if experiment_annotation_path is not None:
-            self._experiment_to_runs = load_experiment_annotation(experiment_annotation_path)
-        else:
-            self._experiment_to_runs = normalize_experiment_mapping(experiment_to_runs or {})
-        self._sdrf_experiment_to_runs = experiment_runs_from_sdrf(sdrf_path)
-
         # Step 1: Load protein file into DuckDB
         self._load_protein_file(protein_path)
 
@@ -171,19 +192,12 @@ class FragPipePgAdapter(BaseConverter):
         }
         self._resolved = resolve_columns(_PG_MAP, actual_cols)
 
-        # Step 3: Detect per-experiment intensity columns and require every one to
-        # resolve to raw files (results mapping first, then SDRF) — fail early with
-        # the full list rather than emitting a dangling experiment token.
+        # Step 3: Detect per-experiment intensity columns and resolve each one to
+        # its raw files before writing anything.
         experiment_cols = self._detect_experiment_columns()
-        missing = sorted(exp for exp in experiment_cols if self._lookup_grouped_runs(exp) is None)
-        if missing:
-            raise ValueError(
-                "Cannot build grouped_runs for FragPipe experiment(s) "
-                + ", ".join(missing)
-                + ": no experiment->runs mapping. Provide experiment_annotation.tsv "
-                "(experiment_annotation_path), an explicit experiment_to_runs mapping, "
-                "or an SDRF (sdrf_path) whose 'source name' matches the experiment(s)."
-            )
+        self._experiment_runs = resolve_experiment_runs(
+            experiment_cols, experiment_to_runs, experiment_annotation_path, sdrf_path
+        )
 
         # Step 4: Stream and transform
         self.logger.info("Transforming FragPipe protein groups ...")
@@ -201,33 +215,6 @@ class FragPipePgAdapter(BaseConverter):
     # ------------------------------------------------------------------
     # Data loading
     # ------------------------------------------------------------------
-
-    def _lookup_grouped_runs(self, experiment: str) -> list[str] | None:
-        """Resolve an experiment to its raw files, or None if unmapped.
-
-        Results mapping (experiment_annotation.tsv / experiment_to_runs) first,
-        then the SDRF ``source name`` fallback. No dangling experiment token.
-        """
-        runs = self._experiment_to_runs.get(experiment)
-        if runs:
-            return runs
-        if self._sdrf_experiment_to_runs:
-            runs = self._sdrf_experiment_to_runs.get(experiment)
-            if runs:
-                return runs
-        return None
-
-    def _resolve_grouped_runs(self, experiment: str) -> list[str]:
-        """Like :meth:`_lookup_grouped_runs` but raises when unmapped."""
-        runs = self._lookup_grouped_runs(experiment)
-        if runs is None:
-            raise ValueError(
-                f"Cannot build grouped_runs for FragPipe experiment {experiment!r}: no "
-                "experiment->runs mapping. Provide experiment_annotation.tsv, an explicit "
-                "experiment_to_runs mapping, or an SDRF (sdrf_path) whose 'source name' "
-                "matches the experiment."
-            )
-        return runs
 
     def _load_protein_file(self, path: str) -> None:
         """Load combined_protein.tsv into DuckDB."""
@@ -322,7 +309,7 @@ class FragPipePgAdapter(BaseConverter):
                 # Expand the FragPipe experiment to its member run files (results
                 # mapping, else SDRF); the tool-reported per-experiment intensity
                 # is kept as-is (FragPipe already aggregated across the fractions).
-                "grouped_runs": self._resolve_grouped_runs(experiment),
+                "grouped_runs": self._experiment_runs[experiment],
                 "intensities": intensities,
                 "additional_intensities": additional_intensities or None,
                 "peptide_counts": {
@@ -360,8 +347,8 @@ class FragPipePgAdapter(BaseConverter):
         """Build protein-group fields shared across experiments."""
         r = self._resolved
         # Protein group identity
-        protein_raw = str(row.get(r.get("pg_accessions", "Protein"), ""))
-        pg_accessions = protein_raw.split(",") if protein_raw else []
+        protein_raw = row.get(r.get("pg_accessions", "Protein"))
+        pg_accessions = protein_accessions(protein_raw, row.get("Indistinguishable Proteins"))
 
         gene_raw = row.get(r.get("gg_accessions", "Gene"), "")
         gg_accessions = str(gene_raw).split(",") if pd.notna(gene_raw) and gene_raw else None

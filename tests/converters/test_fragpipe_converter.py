@@ -2,8 +2,9 @@
 
 FragPipe ``combined_protein.tsv`` reports intensities per *experiment*. Each
 experiment can aggregate several raw files, so ``grouped_runs`` must expand to
-the experiment's member ``run_file_name`` values (via ``experiment_to_runs``);
-absent that mapping it falls back to the single experiment token.
+the experiment's member ``run_file_name`` values (via ``experiment_to_runs``,
+``experiment_annotation.tsv`` or the SDRF); an experiment none of them resolves
+raises.
 """
 
 from __future__ import annotations
@@ -239,8 +240,8 @@ def test_pg_decoy_detected_from_raw_prefix(tmp_path):
     )
     df = _read_pg(tmp_path, tsv)
     decoy_flag = {row["pg_accessions"][0]: bool(row["is_decoy"]) for _, row in df.iterrows()}
-    assert decoy_flag["sp|P1|A_HUMAN"] is False
-    assert decoy_flag["REV_sp|P2|B_HUMAN"] is True
+    assert decoy_flag["P1"] is False
+    assert decoy_flag["REV_P2"] is True
 
 
 # ---- Feature adapter (combined_ion.tsv + psm.tsv) --------------------------
@@ -332,9 +333,9 @@ def test_feature_psm_enrichment_does_not_cross_experiments(tmp_path):
         )
 
     rows = {row["run_file_name"]: row for row in pq.read_table(out).to_pylist()}
-    assert rows["sampleA"]["scan"] == [500]
-    assert rows["sampleB"]["scan"] == []
-    assert rows["sampleB"]["posterior_error_probability"] is None
+    assert rows["run_A"]["scan"] == [500]
+    assert rows["run_B"]["scan"] == []
+    assert rows["run_B"]["posterior_error_probability"] is None
 
 
 def test_feature_decoy_from_raw_accession_without_psm(tmp_path):
@@ -348,12 +349,114 @@ def test_feature_decoy_from_raw_accession_without_psm(tmp_path):
     )
     out = tmp_path / "feature.parquet"
     with FragPipeFeatureAdapter() as adapter:
-        adapter.convert(feature_path=str(ion), output_path=str(out))
+        adapter.convert(feature_path=str(ion), output_path=str(out), experiment_to_runs={"sampleA": ["run_A"]})
     df = pq.read_table(str(out)).to_pandas()
     assert bool(df.iloc[0]["is_decoy"]) is True
 
 
+def test_feature_rows_are_keyed_by_the_experiment_run(tmp_path):
+    """A feature names the raw run of its experiment, which run.parquet and the pg
+    grouped_runs hold, and the run that identified it only when that is known."""
+    ion = tmp_path / "combined_ion.tsv"
+    ion.write_text(
+        "Peptide Sequence\tProtein\tM/Z\tCharge\tAssigned Modifications\t"
+        "expA Intensity\texpA Match Type\texpB Intensity\texpB Match Type\tfrac Intensity\tfrac Match Type\n"
+        "PEPTIDEK\tsp|P1|A_HUMAN\t500.0\t2\t\t1000\tMS/MS\t2000\tMBR\t3000\tMS/MS\n"
+    )
+    psm = tmp_path / "psm.tsv"
+    psm.write_text(
+        "Spectrum\tPeptide\tCharge\tAssigned Modifications\tCalibrated Observed M/Z\tCalculated M/Z\tProbability\tProtein\n"
+        "run_A.00500.00500.2\tPEPTIDEK\t2\t\t500.001\t500.000\t0.99\tsp|P1|A_HUMAN\n"
+    )
+    out = tmp_path / "feature.parquet"
+    with FragPipeFeatureAdapter() as adapter:
+        adapter.convert(
+            feature_path=str(ion),
+            output_path=str(out),
+            psm_path=str(psm),
+            experiment_to_runs={"expA": ["run_A"], "expB": ["run_B"], "frac": ["run_F2", "run_F1"]},
+        )
+
+    rows = {row["quantification_unit_id"]: row for row in pq.read_table(out).to_pylist()}
+    assert {unit: (row["run_file_name"], row["id_run_file_name"]) for unit, row in rows.items()} == {
+        "expA": ("run_A", "run_A"),
+        "expB": ("run_B", None),  # transferred by match-between-runs
+        "frac": ("run_F1", None),  # identified in one of several fractions
+    }
+    assert rows["expA"]["posterior_error_probability"] == pytest.approx(0.01)
+    # combined_ion M/Z is the calculated m/z; only a PSM gives the observed one.
+    assert rows["expA"]["observed_mz"] == pytest.approx(500.001)
+    assert rows["expB"]["observed_mz"] is None
+    assert rows["expB"]["calculated_mz"] == pytest.approx(500.0)
+
+
+def test_feature_experiment_without_runs_raises(tmp_path):
+    """An experiment no mapping resolves cannot name a run, so conversion fails."""
+    ion, _ = _write_feature_inputs(tmp_path, experiment="sampleA", spectrum_source="run_01")
+    with FragPipeFeatureAdapter() as adapter:
+        with pytest.raises(ValueError, match="No raw runs for FragPipe experiment.*sampleA"):
+            adapter.convert(feature_path=str(ion), output_path=str(tmp_path / "feature.parquet"))
+
+
+def test_features_carry_their_group_and_mapped_proteins(tmp_path):
+    """A feature lists its group's members as pg writes them, is unique only when the
+    peptide maps to one protein, and the pepmap lists every protein it maps to."""
+    from qpx.converters.fragpipe.converter import FragPipeConverter
+
+    ion = tmp_path / "combined_ion.tsv"
+    ion.write_text(
+        "Peptide Sequence\tProtein\tMapped Proteins\tM/Z\tCharge\tAssigned Modifications\texpA Intensity\n"
+        "SHAREDK\tsp|P1|A_HUMAN\tsp|P2|B_HUMAN\t500.0\t2\t\t1000\n"
+        "OTHERK\tsp|P1|A_HUMAN\tsp|P3|C_HUMAN\t400.0\t2\t\t900\n"
+        "ONLYK\tsp|P3|C_HUMAN\t\t300.0\t2\t\t800\n"
+    )
+    protein = tmp_path / "combined_protein.tsv"
+    protein.write_text(
+        "Protein\tProtein ID\tIndistinguishable Proteins\texpA Total Intensity\n"
+        "sp|P1|A_HUMAN\tP1\tsp|P2|B_HUMAN\t5000\n"
+        "sp|P3|C_HUMAN\tP3\t\t800\n"
+    )
+    out = tmp_path / "out"
+    FragPipeConverter(output_directory=out).convert(
+        ion_file=ion, pg_file=protein, experiment_to_runs={"expA": ["run_A"]}, output_prefix="fp"
+    )
+
+    features = {row["sequence"]: row for row in pq.read_table(out / "fp.feature.parquet").to_pylist()}
+    groups = sorted(row["pg_accessions"] for row in pq.read_table(out / "fp.pg.parquet").to_pylist())
+    assert groups == [["P1", "P2"], ["P3"]]
+    assert {seq: [p["accession"] for p in row["pg_accessions"]] for seq, row in features.items()} == {
+        "SHAREDK": ["P1", "P2"],
+        "OTHERK": ["P1", "P2"],
+        "ONLYK": ["P3"],
+    }
+    assert {seq: row["unique"] for seq, row in features.items()} == {"SHAREDK": False, "OTHERK": False, "ONLYK": True}
+    pepmap = pq.read_table(out / "fp.pepmap.parquet").to_pylist()
+    assert {row["sequence"]: [p["accession"] for p in row["pg_accessions"]] for row in pepmap} == {
+        "SHAREDK": ["P1", "P2"],
+        "OTHERK": ["P1", "P3"],
+        "ONLYK": ["P3"],
+    }
+
+
 # ---- PSM adapter (psm.tsv) -------------------------------------------------
+
+
+def test_psm_lists_mapped_proteins_and_reads_probability(tmp_path):
+    """protein_accessions holds every protein the peptide maps to; FragPipe 22 names the
+    PeptideProphet probability "Probability"; a missing observed m/z stays null."""
+    psm = tmp_path / "psm.tsv"
+    psm.write_text(
+        "Spectrum\tPeptide\tCharge\tAssigned Modifications\tCalculated M/Z\tProbability\tProtein\tMapped Proteins\n"
+        "run_01.00500.00500.2\tPEPTIDEK\t2\t\t500.000\t0.99\tsp|P1|A_HUMAN\tsp|P2|B_HUMAN, tr|Q9|C_HUMAN\n"
+    )
+    out = tmp_path / "psm.parquet"
+    with FragPipePsmAdapter() as adapter:
+        adapter.convert(psm_path=str(psm), output_path=str(out))
+    row = pq.read_table(out).to_pylist()[0]
+    assert row["protein_accessions"] == ["P1", "P2", "Q9"]
+    assert row["posterior_error_probability"] == pytest.approx(0.01)
+    assert row["observed_mz"] is None
+    assert row["mass_error_ppm"] is None
 
 
 @pytest.mark.parametrize(

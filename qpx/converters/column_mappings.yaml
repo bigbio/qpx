@@ -12,7 +12,7 @@ fragpipe:
       modified_sequence: ["Modified Sequence", "Modified Peptide"]
       pg_accessions: ["Protein", "Protein ID"]
       gg_names: ["Gene"]
-      observed_mz: ["M/Z"]
+      calculated_mz: ["M/Z"]
       charge: ["Charge"]
       compensation_voltage: ["Compensation Voltage"]
       modifications: ["Assigned Modifications"]

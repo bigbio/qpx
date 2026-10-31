@@ -7,7 +7,7 @@ This page lists which QPX data views each converter produces and explains the so
 | Converter | PSM | Feature | PG | Pepmap | Sample | Run | Dataset | Ontology | Provenance | mz |
 | ----------- | :---: | :-------: | :--: | :------: | :------: | :---: | :-------: | :--------: | :----------: | :--: |
 | **MaxQuant** | Yes | Yes | Yes | No | If SDRF | If SDRF | Yes | If terms | Yes | No |
-| **FragPipe** | Yes | Yes | Yes | No | If SDRF | If SDRF | Yes | If terms | Yes | No |
+| **FragPipe** | Yes | Yes | Yes | Yes | If SDRF | If SDRF | Yes | If terms | Yes | No |
 | **DIA-NN** | No | Yes | Yes | Yes | Yes | Yes | Yes | If terms | Yes | If MS2 info |
 | **Spectronaut** | No | Yes | Yes | No | If SDRF | If SDRF | Yes | Yes | Yes | No |
 | **OpenMS native QPX** | Yes | Yes | Yes | No | Yes | Yes | Yes | Yes | Yes | No |
@@ -157,7 +157,7 @@ code alone.
 | Converter | Measured on | From code only |
 | ----------- | ------------- | ---------------- |
 | MaxQuant | `tests/examples/maxquant`: `maxquant_full` (PXD001819 `evidence.txt` and `proteinGroups.txt`; 243,821 features, 27,072 pg rows) and `maxquant_simple` (TMT `msms.txt` and `evidence.txt`; 1,000 PSMs, 9,301 features) | `1/K0` (no timsTOF input) |
-| FragPipe | A TMT `psm.tsv` from the bigbio/pmultiqc test data (1,000 PSMs) | Feature and pg views: no `combined_ion.tsv` or `combined_protein.tsv` beyond the one-row inputs of the repository tests |
+| FragPipe | A TMT `psm.tsv` from the bigbio/pmultiqc test data (1,000 PSMs); PXD081924 (FragPipe 22 label-free, three one-run experiments; 10,313 PSMs, 3,376 ions, 482 protein groups) | Multi-run experiments and match-between-runs rows |
 | Spectronaut | `tests/examples/spectronaut/small`, without SDRF (168 features, 70 pg rows) | `PG.Genes`, `PG.ProteinNames` and the SDRF-based `missed_cleavages`, which that report does not exercise |
 | CDAP | `tests/examples/cdap` and CPTAC PDC000451 (12 TMT fractions; 217,102 PSMs, 151,442 features, 598,521 pg rows) | — |
 | mzIdentML | `tests/examples/mzidentml`: PXD054720 with its MGF and `--include-spectra` (13,386 PSMs, 123 pg rows) and the four mzIdentML 1.3 cross-linking examples | PEP, `MS:1003044` and protein-group q-value terms, which none of these files contains |
@@ -169,9 +169,9 @@ mzIdentML produces no feature view.
 
 | Field | MaxQuant | FragPipe | Spectronaut | CDAP | QuantMS MSstats |
 | ------- | ---------- | ---------- | ------------- | ------ | ----------------- |
-| `posterior_error_probability` | `PEP`. Null for match-between-runs rows (`Type` `MULTI-MATCH`), which have no MS/MS. | 1 − `PeptideProphet Probability` of the matching PSM (see below). | `EG.PEP`, when exported. | Not provided: `.psm` files report MS-GF+ scores and q-values, not a PEP. | Not provided: the MSstats input has no identification scores. |
+| `posterior_error_probability` | `PEP`. Null for match-between-runs rows (`Type` `MULTI-MATCH`), which have no MS/MS. | 1 − `PeptideProphet Probability` (`Probability` in FragPipe 22) of the matching PSM (see below). | `EG.PEP`, when exported. | Not provided: `.psm` files report MS-GF+ scores and q-values, not a PEP. | Not provided: the MSstats input has no identification scores. |
 | `peptide_qvalue` | Not provided: `evidence.txt` reports a PEP, not a peptide q-value. | Not implemented. | Not implemented: the precursor-level `EG.Qvalue` is stored as `qvalue` in `additional_scores`. | Not implemented: the best `PepQvalue` is stored as `peptide_level_qvalue` in `additional_scores`. | Not provided. |
-| `calculated_mz` / `observed_mz` | Filled. | Filled. | Filled. | Filled. | `calculated_mz`: not implemented, although it can be calculated from the peptidoform and charge. `observed_mz`: not provided. |
+| `calculated_mz` / `observed_mz` | Filled. | `calculated_mz`: `Calculated M/Z` of the matching PSM, else `M/Z`, which is also calculated. `observed_mz`: `Calibrated Observed M/Z` of the matching PSM; null without one. | Filled. | Filled. | `calculated_mz`: not implemented, although it can be calculated from the peptidoform and charge. `observed_mz`: not provided. |
 | `mass_error_ppm` | From the experimental and calculated m/z; null for `Type` `MSMS` rows, where MaxQuant reports no mass error. | From the matching PSM. | Not implemented: the report's mass-accuracy columns (`F.*MassAccuracy (PPM)`) are fragment-level. | Filled. | Not provided. |
 | `additional_scores` | `Score` and `Delta score`. Null for match-between-runs rows. | Not implemented. | Spectronaut q-values and C-scores, when exported. | Filled. | Not provided. |
 | `predicted_rt` | Not provided. | Not implemented. | `EG.RTPredicted`, when exported. | Not provided. | Not provided. |
@@ -187,8 +187,18 @@ mzIdentML produces no feature view.
 | `pg_global_qvalue` | `Q-value` of the feature's group in `proteinGroups.txt`. Null without `--protein-groups-file`. | Not implemented. | `PG.Qvalue`, when exported. | Not provided: `.psm` files have no protein-level q-value. | Not provided. |
 | `pg_positions` | Not implemented: `evidence.txt` has no coordinates, and the `Start position` / `End position` of `peptides.txt` are not read. | Not implemented. | Not implemented. | Not provided: protein cells give the flanking residues, stored as `pre` / `post` in `pg_accessions`, but no coordinates. | Not provided. |
 | `gg_accessions` / `gg_names` | `Gene names`, or the group's genes from `proteinGroups.txt` (`Gene names`, or `GN=` in `Fasta headers`). Both fields hold gene symbols. | `gg_names` from `Gene`. `gg_accessions`: not implemented. | `PG.Genes`, when exported. | Not provided: RefSeq accessions without gene names. | Not provided. |
-| `id_run_file_name` | The run. Null for match-between-runs rows. | The FragPipe experiment. | Filled. | Filled. | Filled. |
+| `id_run_file_name` | The run. Null for match-between-runs rows. | The experiment's raw run. Null for match-between-runs rows (`Match Type` `MBR`) and for an experiment of several raw runs, where the identifying fraction is unknown. | Filled. | Filled. | Filled. |
 | `rt_start` / `rt_stop` | Filled from the calibrated retention time start and finish. | Not implemented. | Not implemented. | Not provided: `.psm` files give one retention time (`RTAtPrecursorHalfElution`) per PSM. | Not provided. |
+
+A FragPipe feature is one experiment's quantity. Its `run_file_name` is the
+first raw run of the experiment (from `experiment_annotation.tsv`, else the SDRF
+`source name` of the same name), which is a member of the experiment's pg
+`grouped_runs`; an experiment neither resolves stops the conversion. Its
+`pg_accessions` are the members of the group led by `Protein`: the lead and its
+`Indistinguishable Proteins` in `combined_protein.tsv` (only the lead without
+`--pg-file`). `unique` is true when `Protein` and `Mapped Proteins` name one
+protein, and the pepmap view lists those proteins for each converted
+peptidoform.
 
 FragPipe features take PEP, mass error, scan, ion mobility and missed cleavages
 from the `psm.tsv` PSM with the same peptidoform and charge in the experiment's
@@ -205,13 +215,13 @@ Spectronaut and QuantMS MSstats produce no PSM view.
 
 | Field | MaxQuant | FragPipe | CDAP | mzIdentML |
 | ------- | ---------- | ---------- | ------ | ----------- |
-| `posterior_error_probability` | Filled from `PEP`. | Filled: 1 − `PeptideProphet Probability`. | Not provided. | A PSI-MS PEP term (`MS:1001493`, `MS:1002352`) on the identification item, when present. |
+| `posterior_error_probability` | Filled from `PEP`. | Filled: 1 − `PeptideProphet Probability` (`Probability` in FragPipe 22). | Not provided. | A PSI-MS PEP term (`MS:1001493`, `MS:1002352`) on the identification item, when present. |
 | `mass_error_ppm` | From the experimental and calculated m/z; null for `Type` `MSMS` rows, where MaxQuant reports no mass error. | Filled. | Filled. | From the experimental and calculated m/z. Null when the file omits the calculated m/z. |
 | `additional_scores` | Filled. | Filled. | Filled. | Score terms on the identification item. Null when it has none. |
 | `rt` | Filled. | Filled. | Filled. | The `scan start time` of the spectrum result. Null when the file omits it. |
 | `ion_mobility` | `1/K0`, when present. | `Ion Mobility`, when present. | Not provided. | Not implemented. |
 | `missed_cleavages` | Filled from `Missed cleavages`. | Filled from `Number of Missed Cleavages`. | Not implemented: no enzyme is declared to the converter. | Only the `MS:1003044` term on the identification item. Not calculated from the enzyme that the file declares. |
-| `protein_accessions` | `Proteins`, which MaxQuant leaves blank for some reverse hits. | Filled from `Protein`. | Filled. | Filled. |
+| `protein_accessions` | `Proteins`, which MaxQuant leaves blank for some reverse hits. | `Protein` and `Mapped Proteins`. | Filled. | Filled. |
 | `cross_links` | Out of scope. | Out of scope. | Out of scope. | Cross-linking identifications only. |
 | `mz_array` / `intensity_array` | `Masses` / `Intensities` of `msms.txt`, with `--spectral-data`. | Not provided: `psm.tsv` has no spectra. | Not provided. | From the MGF, with `--mgf-path` and `--include-spectra`. |
 | `feature_id` | Not implemented: the `Evidence ID` of `msms.txt` is not read. | Not implemented. | Not implemented: features are aggregated from PSMs, but the link is not recorded. | Out of scope: there is no feature view. |

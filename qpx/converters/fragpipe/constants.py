@@ -6,6 +6,7 @@ import re
 from functools import lru_cache
 
 from qpx.converters.ptm import build_proforma, format_mass_shift, from_proforma, mass_to_unimod
+from qpx.converters.utils import parse_uniprot_id
 
 # ---------------------------------------------------------------------------
 # Decoy detection
@@ -26,6 +27,25 @@ def is_decoy_accession(protein_field: str) -> bool:
     if not protein_field:
         return False
     return any(part.strip().startswith(DECOY_PREFIXES) for part in str(protein_field).split(","))
+
+
+def protein_accessions(*fields: object) -> list[str]:
+    """Distinct accessions of comma-separated FragPipe protein fields, in order.
+
+    ``sp|P12345|NAME`` gives ``P12345``, the form of FragPipe's ``Protein ID``; a
+    decoy keeps its prefix (``rev_P12345``) so it never merges with its target.
+    Missing fields are skipped.
+    """
+    accessions: dict[str, None] = {}
+    for field in fields:
+        if not isinstance(field, str):
+            continue
+        for part in field.split(","):
+            part = part.strip()
+            if part:
+                prefix = next((p for p in DECOY_PREFIXES if part.startswith(p)), "")
+                accessions[prefix + parse_uniprot_id(part[len(prefix) :])[0]] = None
+    return list(accessions)
 
 
 # ---------------------------------------------------------------------------

@@ -174,6 +174,8 @@ class TestDiannToProforma:
 
 
 class TestFragPipeFeatureAdapter:
+    _RUNS = {"experiment_1": ["run_1"], "experiment_2": ["run_2"]}
+
     def _write_ion_tsv(self, tmp_path):
         """Write a minimal combined_ion.tsv."""
         tsv = tmp_path / "combined_ion.tsv"
@@ -205,7 +207,7 @@ class TestFragPipeFeatureAdapter:
         tsv = self._write_ion_tsv(tmp_path)
         output = tmp_path / "test.feature.parquet"
         with FragPipeFeatureAdapter() as adapter:
-            adapter.convert(feature_path=str(tsv), output_path=str(output))
+            adapter.convert(feature_path=str(tsv), output_path=str(output), experiment_to_runs=self._RUNS)
         assert output.exists()
         table = pq.read_table(output)
         # row1 -> 2 experiments (1000 + 2000), row2 -> 1 experiment (3000, experiment_2 = 0)
@@ -226,7 +228,7 @@ class TestFragPipeFeatureAdapter:
         )
         output = tmp_path / "test.feature.parquet"
         with FragPipeFeatureAdapter() as adapter:
-            adapter.convert(feature_path=str(tsv), output_path=str(output))
+            adapter.convert(feature_path=str(tsv), output_path=str(output), experiment_to_runs=self._RUNS)
 
         table = pq.read_table(output)
         assert set(table.column("quantification_unit_id").to_pylist()) == {"experiment_1"}
@@ -241,7 +243,7 @@ class TestFragPipeFeatureAdapter:
         output = tmp_path / "test.feature.parquet"
         with FragPipeFeatureAdapter() as adapter:
             with pytest.raises(ValueError, match="combined_peptide.tsv.*peptide-level.*combined_ion.tsv"):
-                adapter.convert(feature_path=str(tsv), output_path=str(output))
+                adapter.convert(feature_path=str(tsv), output_path=str(output), experiment_to_runs=self._RUNS)
         assert not output.exists()
 
     def test_ion_modifications_parsed(self, tmp_path):
@@ -250,7 +252,7 @@ class TestFragPipeFeatureAdapter:
         tsv = self._write_ion_tsv(tmp_path)
         output = tmp_path / "test.feature.parquet"
         with FragPipeFeatureAdapter() as adapter:
-            adapter.convert(feature_path=str(tsv), output_path=str(output))
+            adapter.convert(feature_path=str(tsv), output_path=str(output), experiment_to_runs=self._RUNS)
         table = pq.read_table(output)
         # The second peptide (ANOTHERK) has mods, appears in experiment_1 only
         df = table.to_pandas()
@@ -267,7 +269,7 @@ class TestFragPipeFeatureAdapter:
         tsv = self._write_ion_tsv(tmp_path)
         output = tmp_path / "test.feature.parquet"
         with FragPipeFeatureAdapter() as adapter:
-            adapter.convert(feature_path=str(tsv), output_path=str(output))
+            adapter.convert(feature_path=str(tsv), output_path=str(output), experiment_to_runs=self._RUNS)
         table = pq.read_table(output)
         df = table.to_pandas()
 
@@ -616,8 +618,8 @@ class TestFragPipePgAdapterIsDecoy:
             adapter.convert(protein_path=tsv, output_path=str(output), experiment_to_runs={"exp1": ["run_01"]})
         table = pq.read_table(str(output))
         df = table.to_pandas()
-        normal_rows = df[df["anchor_protein"] == "sp|P12345|PROT_HUMAN"]
-        decoy_rows = df[df["anchor_protein"] == "rev_sp|P12345|PROT_HUMAN"]
+        normal_rows = df[df["anchor_protein"] == "P12345"]
+        decoy_rows = df[df["anchor_protein"] == "rev_P12345"]
         assert len(normal_rows) > 0
         assert len(decoy_rows) > 0
         assert all(not v for v in normal_rows["is_decoy"].tolist())

@@ -20,11 +20,11 @@ The PSM (Peptide Spectrum Match) view captures spectrum-level identification res
 | `peptidoform` | Modified sequence, plus the SILAC label modifications of the `Labeling state` (summary.txt `Labels<n>`) | Modified.Sequence | Modified Peptide |
 | `label` | Labeling state (SILAC) | --- | --- |
 | `charge` | Charge | Precursor.Charge | Charge |
-| `posterior_error_probability` | PEP | PEP | --- |
+| `posterior_error_probability` | PEP | PEP | 1 − PeptideProphet Probability (Probability in FragPipe 22) |
 | `is_decoy` | Reverse | --- | --- |
 | `calculated_mz` | From the peptidoform (`Mass` when a modification has no known mass) | --- | Calculated M/Z |
 | `observed_mz` | m/z × (1 + Mass error [ppm] × 10⁻⁶); MaxQuant's `m/z` is theoretical | --- | Observed M/Z |
-| `protein_accessions` | Proteins | Protein.Group | Protein |
+| `protein_accessions` | Proteins | Protein.Group | Protein, Mapped Proteins |
 | `run_file_name` | Raw file | Run | Spectrum File |
 | `scan` | Scan number | --- | Scan |
 | `rt` | Retention time | RT | Retention |
@@ -43,18 +43,18 @@ The Feature view captures quantified peptide features with intensity data. Featu
 | `charge` | Charge | Precursor.Charge | --- | Charge / PrecursorCharge |
 | `is_decoy` | Reverse | Decoy (`--report-decoys`), else accession prefix | --- | ProteinName prefix |
 | `peptide_qvalue` | --- | --- | --- | --- |
-| `calculated_mz` | From the peptidoform (`Mass` when a modification has no known mass) | From the peptidoform | Calculated M/Z | --- |
-| `observed_mz` | m/z × (1 + Mass error [ppm] × 10⁻⁶); MaxQuant's `m/z` is theoretical | Precursor.Mz + Ms1.Apex.Mz.Delta (2.x); `Precursor.Mz` is theoretical | --- | --- |
+| `calculated_mz` | From the peptidoform (`Mass` when a modification has no known mass) | From the peptidoform | Calculated M/Z (psm.tsv), else M/Z | --- |
+| `observed_mz` | m/z × (1 + Mass error [ppm] × 10⁻⁶); MaxQuant's `m/z` is theoretical | Precursor.Mz + Ms1.Apex.Mz.Delta (2.x); `Precursor.Mz` is theoretical | Calibrated Observed M/Z (psm.tsv); `M/Z` is theoretical | --- |
 | `rt` | Retention time | RT | --- | RetentionTime |
 | `rt_start` | --- | RT.Start | --- | --- |
 | `rt_stop` | --- | RT.Stop | --- | --- |
 | `predicted_rt` | --- | Predicted.RT | --- | --- |
 | `intensities` | Intensity; Intensity L/M/H (SILAC) | Precursor.Quantity (+ Channel for plexDIA) | Intensity | Intensity + Channel |
 | `identified_labels` | Labeling State, and msms.txt Labeling state of its MS/MS (SILAC) | --- | --- | --- |
-| `pg_accessions` | Proteins | Protein.Group (`DECOY_`-prefixed on decoy rows) | --- | ProteinName |
-| `anchor_protein` | --- | First Protein.Group accession | --- | First ProteinName accession |
+| `pg_accessions` | Proteins | Protein.Group (`DECOY_`-prefixed on decoy rows) | Protein + its Indistinguishable Proteins (combined_protein.tsv) | ProteinName |
+| `anchor_protein` | --- | First Protein.Group accession | Protein | First ProteinName accession |
 | `pg_positions` | --- | --- | --- | --- |
-| `run_file_name` | Raw file | Run | --- | Reference / Run resolved through SDRF |
+| `run_file_name` | Raw file | Run | First raw file of the experiment (experiment_annotation.tsv or SDRF) | Reference / Run resolved through SDRF |
 
 DIA-NN `Q.Value` is precursor-level and is stored in `additional_scores` as `precursor_qvalue`; it is not mapped to the peptide-level `peptide_qvalue` field.
 
@@ -64,7 +64,7 @@ The Protein Group view captures protein-level quantification and inference resul
 
 | QPX Field | MaxQuant | DIA-NN | FragPipe |
 | --- | --- | --- | --- |
-| `pg_accessions` | Protein IDs | Protein.Group | Group + Indistinguishable Proteins |
+| `pg_accessions` | Protein IDs | Protein.Group | Protein ID + Indistinguishable Proteins |
 | `pg_names` | Protein names | Protein.Names | --- |
 | `gg_accessions` | Gene names | Genes | --- |
 | `run_file_name` | combined | Run | --- |
