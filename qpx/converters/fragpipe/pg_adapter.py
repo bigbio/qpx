@@ -201,7 +201,8 @@ class FragPipePgAdapter(BaseConverter):
         Args:
             protein_path: Path to FragPipe ``combined_protein.tsv``.
             output_path: Destination Parquet path.
-            chunksize: Rows per batch.
+            chunksize: Records per batch; a row gives one record per
+                experiment, so ``chunksize // experiments`` rows are read at a time.
             creator: Creator tag in Parquet metadata.
             experiment_to_runs: Optional mapping of each FragPipe *experiment* (the
                 token that names the per-experiment intensity columns in
@@ -245,7 +246,7 @@ class FragPipePgAdapter(BaseConverter):
         self.logger.info("Transforming FragPipe protein groups ...")
 
         with PgWriter(output_path, creator=creator, compression=self._compression) as writer:
-            for batch in self._query_batched("SELECT * FROM fragpipe_proteins", chunksize):
+            for batch in self._query_batched("SELECT * FROM fragpipe_proteins", max(1, chunksize // len(experiment_cols))):
                 df = batch.to_pandas()
                 records = self._transform_batch(df, experiment_cols)
                 if records:

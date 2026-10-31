@@ -7,7 +7,7 @@ transforms feature rows into ``FeatureSchema``, and writes through ``FeatureWrit
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import NamedTuple, Optional
 
 import pandas as pd
 
@@ -44,6 +44,23 @@ _FEATURE_IDENTITY_COMPOSITE = (
     "charge",
     "compensation_voltage",
 )
+
+
+class _PsmInfo(NamedTuple):
+    """Fields a feature takes from its first PSM; tuples keep a million-PSM lookup small."""
+
+    observed_mz: float | None
+    calculated_mz: float | None
+    pep: float | None
+    is_decoy: bool
+    scan: int
+    ion_mobility: float | None
+    missed_cleavages: int | None
+
+
+def _psm_rank(pep: float | None, scan: int) -> tuple[float, int]:
+    """Order PSMs best first: lowest PEP (a missing one last), then lowest scan."""
+    return (pep if pep is not None else float("inf"), scan)
 
 
 def _pg_proteins(accessions: list[str]) -> list[dict] | None:
@@ -105,7 +122,8 @@ class FragPipeFeatureAdapter(BaseConverter):
                 intensity prefix to its member raw runs.
             experiment_annotation_path: Optional FragPipe
                 ``experiment_annotation.tsv`` providing that mapping.
-            chunksize: Rows per batch.
+            chunksize: Records per batch; a row gives one record per
+                experiment, so ``chunksize // experiments`` rows are read at a time.
             creator: Creator tag in Parquet metadata.
         """
         require_label_free(sdrf_path)
@@ -143,7 +161,7 @@ class FragPipeFeatureAdapter(BaseConverter):
             compression=self._compression,
             identity_composite=_FEATURE_IDENTITY_COMPOSITE,
         ) as writer:
-            for batch in self._query_batched("SELECT * FROM fragpipe_features", chunksize):
+            for batch in self._query_batched("SELECT * FROM fragpipe_features", max(1, chunksize // len(experiments))):
                 df = batch.to_pandas()
                 records = self._transform_batch(df, experiment_runs, psm_lookup)
                 if records:
@@ -211,11 +229,12 @@ class FragPipeFeatureAdapter(BaseConverter):
     # PSM lookup
     # ------------------------------------------------------------------
 
-    def _build_psm_lookup(self, psm_path: str) -> dict[tuple, dict]:
+    def _build_psm_lookup(self, psm_path: str) -> dict[tuple, _PsmInfo]:
         """Build a lookup for feature-level PSM enrichment.
 
-        Loads FragPipe ``psm.tsv`` into a temporary DuckDB table and extracts the
-        first-occurrence PSM providing mass error, PEP, scan, and decoy flag.
+        Streams the needed columns of FragPipe ``psm.tsv`` and keeps the best PSM
+        (lowest PEP, then lowest scan) providing mass error, PEP, scan, and
+        decoy flag, whatever order DuckDB returns the rows in.
 
         Each PSM is registered under its exact
         ``(source_file, peptidoform, charge)`` key. The experiment-to-source
@@ -223,18 +242,16 @@ class FragPipeFeatureAdapter(BaseConverter):
         precursor fallback is used because it can attach one run's PSM to every
         experiment in a combined results table.
         """
-        lookup: dict[tuple, dict] = {}
+        lookup: dict[tuple, _PsmInfo] = {}
 
         self._conn.execute(
             sql_build(
-                """CREATE TEMPORARY TABLE _fp_psm_lookup AS
+                """CREATE TEMPORARY VIEW _fp_psm_lookup AS
             SELECT * FROM read_csv_auto('$path',
                 delim='\t', header=true, auto_detect=true)""",
                 path=escape_path(psm_path),
             )
         )
-        count = self._conn.execute("SELECT COUNT(*) FROM _fp_psm_lookup").fetchall()[0][0]
-        self.logger.info(f"PSM lookup: loaded {count:,} PSM rows from {psm_path}")
 
         # Detect columns
         actual_cols = {
@@ -244,15 +261,15 @@ class FragPipeFeatureAdapter(BaseConverter):
             ).fetchall()
         }
 
-        sql = self._psm_lookup_query(actual_cols)
-        rows = self._conn.execute(sql).fetchall()
+        result = self._conn.execute(self._psm_lookup_query(actual_cols))
+        count = 0
+        while rows := result.fetchmany(100_000):
+            count += len(rows)
+            for values in rows:
+                self._add_psm_lookup_row(lookup, values)
 
-        for values in rows:
-            self._add_psm_lookup_row(lookup, values)
-
-        # Clean up temporary table
-        self._conn.execute("DROP TABLE IF EXISTS _fp_psm_lookup")
-        self.logger.info(f"PSM lookup: {len(lookup):,} unique keys built")
+        self._conn.execute("DROP VIEW IF EXISTS _fp_psm_lookup")
+        self.logger.info(f"PSM lookup: {len(lookup):,} unique keys from {count:,} PSM rows of {psm_path}")
 
         return lookup
 
@@ -264,7 +281,7 @@ class FragPipeFeatureAdapter(BaseConverter):
         self,
         df: pd.DataFrame,
         experiment_runs: dict[str, list[str]],
-        psm_lookup: dict[tuple, dict],
+        psm_lookup: dict[tuple, _PsmInfo],
     ) -> list[dict]:
         # Pre-extract column arrays for faster per-row access than to_dict("records")
         col_arrays = {col: df[col].values for col in df.columns}
@@ -279,7 +296,7 @@ class FragPipeFeatureAdapter(BaseConverter):
         self,
         row,
         experiment_runs: dict[str, list[str]],
-        psm_lookup: dict[tuple, dict],
+        psm_lookup: dict[tuple, _PsmInfo],
     ) -> list[dict]:
         """Transform a single row into one or more feature records.
 
@@ -304,9 +321,9 @@ class FragPipeFeatureAdapter(BaseConverter):
             # transferred by match-between-runs. One combined Feature of a
             # multi-run experiment cannot represent one fraction's PSM.
             id_run = runs[0] if len(runs) == 1 and row.get(f"{experiment} Match Type") != "MBR" else None
-            psm_info = psm_lookup.get((id_run, common_fields["peptidoform"], str(common_fields["charge"])), {})
+            psm = psm_lookup.get((id_run, common_fields["peptidoform"], str(common_fields["charge"])))
 
-            psm_fields = self._feature_psm_fields(psm_info, mz, protein_raw)
+            psm_fields = self._feature_psm_fields(psm, mz, protein_raw)
 
             rec = {
                 **common_fields,
@@ -406,7 +423,7 @@ class FragPipeFeatureAdapter(BaseConverter):
         return source_file, scan_number
 
     def _add_psm_lookup_row(self, lookup: dict, values: tuple) -> None:
-        """Register the first PSM for an exact source and precursor key."""
+        """Register the PSM for an exact source and precursor key if it beats the one there."""
         (
             spectrum,
             sequence,
@@ -427,24 +444,21 @@ class FragPipeFeatureAdapter(BaseConverter):
         charge_str = str(charge) if charge is not None else "0"
 
         key = (source_file, peptidoform, charge_str)
-        if key not in lookup:
-            # PEP = 1 - PeptideProphet Probability
-            pep = None
-            if pp_prob is not None:
-                pep = 1.0 - pp_prob if pp_prob <= 1.0 else pp_prob
-
-            is_decoy = is_decoy_accession(protein)
-
-            info = {
-                "observed_mz": float(obs_mz) if obs_mz is not None else None,
-                "calculated_mz": (float(calc_mz) if calc_mz is not None else None),
-                "pep": pep,
-                "is_decoy": is_decoy,
-                "scan": [scan_number] if scan_number > 0 else [],
-                "ion_mobility": (float(ion_mobility) if ion_mobility is not None else None),
-                "missed_cleavages": (int(missed_cleavages_val) if missed_cleavages_val is not None else None),
-            }
-            lookup[key] = info
+        # PEP = 1 - PeptideProphet Probability
+        pep = None
+        if pp_prob is not None:
+            pep = 1.0 - pp_prob if pp_prob <= 1.0 else pp_prob
+        current = lookup.get(key)
+        if current is None or _psm_rank(pep, scan_number) < _psm_rank(current.pep, current.scan):
+            lookup[key] = _PsmInfo(
+                observed_mz=float(obs_mz) if obs_mz is not None else None,
+                calculated_mz=float(calc_mz) if calc_mz is not None else None,
+                pep=pep,
+                is_decoy=is_decoy_accession(protein),
+                scan=scan_number,
+                ion_mobility=float(ion_mobility) if ion_mobility is not None else None,
+                missed_cleavages=int(missed_cleavages_val) if missed_cleavages_val is not None else None,
+            )
 
     def _feature_identity_fields(self, row: dict) -> tuple:
         """Parse the feature peptide and protein identity fields."""
@@ -498,22 +512,21 @@ class FragPipeFeatureAdapter(BaseConverter):
         )
 
     @staticmethod
-    def _feature_psm_fields(psm_info: dict, mz: float | None, protein_raw: str | None) -> dict:
+    def _feature_psm_fields(psm: _PsmInfo | None, mz: float | None, protein_raw: str | None) -> dict:
         """Resolve spectrum fields from exact PSM enrichment, else the feature's calculated m/z."""
-        _calc = psm_info.get("calculated_mz")
-        _obs = psm_info.get("observed_mz")
-        mass_error_ppm = 1e6 * (_obs - _calc) / _calc if _calc and _obs else None
-
-        # Is decoy: prefer PSM lookup; fall back to the decoy prefix on the RAW
-        # protein field (before parse_uniprot_id strips e.g. the "rev_" prefix).
-        _is_decoy_fallback = is_decoy_accession(protein_raw)
+        if psm is None:
+            # Without a PSM, is_decoy falls back to the decoy prefix on the RAW
+            # protein field (before parsing strips e.g. the "rev_" prefix).
+            psm = _PsmInfo(None, None, None, is_decoy_accession(protein_raw), 0, None, None)
+        _calc = psm.calculated_mz
+        _obs = psm.observed_mz
         return {
-            "posterior_error_probability": psm_info.get("pep"),
-            "is_decoy": psm_info.get("is_decoy", _is_decoy_fallback),
+            "posterior_error_probability": psm.pep,
+            "is_decoy": psm.is_decoy,
             "calculated_mz": _calc or mz,
             "observed_mz": _obs,
-            "mass_error_ppm": mass_error_ppm,
-            "scan": psm_info.get("scan", []),
-            "ion_mobility": psm_info.get("ion_mobility"),
-            "missed_cleavages": psm_info.get("missed_cleavages"),
+            "mass_error_ppm": 1e6 * (_obs - _calc) / _calc if _calc and _obs else None,
+            "scan": [psm.scan] if psm.scan > 0 else [],
+            "ion_mobility": psm.ion_mobility,
+            "missed_cleavages": psm.missed_cleavages,
         }

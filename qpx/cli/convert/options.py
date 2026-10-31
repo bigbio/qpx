@@ -69,7 +69,7 @@ def _max_memory_option(func):
     """Add the shared memory limit option."""
     return click.option(
         "--max-memory",
-        help="Maximum memory limit (e.g. '16GB')",
+        help="DuckDB memory limit (e.g. '16GB'); the converter's Python row batches come on top",
     )(func)
 
 

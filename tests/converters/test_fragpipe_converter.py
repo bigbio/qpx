@@ -331,6 +331,23 @@ def test_feature_psm_enrichment_uses_experiment_annotation(tmp_path):
     assert bool(rec["is_decoy"]) is True
 
 
+def test_feature_takes_the_best_psm_of_its_run(tmp_path):
+    """Of several PSMs of a precursor in the run, the feature links the one with the
+    highest probability, not whichever DuckDB returns first."""
+    ion, psm = _write_feature_inputs(tmp_path, experiment="sampleA", spectrum_source="run_01")
+    with psm.open("a") as handle:
+        handle.write("run_01.00300.00300.2\tPEPTIDEK\t2\t\t500.002\t500.000\t0.80\tsp|P12345|PROT_HUMAN\n")
+        handle.write("run_01.00700.00700.2\tPEPTIDEK\t2\t\t500.003\t500.000\t0.999\tsp|P12345|PROT_HUMAN\n")
+    out = tmp_path / "feature.parquet"
+    with FragPipeFeatureAdapter() as adapter:
+        adapter.convert(
+            feature_path=str(ion), output_path=str(out), psm_path=str(psm), experiment_to_runs={"sampleA": ["run_01"]}
+        )
+    record = pq.read_table(out).to_pylist()[0]
+    assert record["scan"] == [700]
+    assert record["posterior_error_probability"] == pytest.approx(0.001)
+
+
 def test_feature_psm_fallback_does_not_cross_multiple_raw_files(tmp_path):
     """A run-agnostic precursor match is unsafe when the PSM occurs in more
     than one raw file; leave enrichment empty instead of taking the first run."""

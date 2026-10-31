@@ -101,7 +101,7 @@ pip install venn pyopenms
        --output-folder ./output
    ```
 
-4. For MaxQuant, use the `--max-memory` option:
+4. For MaxQuant, use the `--max-memory` option. It limits DuckDB's buffer pool, not the whole process: the converter builds rows in Python batches of 100,000 records, whose memory comes on top.
 
    ```bash
    qpxc convert maxquant \

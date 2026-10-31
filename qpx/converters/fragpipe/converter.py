@@ -13,8 +13,10 @@ from qpx.core.scores import field_ontology_entries, score_ontology_entries
 
 logger = logging.getLogger(__name__)
 
-# Rows per batch read from each FragPipe table.
-_BATCH_SIZE = 1_000_000
+# Records per batch: rows of psm.tsv, and rows times experiments of
+# combined_ion.tsv and combined_protein.tsv, each row expanding to one record
+# per experiment.
+_BATCH_SIZE = 100_000
 
 
 class FragPipeConverter(BaseOrchestrator):

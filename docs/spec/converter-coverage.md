@@ -201,9 +201,10 @@ protein, and the pepmap view lists those proteins for each converted
 peptidoform.
 
 FragPipe features take PEP, mass error, scan, ion mobility and missed cleavages
-from the `psm.tsv` PSM with the same peptidoform and charge in the experiment's
-raw file. These fields are null without `--psm-file`, for an experiment that
-maps to more than one raw file, and when that raw file has no such PSM.
+from the best `psm.tsv` PSM (lowest PEP, then lowest scan) with the same
+peptidoform and charge in the experiment's raw file. These fields are null
+without `--psm-file`, for an experiment that maps to more than one raw file,
+and when that raw file has no such PSM.
 
 `consensus_rt` (an OpenMS consensusXML field), `ion_mobility_start` and
 `ion_mobility_stop` are null for all five converters. `psm_ids` and `pg_ids` are

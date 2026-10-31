@@ -224,7 +224,7 @@ class BaseWriter:
         creator: str = "qpx",
         software_provider: str = "qpx",
         compression: str = "zstd",
-        batch_size: int = 1_000_000,
+        batch_size: int = 100_000,
         scan_format: str | None = None,
         extra_columns: list[str] | None = None,
         override_provided_ids: bool = False,
