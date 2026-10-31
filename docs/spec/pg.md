@@ -337,7 +337,7 @@ DIA-NN's main report is precursor-level. PG-level columns (`PG.*`, `Genes.*`) ar
 
 ### FragPipe (`combined_protein.tsv`)
 
-FragPipe outputs are pre-filtered (no decoys or contaminants). Per-experiment columns are prefixed with the experiment name.
+Decoys are filtered out before FragPipe writes the report; contaminants (`contam_` accessions) are kept. Per-experiment columns are prefixed with the experiment name, and any of them names an experiment, so a spectral-count-only report still gives one row per experiment.
 
 === "Identity & Metadata"
 
@@ -355,13 +355,14 @@ FragPipe outputs are pre-filtered (no decoys or contaminants). Per-experiment co
 
     | FragPipe column | QPX field | Notes |
     |---|---|---|
-    | `[exp] Total Peptides` | `peptide_counts.total_sequences` | Per-experiment peptide count |
+    | `[exp] Total Peptides` | `peptide_counts.total_sequences` | Per-experiment peptide count, with `[exp] Unique Peptides` |
+    | `[exp] Unique Peptides` | `peptide_counts.unique_sequences` | `peptide_counts` is null unless both are reported |
 
 === "Quantification"
 
     | FragPipe column | QPX field | Notes |
     |---|---|---|
-    | `[exp] Intensity` | `intensity` | Primary razor peptide intensity (scalar per row) |
+    | `[exp] Intensity` | `intensity` | Primary razor peptide intensity (scalar per row); `[exp] Total Intensity` in older reports |
     | `[exp] MaxLFQ Intensity` | `additional_intensities` → `maxlfq` | MaxLFQ normalised |
     | `[exp] MaxLFQ Unique Intensity` | `additional_intensities` → `maxlfq_unique` | MaxLFQ using only unique peptides |
     | `[exp] Unique Intensity` | `additional_intensities` → `unique_intensity` | Intensity from unique peptides only |

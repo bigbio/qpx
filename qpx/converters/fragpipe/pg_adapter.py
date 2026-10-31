@@ -29,28 +29,52 @@ logger = logging.getLogger(__name__)
 # Derive field map from central YAML mappings
 _PG_MAP = get_field_mappings("fragpipe", "pg")
 
-_SPECTRAL_COUNT_SUFFIXES = ("Spectral Count", "Unique Spectral Count", "Total Spectral Count")
+# Additional quantities of an experiment by column suffix, named as in pg.md.
+_ADDITIONAL_INTENSITIES = (
+    ("MaxLFQ Intensity", "maxlfq"),
+    ("MaxLFQ Unique Intensity", "maxlfq_unique"),
+    ("Unique Intensity", "unique_intensity"),
+)
+_SPECTRAL_COUNTS = (
+    ("Spectral Count", "spectral_count"),
+    ("Unique Spectral Count", "unique_spectral_count"),
+    ("Total Spectral Count", "total_spectral_count"),
+)
+# Per-experiment column suffixes, longest first so that "<exp> MaxLFQ Intensity"
+# is not read as an experiment "<exp> MaxLFQ".
+_EXPERIMENT_SUFFIXES = sorted(
+    {suffix for suffix, _ in _ADDITIONAL_INTENSITIES + _SPECTRAL_COUNTS}
+    | {"Intensity", "Total Intensity", "Razor Intensity", "Razor Spectral Count", "Total Peptides", "Unique Peptides"},
+    key=len,
+    reverse=True,
+)
 
 
 def _experiment_quantities(row, experiment: str) -> tuple[float | None, list[dict]] | None:
-    """Primary intensity and MaxLFQ entries of one experiment; ``None`` without evidence in it.
+    """Primary intensity and additional quantities of one experiment; ``None`` without evidence in it.
 
-    MaxLFQ-only experiments (detected from a "<exp> MaxLFQ Intensity" column) have
-    no Total Intensity; MaxLFQ is then the primary intensity rather than dropping
-    the protein group. Unit-specific identifications survive a missing quantity.
+    ``<exp> Intensity`` is the primary quantity (``Total Intensity`` in older
+    reports, else MaxLFQ). A zero intensity is FragPipe's "not quantified" and is
+    left out; spectral counts are kept as counted, zeros included. A group with
+    spectral counts but no intensity in the experiment keeps a row with a null
+    intensity.
     """
-    total_intensity = safe_float(row.get(f"{experiment} Total Intensity")) or 0.0
-    maxlfq = safe_float(row.get(f"{experiment} MaxLFQ Intensity"))
-    if total_intensity > 0:
-        primary = total_intensity
-    elif maxlfq is not None and maxlfq > 0:
-        primary = maxlfq
-    elif any((safe_float(row.get(f"{experiment} {suffix}")) or 0) > 0 for suffix in _SPECTRAL_COUNT_SUFFIXES):
-        # Without a primary quantity, MaxLFQ can only hold FragPipe's zero sentinel.
-        return None, []
-    else:
+
+    def value(suffix: str) -> float | None:
+        return safe_float(row.get(f"{experiment} {suffix}"))
+
+    def positive(suffix: str) -> float | None:
+        quantity = value(suffix)
+        return quantity if quantity is not None and quantity > 0 else None
+
+    primary = next(filter(None, map(positive, ("Intensity", "Total Intensity", "MaxLFQ Intensity"))), None)
+    quantities = [(name, positive(suffix)) for suffix, name in _ADDITIONAL_INTENSITIES]
+    counts = [(name, value(suffix)) for suffix, name in _SPECTRAL_COUNTS]
+    if primary is None and not any(count for _, count in counts):
         return None
-    return primary, [{"intensity_name": "maxlfq", "intensity_value": float(maxlfq)}] if maxlfq is not None else []
+    return primary, [
+        {"intensity_name": name, "intensity_value": quantity} for name, quantity in quantities + counts if quantity is not None
+    ]
 
 
 def normalize_run_name(value: str) -> str:
@@ -230,28 +254,26 @@ class FragPipePgAdapter(BaseConverter):
         self.logger.info(f"Loaded {count:,} FragPipe protein group rows")
 
     def _detect_experiment_columns(self) -> list[str]:
-        """Detect per-experiment intensity columns.
+        """Detect the experiments from any per-experiment column.
 
-        FragPipe ``combined_protein.tsv`` has columns like:
-            ``<experiment> Total Intensity``
-            ``<experiment> Spectral Count``
-            ``<experiment> Unique Spectral Count``
+        FragPipe ``combined_protein.tsv`` has columns like ``<experiment> Intensity``,
+        ``<experiment> MaxLFQ Intensity`` and ``<experiment> Spectral Count``; a
+        spectral-count-only report has just the counts. ``Combined *`` columns
+        cover all experiments.
         """
         cols = self._conn.execute(
             "SELECT column_name FROM information_schema.columns WHERE table_name='fragpipe_proteins'"
         ).fetchall()
-        col_names = [c[0] for c in cols]
-
-        # Find columns ending with " Total Intensity" or " MaxLFQ Intensity"
-        intensity_cols = [c for c in col_names if c.endswith(" Total Intensity") or c.endswith(" MaxLFQ Intensity")]
-
-        # Extract experiment names
         experiments = set()
-        for col in intensity_cols:
-            for suffix in [" Total Intensity", " MaxLFQ Intensity"]:
-                if col.endswith(suffix):
-                    experiments.add(col[: -len(suffix)])
-
+        for (col,) in cols:
+            # Unprefixed columns of a one-experiment protein.tsv name no experiment.
+            if col in _EXPERIMENT_SUFFIXES or col.startswith("Combined "):
+                continue
+            suffix = next((suffix for suffix in _EXPERIMENT_SUFFIXES if col.endswith(f" {suffix}")), None)
+            if suffix:
+                experiments.add(col[: -len(suffix) - 1])
+        if not experiments:
+            raise ValueError("FragPipe combined_protein.tsv has no per-experiment columns such as '<experiment> Intensity'")
         return sorted(experiments)
 
     # ------------------------------------------------------------------
@@ -269,13 +291,10 @@ class FragPipePgAdapter(BaseConverter):
         Expands into one record per experiment (run).
         """
         records: list[dict] = []
-        common_fields, total_peptides, unique_peptides = self._pg_common_fields(row)
+        common_fields = self._pg_common_fields(row)
 
         # Expand per experiment
         for experiment in experiments:
-            spec_count_col = f"{experiment} Spectral Count"
-            unique_spec_col = f"{experiment} Unique Spectral Count"
-
             quantities = _experiment_quantities(row, experiment)
             if quantities is None:
                 continue
@@ -285,24 +304,12 @@ class FragPipePgAdapter(BaseConverter):
             label = "LFQ"
             intensities = [{"label": label, "intensity": primary_intensity}]
 
-            # Additional intensities pre-computed by FragPipe (MaxLFQ)
+            # Additional intensities: MaxLFQ, unique intensities and spectral counts
             additional_intensities = [{"label": label, "intensities": extra_vals}] if extra_vals else []
 
-            # Additional scores
-            additional_scores = []
-            spec_val = safe_float(row.get(spec_count_col))
-            if spec_val is not None:
-                additional_scores.append(
-                    {
-                        "score_name": "spectral_count",
-                        "score_value": spec_val,
-                        "higher_better": True,
-                    }
-                )
-
-            # Per-experiment peptide/feature counts
-            exp_unique = safe_float(row.get(unique_spec_col)) or 0
-            exp_total = safe_float(row.get(spec_count_col)) or 0
+            # Per-experiment peptide counts; FragPipe reports no feature counts
+            unique_peptides = safe_float(row.get(f"{experiment} Unique Peptides"))
+            total_peptides = safe_float(row.get(f"{experiment} Total Peptides"))
 
             rec = {
                 **common_fields,
@@ -312,15 +319,12 @@ class FragPipePgAdapter(BaseConverter):
                 "grouped_runs": self._experiment_runs[experiment],
                 "intensities": intensities,
                 "additional_intensities": additional_intensities or None,
-                "peptide_counts": {
-                    "unique_sequences": unique_peptides,
-                    "total_sequences": total_peptides,
-                },
-                "feature_counts": {
-                    "unique_features": int(exp_unique),
-                    "total_features": int(exp_total),
-                },
-                "additional_scores": additional_scores or None,
+                "peptide_counts": (
+                    None
+                    if unique_peptides is None or total_peptides is None
+                    else {"unique_sequences": int(unique_peptides), "total_sequences": int(total_peptides)}
+                ),
+                "feature_counts": None,
             }
             records.append(rec)
 
@@ -343,7 +347,7 @@ class FragPipePgAdapter(BaseConverter):
             pg_qvalue = pg_qvalue_raw
         return pg_qvalue
 
-    def _pg_common_fields(self, row: dict) -> tuple:
+    def _pg_common_fields(self, row: dict) -> dict:
         """Build protein-group fields shared across experiments."""
         r = self._resolved
         # Protein group identity
@@ -364,9 +368,8 @@ class FragPipePgAdapter(BaseConverter):
         # Is decoy: detected from a decoy prefix on any RAW accession
         is_decoy = is_decoy_accession(protein_raw)
 
-        # Combined counts
+        # Combined count, the same for every member of an indistinguishable group
         total_peptides = int(row.get(r.get("peptide_count_total", "Combined Total Peptides"), 0) or 0)
-        unique_peptides = int(row.get(r.get("peptide_count_unique", "Combined Unique Peptides"), 0) or 0)
 
         # Sequence coverage
         seq_coverage = safe_float(row.get(r.get("sequence_coverage", "Percent Coverage")))
@@ -380,23 +383,40 @@ class FragPipePgAdapter(BaseConverter):
 
         # Peptides per protein
         peptides = [{"protein_name": acc, "peptide_count": total_peptides} for acc in pg_accessions]
-        return (
-            {
-                "pg_accessions": pg_accessions,
-                "pg_names": pg_names,
-                "gg_accessions": gg_accessions,
-                "gg_names": gg_accessions,
-                "gg_qvalue": None,
-                "anchor_protein": anchor_protein,
-                "global_qvalue": None,
-                "pg_qvalue": pg_qvalue,
-                "is_decoy": is_decoy,
-                "contaminant": None,
-                "peptides": peptides,
-                "sequence_coverage": seq_coverage,
-                "molecular_weight": mol_weight,
-                "cv_params": None,
-            },
-            total_peptides,
-            unique_peptides,
-        )
+        return {
+            "pg_accessions": pg_accessions,
+            "pg_names": pg_names,
+            "gg_accessions": gg_accessions,
+            "gg_names": gg_accessions,
+            "gg_qvalue": None,
+            "anchor_protein": anchor_protein,
+            "global_qvalue": None,
+            "pg_qvalue": pg_qvalue,
+            "is_decoy": is_decoy,
+            "contaminant": None,
+            "peptides": peptides,
+            "sequence_coverage": seq_coverage,
+            "molecular_weight": mol_weight,
+            **self._pg_annotations(row),
+        }
+
+    @staticmethod
+    def _pg_annotations(row: dict) -> dict:
+        """Protein length and existence as cv_params, and the ProteinProphet probabilities as scores."""
+        cv_params = []
+        length = safe_float(row.get("Protein Length"))
+        if length is not None:
+            cv_params.append({"cv_name": "sequence_length", "cv_value": str(int(length))})
+        existence = row.get("Protein Existence")
+        if pd.notna(existence) and str(existence).strip():
+            # "1:Experimental evidence at protein level" -> "1"
+            cv_params.append({"cv_name": "protein_existence", "cv_value": str(existence).split(":", 1)[0].strip()})
+        scores = [
+            {"score_name": name, "score_value": score, "higher_better": True}
+            for column, name in (
+                ("Protein Probability", "protein_probability"),
+                ("Top Peptide Probability", "top_peptide_probability"),
+            )
+            if (score := safe_float(row.get(column))) is not None
+        ]
+        return {"cv_params": cv_params or None, "additional_scores": scores or None}

@@ -48,7 +48,11 @@ def test_fragpipe_retains_only_units_with_identification(tmp_path, missing_quant
         assert retained[0]["grouped_runs"] == ["run1", "run2"]
         assert retained[0]["label"] == "LFQ"
         assert retained[0]["intensity"] is None
-        assert retained[0]["additional_intensities"] is None
+        # The experiment's spectral count; FragPipe's zero MaxLFQ is not a quantity.
+        count_name = count_column.lower().replace(" ", "_")
+        assert retained[0]["additional_intensities"] == [
+            {"label": "LFQ", "intensities": [{"intensity_name": count_name, "intensity_value": 2.0}]}
+        ]
         assert retained[0]["pg_qvalue"] == pytest.approx(0.001)
     assert sorted(row["intensity"] for row in rows if row["anchor_protein"] == "P2") == [100, 200]
 

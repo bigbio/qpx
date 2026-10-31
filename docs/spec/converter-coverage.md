@@ -240,15 +240,16 @@ QuantMS MSstats produces no pg view.
 | `gg_accessions` / `gg_names` | `Gene names`, or `GN=` in `Fasta headers`. | `Gene`. | `PG.Genes`, when exported. | Not provided. | Not implemented. |
 | `global_qvalue` | `Q-value`. | Not implemented: the group q-value is written to `pg_qvalue`. | `PG.Qvalue`, when exported. | Not provided. | The protein-group q-value term `MS:1002373`, when present. |
 | `pg_qvalue` | The same experiment-level `Q-value` as `global_qvalue`. | The q-value column of `combined_protein.tsv`, or 1 − `Protein Probability` when that is the only one. | `PG.QValue (Run-Wise)`, when exported. | Not provided. | Not implemented. |
-| `label` / `intensity` | `intensity` is null for a group with MS/MS counts but no intensity in that experiment. | `intensity` is null for a group with spectral counts but no intensity in that experiment. | Filled. | Null when no channel has a positive intensity. | Out of scope: identification only. |
-| `additional_intensities` | `LFQ intensity` and `iBAQ` (label-free), corrected reporter intensities (TMT) or `Ratio X/Y [normalized] [exp]` on the numerator label (SILAC). Null when none is reported. | `MaxLFQ Intensity`, when present. | Not implemented. | Not implemented. | Out of scope. |
+| `label` / `intensity` | `intensity` is null for a group with MS/MS counts but no intensity in that experiment. | `<exp> Intensity` (`Total Intensity` in older reports, else `MaxLFQ Intensity`); null for a group with spectral counts but no intensity in that experiment. | Filled. | Null when no channel has a positive intensity. | Out of scope: identification only. |
+| `additional_intensities` | `LFQ intensity` and `iBAQ` (label-free), corrected reporter intensities (TMT) or `Ratio X/Y [normalized] [exp]` on the numerator label (SILAC). Null when none is reported. | Positive `MaxLFQ Intensity`, `MaxLFQ Unique Intensity` and `Unique Intensity`, and the experiment's `Spectral Count`, `Unique Spectral Count` and `Total Spectral Count`. | Not implemented. | Not implemented. | Out of scope. |
 | `contaminant` | `Potential contaminant`. | Not implemented. | Not implemented. | Always false: not derived from the input. | Not implemented. |
-| `peptide_counts` / `feature_counts` | Filled. | Filled. | `feature_counts`: not implemented. | Filled. | Not implemented. |
+| `peptide_counts` / `feature_counts` | Filled. | `peptide_counts`: `<exp> Unique Peptides` and `<exp> Total Peptides`, when both are present. `feature_counts`: not provided. | `feature_counts`: not implemented. | Filled. | Not implemented. |
 | `sequence_coverage` / `molecular_weight` | `Sequence coverage [%]` / `Mol. weight [kDa]`. | `Percent Coverage` / `Protein Molecular Weight (Da)` in kDa, when present. | Not implemented. | Not provided. | Not implemented. |
-| `additional_scores` | Filled. | Spectral count. | Spectronaut protein-group q-values, when exported. | Filled. | Score terms on the group and its proteins. Null when there are none. |
+| `additional_scores` | Filled. | `Protein Probability` and `Top Peptide Probability`. | Spectronaut protein-group q-values, when exported. | Filled. | Score terms on the group and its proteins. Null when there are none. |
 
-`gg_qvalue` and `cv_params` are null for all five converters: none reads a
-gene-level q-value or records the quantification method.
+`gg_qvalue` is null for all five converters: none reads a gene-level q-value.
+`cv_params` is null except for FragPipe, which records `Protein Length` and the
+`Protein Existence` level.
 
 `qpxc transform protein-properties` and `qpxc transform gene-map` take any QPX
 dataset. With the search FASTA they fill null `pg.sequence_coverage`,

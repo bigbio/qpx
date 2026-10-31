@@ -65,14 +65,14 @@ The Protein Group view captures protein-level quantification and inference resul
 | QPX Field | MaxQuant | DIA-NN | FragPipe |
 | --- | --- | --- | --- |
 | `pg_accessions` | Protein IDs | Protein.Group | Protein ID + Indistinguishable Proteins |
-| `pg_names` | Protein names | Protein.Names | --- |
-| `gg_accessions` | Gene names | Genes | --- |
+| `pg_names` | Protein names | Protein.Names | Description |
+| `gg_accessions` | Gene names | Genes | Gene |
 | `run_file_name` | combined | Run | --- |
-| `peptide_counts` | Unique peptides [exp], Peptides [exp] | Unique.Stripped.Peptides | Unique Peptides |
-| `feature_counts` | --- | Precursor.Quantity | Precursor Ions |
+| `peptide_counts` | Unique peptides [exp], Peptides [exp] | Unique.Stripped.Peptides | Unique Peptides [exp], Total Peptides [exp] |
+| `feature_counts` | --- | Precursor.Quantity | --- |
 | `global_qvalue` | Q-value | Global.PG.Q.Value | --- |
-| `intensities` | Intensity [exp]; Intensity L/M/H [exp] (SILAC); Reporter intensity | PG.Quantity | --- |
-| `additional_intensities` | LFQ intensity, iBAQ, MS/MS count; Ratio X/Y [normalized] [exp] (SILAC) | PG.Normalised, PG.MaxLFQ | --- |
+| `intensities` | Intensity [exp]; Intensity L/M/H [exp] (SILAC); Reporter intensity | PG.Quantity | Intensity [exp] |
+| `additional_intensities` | LFQ intensity, iBAQ, MS/MS count; Ratio X/Y [normalized] [exp] (SILAC) | PG.Normalised, PG.MaxLFQ | MaxLFQ (Unique) Intensity, Unique Intensity, Spectral Count, Unique Spectral Count, Total Spectral Count [exp] |
 | `is_decoy` | Reverse | Decoy (`--report-decoys`; accessions prefixed `DECOY_`) | --- |
 | `contaminant` | Potential contaminant | --- | --- |
 

@@ -244,6 +244,50 @@ def test_pg_decoy_detected_from_raw_prefix(tmp_path):
     assert decoy_flag["REV_P2"] is True
 
 
+def test_pg_maps_fragpipe_22_quantities_counts_and_annotations(tmp_path):
+    """A FragPipe 22 combined_protein.tsv: `<exp> Intensity` is the primary quantity,
+    spectral counts and MaxLFQ are additional intensities, the ProteinProphet
+    probabilities are scores, length and existence are cv_params, and the
+    combined peptide count is not copied into the experiment's counts."""
+    tsv = (
+        "Protein\tProtein ID\tGene\tProtein Length\tProtein Existence\tDescription\tProtein Probability\t"
+        "Top Peptide Probability\tCombined Total Peptides\tCombined Spectral Count\texpA Spectral Count\t"
+        "expA Unique Spectral Count\texpA Total Spectral Count\texpA Intensity\texpA MaxLFQ Intensity\t"
+        "Indistinguishable Proteins\n"
+        "sp|P1|A_HUMAN\tP1\tG1\t495\t1:Experimental evidence at protein level\tprot1\t0.999\t0.998\t"
+        "12\t40\t5\t3\t7\t1000\t900\tsp|P2|B_HUMAN\n"
+    )
+    row = _read_pg(tmp_path, tsv).iloc[0]
+    assert list(row["pg_accessions"]) == ["P1", "P2"]
+    assert row["intensity"] == pytest.approx(1000.0)
+    assert {q["intensity_name"]: q["intensity_value"] for q in row["additional_intensities"][0]["intensities"]} == {
+        "maxlfq": 900.0,
+        "spectral_count": 5.0,
+        "unique_spectral_count": 3.0,
+        "total_spectral_count": 7.0,
+    }
+    assert {s["score_name"]: s["score_value"] for s in row["additional_scores"]} == pytest.approx(
+        {"protein_probability": 0.999, "top_peptide_probability": 0.998}
+    )
+    assert [tuple(cv.values()) for cv in row["cv_params"]] == [("sequence_length", "495"), ("protein_existence", "1")]
+    assert row["peptide_counts"] is None
+    assert row["feature_counts"] is None
+
+
+def test_spectral_count_only_report_writes_pg(tmp_path):
+    """A combined_protein.tsv without intensities still names its experiments by
+    their spectral counts, and each group is written with a null intensity."""
+    tsv = (
+        "Protein\tCombined Total Peptides\texpA Spectral Count\texpA Unique Spectral Count\t"
+        "expA Total Spectral Count\texpA Unique Peptides\texpA Total Peptides\n"
+        "sp|P1|A_HUMAN\t12\t5\t3\t7\t2\t4\n"
+    )
+    df = _read_pg(tmp_path, tsv)
+    assert len(df) == 1
+    assert df["intensity"].isna().all()
+    assert df.iloc[0]["peptide_counts"] == {"unique_sequences": 2, "total_sequences": 4}
+
+
 # ---- Feature adapter (combined_ion.tsv + psm.tsv) --------------------------
 
 
