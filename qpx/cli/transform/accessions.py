@@ -22,7 +22,9 @@ def _accession_target_files(dataset: Path) -> list[str]:
     if not target_files:
         raise click.ClickException(f"No feature or protein-group Parquet file found in {dataset}")
     target_files.extend(
-        name for name in (f"{file_prefix}.site.parquet", f"{file_prefix}.proteoform.parquet") if (dataset / name).is_file()
+        name
+        for name in (f"{file_prefix}.{view}.parquet" for view in ("site", "proteoform", "psm", "pepmap"))
+        if (dataset / name).is_file()
     )
     return target_files
 
@@ -84,8 +86,10 @@ def transform_normalize_accessions_cmd(
     Reverse: converts bare accessions back to full UniProt format.
     Requires a FASTA database to look up the full identifiers.
 
-    Normalizes protein accessions in feature.parquet, pg.parquet,
-    site.parquet and proteoform.parquet files.
+    Normalizes protein accessions in feature.parquet, pg.parquet, site.parquet,
+    proteoform.parquet, psm.parquet and pepmap.parquet files. Ids stay as they
+    are, so links survive: a file whose identity composite holds an accession
+    (pg_id) is then marked identity_source=provided.
 
     \b
     Examples:

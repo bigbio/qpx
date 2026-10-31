@@ -1,13 +1,14 @@
 """Tests for the derived mandatory identity ids (feature_id / psm_id / pg_id)."""
 
 import logging
+from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
 from qpx.core.data import FeatureSchema, PgSchema, PsmSchema
-from qpx.core.data.identity import canonical, derive_id
+from qpx.core.data.identity import canonical, derive_composite_id, derive_id
 from qpx.writers import FeatureWriter, PgWriter, PsmWriter
 from tests.conftest import make_feature_record, make_pg_record, make_psm_record
 
@@ -48,7 +49,7 @@ def test_schema_identity_metadata():
     assert tuple(FeatureSchema._primary_key) == ("feature_id",)
     assert tuple(FeatureSchema.identity_composite) == ("peptidoform", "charge", "run_file_name", "rt")
     assert tuple(PsmSchema._primary_key) == ("psm_id",)
-    assert tuple(PsmSchema.identity_composite) == ("peptidoform", "charge", "run_file_name", "scan")
+    assert tuple(PsmSchema.identity_composite) == ("run_file_name", "scan", "peptidoform", "charge")
     assert tuple(PgSchema._primary_key) == ("pg_id",)
     assert tuple(PgSchema.identity_composite) == ("pg_accessions", "grouped_runs", "label")
 
@@ -98,7 +99,7 @@ def test_psm_roundtrip_derives_id(tmp_path):
     assert None not in ids
     assert len(set(ids)) == len(ids)
     for rec, got in zip(records, ids):
-        expected = derive_id([rec["peptidoform"], rec["charge"], rec["run_file_name"], rec["scan"]])
+        expected = derive_id([rec["run_file_name"], rec["scan"], rec["peptidoform"], rec["charge"]])
         assert got == expected
 
 
@@ -365,3 +366,117 @@ def test_write_table_warns_on_duplicate_pk(tmp_path, caplog):
             w.write_table(table)
     assert path.exists()
     assert "duplicate row" in caplog.text.lower()
+
+
+# The vectors of docs/spec/identity.md: a reimplementation checks itself against them.
+_VECTORS = [
+    (("run_file_name", "scan", "peptidoform", "charge"), ["run_1", [1234], "PEPTIDEK", 2], -5127882623363935776),
+    (
+        ("peptidoform", "charge", "run_file_name", "rt"),
+        ["[UNIMOD:1]-AC[UNIMOD:4]DEK", 3, "a,b", 1234.56005859375],
+        6417640111734626350,
+    ),
+    (("pg_accessions", "grouped_runs", "label"), [["Q9Y6K9", "P04114", "P04114"], ["f2", "f1"], "TMT126"], -5459222103841755848),
+    (("pg_accessions", "grouped_runs", "label"), [["P04114"], ["r"], None], -4507348376872481825),
+]
+
+
+@pytest.mark.parametrize(("composite", "values", "expected"), _VECTORS)
+def test_documented_vectors_reproduce(composite, values, expected):
+    row = dict(zip(composite, values))
+    assert derive_composite_id(row, composite) == expected
+    spec = (Path(__file__).parents[2] / "docs" / "spec" / "identity.md").read_text(encoding="utf-8")
+    assert f"`{expected}`" in spec
+
+
+def test_a_float32_composite_value_hashes_as_persisted(tmp_path):
+    """A record's raw double and the file's float32 read back must give one id."""
+    path = tmp_path / "x.feature.parquet"
+    record = {**make_feature_record(), "rt": 1234.56}
+    with FeatureWriter(path, identity_composite=("peptidoform", "charge", "run_file_name", "rt")) as writer:
+        writer.write_batch([record])
+    row = pq.read_table(path).to_pylist()[0]
+    assert row["rt"] == 1234.56005859375
+    assert row["feature_id"] == derive_composite_id(row, ("peptidoform", "charge", "run_file_name", "rt"))
+
+
+def _footer(path):
+    return pq.read_metadata(path).metadata
+
+
+def test_footer_states_where_ids_came_from(tmp_path):
+    derived = tmp_path / "derived.psm.parquet"
+    with PsmWriter(derived) as writer:
+        writer.write_batch([make_psm_record()])
+    assert _footer(derived)[b"identity_source"] == b"derived"
+    assert _footer(derived)[b"identity_hash_version"] == b"1"
+    assert _footer(derived)[b"identity_composite"] == b"run_file_name,scan,peptidoform,charge"
+
+    provided = tmp_path / "provided.psm.parquet"
+    with PsmWriter(provided, override_provided_ids=False) as writer:
+        writer.write_batch([{**make_psm_record(), "psm_id": 7}])
+    assert _footer(provided)[b"identity_source"] == b"provided"
+
+    mixed = tmp_path / "mixed.psm.parquet"
+    with PsmWriter(mixed, override_provided_ids=False) as writer:
+        writer.write_batch([{**make_psm_record(scan=[1]), "psm_id": 7}, make_psm_record(scan=[2])])
+    assert _footer(mixed)[b"identity_source"] == b"mixed"
+
+
+def test_partitioned_files_state_where_ids_came_from(tmp_path):
+    source = tmp_path / "source.psm.parquet"
+    with PsmWriter(source) as writer:
+        writer.write_batch([make_psm_record()])
+    table = pq.read_table(source).drop_columns(["psm_id"])
+    PsmWriter.write_partitioned(table, tmp_path / "psm", partition_cols=["run_file_name"])
+    part = next((tmp_path / "psm").rglob("*.parquet"))
+    assert _footer(part)[b"identity_source"] == b"derived"
+
+
+def _dataset(tmp_path, **kwargs):
+    import qpx
+
+    with PsmWriter(tmp_path / "exp.psm.parquet", **kwargs) as writer:
+        writer.write_batch([make_psm_record()])
+    return qpx.open_dataset(str(tmp_path))
+
+
+def test_check_identity_passes_on_derived_ids_and_catches_stale_ones(tmp_path):
+    with _dataset(tmp_path) as dataset:
+        result = dataset.validate(["psm"], strict=True, check_identity=True)["psm"]
+    assert not [issue for issue in result.issues if issue.check == "stale_identity"]
+
+    path = tmp_path / "exp.psm.parquet"
+    table = pq.read_table(path)
+    changed = table.set_column(table.schema.get_field_index("charge"), "charge", pa.array([5], table.schema.field("charge").type))
+    pq.write_table(changed, path)
+    import qpx
+
+    with qpx.open_dataset(str(tmp_path)) as dataset:
+        result = dataset.validate(["psm"], strict=True, check_identity=True)["psm"]
+    assert any(issue.check == "stale_identity" for issue in result.errors)
+
+
+def test_check_identity_skips_provided_ids(tmp_path):
+    with PsmWriter(tmp_path / "exp.psm.parquet", override_provided_ids=False) as writer:
+        writer.write_batch([{**make_psm_record(), "psm_id": 7}])
+    import qpx
+
+    with qpx.open_dataset(str(tmp_path)) as dataset:
+        result = dataset.validate(["psm"], strict=True, check_identity=True)["psm"]
+    assert any(issue.check == "identity_not_checked" for issue in result.warnings)
+    assert not any(issue.check == "stale_identity" for issue in result.issues)
+
+
+def test_files_with_different_composites_are_flagged(tmp_path):
+    import qpx
+
+    with PsmWriter(tmp_path / "exp-a.psm.parquet") as writer:
+        writer.write_batch([make_psm_record(scan=[1])])
+    with PsmWriter(
+        tmp_path / "exp-b.psm.parquet", identity_composite=("run_file_name", "peptidoform", "charge", "scan")
+    ) as writer:
+        writer.write_batch([make_psm_record(scan=[2])])
+    with qpx.open_dataset(str(tmp_path)) as dataset:
+        result = dataset.validate(["psm"])["psm"]
+    assert any(issue.check == "mixed_identity" for issue in result.warnings)

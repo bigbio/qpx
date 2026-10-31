@@ -35,6 +35,7 @@ _FULL_RE = re.compile(
 _DECOY_MARKER = re.compile(r"^(?:DECOY_|REV__|rev_)")
 
 _SCALAR_ACCESSION_COLUMNS = ("anchor_protein", "protein_accession", "accession", "family")
+_LIST_ACCESSION_COLUMNS = ("pg_accessions", "protein_accessions")
 
 
 def to_bare(accession: str) -> str:
@@ -113,7 +114,7 @@ def normalize_parquet(
     Parquet encoding.
 
     Args:
-        parquet_path: Input feature, pg, site or proteoform Parquet file.
+        parquet_path: Input feature, pg, site, proteoform, psm or pepmap Parquet file.
         output_path: Where to write the normalized file.
         direction: "forward" (full → bare) or "reverse" (bare → full).
         fasta_lookup: Required for reverse. {bare_accession: full_header}.
@@ -142,7 +143,9 @@ def normalize_parquet(
         staging = output_path.with_name(f".{output_path.name}.normalizing")
         try:
             keep_names = direction == "forward"
-            _rewrite_view(parquet_path, staging, lambda table: _normalize_table(table, changes, keep_names))
+            _rewrite_view(
+                parquet_path, staging, lambda table: _normalize_table(table, changes, keep_names), _identity_footer(parquet)
+            )
             os.replace(staging, output_path)
         finally:
             staging.unlink(missing_ok=True)
@@ -157,11 +160,20 @@ def normalize_parquet(
     return {"rows": total_rows, "accessions_changed": n_changed, "file": str(output_path)}
 
 
+def _identity_footer(parquet: pq.ParquetFile) -> dict[bytes, bytes] | None:
+    """Footer keys for a rewrite that changes accessions: ids hashed from them no longer re-derive."""
+    declared = (parquet.schema_arrow.metadata or {}).get(b"identity_composite", b"").decode()
+    if set(declared.split(",")) & {*_SCALAR_ACCESSION_COLUMNS, *_LIST_ACCESSION_COLUMNS}:
+        return {b"identity_source": b"provided"}
+    return None
+
+
 def _scan_accessions(parquet: pq.ParquetFile) -> tuple[dict[str, int], set[str]]:
     """Count the first scalar accession column and collect every distinct accession."""
     names = parquet.schema_arrow.names
     scalar_columns = [name for name in _SCALAR_ACCESSION_COLUMNS if name in names]
-    columns = [name for name in (*_SCALAR_ACCESSION_COLUMNS, "pg_accessions") if name in names]
+    list_columns = [name for name in _LIST_ACCESSION_COLUMNS if name in names]
+    columns = [*scalar_columns, *list_columns]
     accession_counts: dict[str, int] = {}
     accessions: set[str] = set()
     if not columns:
@@ -173,8 +185,8 @@ def _scan_accessions(parquet: pq.ParquetFile) -> tuple[dict[str, int], set[str]]
                     accessions.add(entry["values"])
                     if name == scalar_columns[0]:
                         accession_counts[entry["values"]] = accession_counts.get(entry["values"], 0) + entry["counts"]
-        if "pg_accessions" in columns:
-            members = _member_accessions(batch.column("pg_accessions"))
+        for name in list_columns:
+            members = _member_accessions(batch.column(name))
             if members is not None:
                 accessions.update(pc.call_function("unique", [members]).to_pylist())
     accessions.discard(None)
@@ -182,7 +194,7 @@ def _scan_accessions(parquet: pq.ParquetFile) -> tuple[dict[str, int], set[str]]
 
 
 def _member_accessions(column: pa.Array) -> pa.Array | None:
-    """The accession strings inside a ``pg_accessions`` list, or None for another layout."""
+    """The accession strings inside an accession list, or None for another layout."""
     if _is_list_of_strings(column.type):
         return column.values
     if _is_list_of_structs_with_accession(column.type):
@@ -218,8 +230,10 @@ def _normalize_table(table: pa.Table, changes: dict[str, str], keep_names: bool 
             table = table.set_column(
                 index, table.schema.field(index), pa.chunked_array([_mapped(c, changes) for c in column.chunks], column.type)
             )
-    if "pg_accessions" in table.schema.names:
-        index = table.schema.get_field_index("pg_accessions")
+    for name in _LIST_ACCESSION_COLUMNS:
+        if name not in table.schema.names:
+            continue
+        index = table.schema.get_field_index(name)
         column = table.column(index)
         if _is_list_of_strings(column.type) or _is_list_of_structs_with_accession(column.type):
             chunks = [_normalize_members(chunk, changes) for chunk in column.chunks]
@@ -228,7 +242,7 @@ def _normalize_table(table: pa.Table, changes: dict[str, str], keep_names: bool 
 
 
 def _normalize_members(chunk: pa.Array, changes: dict[str, str]) -> pa.Array:
-    """Rebuild one ``pg_accessions`` list chunk with its member accessions mapped."""
+    """Rebuild one accession list chunk with its member accessions mapped."""
     values = chunk.values
     if _is_list_of_strings(chunk.type):
         mapped = _mapped(values, changes)

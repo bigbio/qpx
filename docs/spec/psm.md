@@ -6,7 +6,8 @@ peptide sequence, including the identification scores, optional spectral data,
 and protein mappings. Its mandatory opaque `psm_id` is the primary key. A
 producer-supplied ID is preserved by default; otherwise QPX derives the ID from
 the footer-declared `identity_composite`, whose schema default is
-`[peptidoform, charge, run_file_name, scan]`.
+`[run_file_name, scan, peptidoform, charge]`. An id is meaningful within one file;
+see [Row Identity](identity.md).
 
 That composite names one peptidoform per spectrum. A file with several hits of
 one peptidoform and charge for a spectrum (other engines, or cross-links) needs

@@ -1,7 +1,7 @@
 name: psm
 file_type: psm_file
 primary_key: [psm_id]
-identity_composite: [peptidoform, charge, run_file_name, scan]
+identity_composite: [run_file_name, scan, peptidoform, charge]
 doc: "Peptide Spectrum Matches from identification searches"
 
 fields:

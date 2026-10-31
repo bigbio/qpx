@@ -26,7 +26,7 @@ separate the same precursor by FAIMS voltage, instead declares
 OpenMS consensusXML declares `[peptidoform, charge, run_file_name, rt, scan,
 observed_mz, consensus_rt]`, where `scan` contains every spectrum reference for
 the run. Identity is meaningful within a file only; distinct QPX files must not
-be joined on `feature_id` alone.
+be joined on `feature_id` alone ([Row Identity](identity.md)).
 
 ## Use Cases
 

@@ -8,6 +8,7 @@ consolidates the common writing logic.
 from __future__ import annotations
 
 import logging
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -40,6 +41,7 @@ def build_dataset_record(
         "pubmed_id": None,
         "software_name": software_name,
         "software_version": software_version,
+        "analysis_id": str(uuid.uuid4()),
         "creation_date": datetime.now().isoformat(),
         "file_checksums": None,
         "file_row_counts": None,

@@ -255,7 +255,7 @@ class _DatasetValidationMixin:
         return ValidationResult(structure=name, issues=[issue])
 
     def validate(
-        self, structures: list[str] | None = None, *, strict: bool = False, semantic: bool = False
+        self, structures: list[str] | None = None, *, strict: bool = False, semantic: bool = False, check_identity: bool = False
     ) -> dict[str, ValidationResult]:
         """Validate the dataset or specific structures against their schemas.
 
@@ -268,6 +268,8 @@ class _DatasetValidationMixin:
             Report the issues that are warnings by default as errors.
         semantic : bool
             Also check PSM and feature peptidoforms, modification positions and m/z values.
+        check_identity : bool
+            Also re-derive each id from the composite its footer declares.
 
         Returns
         -------
@@ -283,7 +285,9 @@ class _DatasetValidationMixin:
         for name in targets:
             struct = self._structures.get(name)
             results[name] = (
-                self._unavailable_result(name) if struct is None else struct.validate(strict=strict, semantic=semantic)
+                self._unavailable_result(name)
+                if struct is None
+                else struct.validate(strict=strict, semantic=semantic, check_identity=check_identity)
             )
 
         present = {name for name in results if self._structures.get(name) is not None}

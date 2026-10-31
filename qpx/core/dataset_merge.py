@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime
 import hashlib
 import logging
+import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -300,6 +301,7 @@ class _Merge:
             "project_accession": ";".join(accessions),
             "project_title": rows[0].get("project_title") if len(accessions) == 1 else f"Merge of {', '.join(accessions)}",
             "software_name": ";".join(names) or None,
+            "analysis_id": str(uuid.uuid4()),
             "creation_date": datetime.date.today().isoformat(),
         }
         self._write_records("dataset", pa.Table.from_pylist([record]))

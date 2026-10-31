@@ -39,7 +39,7 @@ from qpx.writers.pg import PgWriter
 from qpx.writers.psm import PsmWriter
 
 _log = logging.getLogger("qpx.converters.openms_consensus.converter")
-_PSM_IDENTITY_COMPOSITE = ("peptidoform", "charge", "run_file_name", "scan")
+_PSM_IDENTITY_COMPOSITE = ("run_file_name", "scan", "peptidoform", "charge")
 # Pending record dicts cost far more than their row groups: keep few of them.
 _STREAM_BATCH = 20_000
 

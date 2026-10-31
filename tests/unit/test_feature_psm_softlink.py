@@ -38,9 +38,9 @@ def test_link_feature_psm_is_inverse_of_feature_id(tmp_path):
     psm_a["feature_id"] = feature_id
     psm_b["feature_id"] = feature_id
     psm_c["feature_id"] = None
-    id_a = derive_id([psm_a["peptidoform"], psm_a["charge"], psm_a["run_file_name"], psm_a["scan"]])
-    id_b = derive_id([psm_b["peptidoform"], psm_b["charge"], psm_b["run_file_name"], psm_b["scan"]])
-    id_c = derive_id([psm_c["peptidoform"], psm_c["charge"], psm_c["run_file_name"], psm_c["scan"]])
+    id_a = derive_id([psm_a["run_file_name"], psm_a["scan"], psm_a["peptidoform"], psm_a["charge"]])
+    id_b = derive_id([psm_b["run_file_name"], psm_b["scan"], psm_b["peptidoform"], psm_b["charge"]])
+    id_c = derive_id([psm_c["run_file_name"], psm_c["scan"], psm_c["peptidoform"], psm_c["charge"]])
 
     _write(ds_dir, [feature], [psm_a, psm_b, psm_c])
 

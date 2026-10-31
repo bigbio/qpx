@@ -322,7 +322,7 @@ def _rewrite_batch_rows(parquet: pq.ParquetFile, group: int) -> int:
     return max(1, min(rows, _REWRITE_BATCH_BYTES // per_row))
 
 
-def _rewrite_view(source: Path, destination: Path, fill_batch) -> None:
+def _rewrite_view(source: Path, destination: Path, fill_batch, footer: dict[bytes, bytes] | None = None) -> None:
     """Rewrite a view in bounded batches, keeping its schema and footer identity.
 
     A whole row group is never read at once: a TMT pg view over ~1,000 runs holds
@@ -334,6 +334,9 @@ def _rewrite_view(source: Path, destination: Path, fill_batch) -> None:
 
     parquet = pq.ParquetFile(source)
     schema, compression = _stamped_schema(parquet.schema_arrow)
+    # Keys added after the first batch, such as identity_source, are in the file's footer only.
+    added = {key: value for key, value in (parquet.metadata.metadata or {}).items() if key != b"ARROW:schema"}
+    schema = schema.with_metadata({**added, **schema.metadata, **(footer or {})})
     # The same encoding every QPX writer uses (byte-stream-split on rt/mz leaves,
     # per-column dictionaries, zstd level, format 2.6). A bare compression= kept
     # the footer identity but silently re-encoded the file with pyarrow defaults.

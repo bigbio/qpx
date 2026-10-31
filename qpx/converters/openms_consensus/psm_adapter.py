@@ -2,7 +2,7 @@
 
 Each ``PeptideIdentification`` (assigned to a consensus feature or unassigned) is
 one spectrum match. We emit one psm record per hit with PK
-``[peptidoform, charge, run_file_name, scan]``. The run is resolved from the
+``[run_file_name, scan, peptidoform, charge]``. The run is resolved from the
 identification's global ``map_index`` (→ the map's file) unless it is a copy of
 merged identifications whose ``id_merge_index`` places the spectrum in another
 map run, the parent consensus feature's element runs, or — for an unassigned ID

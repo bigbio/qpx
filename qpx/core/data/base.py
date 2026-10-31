@@ -10,7 +10,12 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from qpx.core.convert import QueryResult
-from qpx.core.data.footer_validation import duplicate_composite_issues, footer_issues
+from qpx.core.data.footer_validation import (
+    duplicate_composite_issues,
+    footer_issues,
+    mixed_identity_issues,
+    stale_identity_issues,
+)
 from qpx.core.data.schema import ValidationResult, pg_quantity_issues, pg_referential_issues_from_query
 from qpx.core.engine import DuckDBEngine, create_engine
 from qpx.core.parquet_io import read_parquet_metadata
@@ -147,14 +152,15 @@ class BaseStructure:
             yield batch_values, df
 
     # --- Validation ---
-    def validate(self, *, strict: bool = False, semantic: bool = False) -> ValidationResult:
+    def validate(self, *, strict: bool = False, semantic: bool = False, check_identity: bool = False) -> ValidationResult:
         """Validate this structure's data against its schema.
 
         ``strict=True`` (used by ``qpxc validate``) promotes duplicate-PK and
         required-null issues to errors; the default is lenient. Rows are read in
         batches; only the primary-key columns are held for the whole view.
         ``semantic=True`` also checks PSM and feature peptidoforms, modification
-        positions and m/z values.
+        positions and m/z values. ``check_identity=True`` also re-derives each id
+        from the declared composite.
         """
         view = self._schema_class
         severity = "error" if strict else "warning"
@@ -177,6 +183,10 @@ class BaseStructure:
                 sql_build("SELECT $columns FROM ($query)", columns=columns, query=query)
             ).to_arrow_table()
         referential = footer_issues(view, footers, severity)
+        if view.identity_composite is not None:
+            referential += mixed_identity_issues(view, footers)
+        if check_identity:
+            referential += stale_identity_issues(self._engine, query, view, schema.names, footers, severity)
         referential += duplicate_composite_issues(self._engine, query, view, schema.names, footers, severity)
         if view.view_name == "pg":
             referential += self._pg_view_issues(query, set(schema.names), severity)

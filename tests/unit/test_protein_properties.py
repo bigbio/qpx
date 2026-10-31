@@ -236,7 +236,6 @@ def test_coverage_keeps_psm_evidence_after_accession_normalization(dataset_dir, 
     psm["protein_accessions"] = [full if direction == "forward" else "P67890"]
     with PsmWriter(dataset_dir / "exp.psm.parquet") as writer:
         writer.write_batch([psm])
-    psm_before = (dataset_dir / "exp.psm.parquet").read_bytes()
 
     result = CliRunner().invoke(
         transform,
@@ -250,7 +249,7 @@ def test_coverage_keeps_psm_evidence_after_accession_normalization(dataset_dir, 
     anchor = "P67890" if direction == "forward" else full
     assert pg[anchor]["sequence_coverage"] == pytest.approx(100 * 8 / 13, rel=1e-5)
     assert list(pg) == anchors_before
-    assert (dataset_dir / "exp.psm.parquet").read_bytes() == psm_before
+    assert [row["protein_accessions"] for row in _rows(dataset_dir, "psm")] == [[anchor]]
 
 
 @pytest.mark.parametrize("in_place", [True, False])

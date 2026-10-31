@@ -13,7 +13,7 @@ This view is analogous to outputs from tools such as MaxQuant (`proteinGroups.tx
 
 ## Schema
 
-`pg_id` is the non-null primary key. The schema-default `identity_composite` is
+`pg_id` is the non-null primary key, meaningful within one file ([Row Identity](identity.md)). The schema-default `identity_composite` is
 `[pg_accessions, grouped_runs, label]`; `label` is null only for
 identification-only protein groups with no label context. A known label is
 retained even when its intensity is null. Fields marked with

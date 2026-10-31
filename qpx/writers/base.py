@@ -7,6 +7,8 @@ import datetime
 import logging
 import os
 import uuid
+from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Sequence
 
@@ -14,7 +16,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from qpx._version import __version__
-from qpx.core.data.identity import derive_id
+from qpx.core.data.identity import IDENTITY_HASH_VERSION, derive_composite_id
 from qpx.core.data.schema import _scan_format_issues, _scan_format_violations, pg_referential_issues_from_parquet
 from qpx.core.engine import create_connection
 from qpx.core.sql import sql_build, validate_identifier
@@ -33,6 +35,14 @@ def _cast_column(column: pa.ChunkedArray, target: pa.DataType) -> pa.ChunkedArra
         return column.cast(target)
     except pa.ArrowInvalid:
         return pa.array(column.to_pylist(), type=target)
+
+
+@dataclass
+class _IdentityState:
+    """A writer's identity composite override and where the ids written so far came from."""
+
+    composite_override: tuple[str, ...] | None
+    sources: set[str] = dataclass_field(default_factory=set)
 
 
 class BaseWriter:
@@ -93,7 +103,7 @@ class BaseWriter:
         # measured keys its producer emits (bigbio/qpx#229). Stored as a tuple so
         # the footer stamps the effective composite via the ``_identity_composite``
         # property below.
-        self._identity_composite_override = tuple(identity_composite) if identity_composite else None
+        self._identity = _IdentityState(tuple(identity_composite) if identity_composite else None)
         self._validate_identity_composite()
 
         # Build Parquet footer metadata. Two distinct versions are stamped:
@@ -122,6 +132,7 @@ class BaseWriter:
             if id_field is not None:
                 self._file_metadata[b"primary_key"] = id_field.encode()
             self._file_metadata[b"identity_composite"] = ",".join(identity_composite).encode()
+            self._file_metadata[b"identity_hash_version"] = IDENTITY_HASH_VERSION.encode()
 
     def _validate_identity_composite(self) -> None:
         """Reject composite fields absent from the effective writer schema."""
@@ -148,8 +159,8 @@ class BaseWriter:
         A converter-supplied override (producer-specific composite) wins over the
         schema class attribute; ``None`` for views without any derived identity.
         """
-        if self._identity_composite_override is not None:
-            return self._identity_composite_override
+        if self._identity.composite_override is not None:
+            return self._identity.composite_override
         return getattr(self._schema_class, "identity_composite", None)
 
     @property
@@ -208,18 +219,12 @@ class BaseWriter:
     ) -> list[int]:
         """Preserve or derive row IDs, recording overridden producer IDs."""
         ids: list[int] = []
-        # Identity list fields whose element order is not meaningful: grouped_runs
-        # is a set of raw files, and pg_accessions is a set of group members (the
-        # anchor/leader is carried separately). Hashing them order-independently
-        # keeps the derived id stable across producers that emit the same
-        # membership in a different order.
-        unordered_list_indices = tuple(
-            index for index, field in enumerate(composite) if field in ("grouped_runs", "pg_accessions")
-        )
         for index, provided in enumerate(existing):
             if provided is not None and not self._should_override_provided_id(index, composite_values):
+                self._identity.sources.add("provided")
                 ids.append(provided)
                 continue
+            self._identity.sources.add("derived")
             if provided is not None:
                 if cv_lists is not None:
                     params = list(cv_lists[index] or [])
@@ -227,12 +232,7 @@ class BaseWriter:
                     if provided_param not in params:
                         params.append(provided_param)
                     cv_lists[index] = params
-            ids.append(
-                derive_id(
-                    [composite_values[field][index] for field in composite],
-                    unordered_list_indices=unordered_list_indices,
-                )
-            )
+            ids.append(derive_composite_id({field: composite_values[field][index] for field in composite}, composite))
         return ids
 
     def _should_override_provided_id(self, _index: int, _composite_values: dict[str, list]) -> bool:
@@ -265,6 +265,7 @@ class BaseWriter:
         names = set(table.schema.names)
         id_arrow_field = pa.field(id_field, pa.int64(), nullable=False)
         if self._keeps_every_id(table, id_field):
+            self._identity.sources.add("provided")
             return table.set_column(
                 table.schema.get_field_index(id_field), id_arrow_field, table.column(id_field).cast(pa.int64())
             )
@@ -331,6 +332,14 @@ class BaseWriter:
     def set_scan_format(self, scan_format: str) -> None:
         """Declare a confirmed format before close, including after streamed batches."""
         self._guard(self._set_scan_format, scan_format)
+
+    def identity_source_metadata(self) -> dict[bytes, bytes]:
+        """The ``identity_source`` footer key for the ids written so far; empty before any."""
+        sources = self._identity.sources
+        if not sources:
+            return {}
+        source = next(iter(sources)) if len(sources) == 1 else "mixed"
+        return {b"identity_source": source.encode()}
 
     def add_footer_metadata(self, entries: dict[bytes, bytes]) -> None:
         """Add footer keys before close, including after streamed batches."""
@@ -435,6 +444,8 @@ class BaseWriter:
             if validate and self._buffer:
                 self._write_arrow_batch(self._buffer)
             self._buffer = []
+            if validate and self._identity.sources:
+                self._add_footer_metadata(self.identity_source_metadata())
             wrote_file = self._writer is not None
             writer = self._writer
             self._writer = None

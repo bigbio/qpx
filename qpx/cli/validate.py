@@ -54,6 +54,11 @@ _VALID_STRUCTURES = Dataset.structure_names()
     "modification positions and calculated/observed m/z",
     is_flag=True,
 )
+@click.option(
+    "--check-identity",
+    help="Also re-derive each feature_id, psm_id and pg_id from the composite its file declares",
+    is_flag=True,
+)
 @duckdb_resource_options
 @click.option("--verbose", help="Enable verbose logging", is_flag=True)
 def validate_cmd(
@@ -61,6 +66,7 @@ def validate_cmd(
     file_path: Optional[Path],
     structures: tuple[str, ...],
     semantic: bool,
+    check_identity: bool,
     verbose: bool,
 ):
     """Validate a QPX dataset or structure against the canonical schema.
@@ -82,29 +88,32 @@ def validate_cmd(
 
         # Also check peptidoforms, modification positions and m/z
         qpxc validate --dataset-path ./PXD014414 --semantic
+
+        # Also re-derive the ids from their composites
+        qpxc validate --dataset-path ./PXD014414 --check-identity
     """
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
     if file_path:
-        _validate_single_file(file_path, semantic)
+        _validate_single_file(file_path, semantic, check_identity)
         return
 
     if dataset_path:
-        _validate_dataset(dataset_path, list(structures) if structures else None, semantic)
+        _validate_dataset(dataset_path, list(structures) if structures else None, semantic, check_identity)
         return
 
     raise click.ClickException("Provide --dataset-path or --file.")
 
 
-def _validate_single_file(file_path: Path, semantic: bool):
+def _validate_single_file(file_path: Path, semantic: bool, check_identity: bool):
     """Validate a single Parquet file by inferring its structure type."""
     from qpx.dataset import Dataset
 
     for name, (cls, suffix) in Dataset._STRUCTURE_REGISTRY.items():
         if file_path.name.endswith(suffix):
             try:
-                result = cls.from_file(file_path).validate(strict=True, semantic=semantic)
+                result = cls.from_file(file_path).validate(strict=True, semantic=semantic, check_identity=check_identity)
             except (OSError, ValueError, duckdb.Error) as exc:
                 result = ValidationResult(structure=name)
                 message = f"{file_path.name} could not be read: {exc}"
@@ -118,12 +127,12 @@ def _validate_single_file(file_path: Path, semantic: bool):
     )
 
 
-def _validate_dataset(dataset_path: Path, structures: list[str] | None, semantic: bool):
+def _validate_dataset(dataset_path: Path, structures: list[str] | None, semantic: bool, check_identity: bool):
     """Validate a dataset directory."""
     import qpx
 
     with qpx.open_dataset(dataset_path) as ds:
-        results = ds.validate(structures=structures, strict=True, semantic=semantic)
+        results = ds.validate(structures=structures, strict=True, semantic=semantic, check_identity=check_identity)
 
     all_valid = True
     for _, result in results.items():

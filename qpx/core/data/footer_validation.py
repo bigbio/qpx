@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from qpx.core.data.identity import SET_VALUED_FIELDS, derive_composite_id
 from qpx.core.data.validation import ValidationIssue, _issue
 from qpx.core.sql import sql_build, validate_identifier
 from qpx.version import QPX_SPEC_VERSION, parse_spec_version
 
 _READER_VERSION = parse_spec_version(QPX_SPEC_VERSION)
-# Composite fields compared as sets when the id is derived (qpx.writers.feature).
-_SET_VALUED = ("grouped_runs", "pg_accessions")
+_CHECK_IDENTITY_BATCH_ROWS = 100_000
 
 _DUPLICATE_COMPOSITE_SQL = """
     SELECT count(*), sum(ids)
@@ -92,6 +92,39 @@ def footer_issues(view, footers: list[tuple[str, dict]], severity: str) -> list[
     return issues
 
 
+def mixed_identity_issues(view, footers: list[tuple[str, dict]]) -> list[ValidationIssue]:
+    """Files of one view whose ids were derived differently, so equal rows do not have equal ids."""
+    issues = []
+    for key in (b"identity_composite", b"identity_hash_version"):
+        declared = sorted({meta[key].decode(errors="replace") for _, meta in footers if key in meta})
+        if len(declared) > 1:
+            message = f"The files declare different {key.decode()} values ({', '.join(declared)}): their ids are not comparable"
+            issues.append(_issue(view.view_name, "mixed_identity", "warning", view.primary_key[0], message))
+    return issues
+
+
+def stale_identity_issues(engine, query: str, view, columns: list[str], footers, severity: str) -> list[ValidationIssue]:
+    """Ids that no longer match the composite their footers declare them derived from."""
+    composite = _declared_composite(view, footers, columns) if view.identity_composite else None
+    if composite is None:
+        return []
+    id_field = view.primary_key[0]
+    if any(meta.get(b"identity_source", b"derived") != b"derived" for _, meta in footers):
+        message = f"Not all {id_field} values are derived (footer identity_source), so they were not re-derived"
+        return [_issue(view.view_name, "identity_not_checked", "warning", id_field, message)]
+    selected = ", ".join(validate_identifier(name) for name in (id_field, *composite))
+    reader = engine.connection.sql(sql_build("SELECT $selected FROM ($query)", selected=selected, query=query))
+    rows = stale = 0
+    for batch in reader.to_arrow_reader(_CHECK_IDENTITY_BATCH_ROWS):
+        for row in batch.to_pylist():
+            rows += 1
+            stale += row[id_field] != derive_composite_id(row, composite)
+    if not stale:
+        return []
+    message = f"{stale} of {rows} {id_field} values do not match the declared composite ({', '.join(composite)})"
+    return [_issue(view.view_name, "stale_identity", severity, id_field, message)]
+
+
 def _declared_composite(view, footers: list[tuple[str, dict]], columns: list[str]) -> tuple[str, ...] | None:
     """The identity composite the files declare (the schema default when none does), if its columns are present."""
     declared = {meta[b"identity_composite"].decode(errors="replace") for _, meta in footers if b"identity_composite" in meta}
@@ -109,7 +142,7 @@ def duplicate_composite_issues(engine, query: str, view, columns: list[str], foo
     if composite is None:
         return []
     keys = ", ".join(
-        f"list_sort(list_distinct({validate_identifier(name)}))" if name in _SET_VALUED else validate_identifier(name)
+        f"list_sort(list_distinct({validate_identifier(name)}))" if name in SET_VALUED_FIELDS else validate_identifier(name)
         for name in composite
     )
     id_field = view.primary_key[0]

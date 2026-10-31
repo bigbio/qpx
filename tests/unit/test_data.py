@@ -366,7 +366,7 @@ def _write_feature_psm_dataset(ds_dir, *, feature_psm_ids, psm_feature_id):
     # The writers derive the identity ids from the schema-default composites; mirror
     # them so a caller can construct a *resolving* cross-ref.
     feature_id = derive_id([feat["peptidoform"], feat["charge"], feat["run_file_name"], feat["rt"]])
-    psm_id = derive_id([psm["peptidoform"], psm["charge"], psm["run_file_name"], psm["scan"]])
+    psm_id = derive_id([psm["run_file_name"], psm["scan"], psm["peptidoform"], psm["charge"]])
     feat["psm_ids"] = feature_psm_ids
     psm["feature_id"] = psm_feature_id
     with FeatureWriter(ds_dir / "exp.feature.parquet") as w:
@@ -518,7 +518,7 @@ def test_feature_psm_inverse_reciprocal_desync_is_warning(tmp_path):
     psm = make_psm_record(sequence="PSMPEPTIDEK", peptidoform="PSMPEPTIDEK", scan=[10])
     feature_a_id = derive_id([feature_a["peptidoform"], feature_a["charge"], feature_a["run_file_name"], feature_a["rt"]])
     feature_b_id = derive_id([feature_b["peptidoform"], feature_b["charge"], feature_b["run_file_name"], feature_b["rt"]])
-    psm_id = derive_id([psm["peptidoform"], psm["charge"], psm["run_file_name"], psm["scan"]])
+    psm_id = derive_id([psm["run_file_name"], psm["scan"], psm["peptidoform"], psm["charge"]])
     feature_a["psm_ids"] = [psm_id]
     psm["feature_id"] = feature_b_id
 

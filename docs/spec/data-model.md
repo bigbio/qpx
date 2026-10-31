@@ -60,7 +60,7 @@ graph LR
 - **run** — one raw file was acquired on the instrument.
 - **PSM** — a search engine matched a single MS/MS spectrum (one `scan`) to a
   peptidoform. PK `psm_id`; schema-default identity composite
-  `[peptidoform, charge, run_file_name, scan]`. Primarily DDA.
+  `[run_file_name, scan, peptidoform, charge]`. Primarily DDA.
 - **feature** — one quantified chromatographic peak: a peptidoform+charge in one
   run, with an intensity per channel. PK `feature_id`; schema-default identity
   composite `[peptidoform, charge, run_file_name, rt]`, which converters may

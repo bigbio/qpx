@@ -145,6 +145,7 @@ def write_partitioned_table(
         table = deriver.identified_table(table)
         _validate_partitioned_table(schema_class, table)
         footer = {k: v for k, v in deriver.footer_metadata.items() if k not in (b"creator", b"software_provider")}
+        footer |= deriver.identity_source_metadata()
         file_metadata = {**footer, **(file_metadata or {})}
 
     _validate_partition_columns(table, cols)

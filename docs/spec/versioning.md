@@ -85,6 +85,11 @@ This version defines all core serialized views (PSM, Feature, PG, MZ), the deriv
       are outside every range.
     - **Identity composites.** One identity composite value names one row
       identity, also for producer-supplied ids.
+    - **Row identity.** The PSM composite is `[run_file_name, scan, peptidoform,
+      charge]`, the order agreed in #229, so every derived `psm_id` changes and
+      equals the id OpenMS writes for the same row. The hash is specified with
+      test vectors, and footers state `identity_hash_version` and `identity_source`
+      ([Row Identity](identity.md)). `dataset.analysis_id` is new.
 - **1.2** (backward-compatible): adds the [site](site.md) and
   [proteoform](proteoform.md) views, the optional `modification_candidates` column
   of the PSM and Feature views ([Modifications](modifications.md)) and the optional
@@ -115,6 +120,9 @@ This version defines all core serialized views (PSM, Feature, PG, MZ), the deriv
     - **No in-place migration.** These changes affect derived `pg_id` values and
       identity handling; regenerate qpx files by **re-converting from the original
       source files** — there is no on-disk migration.
+    - This release changed `pg_id` under the same `qpx_version`, which only the
+      footer's `identity_composite` reveals. Later changes to the derivation move
+      the specification version ([Row Identity](identity.md#changes-to-the-derivation)).
 - **1.1** (backward-incompatible, pre-2.0 stabilisation): the PG view now keys on
   `grouped_runs` (`list<string>`) instead of the scalar `run_file_name`. A
   protein-group quantity applies to the set of raw files (fractions) aggregated

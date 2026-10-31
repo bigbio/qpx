@@ -146,6 +146,7 @@ nav:
       - Technical:
           - Serialization & Parquet: spec/serialization.md
           - File Naming: spec/file-naming.md
+          - Row Identity: spec/identity.md
           - Versioning: spec/versioning.md
           - Tool Mappings: spec/tool-mappings.md
           - Schemas: spec/schemas.md
