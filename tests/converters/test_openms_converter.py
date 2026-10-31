@@ -37,7 +37,7 @@ def _write_minimal_qpx(
     # PSM
     psm_records = [
         make_psm_record(sequence="PEPTIDEK", run_file_name="run_01", scan=[1001]),
-        make_psm_record(sequence="ANOTHERK", run_file_name="run_01", scan=[1002], charge=3),
+        make_psm_record(sequence="ANOTHERK", peptidoform="ANOTHERK", run_file_name="run_01", scan=[1002], charge=3),
     ]
     with PsmWriter(qpx_dir / f"{prefix}.psm.parquet") as w:
         w.write_batch(psm_records)
@@ -52,6 +52,7 @@ def _write_minimal_qpx(
         ),
         make_feature_record(
             sequence="ANOTHERK",
+            peptidoform="ANOTHERK",
             run_file_name="run_01",
             anchor_protein="P12345",
             charge=3,
