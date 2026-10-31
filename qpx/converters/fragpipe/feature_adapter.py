@@ -19,6 +19,7 @@ from qpx.converters.fragpipe.constants import (
     to_proforma,
     unassigned_mass_shift,
 )
+from qpx.converters.fragpipe.isobaric import channel_intensities, ms1_additional_intensity, require_channel_columns
 from qpx.converters.fragpipe.pg_adapter import normalize_run_name, require_label_free, resolve_experiment_runs
 from qpx.converters.mappings import get_field_mappings
 from qpx.converters.ptm import compute_precursor_mz
@@ -94,6 +95,12 @@ class FragPipeFeatureAdapter(BaseConverter):
     _protein_groups: dict[str, list[str]] = {}
     # Sequence and every mapped protein of each converted peptidoform.
     _pepmap: dict[str, tuple[str, list[str]]] = {}
+    # Channel column -> label of a one-plex ion.tsv; empty for label-free input.
+    _channels: dict[str, str] = {}
+
+    def load_channels(self, channels: dict[str, str]) -> None:
+        """Read reporter-ion quantities from these columns of a one-plex ion.tsv."""
+        self._channels = channels
 
     def load_protein_groups(self, protein_path: str) -> None:
         """Read the members of each protein group from FragPipe ``combined_protein.tsv``.
@@ -136,7 +143,8 @@ class FragPipeFeatureAdapter(BaseConverter):
                 experiment, so ``chunksize // experiments`` rows are read at a time.
             creator: Creator tag in Parquet metadata.
         """
-        require_label_free(sdrf_path)
+        if not self._channels:
+            require_label_free(sdrf_path)
 
         # Step 1: Load feature file into DuckDB
         self._load_feature_file(feature_path)
@@ -153,8 +161,10 @@ class FragPipeFeatureAdapter(BaseConverter):
         # Step 3: Detect format and experiment columns, and resolve each
         # experiment to its raw runs
         self._require_ion_format()
-        experiments = self._detect_experiment_columns()
-        self.logger.info("Detected combined_ion format, experiments: %s", experiments)
+        if self._channels:
+            require_channel_columns(self._channels, actual_cols, feature_path)
+        experiments = list(experiment_to_runs) if self._channels else self._detect_experiment_columns()
+        self.logger.info("Detected ion format, experiments: %s", experiments)
         experiment_runs = resolve_experiment_runs(experiments, experiment_to_runs, experiment_annotation_path, sdrf_path)
 
         # Step 4: Build PSM lookup if psm.tsv provided
@@ -230,8 +240,8 @@ class FragPipeFeatureAdapter(BaseConverter):
                 experiments.add(col[: -len(" Intensity")])
         if not experiments:
             raise ValueError(
-                "FragPipe combined_ion.tsv has no '<experiment> Intensity' columns; a one-experiment ion.tsv, "
-                "whose TMT/iTRAQ channel columns hold its reporter quantities, is not supported"
+                "FragPipe combined_ion.tsv has no '<experiment> Intensity' columns; a one-plex ion.tsv holds "
+                "its reporter quantities in channel columns, which --annotation-file names"
             )
         return sorted(experiments)
 
@@ -319,12 +329,9 @@ class FragPipeFeatureAdapter(BaseConverter):
 
         # Expand per experiment
         for experiment, runs in experiment_runs.items():
-            int_col = f"{experiment} Intensity"
-            intensity_val = safe_float(row.get(int_col)) or 0.0
-            if intensity_val <= 0:
+            intensities, additional_intensities = self._experiment_quantities(row, experiment)
+            if intensities is None:
                 continue
-
-            intensities = [{"label": "LFQ", "intensity": float(intensity_val)}]
 
             # The identifying run, and so its PSM, is known only for a one-run
             # experiment whose feature was identified there by MS/MS rather than
@@ -346,7 +353,7 @@ class FragPipeFeatureAdapter(BaseConverter):
                 "cv_params": None,
                 "rt": None,
                 "intensities": intensities,
-                "additional_intensities": None,
+                "additional_intensities": additional_intensities,
                 "pg_global_qvalue": None,
                 "ion_mobility_start": None,
                 "ion_mobility_stop": None,
@@ -361,6 +368,14 @@ class FragPipeFeatureAdapter(BaseConverter):
         if records and mapped is not None:
             self._pepmap.setdefault(common_fields["peptidoform"], (common_fields["sequence"], mapped))
         return records
+
+    def _experiment_quantities(self, row, experiment: str) -> tuple[list[dict] | None, list[dict] | None]:
+        """The experiment's intensities, or its channels' with the MS1 intensity beside them."""
+        if self._channels:
+            intensities = channel_intensities(row, self._channels)
+            return intensities, ms1_additional_intensity(row, intensities) if intensities else None
+        intensity = safe_float(row.get(f"{experiment} Intensity")) or 0.0
+        return ([{"label": "LFQ", "intensity": float(intensity)}] if intensity > 0 else None), None
 
     def write_pepmap(self, output_path: str, creator: str = "fragpipe") -> bool:
         """Write every protein each converted peptidoform maps to as the pepmap view.

@@ -184,6 +184,7 @@ Each `intensity_name` has one meaning, including its level: a name on a feature 
 | `ms1_area` | DIA-NN | MS1 area of the precursor |
 | `spectral_count` | MaxQuant | MS/MS scans of the evidence row (`MS/MS count`) |
 | `reporter_intensity_corrected` | MaxQuant (TMT/iTRAQ) | Isotope-purity-corrected reporter intensity |
+| `ms1_intensity` | FragPipe (TMT/iTRAQ) | MS1 intensity of the precursor, once per feature under its first quantified channel |
 | `ratio_<num>_<den>` | MaxQuant, OpenMS | Ratio of two labels of a multiplet, on the numerator label |
 | `pg_maxlfq` | DIA-NN | MaxLFQ quantity of the protein group (`PG.MaxLFQ`) |
 | `pg_quantity` | Spectronaut | Quantity of the protein group (`PG.Quantity`) |

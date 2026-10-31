@@ -240,6 +240,7 @@ The following names are commonly used in `additional_intensities` for the PG vie
 | `unnormalized_unique_peptide_sum` | OpenMS consensusXML | Sum of the group's unique peptides, beside OpenMS' own protein abundance |
 | `reporter_intensity` | MaxQuant (TMT/iTRAQ) | Raw reporter-ion intensity |
 | `reporter_intensity_corrected` | MaxQuant (TMT/iTRAQ) | Isotope-purity-corrected reporter intensity |
+| `tmt_integrator_log2_abundance` | FragPipe `--tmt-report` | TMT-Integrator's normalized log2 abundance of the protein in the channel |
 
 !!! tip "Spectral counts as intensities"
     Spectral counts are quantitative measures that vary per run and per label, so they fit naturally in `additional_intensities`. Store them as float values (e.g., `3.0` instead of `3`) since the struct uses `float32`.

@@ -4,6 +4,7 @@ import logging
 from pathlib import Path
 
 from qpx._version import __version__
+from qpx.converters.fragpipe.isobaric import load_channel_annotation, load_tmt_report, plex_runs
 from qpx.converters.fragpipe.pg_adapter import FragPipePgAdapter
 from qpx.converters.fragpipe.psm_adapter import FragPipePsmAdapter
 from qpx.converters.mappings import get_tool_meta
@@ -28,6 +29,13 @@ class FragPipeConverter(BaseOrchestrator):
         self._cpus = max_cpus
         self._compression = compression
         self._resolved_mappings_by_view: dict[str, dict] = {}
+        self._channels: dict[str, str] = {}
+        self._tmt_report: dict[str, dict[str, float]] = {}
+
+    def load_plex(self, annotation_file, tmt_report_file=None) -> None:
+        """Convert one plex: the channel columns of its reports take the labels of its annotation.txt."""
+        self._channels = load_channel_annotation(annotation_file)
+        self._tmt_report = load_tmt_report(tmt_report_file, self._channels) if tmt_report_file else {}
 
     def convert(
         self,
@@ -46,6 +54,10 @@ class FragPipeConverter(BaseOrchestrator):
             raise ValueError("output_folder or output_directory required")
         out.mkdir(parents=True, exist_ok=True)
         prefix = output_prefix or "fragpipe"
+        if self._channels:
+            if not psm_file:
+                raise ValueError("The annotation of a plex needs psm.tsv, whose spectrum ids name the plex's raw runs")
+            experiment_to_runs = {prefix: plex_runs(str(psm_file))}
 
         ontology_entries: list[dict] = []
         produced_structures: list[str] = []
@@ -135,6 +147,7 @@ class FragPipeConverter(BaseOrchestrator):
         ) as adapter:
             if pg_file:
                 adapter.load_protein_groups(str(pg_file))
+            adapter.load_channels(self._channels)
             adapter.convert(
                 feature_path=str(ion_file),
                 output_path=str(out / f"{prefix}.feature.parquet"),
@@ -154,6 +167,7 @@ class FragPipeConverter(BaseOrchestrator):
         """Write protein groups using the supplied experiment mapping."""
         experiment_to_runs, experiment_annotation_file = mapping
         with FragPipePgAdapter(duckdb_memory=self._memory, duckdb_threads=self._cpus, compression=self._compression) as adapter:
+            adapter.load_channels(self._channels, self._tmt_report)
             adapter.convert(
                 protein_path=str(pg_file),
                 output_path=str(output_path),

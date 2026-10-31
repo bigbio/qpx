@@ -160,7 +160,7 @@ code alone.
 | Converter | Measured on | From code only |
 | ----------- | ------------- | ---------------- |
 | MaxQuant | `tests/examples/maxquant`: `maxquant_full` (PXD001819 `evidence.txt` and `proteinGroups.txt`; 243,821 features, 27,072 pg rows) and `maxquant_simple` (TMT `msms.txt` and `evidence.txt`; 1,000 PSMs, 9,301 features) | `1/K0` (no timsTOF input) |
-| FragPipe | A TMT `psm.tsv` from the bigbio/pmultiqc test data (1,000 PSMs); PXD081924 (FragPipe 22 label-free, three one-run experiments; 10,313 PSMs, 3,376 ions, 482 protein groups) | Multi-run experiments and match-between-runs rows |
+| FragPipe | PXD085647 (TMTpro 16 channels, one run; 7,395 PSMs, 4,356 features, 1,241 protein groups); a TMT `psm.tsv` from the bigbio/pmultiqc test data (1,000 PSMs); PXD081924 (FragPipe 22 label-free, three one-run experiments; 10,313 PSMs, 3,376 ions, 482 protein groups) | Multi-run experiments and match-between-runs rows |
 | Spectronaut | `tests/examples/spectronaut/small`, without SDRF (168 features, 70 pg rows); PXD057632 pivot reports (three-channel precursors, 334,345 features; protein level, 44,383 pg rows) | `PG.Genes`, `PG.ProteinNames` and the SDRF-based `missed_cleavages`, which that report does not exercise; `FG.ApexIonMobility`, `EG.StartRT` and `EG.EndRT` (no input with them) |
 | CDAP | `tests/examples/cdap` and CPTAC PDC000451 (12 TMT fractions; 217,102 PSMs, 151,442 features, 598,521 pg rows) | — |
 | mzIdentML | `tests/examples/mzidentml`: PXD054720 with its MGF and `--include-spectra` (13,386 PSMs, 123 pg rows) and the four mzIdentML 1.3 cross-linking examples | PEP, `MS:1003044` and protein-group q-value terms, which none of these files contains |
@@ -185,8 +185,8 @@ mzIdentML produces no feature view.
 | `ion_mobility` | `1/K0`, when present. | From the matching PSM's `Ion Mobility`, when present. | `FG.ApexIonMobility`, when exported; null when 0. | Not provided. | Not provided. |
 | `compensation_voltage` | Not implemented. | `Compensation Voltage`; 0 when the column is absent, because the field is part of FragPipe's feature identity. | Not implemented. | Not provided. | Not provided. |
 | `missed_cleavages` | Filled from `Missed cleavages`. | From the matching PSM. | Calculated from the peptide sequence and the SDRF enzyme; null without `--sdrf-file`. `PEP.NrOfMissedCleavages` is not read. | Not implemented: no enzyme is declared to the converter. | Not implemented, although the required SDRF declares the enzyme. |
-| `intensities` | TMT: one entry per channel the SDRF assigns in the run. SILAC: one entry per label (`Intensity L/M/H`); null for a label MaxQuant did not quantify, and for both labels of a peptide without a labelled residue. | Label-free `<exp> Intensity` only: TMT/iTRAQ reporter channels are not converted, and an isobaric SDRF or a one-experiment `ion.tsv` stops the conversion. | `FG.Quantity`, or one entry per `EG.Channel<N>Quantity`: the report does not name its channels, so they take the SDRF's SILAC labels lightest first, or `SILAC light`/`medium`/`heavy` without an SDRF. Null for a value Spectronaut reports as `Filtered`. | Null when no reporter channel (TMT) or precursor area (label-free) is positive. | Filled. |
-| `additional_intensities` | TMT corrected reporter intensities; SILAC `ratio_h_l` and `ratio_h_l_normalized` on the heavy label; `MS/MS count` as `spectral_count` for label-free input. Null when no reporter intensity is positive. | Not implemented. | `PG.Quantity`, when exported. Null for a report with channels, where it belongs to no single label. | Not implemented. | Not provided. |
+| `intensities` | TMT: one entry per channel the SDRF assigns in the run. SILAC: one entry per label (`Intensity L/M/H`); null for a label MaxQuant did not quantify, and for both labels of a peptide without a labelled residue. | Label-free: `<exp> Intensity`. TMT/iTRAQ: one entry per channel of `--annotation-file`, null for FragPipe's 0. An isobaric SDRF or a one-plex `ion.tsv` without the annotation stops the conversion. | `FG.Quantity`, or one entry per `EG.Channel<N>Quantity`: the report does not name its channels, so they take the SDRF's SILAC labels lightest first, or `SILAC light`/`medium`/`heavy` without an SDRF. Null for a value Spectronaut reports as `Filtered`. | Null when no reporter channel (TMT) or precursor area (label-free) is positive. | Filled. |
+| `additional_intensities` | TMT corrected reporter intensities; SILAC `ratio_h_l` and `ratio_h_l_normalized` on the heavy label; `MS/MS count` as `spectral_count` for label-free input. Null when no reporter intensity is positive. | TMT/iTRAQ: `Intensity` as `ms1_intensity`, once per feature under its first quantified channel. | `PG.Quantity`, when exported. Null for a report with channels, where it belongs to no single label. | Not implemented. | Not provided. |
 | `pg_global_qvalue` | `Q-value` of the feature's group in `proteinGroups.txt`. Null without `--protein-groups-file`. | Not implemented. | `PG.Qvalue`, when exported. | Not provided: `.psm` files have no protein-level q-value. | Not provided. |
 | `pg_positions` | Not implemented: `evidence.txt` has no coordinates, and the `Start position` / `End position` of `peptides.txt` are not read. | Not implemented. | Not implemented. | Not provided: protein cells give the flanking residues, stored as `pre` / `post` in `pg_accessions`, but no coordinates. | Not provided. |
 | `gg_accessions` / `gg_names` | `Gene names`, or the group's genes from `proteinGroups.txt` (`Gene names`, or `GN=` in `Fasta headers`). Both fields hold gene symbols. | `gg_names` from `Gene`. `gg_accessions`: not implemented. | `PG.Genes`, when exported. | Not provided: RefSeq accessions without gene names. | Not provided. |
@@ -196,6 +196,13 @@ mzIdentML produces no feature view.
 | `parent_ion_fraction` | `PIF`; null for MaxQuant's 0, which means not computed. | Not provided: on the PSM. | Not provided. | Not provided: on the PSM, from the first percentage of `PrecursorPurity`. | Not provided. |
 | `id_run_file_name` | The run. Null for match-between-runs rows. | The experiment's raw run. Null for match-between-runs rows (`Match Type` `MBR`) and for an experiment of several raw runs, where the identifying fraction is unknown. | Filled. | Filled. | Filled. |
 | `rt_start` / `rt_stop` | Filled from the calibrated retention time start and finish. | Not implemented. | `EG.StartRT` / `EG.EndRT`, when exported. | Not provided: `.psm` files give one retention time (`RTAtPrecursorHalfElution`) per PSM. | Not provided. |
+
+FragPipe's `combined_*` reports hold MS1 intensities only, so the reporter
+quantities of a TMT/iTRAQ study are read per plex: `--annotation-file` names the
+channel columns of that plex's `ion.tsv` and `protein.tsv`, a feature takes the
+plex's first raw run and the output prefix as `quantification_unit_id`, and a pg
+row groups all the runs `psm.tsv` names. A precursor with no reporter quantity
+writes no feature. Convert each plex with its own `--output-prefix`.
 
 A FragPipe feature is one experiment's quantity. Its `run_file_name` is the
 first raw run of the experiment (from `experiment_annotation.tsv`, else the SDRF
@@ -285,7 +292,7 @@ QuantMS MSstats produces no pg view.
 | `global_qvalue` | `Q-value`. | Not implemented: the group q-value is written to `pg_qvalue`. | `PG.Qvalue`, when exported. | Not provided. | The protein-group q-value term `MS:1002373`, when present. |
 | `pg_qvalue` | The same experiment-level `Q-value` as `global_qvalue`. | The q-value column of `combined_protein.tsv`, or 1 − `Protein Probability` when that is the only one. | `PG.QValue (Run-Wise)`, when exported. | Not provided. | Not implemented. |
 | `label` / `intensity` | `intensity` is null for a group with MS/MS counts but no intensity in that experiment. | `<exp> Intensity` (`Total Intensity` in older reports, else `MaxLFQ Intensity`); null for a group with spectral counts but no intensity in that experiment. | Filled. | Null when no channel has a positive intensity. | Out of scope: identification only. |
-| `additional_intensities` | `LFQ intensity` and `iBAQ` (label-free), corrected reporter intensities (TMT) or `Ratio X/Y [normalized] [exp]` on the numerator label (SILAC). Null when none is reported. | Positive `MaxLFQ Intensity`, `MaxLFQ Unique Intensity` and `Unique Intensity`, and the experiment's `Spectral Count`, `Unique Spectral Count` and `Total Spectral Count`. | Not implemented. | Not implemented. | Out of scope. |
+| `additional_intensities` | `LFQ intensity` and `iBAQ` (label-free), corrected reporter intensities (TMT) or `Ratio X/Y [normalized] [exp]` on the numerator label (SILAC). Null when none is reported. | Positive `MaxLFQ Intensity`, `MaxLFQ Unique Intensity` and `Unique Intensity`, and the experiment's `Spectral Count`, `Unique Spectral Count` and `Total Spectral Count`. TMT/iTRAQ: `--tmt-report` as `tmt_integrator_log2_abundance`. | Not implemented. | Not implemented. | Out of scope. |
 | `contaminant` | `Potential contaminant`. | Not implemented. | Not implemented. | Always false: not derived from the input. | Not implemented. |
 | `peptide_counts` / `feature_counts` | Filled. | `peptide_counts`: `<exp> Unique Peptides` and `<exp> Total Peptides`, when both are present. `feature_counts`: not provided. | `feature_counts`: not implemented. | Filled. | Not implemented. |
 | `sequence_coverage` / `molecular_weight` | `Sequence coverage [%]` / `Mol. weight [kDa]`. | `Percent Coverage` / `Protein Molecular Weight (Da)` in kDa, when present. | Not implemented. | Not provided. | Not implemented. |
@@ -320,7 +327,7 @@ dataset. With the search FASTA they fill null `pg.sequence_coverage`,
 | Converter | Typical inputs |
 | ----------- | ---------------- |
 | MaxQuant | msms.txt, evidence.txt, proteinGroups.txt |
-| FragPipe | psm.tsv, combined_ion, combined_protein |
+| FragPipe | psm.tsv, combined_ion, combined_protein; for one TMT/iTRAQ plex, psm.tsv, ion.tsv, protein.tsv, annotation.txt and optionally a TMT-Integrator abundance_protein report |
 | DIA-NN | report (TSV or Parquet), pg_matrix (optional); required SDRF; optional mzML statistics folder (`--mzml-info-folder`) for feature scans and the `mz` view |
 | Spectronaut | report.tsv; optional SDRF |
 | OpenMS native QPX | `-out_qpx` Parquet directory; SDRF; optional companion consensusXML |

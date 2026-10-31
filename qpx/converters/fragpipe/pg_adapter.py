@@ -18,8 +18,9 @@ import pandas as pd
 from qpx.converters.base import BaseConverter, resolve_columns
 from qpx.converters.channel_labels import experiment_runs_from_sdrf, experiment_type_from_labels, read_sdrf_labels
 from qpx.converters.fragpipe.constants import is_decoy_accession, protein_accessions
+from qpx.converters.fragpipe.isobaric import TMT_REPORT_INTENSITY, channel_intensities, require_channel_columns
 from qpx.converters.mappings import get_field_mappings
-from qpx.converters.utils import safe_float
+from qpx.converters.utils import is_contaminant_accession, safe_float
 from qpx.core.files import run_file_stem
 from qpx.core.sql import escape_path, sql_build
 from qpx.writers.pg import PgWriter
@@ -133,7 +134,7 @@ def require_label_free(sdrf_path: str | None) -> None:
     if experiment_type in ("TMT", "iTRAQ"):
         raise ValueError(
             f"FragPipe {experiment_type} reporter-ion quantities are not converted: combined_ion.tsv and "
-            "combined_protein.tsv hold MS1 intensities, which would be written as label-free. Convert psm.tsv only."
+            "combined_protein.tsv hold MS1 intensities, which would be written as label-free. Convert each plex's ion.tsv and protein.tsv with --annotation-file, or psm.tsv only."
         )
 
 
@@ -185,6 +186,16 @@ class FragPipePgAdapter(BaseConverter):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._experiment_runs: dict[str, list[str]] = {}
+        self._channels: dict[str, str] = {}
+        self._tmt_report: dict[str, dict[str, float]] = {}
+
+    def load_channels(self, channels: dict[str, str], tmt_report: dict[str, dict[str, float]] | None = None) -> None:
+        """Read reporter-ion quantities from these columns of a one-plex protein.tsv.
+
+        *tmt_report* holds the TMT-Integrator log2 abundance of each protein and label.
+        """
+        self._channels = channels
+        self._tmt_report = tmt_report or {}
 
     def convert(
         self,
@@ -221,7 +232,8 @@ class FragPipePgAdapter(BaseConverter):
                 SDRF resolves an experiment, conversion raises rather than emitting
                 a dangling experiment token.
         """
-        require_label_free(sdrf_path)
+        if not self._channels:
+            require_label_free(sdrf_path)
 
         # Step 1: Load protein file into DuckDB
         self._load_protein_file(protein_path)
@@ -237,7 +249,9 @@ class FragPipePgAdapter(BaseConverter):
 
         # Step 3: Detect per-experiment intensity columns and resolve each one to
         # its raw files before writing anything.
-        experiment_cols = self._detect_experiment_columns()
+        if self._channels:
+            require_channel_columns(self._channels, actual_cols, protein_path)
+        experiment_cols = list(experiment_to_runs) if self._channels else self._detect_experiment_columns()
         self._experiment_runs = resolve_experiment_runs(
             experiment_cols, experiment_to_runs, experiment_annotation_path, sdrf_path
         )
@@ -294,7 +308,7 @@ class FragPipePgAdapter(BaseConverter):
         if not experiments:
             raise ValueError(
                 "FragPipe combined_protein.tsv has no per-experiment columns such as '<experiment> Intensity'; "
-                "a one-experiment protein.tsv is not supported"
+                "a one-plex protein.tsv holds its reporter quantities in channel columns, which --annotation-file names"
             )
         return sorted(experiments)
 
@@ -314,6 +328,8 @@ class FragPipePgAdapter(BaseConverter):
         """
         records: list[dict] = []
         common_fields = self._pg_common_fields(row)
+        if self._channels:
+            return self._channel_records(row, common_fields, experiments[0])
 
         # Expand per experiment
         for experiment in experiments:
@@ -350,6 +366,41 @@ class FragPipePgAdapter(BaseConverter):
             }
             records.append(rec)
 
+        return records
+
+    def _channel_records(self, row, common_fields: dict, plex: str) -> list[dict]:
+        """One record per quantified channel of a one-plex protein.tsv."""
+        unique_peptides, total_peptides = safe_float(row.get("Unique Peptides")), safe_float(row.get("Total Peptides"))
+        peptide_counts = (
+            None
+            if unique_peptides is None or total_peptides is None
+            else {"unique_sequences": int(unique_peptides), "total_sequences": int(total_peptides)}
+        )
+        report = self._tmt_report.get(row.get("Protein ID"), {})
+        records = []
+        for entry in channel_intensities(row, self._channels) or []:
+            if entry["intensity"] is None:
+                continue
+            abundance = report.get(entry["label"])
+            records.append(
+                {
+                    **common_fields,
+                    "grouped_runs": self._experiment_runs[plex],
+                    "intensities": [entry],
+                    "additional_intensities": (
+                        None
+                        if abundance is None
+                        else [
+                            {
+                                "label": entry["label"],
+                                "intensities": [{"intensity_name": TMT_REPORT_INTENSITY, "intensity_value": abundance}],
+                            }
+                        ]
+                    ),
+                    "peptide_counts": peptide_counts,
+                    "feature_counts": None,
+                }
+            )
         return records
 
     def _pg_qvalue(self, row: dict) -> float | None:
@@ -415,7 +466,7 @@ class FragPipePgAdapter(BaseConverter):
             "global_qvalue": None,
             "pg_qvalue": pg_qvalue,
             "is_decoy": is_decoy,
-            "contaminant": None,
+            "contaminant": is_contaminant_accession(protein_raw),
             "peptides": peptides,
             "sequence_coverage": seq_coverage,
             "molecular_weight": mol_weight,
@@ -426,7 +477,7 @@ class FragPipePgAdapter(BaseConverter):
     def _pg_annotations(row: dict) -> dict:
         """Protein length and existence as cv_params, and the ProteinProphet probabilities as scores."""
         cv_params = []
-        length = safe_float(row.get("Protein Length"))
+        length = safe_float(row.get("Protein Length", row.get("Length")))
         if length is not None:
             cv_params.append({"cv_name": "sequence_length", "cv_value": str(int(length))})
         existence = row.get("Protein Existence")

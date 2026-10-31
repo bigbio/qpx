@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `qpxc convert fragpipe --annotation-file` reads the TMT/iTRAQ reporter quantities of one plex from the channel columns of `ion.tsv` and `protein.tsv`, with the MS1 intensity beside them; `--tmt-report` adds TMT-Integrator's log2 protein abundance. The pg view of FragPipe now sets `contaminant`.
 - `qpxc validate --semantic` warns when fewer than 95 % of features link to a pg row, the sign of two producers naming groups differently.
 - `qpxc migrate` rewrites a dataset under the current specification without its source files: it flattens a pre-1.1 pg view, derives the ids again, follows them in `psm.feature_id`, and fixes labels, peptidoform spelling and `0.0` m/z sentinels. On a DIA-NN dataset written by QPX 1.0.2 the ids equal those of a new conversion.
 - [Producer Guide](docs/spec/producer-guide.md): decision tables for scans, decoys, labels, missing quantities and ids, a writer walkthrough, and how to check the result. `qpxc validate --conformance` runs every check and fails on warnings too. `tests/conformance` proves the guide's dataset conforms and that each of 39 single defects fails.

@@ -498,6 +498,24 @@ qpxc convert fragpipe \
     --output-prefix fragpipe_psm
 ```
 
+#### TMT and iTRAQ {#fragpipe-example-tmt}
+
+`combined_ion.tsv` and `combined_protein.tsv` hold MS1 intensities only, so convert each plex from its own reports. Its `annotation.txt` names the channel columns, and its `psm.tsv` the raw runs:
+
+```bash
+qpxc convert fragpipe \
+    --psm-file plex1/psm.tsv \
+    --ion-file plex1/ion.tsv \
+    --pg-file plex1/protein.tsv \
+    --annotation-file plex1/annotation.txt \
+    --tmt-report tmt-report/abundance_protein_MD.tsv \
+    --sdrf-file study.sdrf.tsv \
+    --output-folder ./output \
+    --output-prefix plex1
+```
+
+The labels come from the channel of each annotation line (`127N` is `TMT127N`), and they must match the SDRF `comment[label]` values for `qpxc validate` and `design_matrix()` to resolve the samples.
+
 ### Output Files {#fragpipe-output}
 
 - **Output**: `{output-prefix}.psm.parquet`
