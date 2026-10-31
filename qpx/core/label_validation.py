@@ -132,6 +132,10 @@ def skipped_check_reason(exc: duckdb.Error) -> str:
     return "possible schema drift"
 
 
+# Below this share of linked features, feature->pg queries silently lose rows.
+_MIN_PG_LINK_COVERAGE = 0.95
+
+
 def _issue(structure: str, check: str, severity: str, column: str | None, message: str) -> ValidationIssue:
     return ValidationIssue(structure=structure, check=check, severity=severity, column=column, message=message)
 
@@ -183,6 +187,16 @@ def psm_reference_issues(dangling_feature_ids, desync, severity: str) -> list[Va
             )
         )
     return issues
+
+
+def pg_link_coverage_issues(diagnostics: dict) -> list[ValidationIssue]:
+    """Warn when few features link to a pg row, which usually means two producers named groups differently."""
+    linked, unlinked = diagnostics["n_features_linked"], diagnostics["n_features_without_pg"]
+    if not linked and not unlinked or linked >= _MIN_PG_LINK_COVERAGE * (linked + unlinked):
+        return []
+    share = linked / (linked + unlinked)
+    message = f"Only {share:.1%} of features link to a pg row by membership, run and label ({unlinked} do not)"
+    return [_issue("feature", "pg_link_coverage", "warning", "pg_accessions", message)]
 
 
 def run_sample_issues(engine) -> list[ValidationIssue]:

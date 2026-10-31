@@ -78,9 +78,10 @@ def _pivot_arrow_to_sparse(
     row_pos = _dictionary_positions(table.column(row_col), row_index)
     col_pos = _dictionary_positions(table.column(col_col), col_index)
 
-    mask = (row_pos >= 0) & (col_pos >= 0)
-    values = table.column(value_col).to_numpy(zero_copy_only=False)
-    data = values[mask].astype(np.float32)
+    values = table.column(value_col).to_numpy(zero_copy_only=False).astype(np.float32)
+    # A cell without a stored value is not measured, so a null quantity stores nothing
+    mask = (row_pos >= 0) & (col_pos >= 0) & ~np.isnan(values)
+    data = values[mask]
 
     mat = sparse.coo_matrix(
         (data, (row_pos[mask], col_pos[mask])),

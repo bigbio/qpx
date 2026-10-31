@@ -18,6 +18,7 @@ from qpx.core.label_validation import (
     fraction_order_issues,
     fragment_link_issues,
     grouped_run_sample_issues,
+    pg_link_coverage_issues,
     psm_label_issues,
     psm_reference_issues,
     run_sample_issues,
@@ -290,7 +291,7 @@ class _DatasetValidationMixin:
         # feature.pg_ids is the canonical feature -> protein-group reference.
         # When both views are present, every populated id must resolve to pg.pg_id.
         if {"feature", "pg"} <= present:
-            self._check_feature_pg_referential(results["feature"], strict=strict)
+            self._check_feature_pg_links(results["feature"], semantic=semantic, strict=strict)
 
         # Every run a view names exists, each feature label resolves to one
         # sample, and a PSM's label is one its feature was identified in.
@@ -402,6 +403,17 @@ class _DatasetValidationMixin:
                         structure=view, check=check, severity=severity, column=column, message=f"{count} {view} row(s) {what}"
                     )
                 )
+
+    def _check_feature_pg_links(self, feature_result: ValidationResult, *, semantic: bool, strict: bool) -> None:
+        """Flag dangling feature.pg_ids and, for a semantic check, a low share of linked features."""
+        self._check_feature_pg_referential(feature_result, strict=strict)
+        if semantic:
+            self._cross_view_issues(
+                feature_result,
+                "pg link coverage",
+                lambda: pg_link_coverage_issues(self.feature_link_diagnostics()),
+                strict,
+            )
 
     def _check_feature_pg_referential(self, feature_result: ValidationResult, *, strict: bool = False) -> None:
         """Flag feature.pg_ids elements that do not resolve to pg.pg_id."""

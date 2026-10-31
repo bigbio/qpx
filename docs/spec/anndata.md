@@ -96,7 +96,19 @@ adata.write("PXD000000.ae.h5ad")
 
 ## Missing values
 
-When a protein is not detected in a sample, the corresponding cell in `X` and `layers` contains `NaN`. This is consistent with how scRNA-seq handles dropout events and is the standard behavior when pivoting from long-form to matrix-form.
+In a dense matrix (`.ae.h5ad`, `design_matrix()`), a protein not detected in a sample is `NaN`, as in the long-to-matrix pivots of scRNA-seq tools.
+
+The modalities of a `.h5mu` file are sparse: **a cell without a stored value is not measured**, and a stored value is a measurement, including an explicit `0`. `X.toarray()` turns the cells not stored into `0`, so to compute with missing values take the matrix through NaN first:
+
+```python
+import numpy as np
+
+dense = np.full(modality.shape, np.nan)
+stored = modality.X.tocoo()
+dense[stored.row, stored.col] = stored.data
+```
+
+`qpx` converters write a missing quantity as null or no entry, never as `0`, and `imputed_mask` flags cells a tool imputed ([Missing values](intensities.md#missing-values)).
 
 ## Multi-omics integration
 

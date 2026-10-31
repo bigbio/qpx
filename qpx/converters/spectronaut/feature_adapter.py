@@ -301,7 +301,9 @@ class SpectronautFeatureAdapter(SpectronautBaseAdapter):
         # unique (proteotypic)
         proteotypic_col = r.get("is_proteotypic")
         if proteotypic_col and _has(proteotypic_col):
-            parts.append(f'CAST(FIRST(r."{proteotypic_col}") AS BOOLEAN) AS "unique"')
+            parts.append(
+                f'NOT contains(FIRST(r."{pg_col}"), \';\') AND COALESCE(CAST(FIRST(r."{proteotypic_col}") AS BOOLEAN), true) AS "unique"'
+            )
         else:
             parts.append(f'NOT contains(FIRST(r."{pg_col}"), \';\') AS "unique"')
 

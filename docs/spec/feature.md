@@ -97,7 +97,7 @@ These fields are shared with the PSM view and describe the peptide identificatio
 |-------|-------------|------|----------|
 | `pg_accessions` | Full membership of the peptide's protein group; for a peptide shared by several groups, the group the producer assigned it to (e.g. MaxQuant's razor group) | array[struct], null | no |
 | `anchor_protein` | One protein accession that represents the protein group; null when no protein mapping was performed (converters normalize blank/whitespace to null) | string, null | yes |
-| `unique` | (SQL: quote it, see below) True when the peptide's protein group has exactly one protein and the peptide maps to no other group; false when the group has several members or the peptide is shared with other groups; null when the group is unresolved | bool, null | no |
+| `unique` | Peptide specificity (SQL: quote it, see below). True when the peptide's protein group has exactly one protein and the peptide maps to no other group; false when the group has several members or the peptide is shared with other groups; null when the group is unresolved | bool, null | no |
 | `pg_positions` | Peptide start and end positions within each protein in the protein group | array[struct], null | optional |
 | `pg_group_id` | Hash of the sorted `pg_accessions`, equal to `pg.pg_group_id`, to group and join without comparing lists; specification 1.3 | int64, null | No |
 | `pg_global_qvalue` | Global q-value of the protein group at the experiment level | float64, null | optional |

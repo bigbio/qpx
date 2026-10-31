@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `qpxc validate --semantic` warns when fewer than 95 % of features link to a pg row, the sign of two producers naming groups differently.
 - `qpxc migrate` rewrites a dataset under the current specification without its source files: it flattens a pre-1.1 pg view, derives the ids again, follows them in `psm.feature_id`, and fixes labels, peptidoform spelling and `0.0` m/z sentinels. On a DIA-NN dataset written by QPX 1.0.2 the ids equal those of a new conversion.
 - [Producer Guide](docs/spec/producer-guide.md): decision tables for scans, decoys, labels, missing quantities and ids, a writer walkthrough, and how to check the result. `qpxc validate --conformance` runs every check and fails on warnings too. `tests/conformance` proves the guide's dataset conforms and that each of 39 single defects fails.
 - `qpxc validate` warns about a feature or pg `anchor_protein` outside its `pg_accessions`, and reports a `run.samples` entry that names no sample as an error.
@@ -73,6 +74,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- MuData stores no cell for a null quantity, so a stored cell is always a measurement. The sparse-matrix semantics are in [AnnData](docs/spec/anndata.md).
+- Spectronaut `unique` follows the one definition: `PEP.IsProteotypic` alone no longer marks a peptide of a multi-protein group as unique.
 - The user guides run: the statistics, visualization and project guides described `.data`, `ds.identifications`, `ds.qc` and matplotlib figures that do not exist, and are rewritten against the real API; a test runs their blocks. The `qpx.core.models` import, `pq.compute`, the `issue=None` DE example, `savefig` on plotly figures and `psm-*` file names are corrected.
 - `docs/guide/convert.md` has a [Memory](docs/guide/convert.md#memory) section per converter. It replaces advice to raise `--max-memory`, which raises DIA-NN's peak and does nothing for MaxQuant, and the `--sdrf-path` flag and `{prefix}-{uuid}` file names, which do not exist.
 - The help of `convert spectronaut` and `convert openms` printed a literal `\b`; a second example in a command's help no longer collapses into one paragraph.

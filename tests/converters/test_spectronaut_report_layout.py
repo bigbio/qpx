@@ -191,3 +191,19 @@ def test_pivot_parsing_keeps_dots_in_run_names():
         "EG.PrecursorId", "FG.Charge", "R.FileName", "EG.Channel1Quantity", "EG.TotalQuantity (Settings)",
     }  # fmt: skip
     assert "report_pivot" in melted_report_sql(columns, "report_pivot")
+
+
+def test_unique_needs_a_one_protein_group_even_for_a_proteotypic_peptide(tmp_path):
+    """Spectronaut's proteotypic flag alone says nothing about the size of the group."""
+    report = pd.read_csv(_REPORT, sep="\t", nrows=1, low_memory=False, decimal=",")
+    report["PEP.IsProteotypic"] = True
+    results = {}
+    for name, group in (("single", "P12345"), ("several", "P12345;P67890")):
+        report["PG.ProteinAccessions"] = report["PG.ProteinGroups"] = group
+        path = tmp_path / f"{name}.tsv"
+        report.to_csv(path, sep="\t", index=False)
+        out = tmp_path / name
+        out.mkdir()
+        results[name] = _features(out, path)[0]["unique"]
+
+    assert results == {"single": True, "several": False}

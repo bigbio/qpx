@@ -3,6 +3,7 @@
 import pytest
 
 from qpx.core.data.identity import derive_id
+from qpx.core.label_validation import pg_link_coverage_issues
 from qpx.dataset import Dataset
 from qpx.writers import DatasetWriter, FeatureWriter, PgWriter, PsmWriter, RunWriter
 from tests.conftest import make_dataset_record, make_feature_record, make_pg_record, make_psm_record, make_run_record
@@ -130,3 +131,23 @@ def test_grouped_runs_follow_the_fraction_order(tmp_path, grouped_runs, flagged)
         w.write_batch([pg])
     issues = _issues(tmp_path, "pg", "grouped_runs_fraction_order")
     assert [issue.severity for issue in issues] == (["warning"] if flagged else [])
+
+
+def test_low_feature_to_pg_coverage_warns():
+    """Two producers naming groups differently leave most features without a pg row."""
+    issues = pg_link_coverage_issues({"n_features_linked": 90, "n_features_without_pg": 10})
+    assert [(issue.check, issue.severity) for issue in issues] == [("pg_link_coverage", "warning")]
+    assert "90.0%" in issues[0].message
+    assert pg_link_coverage_issues({"n_features_linked": 95, "n_features_without_pg": 5}) == []
+    assert pg_link_coverage_issues({"n_features_linked": 0, "n_features_without_pg": 0}) == []
+
+
+def test_semantic_validation_reports_features_without_a_pg_row(tmp_path):
+    ds_dir = _write_dataset(tmp_path, features=[make_feature_record()], run_labels=TMT_RUN)
+    with PgWriter(ds_dir / "exp.pg.parquet") as w:
+        w.write_batch([make_pg_record(anchor_protein="Q99999", pg_accessions=["Q99999"])])
+
+    with Dataset(ds_dir) as ds:
+        issues = ds.validate(semantic=True)["feature"].issues
+
+    assert "pg_link_coverage" in {issue.check for issue in issues}

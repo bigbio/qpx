@@ -16,6 +16,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
+import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 from scipy import sparse
@@ -29,6 +30,7 @@ from qpx.mudata import (  # noqa: E402
     _LABEL_QUERIES,
     _attach_uns_metadata,
     _detect_intensity_label,
+    _pivot_arrow_to_sparse,
     build_mudata,
 )
 from qpx.version import QPX_SPEC_VERSION  # noqa: E402
@@ -944,3 +946,18 @@ class TestFailedModalitiesAreReported:
         reloaded = mu.read_h5mu(str(path))
 
         assert reloaded.uns["qpx_failed_modalities"]["precursors"].startswith("ArrowInvalid")
+
+
+def test_pivot_stores_no_cell_for_a_null_quantity():
+    """A null means not measured and stores nothing, while a measured zero stays stored."""
+    table = pa.table(
+        {
+            "row": pa.array(["a", "b", "c"]).dictionary_encode(),
+            "col": pa.array(["s1", "s1", "s1"]).dictionary_encode(),
+            "value": pa.array([1.5, None, 0.0], type=pa.float32()),
+        }
+    )
+
+    matrix = _pivot_arrow_to_sparse(table, "row", "col", "value", pd.Index(["a", "b", "c"]), pd.Index(["s1"])).tocoo()
+
+    assert sorted(zip(matrix.row.tolist(), matrix.data.tolist())) == [(0, 1.5), (2, 0.0)]
