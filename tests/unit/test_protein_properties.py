@@ -254,7 +254,7 @@ def test_coverage_keeps_psm_evidence_after_accession_normalization(dataset_dir, 
 
 @pytest.mark.parametrize("in_place", [True, False])
 def test_new_provenance_updates_structure_count(dataset_dir, tmp_path, in_place):
-    """The final count includes new provenance once and excludes staging files."""
+    """The final count includes new provenance and protein views once and excludes staging files."""
     from qpx import Dataset
     from qpx.writers import DatasetWriter
 
@@ -271,13 +271,13 @@ def test_new_provenance_updates_structure_count(dataset_dir, tmp_path, in_place)
 
     with Dataset(output) as dataset:
         metadata = dataset.dataset_meta.to_df().iloc[0]
-        assert metadata["total_structures"] == dataset.compute_integrity()["total_structures"] == 6
+        assert metadata["total_structures"] == dataset.compute_integrity()["total_structures"] == 7
         assert dataset.verify_integrity() == {"errors": [], "warnings": []}
     if not in_place:
         assert (dataset_dir / "exp.dataset.parquet").read_bytes() == source_before
 
     _run(output, _dataset_fasta(tmp_path), "--in-place")
-    assert _rows(output, "dataset")[0]["total_structures"] == 6
+    assert _rows(output, "dataset")[0]["total_structures"] == 7
 
 
 def test_coverage_does_not_merge_conflicting_fasta_accessions(dataset_dir, tmp_path):

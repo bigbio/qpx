@@ -29,6 +29,7 @@ def annotate_dataset_protein_properties(
     in_place: bool,
     output_folder: Optional[Path] = None,
     prefix: Optional[str] = None,
+    fasta_uri: Optional[str] = None,
 ):
     """Fill null protein properties of a QPX dataset from a FASTA; return the report.
 
@@ -50,7 +51,7 @@ def annotate_dataset_protein_properties(
 
     with TemporaryDirectory(prefix=".protein_properties_tmp-", dir=out_dir) as temporary:
         staging = Path(temporary)
-        report, names = annotate_protein_properties(dataset, prefix, fasta, staging)
+        report, names = annotate_protein_properties(dataset, prefix, fasta, staging, fasta_uri)
         if not any(name.endswith((".pg.parquet", ".feature.parquet")) for name in names):
             raise click.ClickException(f"No pg or feature Parquet file found in {dataset}")
         moves = [(staging / name, out_dir / name) for name in names]
@@ -101,6 +102,7 @@ def _echo_protein_properties_report(report) -> None:
     help="Protein FASTA used for the search (optionally .gz)",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
 )
+@click.option("--fasta-uri", default=None, help="Where others can get this FASTA, recorded in provenance beside its checksum")
 @click.option("--in-place", is_flag=True, help="Overwrite the dataset's files instead of writing to --output-folder")
 @click.option(
     "--output-folder",
@@ -110,14 +112,17 @@ def _echo_protein_properties_report(report) -> None:
 )
 @duckdb_resource_options
 @click.option("--verbose", help="Enable verbose logging", is_flag=True)
-def transform_protein_properties_cmd(dataset: Path, fasta: Path, in_place: bool, output_folder: Optional[Path], verbose: bool):
+def transform_protein_properties_cmd(
+    dataset: Path, fasta: Path, fasta_uri: Optional[str], in_place: bool, output_folder: Optional[Path], verbose: bool
+):
     """Fill protein properties the producer did not record, from a FASTA.
 
     For target rows only, and only where the value is null, fills
     ``pg.sequence_coverage`` (the anchor covered by the dataset's target peptides
     whose evidence names it: PSM protein accessions, feature groups, recorded positions),
     ``pg.molecular_weight`` (anchor average mass, kDa) and ``feature.pg_positions``
-    (every one-based occurrence in each group member). Values a producer recorded
+    (every one-based occurrence in each group member), and writes the ``protein``
+    view of the accessions the FASTA has. Values a producer recorded
     are never overwritten. Proteins absent from the FASTA, such as DIA-NN's internal
     decoys, stay null and are counted in the report. The step is recorded in the
     provenance view with the FASTA's checksum.
@@ -132,6 +137,8 @@ def transform_protein_properties_cmd(dataset: Path, fasta: Path, in_place: bool,
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
     _validate_destination(dataset, in_place, output_folder)
-    out_dir = annotate_dataset_protein_properties(dataset, fasta, in_place=in_place, output_folder=output_folder)
+    out_dir = annotate_dataset_protein_properties(
+        dataset, fasta, in_place=in_place, output_folder=output_folder, fasta_uri=fasta_uri
+    )
     click.echo(f"\nProtein properties complete. Output: {dataset if in_place else output_folder}")
     return out_dir

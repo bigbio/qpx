@@ -63,6 +63,7 @@ graph LR
 | `pg`           | `{PREFIX}.pg.parquet`           | Parquet   | Protein groups with quantification across runs and channels                 |
 | `pepmap` | `{PREFIX}.pepmap.parquet` | Parquet | Deduplicated peptide-to-protein mapping with gene names and uniqueness flags |
 | `site` | `{PREFIX}.site.parquet` | Parquet | Protein modification-site claims with a q-value over the claims, the probability that the residue is modified and the evidence fraction of each candidate modification |
+| `protein` | `{PREFIX}.protein.parquet` | Parquet | Name, organism and sequence of each protein the dataset names |
 | `proteoform` | `{PREFIX}.proteoform.parquet` | Parquet | Canonical, isoform, variant and chain members of protein families with member-level q-values (sequence entries, not modification combinations) |
 
 ### API Views

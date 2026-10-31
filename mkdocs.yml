@@ -132,6 +132,7 @@ nav:
           - Peptide-Protein Map: spec/pepmap.md
           - Modification Sites: spec/site.md
           - Proteoforms: spec/proteoform.md
+          - Proteins: spec/protein.md
           - API Views: spec/views.md
       - Expression Views:
           - AnnData Concepts: spec/anndata.md

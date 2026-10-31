@@ -30,6 +30,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from qpx.core.files import sha256_file
+from qpx.core.protein_annotation import write_protein_view
 from qpx.core.protein_sequence import (
     average_molecular_weight_kda,
     peptide_occurrences,
@@ -63,6 +64,7 @@ class FastaSequences:
 
     def __init__(self) -> None:
         self._sequences: dict[str, str] = {}
+        self._headers: dict[str, str] = {}
         self._conflicting: set[str] = set()
         self.entries = 0
         self.decoy_entries = 0
@@ -73,17 +75,18 @@ class FastaSequences:
         index = cls()
         opener = gzip.open if str(path).endswith(".gz") else open
         identifier: str | None = None
+        header = ""
         chunks: list[str] = []
         with opener(path, "rt", encoding="utf-8", errors="replace") as handle:
             for line in handle:
                 if line.startswith(">"):
-                    index._add(identifier, chunks)
+                    index._add(identifier, chunks, header)
                     header = line[1:].strip()
                     identifier = header.split(None, 1)[0] if header else ""
                     chunks = []
                 elif identifier is not None:
                     chunks.append(line.strip())
-        index._add(identifier, chunks)
+        index._add(identifier, chunks, header)
         if index._conflicting:
             logger.warning(
                 "%d FASTA identifier(s) map to different sequences and are left unresolved, e.g. %s",
@@ -92,7 +95,7 @@ class FastaSequences:
             )
         return index
 
-    def _add(self, identifier: str | None, chunks: list[str]) -> None:
+    def _add(self, identifier: str | None, chunks: list[str], header: str) -> None:
         if not identifier:
             return
         self.entries += 1
@@ -112,12 +115,21 @@ class FastaSequences:
             known = self._sequences.get(key)
             if known is None:
                 self._sequences[key] = sequence
+                self._headers[key] = header
             elif known != sequence:
                 del self._sequences[key]
+                del self._headers[key]
                 self._conflicting.add(key)
 
     def __len__(self) -> int:
         return len(self._sequences)
+
+    def entry(self, accession: str) -> tuple[str, str] | None:
+        """The (header, sequence) of an accession the FASTA resolves to one entry."""
+        sequence = self.get(accession)
+        if sequence is None:
+            return None
+        return self._headers[accession if accession in self._sequences else accession.split("|")[1]], sequence
 
     def get(self, accession: str | None) -> str | None:
         """The sequence for ``accession``, or None when absent or ambiguous."""
@@ -440,12 +452,15 @@ def _fill_feature_table(table: pa.Table, fasta: FastaSequences, report: ProteinP
     return table.set_column(index, table.schema.field(index), positions)
 
 
-def _provenance_step(report: ProteinPropertiesReport, fasta_path: Path, views: list[str], step_order: int) -> dict:
+def _provenance_step(
+    report: ProteinPropertiesReport, fasta_path: Path, views: list[str], step_order: int, fasta_uri: str | None = None
+) -> dict:
     from qpx._version import __version__
 
     parameters = {
         "fasta": fasta_path.name,
         "fasta_sha256": sha256_file(fasta_path),
+        **({"fasta_uri": fasta_uri} if fasta_uri else {}),
         "fill_policy": "null values on target rows only; producer values are never overwritten",
         "pg_sequence_coverage_filled": report.pg_coverage_filled,
         "pg_molecular_weight_filled": report.pg_molecular_weight_filled,
@@ -478,6 +493,7 @@ def annotate_protein_properties(
     prefix: str,
     fasta_path: str | Path,
     staging: str | Path,
+    fasta_uri: str | None = None,
 ) -> tuple[ProteinPropertiesReport, list[str]]:
     """Write FASTA-annotated pg/feature (and provenance) views for a dataset into ``staging``.
 
@@ -511,9 +527,12 @@ def annotate_protein_properties(
         views.append("feature")
 
     if written:
+        if write_protein_view(dataset_dir, prefix, fasta, staging):
+            written.append(f"{prefix}.protein.parquet")
+            views.append("protein")
         provenance = dataset_dir / f"{prefix}.provenance.parquet"
         name = provenance.name
-        _write_provenance(provenance, staging / name, _provenance_step(report, fasta_path, views, 0))
+        _write_provenance(provenance, staging / name, _provenance_step(report, fasta_path, views, 0, fasta_uri))
         written.append(name)
 
     match_rate = report.pg_match_rate

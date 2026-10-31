@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 ON_COLLISION = ("error", "namespace", "dedupe-identical")
 SOURCE_COLUMN = SOURCE_DATASET_COLUMN
 _BATCH_ROWS = 100_000
-_METADATA_VIEWS = ("dataset", "ontology", "provenance", "pepmap")
+_METADATA_VIEWS = ("dataset", "ontology", "provenance", "pepmap", "protein")
 _RUN_VIEWS = {
     "feature": "run_file_name",
     "psm": "run_file_name",
@@ -368,6 +368,16 @@ class _Merge:
             for batch in reader:
                 self._write_pepmap_batch(writer, batch)
 
+    def _write_protein_view(self) -> None:
+        """One row per accession; a source's value fills what the others lack."""
+        union = " UNION ALL BY NAME ".join(f'SELECT * FROM "protein_{i}"' for i in self._sources("protein"))
+        with self._writer_class("protein")(self._output_dir / f"{self._prefix}{self._suffix('protein')}") as writer:
+            columns = [name for name in writer.arrow_schema.names if name != "accession"]
+            values = ", ".join(f"any_value({validate_identifier(name)}) AS {validate_identifier(name)}" for name in columns)
+            reader = self._conn.sql(f"SELECT accession, {values} FROM ({union}) GROUP BY accession ORDER BY accession")
+            for batch in reader.to_arrow_reader(_BATCH_ROWS):
+                writer.write_table(writer.align_table_to_schema(pa.Table.from_batches([batch])))
+
     @staticmethod
     def _write_pepmap_batch(writer, batch: pa.RecordBatch) -> None:
         accessions = batch.column("pg_accessions").to_pylist()
@@ -398,6 +408,8 @@ class _Merge:
                 self._write_provenance_view(views)
             elif name == "pepmap":
                 self._write_pepmap_view()
+            elif name == "protein":
+                self._write_protein_view()
             else:
                 self._write_data_view(name)
 

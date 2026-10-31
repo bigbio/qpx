@@ -10,6 +10,7 @@ from qpx.core.data.mz import MzSchema, MzSpectra
 from qpx.core.data.ontology import Ontology, OntologySchema
 from qpx.core.data.pepmap import PepMap, PepMapSchema
 from qpx.core.data.pg import PG, PgSchema
+from qpx.core.data.protein import Protein, ProteinSchema
 from qpx.core.data.proteoform import Proteoform, ProteoformSchema
 from qpx.core.data.provenance import Provenance, ProvenanceSchema
 from qpx.core.data.psm import PSM, PsmSchema
@@ -38,6 +39,8 @@ __all__ = [
     "Provenance",
     "PepMap",
     "Site",
+    "Protein",
+    "ProteinSchema",
     "Proteoform",
     # Schemas
     "FeatureSchema",

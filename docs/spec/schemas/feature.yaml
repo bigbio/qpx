@@ -146,7 +146,7 @@ fields:
   # Protein mapping
   pg_accessions:
     type: "list<pg_protein>"
-    doc: "Full membership of the peptide's protein group, with optional peptide positions (start, end). For a peptide shared by several groups, the group the producer assigned it to (e.g. MaxQuant's razor group). Null under the same conditions as anchor_protein."
+    doc: "Full membership of the peptide's protein group; its position fields are reserved, pg_positions holds positions. For a peptide shared by several groups, the group the producer assigned it to (e.g. MaxQuant's razor group). Null under the same conditions as anchor_protein."
   anchor_protein:
     type: string
     required: true

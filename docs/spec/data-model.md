@@ -307,6 +307,7 @@ The fields of a struct type follow the same rule: a field that `types.yaml` does
 - [Intensities](intensities.md) — primary vs additional intensity structures.
 - [Peptide-Protein Map](pepmap.md) — deduplicated peptidoform → protein mapping.
 - [Modification Sites](site.md) — protein modification-site claims with a q-value, the probability that the residue is modified and the evidence fraction of each candidate modification.
+- [Proteins](protein.md) — name, organism and sequence of each protein the dataset names.
 - [Proteoforms](proteoform.md) — canonical, isoform, variant and chain members of protein families.
 - [API Views](views.md) — on-demand summaries derived by joining these views.
 - [Versioning](versioning.md) — the 1.1 flatten + primary-key changelog.

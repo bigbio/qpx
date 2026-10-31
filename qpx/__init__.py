@@ -14,6 +14,7 @@ from qpx.core.data.feature import Feature
 from qpx.core.data.mz import MzSpectra
 from qpx.core.data.pepmap import PepMap
 from qpx.core.data.pg import PG
+from qpx.core.data.protein import Protein
 from qpx.core.data.proteoform import Proteoform
 from qpx.core.data.psm import PSM
 from qpx.core.data.run import Run
@@ -31,6 +32,7 @@ from qpx.writers.mz import MzWriter
 from qpx.writers.ontology import OntologyWriter
 from qpx.writers.pepmap import PepMapWriter
 from qpx.writers.pg import PgWriter
+from qpx.writers.protein import ProteinWriter
 from qpx.writers.proteoform import ProteoformWriter
 from qpx.writers.provenance import ProvenanceWriter
 from qpx.writers.psm import PsmWriter
@@ -46,6 +48,7 @@ __all__ = [
     "MzSpectra",
     "PepMap",
     "PG",
+    "Protein",
     "Proteoform",
     "PSM",
     "Run",
@@ -60,6 +63,7 @@ __all__ = [
     "OntologyWriter",
     "PepMapWriter",
     "PgWriter",
+    "ProteinWriter",
     "ProteoformWriter",
     "ProvenanceWriter",
     "PsmWriter",

@@ -15,6 +15,7 @@ _QPX_PARQUET_SUFFIXES = (
     ".pepmap.parquet",
     ".site.parquet",
     ".proteoform.parquet",
+    ".protein.parquet",
     ".mz.parquet",
 )
 

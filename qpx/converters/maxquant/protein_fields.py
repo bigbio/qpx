@@ -7,6 +7,9 @@ from typing import Optional
 
 import pandas as pd
 
+from qpx.core.protein_annotation import fasta_header_fields
+from qpx.writers.protein import ProteinWriter
+
 
 def _genes_from_headers(fasta_raw: str) -> Optional[list[str]]:
     """Extract distinct gene symbols from FASTA headers."""
@@ -34,3 +37,33 @@ def group_ids(value) -> list[int]:
         return []
     text = value if isinstance(value, str) else str(int(value))
     return [int(part) for part in text.split(";") if part.strip()]
+
+
+def _aligned_cell(cell, count: int) -> list:
+    """The tokens of a ``;``-joined cell when there is one per protein, else nothing to align."""
+    tokens = str(cell).split(";") if pd.notna(cell) else []
+    return tokens if len(tokens) == count else [None] * count
+
+
+def _protein_rows(table: pd.DataFrame) -> dict[str, dict]:
+    rows: dict[str, dict] = {}
+    for cells in table.to_dict("records"):
+        accessions = str(cells["Protein IDs"]).split(";")
+        headers = _aligned_cell(cells.get("Fasta headers"), len(accessions))
+        lengths = _aligned_cell(cells.get("Sequence lengths"), len(accessions))
+        for accession, header, length in zip(accessions, headers, lengths):
+            if accession.startswith("REV__") or accession in rows:
+                continue
+            fields = fasta_header_fields(header.lstrip(">")) if header else {}
+            rows[accession] = {**fields, "accession": accession, "length": int(length) if length else None}
+    return rows
+
+
+def write_protein_view(protein_groups_path: str, output_path: str) -> None:
+    """The protein view of what ``proteinGroups.txt`` states: its FASTA headers and sequence lengths."""
+    columns = {"Protein IDs", "Fasta headers", "Sequence lengths"}
+    table = pd.read_csv(protein_groups_path, sep="\t", usecols=lambda name: name in columns, dtype=str)
+    rows = _protein_rows(table)
+    if rows:
+        with ProteinWriter(output_path) as writer:
+            writer.write_batch([rows[accession] for accession in sorted(rows)])

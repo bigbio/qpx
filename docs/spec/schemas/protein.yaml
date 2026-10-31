@@ -1,0 +1,46 @@
+name: protein
+file_type: protein_file
+primary_key: [accession]
+doc: "One row per protein named in the dataset: what its sequence database says of it, in specification 1.3"
+
+fields:
+  accession:
+    type: string
+    required: true
+    nullable: false
+    doc: "Protein accession as the other views name it"
+  entry_name:
+    type: string
+    optional: true
+    nullable: true
+    doc: "Entry name of the database, such as ALBU_HUMAN"
+  description:
+    type: string
+    optional: true
+    nullable: true
+    doc: "Protein name from the FASTA header"
+  gene_name:
+    type: string
+    optional: true
+    nullable: true
+    doc: "Gene symbol from the FASTA header (GN=)"
+  organism:
+    type: string
+    optional: true
+    nullable: true
+    doc: "Organism from the FASTA header (OS=)"
+  taxonomy_id:
+    type: int32
+    optional: true
+    nullable: true
+    doc: "NCBI taxonomy id from the FASTA header (OX=)"
+  length:
+    type: int32
+    optional: true
+    nullable: true
+    doc: "Sequence length in residues"
+  sequence:
+    type: string
+    optional: true
+    nullable: true
+    doc: "Amino acid sequence"

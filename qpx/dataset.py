@@ -16,6 +16,7 @@ from qpx.core.data import (
     MzSpectra,
     Ontology,
     PepMap,
+    Protein,
     Proteoform,
     Provenance,
     Run,
@@ -76,6 +77,7 @@ class Dataset(_DatasetValidationMixin, _DatasetQueryMixin, _DatasetWriteMixin):
         "pepmap": (PepMap, ".pepmap.parquet"),
         "site": (Site, ".site.parquet"),
         "proteoform": (Proteoform, ".proteoform.parquet"),
+        "protein": (Protein, ".protein.parquet"),
     }
 
     @classmethod
@@ -284,6 +286,11 @@ class Dataset(_DatasetValidationMixin, _DatasetQueryMixin, _DatasetWriteMixin):
     def site(self) -> Site | None:
         """The site view, or None when the dataset has no site.parquet."""
         return self._structures.get("site")
+
+    @property
+    def protein(self) -> Protein | None:
+        """The protein view, or None when the dataset has no protein.parquet."""
+        return self._structures.get("protein")
 
     @property
     def proteoform(self) -> Proteoform | None:

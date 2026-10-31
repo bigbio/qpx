@@ -7,6 +7,7 @@ from qpx._version import __version__
 from qpx.converters.mappings import get_tool_meta
 from qpx.converters.maxquant.feature_adapter import MaxQuantFeatureAdapter
 from qpx.converters.maxquant.pg_adapter import MaxQuantPgAdapter
+from qpx.converters.maxquant.protein_fields import write_protein_view
 from qpx.converters.maxquant.psm_adapter import MaxQuantPsmAdapter
 from qpx.converters.orchestrator import BaseOrchestrator
 from qpx.converters.sdrf import convert_sdrf_views
@@ -179,6 +180,7 @@ class MaxQuantConverter(BaseOrchestrator):
             )
             ontology_entries.extend(score_ontology_entries(adapter.get_discovered_scores(), view=PG))
             self._resolved_mappings_by_view[PG] = adapter.get_resolved_columns()
+        write_protein_view(str(protein_groups_file), str(output_path).replace(".pg.parquet", ".protein.parquet"))
 
     def _write_conversion_metadata(self, output_folder, prefix, structures, project_accession, ontology_entries):
         """Write field ontology, provenance, and dataset metadata."""
