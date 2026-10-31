@@ -290,12 +290,17 @@ def test_fixed_modification_without_accession_uses_its_unimod_name(tmp_path):
     """An SDRF fixed modification given only by ``NT`` takes the Unimod accession of that name.
 
     A name the modification database does not know cannot be placed and is
-    left out, as before.
+    left out, as before. So is one of OpenMS' own entries (``CUSTOM0``), which
+    is not a Unimod modification.
     """
     from qpx.converters.maxquant.feature_adapter import MaxQuantFeatureAdapter
 
     sdrf = _write_mod_sdrf(
-        tmp_path, "NT=Carbamidomethyl;TA=C;MT=fixed", "NT=Methylthio;TA=C,M;MT=fixed", "NT=NoSuchMod;TA=K;MT=fixed"
+        tmp_path,
+        "NT=Carbamidomethyl;TA=C;MT=fixed",
+        "NT=Methylthio;TA=C,M;MT=fixed",
+        "NT=NoSuchMod;TA=K;MT=fixed",
+        "NT=CUSTOM0;TA=K;MT=fixed",
     )
     with MaxQuantFeatureAdapter() as adapter:
         assert adapter._load_fixed_modifications(str(sdrf)) == (("UNIMOD:4", "C", ""), ("UNIMOD:39", "CM", ""))

@@ -7,7 +7,6 @@ Provides common data-loading helpers used by
 from __future__ import annotations
 
 import re
-from functools import lru_cache
 from typing import Optional
 
 import pandas as pd
@@ -15,6 +14,7 @@ import pandas as pd
 from qpx.converters.base import BaseConverter
 from qpx.converters.maxquant.channels import channel_label, reporter_channels
 from qpx.converters.maxquant.constants import FixedModification
+from qpx.converters.ptm import name_to_unimod, unimod_names
 from qpx.converters.utils import strip_uniprot_prefix
 
 # SDRF ``PP`` values a fixed modification can be placed for from the peptide
@@ -156,42 +156,22 @@ class MaxQuantBaseAdapter(BaseConverter):
         return (unimod, *target)
 
 
-@lru_cache(maxsize=1)
-def _unimod_names() -> dict[str, frozenset[str]]:
-    """``{"UNIMOD:n": names}`` of the Unimod modifications in the pyopenms modification database."""
-    import pyopenms as oms
-
-    database = oms.ModificationsDB()
-    names: dict[str, set[str]] = {}
-    for index in range(database.getNumberOfModifications()):
-        modification = database.getModification(index)
-        names.setdefault(str(modification.getUniModAccession()).upper(), set()).add(str(modification.getId()))
-    return {accession: frozenset(found) for accession, found in names.items() if accession}
-
-
-@lru_cache(maxsize=1)
-def _unimod_accessions() -> dict[str, str]:
-    """``{name (case-folded): "UNIMOD:n"}`` for the names the pyopenms database gives one Unimod accession."""
-    found: dict[str, set[str]] = {}
-    for accession, names in _unimod_names().items():
-        for name in names:
-            found.setdefault(name.casefold(), set()).add(accession)
-    return {name: min(accessions) for name, accessions in found.items() if len(accessions) == 1}
-
-
 def _sdrf_unimod(param: dict) -> Optional[str]:
     """The ``UNIMOD:n`` accession of an SDRF modification: its ``AC``, else the Unimod accession of its ``NT``."""
     accession = re.fullmatch(r"(?i)\s*unimod:(\d+)\s*", param.get("accession") or "")
     if accession:
         return f"UNIMOD:{accession.group(1)}"
-    return _unimod_accessions().get((param.get("name") or "").strip().casefold())
+    name = (param.get("name") or "").strip()
+    found = name_to_unimod(name) if name else None
+    return f"UNIMOD:{found}" if found is not None else None
 
 
 def _is_quantification_label(name: Optional[str], unimod: Optional[str]) -> bool:
-    """Whether an SDRF modification is a TMT, iTRAQ or SILAC label, by its ``NT`` or its Unimod name."""
+    """Whether an SDRF modification is a TMT, iTRAQ or SILAC label, by its ``NT`` or its Unimod names."""
     if name and _LABEL_NAME.search(name):
         return True
-    return unimod is not None and any(_LABEL_NAME.search(known) for known in _unimod_names().get(unimod, ()))
+    accession = re.fullmatch(r"UNIMOD:(\d+)", unimod or "")
+    return accession is not None and any(_LABEL_NAME.search(known) for known in unimod_names(int(accession.group(1))))
 
 
 _RESIDUES = frozenset("ACDEFGHIKLMNPQRSTUVWY")
