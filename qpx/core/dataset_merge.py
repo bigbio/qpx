@@ -260,6 +260,11 @@ class _Merge:
         sources = self._sources(name)
         if name == "pg":
             self._warn_mixed_quantities(sources)
+            if len(sources) > 1:
+                logger.warning(
+                    "pg groups, q-values, coverage and across-run quantities are computed per analysis, so they "
+                    "may differ between the merged sources (docs/spec/intensities.md#scope-of-a-value)"
+                )
         extra = [SOURCE_COLUMN]
         if name == "sample":
             known = set(self._writer_class(name).view_schema().get_arrow_schema().names)

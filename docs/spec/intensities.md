@@ -17,7 +17,7 @@ graph LR
 | Field | Contains | Semantics |
 | ----- | -------- | --------- |
 | `intensities` | Raw intensity values from the instrument or quantification tool | Experimental design: channels, samples, raw measurements |
-| `additional_intensities` | Normalized, LFQ, iBAQ, or other values pre-computed by the upstream tool | Data processing: values read from the tool's output, not computed by QPX |
+| `additional_intensities` | Normalized, LFQ, iBAQ, or other values computed by the upstream tool or a later step | Data processing: values read from the tool's output, not computed by QPX |
 
 This design means a data consumer can always find the raw measurement in `intensities` and any post-processed variants in `additional_intensities`, regardless of the tool that produced the file.
 
@@ -29,7 +29,7 @@ The `intensities` field is an array of structs. Each element represents one inte
 
 ```text
 intensities: array[struct{
-    label:          string,  -- Label identifier (e.g. "LFQ", "TMT126", "iTRAQ114")
+    label:          string,  -- Label identifier (e.g. "LFQ", "TMT126", "ITRAQ114")
     intensity:      float    -- Raw intensity value; null when identified but not quantified
 }]
 ```
@@ -57,6 +57,22 @@ In a label-free quantification experiment, each feature row has a single intensi
   {"label": "LFQ", "intensity": 98765.4}
 ]
 ```
+
+### Label vocabulary
+
+`label` takes the canonical names below, which come from the sdrf-pipelines channel map. Labels are compared exactly, case included: `iTRAQ114` and `ITRAQ114` give different `pg_id` values and only one joins its sample, so converters write the canonical spelling, and `qpxc validate` warns about any other label and names the canonical one when only the case differs.
+
+<!-- label-vocabulary -->
+| Family | Labels |
+|---|---|
+| Label-free | `LFQ` |
+| TMT | `TMT126`, `TMT127`, `TMT127N`, `TMT127C`, `TMT127D`, `TMT128`, `TMT128N`, `TMT128C`, `TMT128ND`, `TMT128CD`, `TMT129`, `TMT129N`, `TMT129C`, `TMT129ND`, `TMT129CD`, `TMT130`, `TMT130N`, `TMT130C`, `TMT130ND`, `TMT130CD`, `TMT131`, `TMT131N`, `TMT131C`, `TMT131ND`, `TMT131CD`, `TMT132N`, `TMT132C`, `TMT132ND`, `TMT132CD`, `TMT133N`, `TMT133C`, `TMT133ND`, `TMT133CD`, `TMT134N`, `TMT134C`, `TMT134ND`, `TMT134CD`, `TMT135N`, `TMT135ND`, `TMT135CD` |
+| iTRAQ | `ITRAQ113`, `ITRAQ114`, `ITRAQ115`, `ITRAQ116`, `ITRAQ117`, `ITRAQ118`, `ITRAQ119`, `ITRAQ121` |
+| SILAC | `SILAC light`, `SILAC medium`, `SILAC heavy` |
+| mTRAQ | `MTRAQ0`, `MTRAQ4`, `MTRAQ8` |
+| Dimethyl | `DIMETHYL0`, `DIMETHYL2`, `DIMETHYL4`, `DIMETHYL6`, `DIMETHYL8` |
+
+NeuCode, 15N and other schemes have no canonical name yet: write the SDRF `comment[label]` value as it stands, which `qpxc validate` reports with a warning, and agree on a name upstream in the sdrf-pipelines channel map.
 
 ### MS1 labels (SILAC, dimethyl, mTRAQ)
 
@@ -113,7 +129,7 @@ the layer `imputed_mask`.
 
 ## Additional intensities
 
-The `additional_intensities` field stores pre-computed values produced by upstream tools -- normalized intensities, LFQ values, iBAQ values, and so on. QPX reads these from the tool's output files (e.g., MaxQuant's `proteinGroups.txt`, DIA-NN's report) and stores them as-is. Each element mirrors the label structure of primary intensities but adds a nested array of named intensity types.
+The `additional_intensities` field stores values computed from the primary ones -- normalized intensities, LFQ values, iBAQ values, and so on. Converters read these from the tool's output files (e.g., MaxQuant's `proteinGroups.txt`, DIA-NN's report) and store them as-is. See [Derived quantities](#derived-quantities) for values computed after the conversion. Each element mirrors the label structure of primary intensities but adds a nested array of named intensity types.
 
 ### Struct definition
 
@@ -163,6 +179,23 @@ Each `intensity_name` has one meaning, including its level: a name on a feature 
 | `ratio_<num>_<den>` | MaxQuant, OpenMS | Ratio of two labels of a multiplet, on the numerator label |
 | `pg_maxlfq` | DIA-NN | MaxLFQ quantity of the protein group (`PG.MaxLFQ`) |
 | `pg_quantity` | Spectronaut | Quantity of the protein group (`PG.Quantity`) |
+
+### Derived quantities
+
+A quantity computed after the conversion at the view's own granularity, one value per row and label, may be added to `additional_intensities` under its own `intensity_name`, with a `provenance` step naming the tool, the method and the views it wrote. A row per method or per scope does not fit: it breaks the primary key and counts the unit twice. Quantities at another granularity, such as a protein matrix over samples, belong in an [absolute expression](absolute.md) file, which `qpxc transform quantify -o result.h5ad` writes; its `.parquet` and `.tsv` outputs are plain tables, not QPX views.
+
+### Scope of a value
+
+Some values depend on the whole analysis they were computed in, not only on the row:
+
+| Field or name | Computed over |
+|---|---|
+| `pg.global_qvalue`, `feature.global_qvalue`, `feature.pg_global_qvalue` | The dataset |
+| `pg.intensity` and `maxlfq`, `lfq`, `ibaq` where the tool normalizes across runs | The runs quantified together |
+| `pg.sequence_coverage`, and `pg.peptide_counts` where the tool reports one experiment-wide count | The dataset, and the unit where the tool reports per experiment (MaxQuant) |
+| `pg.pg_accessions`, the group itself | The dataset: protein inference depends on the peptides seen |
+
+So a dataset converted in batches and merged is not the dataset converted once: the same group can have other coverage, other members and a MaxLFQ value more than 7 % away. `merge()` warns when it merges pg views, and each source keeps its `source_dataset`; its origin is the `analysis_id` of its `dataset` view.
 
 ### Processing state
 
