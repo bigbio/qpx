@@ -8,20 +8,16 @@ provenance, ontology, and dataset metadata structures.
 
 from __future__ import annotations
 
-import gzip
 import logging
+from itertools import chain
 from pathlib import Path
-from typing import Any
-
-try:
-    from lxml import etree
-except ImportError:
-    etree: Any = None
 
 from qpx._version import __version__
+from qpx.converters.mzidentml.document import MzidDocument, stream_results
+from qpx.converters.mzidentml.mgf_parser import MgfSpectraIndex
 from qpx.converters.mzidentml.pg_adapter import MzIdentMLPgAdapter
 from qpx.converters.mzidentml.psm_adapter import MzIdentMLPsmAdapter, modification_identity_param
-from qpx.converters.mzidentml.psm_records import _build_psm_records, declared_scan_format
+from qpx.converters.mzidentml.psm_records import declare_scan_format, scan_schemes
 from qpx.converters.orchestrator import BaseOrchestrator
 from qpx.core.files import run_file_stem
 from qpx.core.scores import field_ontology_entries, score_ontology_entries
@@ -67,36 +63,36 @@ class MzIdentMLConverter(BaseOrchestrator):
         Returns:
             Path to *output_folder*.
         """
-        if etree is None:
-            raise ImportError("lxml is required for mzIdentML conversion. Install it with: pip install qpx[mzidentml]")
         mzid_path = Path(mzid_path)
         output_folder = Path(output_folder)
         output_folder.mkdir(parents=True, exist_ok=True)
 
-        # 1. Parse mzIdentML and build PSM records via the existing adapter
+        # 1. Stream the file once: PSM records in batches, the other sections in one tree
+        document = MzidDocument()
         adapter = MzIdentMLPsmAdapter()
         try:
-            parsed = adapter._parse_mzidentml(str(mzid_path))
-            records = _build_psm_records(parsed, rank1_only)
+            batches = (records for records in adapter.iter_psm_batches(mzid_path, document, rank1_only) if records)
+            first = next(batches, None)
+            if first is None:
+                logger.warning("No PSM records produced from %s", mzid_path)
+                return output_folder
+
+            # 2. Resolve spectrum references through the MGF, optionally with its peaks
+            mgf_index = None
+            if mgf_path is not None:
+                mgf_index = MgfSpectraIndex(mgf_path, keep_peaks=include_spectra)
+            runs = len(adapter.parsed["spectra_data"])
+
+            # 3. Write the PSMs, tracking scores for ontology generation
+            pepforms = self._write_psms(chain([first], batches), adapter, mgf_index, runs, output_folder, output_prefix)
         finally:
             adapter.close()
-
-        if not records:
-            logger.warning("No PSM records produced from %s", mzid_path)
-            return output_folder
-
-        # 2. Resolve spectrum references through the MGF, optionally with its peaks
-        if mgf_path is not None:
-            records = self._attach_spectra(records, mgf_path, include_spectra, len(parsed["spectra_data"]))
-
-        # 3. Track scores for ontology generation
-        adapter._track_scores(records)
         discovered_scores = adapter.get_discovered_scores()
 
-        self._write_core_views(records, parsed, mzid_path, output_folder, output_prefix)
+        self._write_other_core_views(pepforms, adapter.parsed, document, mzid_path, output_folder, output_prefix)
 
         # 7. Write provenance parquet
-        provenance_records = self._build_provenance(mzid_path)
+        provenance_records = self._provenance_records(document.root, document.ns)
         self._write_provenance(output_folder, output_prefix, provenance_records)
 
         # 8. Write ontology parquet
@@ -121,29 +117,35 @@ class MzIdentMLConverter(BaseOrchestrator):
 
         return output_folder
 
-    def _write_core_views(self, records, parsed, mzid_path, output_folder, output_prefix) -> None:
-        """Write the PSM, protein-group and peptide-map views."""
-        # 4. Write PSM parquet
+    def _write_psms(self, batches, adapter, mgf_index, runs, output_folder, output_prefix) -> dict:
+        """Write the PSM view; returns the peptidoforms seen, for the peptide map."""
         psm_path = output_folder / f"{output_prefix}.psm.parquet"
-        with PsmWriter(
-            psm_path, creator="mzidentml", compression=self._compression, scan_format=declared_scan_format(records)
-        ) as writer:
-            writer.write_batch(records)
-        logger.info("Wrote %d PSMs to %s", len(records), psm_path)
+        pepforms: dict[str, dict] = {}
+        formats: set = set()
+        total = 0
+        with PsmWriter(psm_path, creator="mzidentml", compression=self._compression) as writer:
+            for records in batches:
+                if mgf_index is not None:
+                    self._attach_spectra(records, mgf_index, runs)
+                adapter._track_scores(records)
+                formats |= scan_schemes(records)
+                self._collect_pepforms(records, pepforms)
+                writer.write_batch(records)
+                total += len(records)
+            declare_scan_format(writer, formats)
+        logger.info("Wrote %d PSMs to %s", total, psm_path)
+        return pepforms
 
+    def _write_other_core_views(self, pepforms, parsed, document, mzid_path, output_folder, output_prefix) -> None:
+        """Write the protein-group and peptide-map views."""
         # 5. Write pg (protein groups) parquet
         pg_path = output_folder / f"{output_prefix}.pg.parquet"
         with MzIdentMLPgAdapter(compression=self._compression) as pg_adapter:
-            pg_adapter.convert(mzid_path=mzid_path, output_path=pg_path, creator="mzidentml")
+            pg_adapter.convert(mzid_path=mzid_path, output_path=pg_path, creator="mzidentml", document=document)
 
         # 6. Write pepmap parquet
         pepmap_path = output_folder / f"{output_prefix}.pepmap.parquet"
-        pepmap_records = self._build_pepmap(
-            records,
-            parsed["peptide_evidence"],
-            parsed["peptides"],
-            parsed["db_sequences"],
-        )
+        pepmap_records = self._build_pepmap(pepforms, parsed["peptide_evidence"], parsed["peptides"], parsed["db_sequences"])
         if pepmap_records:
             with PepMapWriter(pepmap_path, creator="mzidentml", compression=self._compression) as writer:
                 writer.write_batch(pepmap_records)
@@ -154,15 +156,12 @@ class MzIdentMLConverter(BaseOrchestrator):
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _attach_spectra(records: list[dict], mgf_path: str | Path, include_peaks: bool = True, runs: int = 1) -> list[dict]:
+    def _attach_spectra(records: list[dict], mgf_index: MgfSpectraIndex, runs: int = 1) -> list[dict]:
         """Turn index references of matching PSM records into scan numbers and attach peaks and RT from MGF.
 
         An MGF holds one run: in a file that searched several, only that run's records match it.
         """
-        from qpx.converters.mzidentml.mgf_parser import MgfSpectraIndex
-
-        mgf_index = MgfSpectraIndex(mgf_path, keep_peaks=include_peaks)
-        mgf_run = run_file_stem(str(mgf_path))
+        mgf_run = run_file_stem(str(mgf_index.path))
         matched_by_scan = 0
         matched_by_index = 0
         for rec in records:
@@ -197,7 +196,7 @@ class MzIdentMLConverter(BaseOrchestrator):
                     rec["rt"] = spectrum["rt"]
 
         total_matched = matched_by_scan + matched_by_index
-        logger.info(
+        logger.debug(
             "Attached spectra to %d / %d PSMs from MGF index (%d spectra, %d by scan, %d by index)",
             total_matched,
             len(records),
@@ -212,31 +211,31 @@ class MzIdentMLConverter(BaseOrchestrator):
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _build_pepmap(
-        records: list[dict],
-        pep_evidence: dict[str, dict],
-        peptides: dict[str, dict],
-        db_sequences: dict[str, str],
-    ) -> list[dict]:
-        """Build deduplicated peptide-to-protein map grouped by peptidoform.
-
-        Uses PSM records for peptidoform strings and PeptideEvidence XML
-        data for per-protein positional info (start, end, pre, post).
-        """
-        # Step 1: Build (sequence, protein) → position lookup from PeptideEvidence
-        position_lookup = MzIdentMLConverter._peptide_positions(pep_evidence, peptides, db_sequences)
-
-        # Step 2: Group PSM records by peptidoform
-        pepform_data: dict[str, dict] = {}
+    def _collect_pepforms(records: list[dict], pepforms: dict[str, dict]) -> None:
+        """Group PSM records by peptidoform, adding to *pepforms*."""
         for psm in records:
             seq = psm.get("sequence", "")
             pf = psm.get("peptidoform", seq)
             if not seq:
                 continue
-            if pf not in pepform_data:
-                pepform_data[pf] = {"sequence": seq, "proteins": set()}
+            if pf not in pepforms:
+                pepforms[pf] = {"sequence": seq, "proteins": set()}
             for prot in psm.get("protein_accessions") or []:
-                pepform_data[pf]["proteins"].add(prot)
+                pepforms[pf]["proteins"].add(prot)
+
+    @staticmethod
+    def _build_pepmap(
+        pepform_data: dict[str, dict],
+        pep_evidence: dict[str, dict],
+        peptides: dict[str, dict],
+        db_sequences: dict[str, str],
+    ) -> list[dict]:
+        """Build deduplicated peptide-to-protein map from the grouped peptidoforms.
+
+        Per-protein positional info (start, end, pre, post) comes from PeptideEvidence.
+        """
+        # Step 1: Build (sequence, protein) -> position lookup from PeptideEvidence
+        position_lookup = MzIdentMLConverter._peptide_positions(pep_evidence, peptides, db_sequences)
 
         # Step 3: Build pepmap records with pg_accessions structs
         pepmap_records: list[dict] = []
@@ -319,18 +318,15 @@ class MzIdentMLConverter(BaseOrchestrator):
 
     @staticmethod
     def _build_provenance(mzid_path: str | Path) -> list[dict]:
-        """Extract processing provenance from mzIdentML AnalysisSoftware elements."""
-        mzid_path = Path(mzid_path)
+        """Extract processing provenance from an mzIdentML file."""
+        document = MzidDocument()
+        for _ in stream_results(mzid_path, document):
+            document.release_sequences()
+        return MzIdentMLConverter._provenance_records(document.root, document.ns)
 
-        if str(mzid_path).endswith(".gz"):
-            with gzip.open(mzid_path, "rb") as fh:
-                tree = etree.parse(fh)
-        else:
-            tree = etree.parse(str(mzid_path))
-
-        root = tree.getroot()
-        ns = root.nsmap.get(None, "")
-
+    @staticmethod
+    def _provenance_records(root, ns: str) -> list[dict]:
+        """Extract processing provenance from the AnalysisSoftware elements of an mzIdentML tree."""
         provenance_records: list[dict] = []
         step_order = 0
 

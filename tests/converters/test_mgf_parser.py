@@ -388,9 +388,8 @@ class TestMgfParserPositionIndex:
         mgf = tmp_path / "test.mgf"
         mgf.write_text("BEGIN IONS\nTITLE=spec\nSCANS=42\n100.0 500\nEND IONS\n")
         idx = MgfSpectraIndex(str(mgf))
-        by_scan = idx.get_spectrum(42)
-        by_pos = idx.get_spectrum_by_index(0)
-        assert by_scan is by_pos  # Same dict object
+        assert idx._index[42] is idx._by_position[0]  # Same dict object
+        assert idx.get_spectrum(42) == idx.get_spectrum_by_index(0)
 
     def test_position_tracks_unparseable_scans(self, tmp_path):
         """Position counter should advance even for spectra with no parseable scan."""

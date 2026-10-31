@@ -24,13 +24,17 @@ class _SpectrumContext(NamedTuple):
     rt: float | None
 
 
-def declared_scan_format(records: list[dict]) -> str | None:
-    """The scan format of a PSM file, when all its spectrum references have the same one."""
-    schemes = {record.get("_spectrum_id_scheme") for record in records}
-    if len(schemes) == 1:
-        return schemes.pop()
-    logger.warning("Spectrum references mix formats %s; scan_format is left undeclared", sorted(map(str, schemes)))
-    return None
+def scan_schemes(records: list[dict]) -> set[str | None]:
+    """The formats of the spectrum references of *records*."""
+    return {record.get("_spectrum_id_scheme") for record in records}
+
+
+def declare_scan_format(writer, schemes: set[str | None]) -> None:
+    """Declare the scan format of a PSM file when all its spectrum references have the same one."""
+    if len(schemes) == 1 and None not in schemes:
+        writer.set_scan_format(next(iter(schemes)))
+    else:
+        logger.warning("Spectrum references have formats %s; scan_format is left undeclared", sorted(map(str, schemes)))
 
 
 def _build_psm_records(parsed: dict, rank1_only: bool = False) -> list[dict]:
