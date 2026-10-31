@@ -137,7 +137,7 @@ The validator performs the following checks on each structure:
 When a dataset has a run view, rows are also resolved through it. A row that names no run, or a label that names no single sample, drops out of every per-sample view or is counted twice, so these findings are errors with or without strict validation:
 
 | Check | View | Description |
-|-------|------|-------------|
+| ----- | ---- | ----------- |
 | `dangling_grouped_run` | pg | Every `grouped_runs` element must be a `run.run_file_name` |
 | `ambiguous_grouped_run_sample` | pg | Each `label` must match the channel of exactly one sample across the row's grouped runs; reported once per distinct (grouped runs, label) unit |
 | `dangling_run_file_name` | feature, psm, mz | `run_file_name` must be a `run.run_file_name` (skipped for an mz view without the optional column) |
