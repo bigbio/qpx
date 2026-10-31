@@ -77,6 +77,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `qpxc validate` accepts a struct without the nullable members a later specification added at its end, so a run view written before `run.samples[].channel_role` and `mixture` stays valid.
 - DIA-NN 2.x `Ms2.Scan`, written only with `--export-quant`, selects the feature's scan as `MS2.Scan` does in 1.8. Checked against a 2.5.1 report and its mzML: all 18,655 rows point at an MS2 spectrum at the reported RT whose isolation window holds the precursor.
 - `qpxc convert openms` names the `ratio` and `ratio_normalized` of OpenMS' native files `ratio_<num>_<den>` on the numerator label and drops the reference's 1.0, as the consensusXML converter and MaxQuant do. Which label is the reference was ambiguous before.
 - MuData stores no cell for a null quantity, so a stored cell is always a measurement. The sparse-matrix semantics are in [AnnData](docs/spec/anndata.md).

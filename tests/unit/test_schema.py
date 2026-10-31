@@ -303,3 +303,27 @@ def test_missing_nullable_column_says_it_must_be_present():
     table = pa.table({field.name: pa.nulls(1, type=field.type) for field in kept}, schema=pa.schema(kept))
     messages = [issue.message for issue in FeatureSchema.validate_full(table).issues if issue.check == "missing_column"]
     assert messages == ["Missing column: modifications (its values may be null, but the column must be present)"]
+
+
+def test_run_samples_without_the_later_nullable_members_stay_valid():
+    """A 1.1 or 1.2 run view has no samples[].channel_role or mixture; a required member stays required."""
+    written = pa.struct(
+        [
+            ("sample_accession", pa.string()),
+            ("label", pa.string()),
+            ("biological_replicate", pa.int32()),
+            ("technical_replicate", pa.int32()),
+        ]
+    )
+    expected = RunSchema.get_arrow_schema().field("samples").type
+
+    def type_issues(samples_type):
+        table = pa.table(
+            {"run_accession": ["r"], "run_file_name": ["r"], "samples": pa.nulls(1, type=pa.list_(samples_type))}
+        )
+        return [issue for issue in RunSchema.validate_full(table).issues if issue.check == "type_mismatch"]
+
+    assert expected.value_type.num_fields > written.num_fields
+    assert type_issues(written) == []
+    assert type_issues(pa.struct(list(written)[1:])) != []
+    assert type_issues(pa.struct([*written, ("unknown", pa.string()), ("other", pa.string()), ("more", pa.string())])) != []

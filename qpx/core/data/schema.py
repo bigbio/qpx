@@ -73,11 +73,24 @@ class FieldDef:
         return pa.field(self.name, self.arrow_type, nullable=self.nullable, metadata=metadata)
 
 
+def _struct_types_compatible(expected: pa.StructType, actual: pa.StructType) -> bool:
+    """Compare field names and types in order; only nullable members at the end may be absent."""
+    if actual.num_fields > expected.num_fields:
+        return False
+    absent = (expected.field(i) for i in range(actual.num_fields, expected.num_fields))
+    if not all(field.nullable for field in absent):
+        return False
+    pairs = ((expected.field(i), actual.field(i)) for i in range(actual.num_fields))
+    return all(ef.name == af.name and _types_compatible(ef.type, af.type) for ef, af in pairs)
+
+
 def _types_compatible(expected: pa.DataType, actual: pa.DataType) -> bool:
     """Check type compatibility, tolerating nullability differences in nested structs.
 
     Parquet does not preserve inner-struct field nullability, so we compare
     types structurally while ignoring the ``nullable`` flag on struct children.
+    A struct written before the specification added nullable members at its end
+    (``run.samples[].channel_role``) stays valid: those members read as null.
     """
     if expected == actual:
         return True
@@ -90,18 +103,8 @@ def _types_compatible(expected: pa.DataType, actual: pa.DataType) -> bool:
     if isinstance(expected, pa.MapType) and isinstance(actual, pa.MapType):
         return _types_compatible(expected.key_type, actual.key_type) and _types_compatible(expected.item_type, actual.item_type)
 
-    # struct — compare field names, types (ignoring nullable)
     if isinstance(expected, pa.StructType) and isinstance(actual, pa.StructType):
-        if expected.num_fields != actual.num_fields:
-            return False
-        for i in range(expected.num_fields):
-            ef = expected.field(i)
-            af = actual.field(i)
-            if ef.name != af.name:
-                return False
-            if not _types_compatible(ef.type, af.type):
-                return False
-        return True
+        return _struct_types_compatible(expected, actual)
 
     return False
 
