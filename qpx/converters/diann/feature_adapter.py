@@ -220,7 +220,8 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
                 mzml_info_folder,
             )
             if table is not None:
-                yield table
+                # DuckDB's parallel GROUP BY returns rows in a different order on each run.
+                yield table.sort_by([(column, "ascending") for column in _FEATURE_IDENTITY_COMPOSITE])
 
     # ------------------------------------------------------------------
     # Data loading helpers

@@ -106,6 +106,7 @@ The `transform` command group provides tools for processing and transforming QPX
 - [protein-properties](#protein-properties) - Fill protein coverage, molecular weight and peptide positions from an optional FASTA
 - [normalize-accessions](#normalize-accessions) - Normalize protein accession formats (full ↔ bare)
 - [update-metadata](#update-metadata) - Update sample/run metadata from a revised SDRF
+- [relayout](#relayout) - Sort a dataset's views for selective reads
 - [quantify](#quantify) - Protein quantification via mokume (DirectLFQ, MaxLFQ, iBAQ, TopN, etc.)
 
 ---
@@ -283,6 +284,20 @@ print(generate_example(transform_update_metadata_cmd, "Update dataset metadata f
 ```
 
 ---
+
+## relayout
+
+Sorts a dataset's views for publishing, and writes them in row groups with a page index. See [Physical Layout](../spec/serialization.md#physical-layout) for the defaults and their trade-offs.
+
+```bash
+qpxc transform relayout --dataset ./qpx_output --output-folder ./qpx_sorted
+
+# One view, by chosen columns, with a higher compression level
+qpxc transform relayout --dataset ./qpx_output --in-place \\
+    --view psm --sort-by run_file_name,scan --compression-level 15
+```
+
+Values, ids and the schema do not change. If the dataset records integrity, its checksums are refreshed for the rewritten files.
 
 ## quantify
 

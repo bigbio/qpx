@@ -188,7 +188,7 @@ class MaxQuantConverter(BaseOrchestrator):
             )
 
         self._write_ontology(output_folder, prefix, ontology_entries)
-        self._write_provenance(output_folder, prefix, structures)
+        self._write_provenance(output_folder, prefix, sorted(structures))
         self._write_dataset(
             output_folder,
             prefix,

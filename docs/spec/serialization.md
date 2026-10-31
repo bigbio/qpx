@@ -54,6 +54,26 @@ QPX leverages the following Parquet capabilities:
 - **Schema Evolution**: Columns can be added, removed, or modified across QPX versions without breaking compatibility with existing files. Readers that encounter unknown columns can safely ignore them.
 - **Complex Data Types**: Parquet natively supports nested structs, arrays, and maps. QPX uses these for fields like `modifications` (array of structs), `additional_scores` (array of structs), and spectral arrays (`mz_array`, `intensity_array`).
 
+## Physical Layout
+
+The physical layout is not normative: any row order and row-group size is a valid QPX file. It does decide what a selective read costs.
+
+QPX writers use row groups of at most 131,072 rows (fewer when rows are large, at most about 256 MB uncompressed per group), a page index, byte-stream-split on continuous float leaves, and no dictionary on hashed primary keys. On a 783k-row dataset, sorting with these row groups made protein lookups 3–4× faster and read 5–7× fewer remote bytes than unsorted 1 Mi-row groups, for about 3% more bytes on disk.
+
+For a published dataset, `qpxc transform relayout` sorts the views, records the order in `sorting_columns` and in the footer key `qpx.sort_order`, and leaves values and ids unchanged:
+
+| View | Sorted by | Good for |
+|---|---|---|
+| `feature` | `anchor_protein`, `run_file_name` | Looking up a protein |
+| `pg` | `anchor_protein`, `label` | Looking up a protein |
+| `psm`, `mz` | `run_file_name`, `scan` | Reading a run, looking up a scan |
+
+Choose by the reads you expect, because one order serves one kind of query well. Sorting by protein costs per-run reads their pruning; Hive partitioning by run is fastest per run, and measured 57% more bytes and 3.5× slower for proteins. Partition by a batch of runs rather than one file per run, and only for a dataset mostly read run by run.
+
+### Comparing two conversions
+
+Converters write rows in a fixed order, but two conversions of the same input do not produce identical bytes: the footer holds a uuid and a date, and `dataset.parquet` a packaging time. Compare rows and ids, not checksums.
+
 ## Hive Partitioning
 
 QPX supports **Hive-style partitioning** for large datasets. This splits a single Parquet file into a directory tree where each subdirectory encodes a partition column value (e.g., `run_file_name=run_01/`). This is particularly useful for datasets with 100+ runs where a single Parquet file would exceed several GB.

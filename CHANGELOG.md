@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `factor value[X]` SDRF columns are written as `factor_X` columns of the sample view, and `qpxc transform quantify --factor X` chooses the condition. Several factors without a choice now warn; the first column used to be taken silently.
 - `run.additional_terms` holds the resolved ontology term of each instrument, enzyme, dissociation and acquisition value, per run.
 - `qpxc validate` warns (`ontology_unknown_field`) on an ontology row naming nothing its view emits.
+- `qpxc transform relayout` sorts a dataset's views for selective reads, records the order in `sorting_columns` and `qpx.sort_order`, and takes `--row-group-size` and `--compression-level`.
 
 ### Changed
 
@@ -40,6 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`convert fragpipe` and `convert maxquant` memory** — the writers buffered one million records before writing a row group, and FragPipe read `combined_ion.tsv` and `combined_protein.tsv` one million rows at a time, each row expanding to one record per experiment, and fetched all of `psm.tsv` into Python for the feature lookup. Writers now flush every 100,000 records, FragPipe batches hold about 100,000 records whatever the number of experiments, and the PSM lookup streams from DuckDB and keeps one tuple per peptidoform, charge and run. On a synthetic FragPipe run (100,000 ions × 40 experiments, 1 million PSMs) the conversion peaks at 2.3 GB instead of 6.3 GB in the same time, and `psm.tsv` alone at 1.8 GB instead of 5.0 GB; a 465,000-row MaxQuant TMT evidence file at 1.9 GB instead of 2.2 GB. `--max-memory` limits only DuckDB, which its help now says.
 - **`convert openms-consensus` memory** — the streaming reader peaked at 3.9× the file, held every row's identity and evidence as Python objects, kept each parsed element attached to the XML tree and buffered 100,000 records per view. It now peaks at 2.3× (1.75 GB for a 769 MB file, against 5.3 GB in memory) at the same speed: state is held as digests and packed bytes, and records are written in batches of 20,000. Streaming is auto-selected above 1 GiB instead of 4 GiB, where an in-memory conversion needed about 27 GB.
 - **`convert mzidentml` memory** — the file was parsed into a full tree three times and every record held in memory. It is now read once: results are streamed and written in batches, and the rest of the tree serves the other views. PXD054720 (30 MB of XML): peak 639 MB to 376 MB, or 916 MB to 582 MB with its MGF, with identical output. Without `--include-spectra` an MGF's peaks are not kept.
+- **Physical layout.** Writers emit a page index and row groups of at most 131,072 rows, capped near 256 MB for spectra, where they used to emit up to 1 Mi rows without an index. Peak m/z in PSM views uses byte-stream-split, and hashed primary keys no longer attempt a dictionary. Files are about 1–2% larger on feature views.
+- **Converters write rows in a fixed order.** DIA-NN, MaxQuant and Spectronaut output depended on DuckDB's parallel group-by. Two conversions now have the same rows in the same order; the footer's uuid and date still differ.
 - **`convert maxquant` reads its SDRF before writing anything** — an SDRF whose labels match no plex now fails before `sample`, `run` and `psm` are written.
 
 ### Fixed

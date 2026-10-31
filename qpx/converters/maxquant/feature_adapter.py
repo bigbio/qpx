@@ -59,6 +59,7 @@ _EVIDENCE_DEDUP_SQL = """
                 PARTITION BY $partition_by
                 ORDER BY $order_by
             ) = 1
+            ORDER BY $partition_by
             """
 
 # Evidence ids collapsed into each kept evidence row.
@@ -251,10 +252,7 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         pep_column = self._resolved.get("posterior_error_probability", "PEP")
         if pep_column in actual_cols:
             order_by.append(
-                sql_build(
-                    "TRY_CAST($pep_column AS DOUBLE) ASC NULLS LAST",
-                    pep_column=validate_identifier(pep_column),
-                )
+                sql_build("TRY_CAST($pep_column AS DOUBLE) ASC NULLS LAST", pep_column=validate_identifier(pep_column))
             )
         if "id" in actual_cols:
             order_by.append(

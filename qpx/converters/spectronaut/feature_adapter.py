@@ -371,7 +371,8 @@ class SpectronautFeatureAdapter(SpectronautBaseAdapter):
             " WHERE r.$run IN ({run_placeholders})"
             " AND r.$pg IS NOT NULL"
             " GROUP BY r.$run, r.$mod, r.$seq, r.$chg"
-            " HAVING $having",
+            " HAVING $having"
+            " ORDER BY r.$mod, r.$chg, r.$run",
             select=select_clause,
             mod=mod_id,
             seq=seq_id,

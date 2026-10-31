@@ -140,7 +140,7 @@ class SpectronautPgAdapter(SpectronautBaseAdapter):
         run_id = validate_identifier(r["run_file_name"])
 
         stmt = sql_build(
-            "SELECT $select FROM report r WHERE r.$run IN ($ph) AND r.$pg IS NOT NULL GROUP BY r.$pg, r.$run",
+            "SELECT $select FROM report r WHERE r.$run IN ($ph) AND r.$pg IS NOT NULL GROUP BY r.$pg, r.$run ORDER BY r.$run, r.$pg",
             select=select_clause,
             run=run_id,
             ph=placeholders,

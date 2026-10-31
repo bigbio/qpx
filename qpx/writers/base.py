@@ -19,7 +19,7 @@ from qpx.core.data.schema import _scan_format_issues, _scan_format_violations, p
 from qpx.core.engine import create_connection
 from qpx.core.sql import sql_build, validate_identifier
 from qpx.version import QPX_SPEC_VERSION
-from qpx.writers.encoding import parquet_write_options
+from qpx.writers.encoding import parquet_write_options, row_group_rows
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -378,7 +378,7 @@ class BaseWriter:
             raise ValueError("Schema validation failed:\n" + "\n".join(issue.message for issue in result.errors))
         self._log_validation_warnings(result.warnings)
         self._ensure_writer()
-        self._writer.write_table(table)
+        self._writer.write_table(table, row_group_size=row_group_rows(table))
 
     def write_dataframe(self, df: "pd.DataFrame"):
         """Write a pandas DataFrame. Converts to Arrow and validates.
@@ -563,14 +563,14 @@ class BaseWriter:
         batch = self._build_table(records, self.arrow_schema).combine_chunks().to_batches()[0]
         self._check_required_non_null(batch)
         self._ensure_writer()
-        self._writer.write_batch(batch)
+        self._writer.write_batch(batch, row_group_size=row_group_rows(batch))
 
     def _write_identity_table(self, table: pa.Table) -> None:
         """Derive the ids of a table built on the nullable-id schema, check it and write it."""
         table = self._fill_identity_table(table)
         self._check_required_non_null(table)
         self._ensure_writer()
-        self._writer.write_table(table)
+        self._writer.write_table(table, row_group_size=row_group_rows(table))
 
     def _ensure_writer(self):
         if self._writer is None:

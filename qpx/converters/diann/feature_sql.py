@@ -217,6 +217,7 @@ _PEPMAP_SQL = """
       $target_filter
       AND r.$pg_col IS NOT NULL
     GROUP BY lk.peptidoform
+    ORDER BY lk.peptidoform
     """
 
 
