@@ -12,6 +12,7 @@ from qpx.converters.orchestrator import BaseOrchestrator
 from qpx.converters.sdrf import convert_sdrf_views
 from qpx.converters.spectronaut.feature_adapter import SpectronautFeatureAdapter
 from qpx.converters.spectronaut.pg_adapter import SpectronautPgAdapter
+from qpx.converters.spectronaut.report_layout import long_columns, report_header, unavailable_views
 from qpx.core.constants import FEATURE, ONTOLOGY, PG, RUN, SAMPLE
 from qpx.core.scores import field_ontology_entries, score_ontology_entries
 
@@ -37,6 +38,16 @@ class SpectronautConverter(BaseOrchestrator):
         self._compression = compression
         self._ontology_entries: list[dict] = []
         self._resolved_mappings_by_view: dict[str, dict] = {}
+
+    def available_views(self) -> list[str]:
+        """The views this report can produce, warning about the others; raises when it produces none."""
+        unavailable = unavailable_views(long_columns(report_header(self.report_path)))
+        for view, reason in unavailable.items():
+            logger.warning("Skipping the %s view: %s", view, reason)
+        views = [view for view in (FEATURE, PG) if view not in unavailable]
+        if not views:
+            raise ValueError(f"{self.report_path} is not a convertible Spectronaut report: {'; '.join(unavailable.values())}")
+        return views
 
     def convert_features(
         self,
@@ -132,7 +143,7 @@ class SpectronautConverter(BaseOrchestrator):
                 "tool_uri": None,
                 "parameters": None,
                 "config": None,
-                "output_views": [FEATURE, PG],
+                "output_views": list(self._resolved_mappings_by_view),
             },
             {
                 "step_order": 2,
@@ -148,7 +159,7 @@ class SpectronautConverter(BaseOrchestrator):
                     },
                 ],
                 "config": None,
-                "output_views": [FEATURE, PG, SAMPLE, RUN, ONTOLOGY],
+                "output_views": [*self._resolved_mappings_by_view, SAMPLE, RUN, ONTOLOGY],
             },
         ]
         self._write_provenance(Path(output_folder), prefix, records)

@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `qpxc validate` warns when the labelled rows of a pg view have no positive intensity, as an all-zero DIA-NN channel pg did while validating clean.
 - `QueryResult.filter(condition)` narrows a query result in SQL, which DuckDB pushes into the scans: looking up one group in `protein_view.intensity()` no longer reads every row into pandas first.
 
+- `qpxc convert spectronaut` reads pivot reports, labelled reports and more columns. Pivot reports (`[1] run.raw.EG.Channel1Quantity`) stopped with `KeyError: 'charge'`; they are melted to one row per precursor and run, with `Filtered` as null. `EG.Channel<N>Quantity` was ignored and every intensity labelled `LFQ`; each channel is now an `intensities` entry with its SILAC label, lightest first, which is an assumption the report cannot confirm (it warns). A report with channels writes no pg view, as `PG.Quantity` is not per channel; a protein-level report writes no feature view; a report that can produce neither names the missing columns. `FG.ApexIonMobility`, `EG.StartRT` and `EG.EndRT` map to `ion_mobility`, `rt_start` and `rt_stop`.
+
 ### Changed
 
 - **Specification 1.3: canonical peptidoform.** Converters write fixed modifications and labels inline, `UNIMOD:n` accessions and signed four-decimal mass shifts (no `CHEMMOD:`), and `calculated_mz` is the theoretical m/z of the peptidoform. MaxQuant peptidoforms now carry the fixed modifications from the SDRF (`MT=fixed`) or `parameters.txt` and the isobaric label implied by the SDRF channels. `feature_id`/`psm_id` change for affected rows.
@@ -32,6 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`convert maxquant` reads its SDRF before writing anything** — an SDRF whose labels match no plex now fails before `sample`, `run` and `psm` are written.
 
 ### Fixed
+
+- Spectronaut `observed_mz` held the theoretical `FG.PrecMz`, and `FG.PrecMzCalibrated` was written as an intensity named `precmz_calibrated`. `observed_mz` is now `FG.PrecMzCalibrated`, or null without it. A missing `FG.Quantity` is a null `intensities` entry rather than 0, and a protein-level report no longer claims one peptide per protein.
 
 - **`convert cdap` protein groups** were built per fraction file, so a channel's intensity was split across a plex's 12–25 fractions, and a group without signal in a channel got no row or a null label. `grouped_runs` is now the plex: from PDC metadata in `pdc2qpx`, from the new `--sdrf-file`, else from runs differing only in a `_fNN` suffix. Every identified group has one row per channel, and every feature an entry per channel, null where CDAP reports its 0 sentinel.
 - **`convert cdap` labels** are canonical (`TMT126`, `TMT131N`, `ITRAQ114`) instead of CDAP's column names (`TMT10-126`), in feature, pg and the PDC run view.

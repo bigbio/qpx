@@ -269,6 +269,26 @@ qpxc convert spectronaut \
     --verbose
 ```
 
+### Report Layouts {#spectronaut-layouts}
+
+Both Spectronaut layouts are read: the long report and the pivot report, whose
+columns are one per run and quantity (`[1] run.raw.EG.Channel1Quantity`). A
+pivot report is melted to one row per precursor and run, and a run where all of
+a precursor's quantities are `Filtered` has no feature row. Pivot reports
+usually carry no scores, so `--qvalue-threshold` warns and applies no filter
+when `EG.Qvalue` is absent.
+
+`EG.Channel<N>Quantity` columns become one `intensities` entry per label.
+Spectronaut does not name its channels: they are assumed lightest first, and
+take the SDRF's SILAC labels in that order, or `SILAC light`, `medium` and
+`heavy` without an SDRF. If channel 1 of your workflow is not the lightest
+label, the labels are wrong. Check them against the workflow's labeling setup.
+
+A report converts to the views it has columns for, and warns about the others.
+A report with channels writes no `pg` view, because `PG.Quantity` is not per
+channel. A protein-level report, without precursor columns, writes no `feature`
+view.
+
 ### Output Files {#spectronaut-output}
 
 Output files generated:

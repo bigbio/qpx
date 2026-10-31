@@ -19,6 +19,7 @@ from qpx.converters.base import resolve_columns
 from qpx.converters.mappings import get_field_mappings
 from qpx.converters.spectronaut.base_adapter import SpectronautBaseAdapter
 from qpx.converters.utils import safe_float
+from qpx.core.constants import PG
 from qpx.core.sql import sql_build, validate_identifier
 from qpx.writers.pg import PgWriter
 
@@ -52,6 +53,7 @@ class SpectronautPgAdapter(SpectronautBaseAdapter):
         creator: str = "spectronaut",
     ) -> None:
         """Run the Spectronaut report -> pg.parquet conversion."""
+        self._require_view(spectronaut_report, PG)
         self._load_spectronaut_report(spectronaut_report)
 
         report_cols = self._get_report_columns()
@@ -212,10 +214,16 @@ class SpectronautPgAdapter(SpectronautBaseAdapter):
         global_qvalue, pg_qvalue, additional_scores = self._build_pg_scores(row)
 
         # Peptide counts
-        total_sequences = int(row["total_sequences"]) if "total_sequences" in row else 0
-        unique_sequences = int(row["unique_sequences"]) if "unique_sequences" in row else 0
-        peptide_count = max(total_sequences, 1)
-        peptides = [{"protein_name": acc, "peptide_count": peptide_count} for acc in pg_accessions]
+        # A protein-level report has no peptide columns.
+        peptides, peptide_counts = [], None
+        if "total_sequences" in row:
+            total_sequences = int(row["total_sequences"])
+            peptide_count = max(total_sequences, 1)
+            peptides = [{"protein_name": acc, "peptide_count": peptide_count} for acc in pg_accessions]
+            peptide_counts = {
+                "unique_sequences": int(row["unique_sequences"]) if "unique_sequences" in row else 0,
+                "total_sequences": total_sequences,
+            }
 
         # is_decoy: Spectronaut normally pre-filters decoys; infer from prefix
         is_decoy = any(acc.startswith(("DECOY_", "decoy_", "rev_", "REV_")) for acc in pg_accessions)
@@ -235,10 +243,7 @@ class SpectronautPgAdapter(SpectronautBaseAdapter):
             "is_decoy": is_decoy,
             "contaminant": None,
             "peptides": peptides,
-            "peptide_counts": {
-                "unique_sequences": unique_sequences,
-                "total_sequences": total_sequences,
-            },
+            "peptide_counts": peptide_counts,
             "feature_counts": None,
             "sequence_coverage": None,
             "molecular_weight": None,

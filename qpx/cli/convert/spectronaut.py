@@ -91,6 +91,7 @@ def convert_spectronaut_cmd(**kwargs):
     prefix = output_prefix or "spectronaut"
 
     from qpx.converters.spectronaut import SpectronautConverter
+    from qpx.core.constants import FEATURE, PG
 
     converter = SpectronautConverter(
         report_path=report_path,
@@ -99,15 +100,18 @@ def convert_spectronaut_cmd(**kwargs):
         max_cpus=max_cpus,
         compression=compression,
     )
-    converter.convert_features(
-        qvalue_threshold=qvalue_threshold,
-        output_folder=output_folder,
-        output_prefix=prefix,
-    )
-    converter.convert_pg(
-        output_folder=output_folder,
-        output_prefix=prefix,
-    )
+    views = converter.available_views()
+    if FEATURE in views:
+        converter.convert_features(
+            qvalue_threshold=qvalue_threshold,
+            output_folder=output_folder,
+            output_prefix=prefix,
+        )
+    if PG in views:
+        converter.convert_pg(
+            output_folder=output_folder,
+            output_prefix=prefix,
+        )
 
     if sdrf_file:
         converter.convert_sdrf(output_folder=output_folder, prefix=prefix)
