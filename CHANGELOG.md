@@ -47,6 +47,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`transform quantify`:** `--method maxlfq` ran DirectLFQ whenever it was installed, and `--threads` was ignored; both now do what they say. `--method ibaq -o x.parquet` wrote tab-separated text under that name; it now writes the format the suffix names, including the absolute-expression view for `.h5ad`, and warns about proteins dropped for missing from the FASTA. Features are pre-aggregated in DuckDB, so `topn` and `top3` rank peptides rather than charge states. A dataset directory is accepted.
+- **AnnData views:** the MuData view reads the `uns["de_results"]` layout from the specification, which used to become a zero matrix, and reports untested proteins as NaN rather than a fold change and p-value of 0. `qpxc validate` checks `.ae.h5ad` and `.de.h5ad` files.
+
 - **The ontology view describes what was written.** Rows for names never written (`cscore` next to the emitted `diann_cscore`) are gone, emitted scores, CV names and intensity names get rows (an mzIdentML pg view had none), and SDRF values no longer appear as `field_name`. Wrong terms are corrected: `observed_mz` was MS:1001475 (OMSSA), `calculated_mz` MS:1001234, `intensity` MS:1002498.
 - A blank `organism` or `organism_part` in an SDRF writes `not available` with a warning; it used to discard both the sample and the run view.
 

@@ -95,6 +95,10 @@ QPX's DE fields map to common statistical tool outputs:
 | `se` | -- | `SE` | `lfcSE` | -- | -- |
 | `df` | -- | `DF` | -- | `df.residual` | -- |
 
+## Reading and checking the file
+
+`qpxc validate --dataset-path` checks a `.de.h5ad` file it finds in the dataset. The MuData view reshapes `uns["de_results"]` into a contrasts x proteins matrix, where a protein a contrast did not test is NaN.
+
 ## Example
 
 ### Creating a DE AnnData

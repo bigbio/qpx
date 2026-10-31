@@ -8,6 +8,7 @@ from pathlib import Path
 
 import duckdb
 
+from qpx.core.anndata_validation import validate_anndata_view
 from qpx.core.data.schema import ValidationIssue, ValidationResult
 from qpx.core.data.validation import _LINK_CONTEXT_MESSAGE, _LINK_MEMBERSHIP_MESSAGE, _LINK_SQL
 from qpx.core.files import sha256_file
@@ -19,7 +20,7 @@ from qpx.core.label_validation import (
     psm_label_issues,
     skipped_check_reason,
 )
-from qpx.core.ontology_fields import emitted_field_names
+from qpx.core.ontology_fields import ontology_field_issues
 
 _log = logging.getLogger("qpx.dataset")
 
@@ -317,8 +318,15 @@ class _DatasetValidationMixin:
         # sample, and a PSM's label is one its feature was identified in.
         self._check_runs_and_labels(results, present, strict=strict)
 
+        if structures is None and not self._is_s3:
+            for view in ("ae", "de"):
+                for path in sorted(Path(self.path).glob(f"{self._file_prefix or '*'}.{view}.h5ad")):
+                    results[view] = validate_anndata_view(path, view)
+
         if "ontology" in present:
-            self._cross_view_issues(results["ontology"], "ontology fields", partial(self._ontology_field_issues, present), strict)
+            self._cross_view_issues(
+                results["ontology"], "ontology fields", partial(ontology_field_issues, self._engine, present), strict
+            )
 
         # site/proteoform links: pg_id names one pg row of the row's run (and, for a
         # proteoform, label) context; best_psm_id names a psm row.
@@ -343,21 +351,6 @@ class _DatasetValidationMixin:
         if {"feature", "psm"} <= present:
             severity = "error" if strict else "warning"
             self._cross_view_issues(results["psm"], "psm label", partial(psm_label_issues, self._engine, severity), strict)
-
-    def _ontology_field_issues(self, present: set[str]) -> list[ValidationIssue]:
-        """Flag ontology rows naming a field that their view does not emit."""
-        rows = self._engine.execute("SELECT field_name, view FROM ontology").fetchall()
-        issues = []
-        for view in sorted({row[1] for row in rows} & present - {"ontology"}):
-            unknown = sorted({row[0] for row in rows if row[1] == view} - emitted_field_names(self._engine, view))
-            if unknown:
-                message = f"{len(unknown)} ontology row(s) of view {view!r} name no field it emits: {', '.join(unknown[:5])}"
-                issues.append(
-                    ValidationIssue(
-                        structure="ontology", check="ontology_unknown_field", severity="warning", column=None, message=message
-                    )
-                )
-        return issues
 
     @staticmethod
     def _cross_view_issues(result: ValidationResult, check: str, issues, strict: bool) -> None:

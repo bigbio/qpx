@@ -37,45 +37,6 @@ _VALID_MODALITIES = {"precursors", "proteins", "expression", "differential"}
 # ---------------------------------------------------------------------------
 
 
-def _pivot_to_sparse(
-    df: pd.DataFrame,
-    row_col: str,
-    col_col: str,
-    value_col: str,
-    row_index: pd.Index,
-    col_index: pd.Index,
-) -> sparse.csr_matrix:
-    """Pivot a long-form DataFrame into a sparse CSR matrix.
-
-    Parameters
-    ----------
-    df : DataFrame
-        Long-form data with at least *row_col*, *col_col*, *value_col*.
-    row_col, col_col, value_col : str
-        Column names for rows, columns, and values.
-    row_index, col_index : pd.Index
-        Pre-built indices that define the matrix shape.
-
-    Returns
-    -------
-    scipy.sparse.csr_matrix
-    """
-    row_pos = row_index.get_indexer(df[row_col])
-    col_pos = col_index.get_indexer(df[col_col])
-
-    # Drop entries that did not match (-1)
-    mask = (row_pos >= 0) & (col_pos >= 0)
-    data = df[value_col].values[mask].astype(np.float32)
-    row_pos = row_pos[mask]
-    col_pos = col_pos[mask]
-
-    mat = sparse.coo_matrix(
-        (data, (row_pos, col_pos)),
-        shape=(len(row_index), len(col_index)),
-    )
-    return mat.tocsr()
-
-
 def _dictionary_positions(column, index: pd.Index) -> np.ndarray:
     """Map an Arrow string column onto positions in *index*, via its dictionary.
 
@@ -110,7 +71,7 @@ def _pivot_arrow_to_sparse(
     row_index: pd.Index,
     col_index: pd.Index,
 ) -> sparse.csr_matrix:
-    """Arrow-native equivalent of :func:`_pivot_to_sparse`.
+    """Pivot long rows into a sparse matrix, working on Arrow columns.
 
     Same result, without converting the long table to pandas object columns first.
     """
@@ -575,18 +536,33 @@ def _build_differential_adata(ds_path: Path, file_prefix: str | None = None):
     # If it has de_results in uns, restructure into matrix form
     if "de_results" in adata.uns:
         de = adata.uns["de_results"]
-        if isinstance(de, pd.DataFrame) and not de.empty:
+        if isinstance(de, dict):
+            de = _long_de_results(de)
+        if not de.empty:
             return _reshape_de_results(de)
 
     # Already in matrix form or no de_results — return as-is
     return adata
 
 
-def _reshape_de_results(de: pd.DataFrame):
-    """Reshape long-form DE results into AnnData matrix.
+def _long_de_results(contrasts: dict) -> pd.DataFrame:
+    """Flatten the specification's ``{contrast: {names, logfoldchanges, ...}}`` layout into long form."""
+    frames = []
+    for contrast, fields in contrasts.items():
+        frame = pd.DataFrame({"contrast": contrast, "protein": list(fields["names"]), "log2FC": fields["logfoldchanges"]})
+        for column in ("pvals_adj", "scores", "pvals", "se"):
+            if column in fields:
+                frame[column] = fields[column]
+        frames.append(frame)
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
-    Expects columns: contrast, protein, log2FC and optionally
-    pvals_adj, scores, pvals, se.
+
+def _reshape_de_results(de: pd.DataFrame):
+    """Reshape long-form DE results into an AnnData matrix.
+
+    Expects columns: contrast, protein, log2FC and optionally pvals_adj, scores,
+    pvals, se. A protein a contrast did not test is NaN, because 0 would read as
+    no change and a p-value of 0.
     """
     import anndata as ad
 
@@ -594,24 +570,24 @@ def _reshape_de_results(de: pd.DataFrame):
     contrast_col = "contrast" if "contrast" in de.columns else de.columns[0]
     protein_col = "protein" if "protein" in de.columns else de.columns[1]
 
-    contrasts = pd.Index(sorted(de[contrast_col].unique()), name="contrast")
-    proteins = pd.Index(sorted(de[protein_col].unique()), name="protein")
-
     if "log2FC" not in de.columns:
         raise ValueError(f"DE results missing required 'log2FC' column. Found columns: {list(de.columns)}")
 
-    X = _pivot_to_sparse(de, contrast_col, protein_col, "log2FC", contrasts, proteins)
+    contrasts = pd.Index(sorted(de[contrast_col].unique()), name="contrast")
+    proteins = pd.Index(sorted(de[protein_col].unique()), name="protein")
 
-    layers = {}
-    for col in ("pvals_adj", "scores", "pvals", "se"):
-        if col in de.columns:
-            layers[col] = _pivot_to_sparse(de, contrast_col, protein_col, col, contrasts, proteins)
+    def matrix(column: str) -> np.ndarray:
+        return (
+            de.pivot_table(index=contrast_col, columns=protein_col, values=column, aggfunc="first", dropna=False)
+            .reindex(index=contrasts, columns=proteins)
+            .to_numpy(dtype="float64")
+        )
 
     return ad.AnnData(
-        X=X,
+        X=matrix("log2FC"),
         obs=pd.DataFrame(index=contrasts),
         var=pd.DataFrame(index=proteins),
-        layers=layers,
+        layers={column: matrix(column) for column in ("pvals_adj", "scores", "pvals", "se") if column in de.columns},
     )
 
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from qpx.core.data.schema import ValidationIssue
+
 _NESTED_NAME_QUERIES = {
     "additional_scores": "SELECT DISTINCT unnest(additional_scores).score_name AS name FROM {relation}",
     "cv_params": "SELECT DISTINCT unnest(cv_params).cv_name AS name FROM {relation}",
@@ -24,3 +26,19 @@ def emitted_field_names(con, relation: str) -> set[str]:
         rows = con.execute(_NESTED_NAME_QUERIES[column].format(relation=relation)).fetchall()
         names.update(row[0] for row in rows if row[0] is not None)
     return names
+
+
+def ontology_field_issues(engine, present: set[str]) -> list[ValidationIssue]:
+    """Flag ontology rows naming a field that their view does not emit."""
+    rows = engine.execute("SELECT field_name, view FROM ontology").fetchall()
+    issues = []
+    for view in sorted({row[1] for row in rows} & present - {"ontology"}):
+        unknown = sorted({row[0] for row in rows if row[1] == view} - emitted_field_names(engine, view))
+        if unknown:
+            message = f"{len(unknown)} ontology row(s) of view {view!r} name no field it emits: {', '.join(unknown[:5])}"
+            issues.append(
+                ValidationIssue(
+                    structure="ontology", check="ontology_unknown_field", severity="warning", column=None, message=message
+                )
+            )
+    return issues

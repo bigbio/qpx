@@ -330,6 +330,10 @@ print(generate_params_table(transform_quantify_cmd))
 | `ibaq` | Intensity-Based Absolute Quantification | `pip install "qpx[quantify]"` + `--fasta` |
 | `sum` | Sum of all peptide intensities | `pip install "qpx[quantify]"` |
 
+`maxlfq` runs the MaxLFQ algorithm, not DirectLFQ, even when DirectLFQ is installed. Charge states and peptidoforms of a peptide are summed in each run and label before quantification, so `topn` and `top3` rank peptides. Every target feature in the input is used, so filter a dataset first if you want a stricter confidence threshold.
+
+`--feature-path` takes a feature file, a dataset directory, or a directory partitioned by run. `-o` chooses the format by suffix: `.parquet`, `.tsv`, `.csv`, or, for `ibaq`, the absolute-expression view `.ae.h5ad`.
+
 When an SDRF has several `factor value[...]` columns, `--factor` chooses the condition (`--factor disease`). Without it the first column is used, with a warning.
 
 ### Usage Examples {#quantify-examples}

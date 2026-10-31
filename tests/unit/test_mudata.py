@@ -18,6 +18,7 @@ import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 import pytest
+from scipy import sparse
 
 mudata = pytest.importorskip("mudata")
 anndata = pytest.importorskip("anndata")
@@ -33,6 +34,45 @@ from qpx.mudata import (  # noqa: E402
 from qpx.version import QPX_SPEC_VERSION  # noqa: E402
 from qpx.writers import FeatureWriter, PgWriter, RunWriter  # noqa: E402
 from tests.conftest import make_feature_record, make_pg_record, make_run_record  # noqa: E402
+
+
+def _pivot_to_sparse(
+    df: pd.DataFrame,
+    row_col: str,
+    col_col: str,
+    value_col: str,
+    row_index: pd.Index,
+    col_index: pd.Index,
+) -> sparse.csr_matrix:
+    """Pivot a long-form DataFrame into a sparse CSR matrix.
+
+    Parameters
+    ----------
+    df : DataFrame
+        Long-form data with at least *row_col*, *col_col*, *value_col*.
+    row_col, col_col, value_col : str
+        Column names for rows, columns, and values.
+    row_index, col_index : pd.Index
+        Pre-built indices that define the matrix shape.
+
+    Returns
+    -------
+    scipy.sparse.csr_matrix
+    """
+    row_pos = row_index.get_indexer(df[row_col])
+    col_pos = col_index.get_indexer(df[col_col])
+
+    # Drop entries that did not match (-1)
+    mask = (row_pos >= 0) & (col_pos >= 0)
+    data = df[value_col].values[mask].astype(np.float32)
+    row_pos = row_pos[mask]
+    col_pos = col_pos[mask]
+
+    mat = sparse.coo_matrix(
+        (data, (row_pos, col_pos)),
+        shape=(len(row_index), len(col_index)),
+    )
+    return mat.tocsr()
 
 
 class _FakeResult:
@@ -619,7 +659,7 @@ class TestArrowPivotEquivalence:
         """The Arrow pivot produces the same sparse matrix as pandas."""
         import pyarrow as pa
 
-        from qpx.mudata import _pivot_arrow_to_sparse, _pivot_to_sparse
+        from qpx.mudata import _pivot_arrow_to_sparse
 
         df = self._frame()
         rows = pd.Index(sorted(df["observation_id"].unique()), name="observation_id")
@@ -635,7 +675,7 @@ class TestArrowPivotEquivalence:
         """A value absent from the index must be dropped, exactly as get_indexer does."""
         import pyarrow as pa
 
-        from qpx.mudata import _pivot_arrow_to_sparse, _pivot_to_sparse
+        from qpx.mudata import _pivot_arrow_to_sparse
 
         df = self._frame()
         rows = pd.Index(["r1|L", "r2|L"], name="observation_id")  # r3|L deliberately absent
@@ -651,7 +691,7 @@ class TestArrowPivotEquivalence:
         """A null Arrow dictionary code is unmatched, not a NumPy index."""
         import pyarrow as pa
 
-        from qpx.mudata import _pivot_arrow_to_sparse, _pivot_to_sparse
+        from qpx.mudata import _pivot_arrow_to_sparse
 
         df = pd.DataFrame(
             {

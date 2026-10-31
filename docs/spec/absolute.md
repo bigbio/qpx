@@ -80,6 +80,10 @@ Each row in `var` represents one protein. The index is the protein accession.
 | `creation_date` | Date when the file was created | `string` |
 | `creator` | Name of the tool that created the file | `string` |
 
+## Producing and checking the file
+
+`qpxc transform quantify --method ibaq --fasta ... -o PXD000000.ae.h5ad` writes this layout, and `qpxc validate --dataset-path` checks an `.ae.h5ad` file it finds in the dataset.
+
 ## Example
 
 ### Creating an AE AnnData
