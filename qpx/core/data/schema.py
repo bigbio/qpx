@@ -18,6 +18,7 @@ from qpx.core.data.validation import (
     ValidationIssue,
     ValidationResult,
     _anchor_membership_issues,
+    _anchor_outside_membership,
     _anchor_without_membership,
     _bad_score_names,
     _evidence_fraction_counts,
@@ -368,7 +369,15 @@ class _RowCounts:
         self.out_of_range = dict.fromkeys((path for path in ranges if path[0] in names), 0)
         self.vocabulary = dict.fromkeys((name for name in _VOCABULARIES.get(structure, {}) if name in names), 0)
         # Counts of the checks that are not kept per column.
-        self.totals = {"anchor": 0, "fractions": (0, 0, 0), "candidates": (0, 0), "edits": (0, 0), "scan": 0, "scores": (0, None)}
+        self.totals = {
+            "anchor": 0,
+            "anchor_outside": 0,
+            "fractions": (0, 0, 0),
+            "candidates": (0, 0),
+            "edits": (0, 0),
+            "scan": 0,
+            "scores": (0, None),
+        }
 
     def add(self, batch: pa.Table | pa.RecordBatch, scan_format: str | None) -> None:
         """Add one batch's counts."""
@@ -379,6 +388,7 @@ class _RowCounts:
             else:
                 self.nulls[key] += _nested_null_count(batch.column(key[0]), key[1:])
         totals["anchor"] += _anchor_without_membership(batch)
+        totals["anchor_outside"] += _anchor_outside_membership(batch)
         for path in self.out_of_range:
             values = _range_values(batch.column(path[0]), path)
             if values is not None:
@@ -412,7 +422,7 @@ class _RowCounts:
     def value_issues(self, severity: str) -> list[ValidationIssue]:
         """Issues from the value checks counted over the batches."""
         return [
-            *_anchor_membership_issues(self.totals["anchor"], self.structure, severity),
+            *_anchor_membership_issues(self.totals["anchor"], self.totals["anchor_outside"], self.structure, severity),
             *_range_issues(self.out_of_range, self.ranges, self.structure, severity),
             *_evidence_fraction_issues(self.totals["fractions"], self.structure, severity),
             *_vocabulary_issues(self.vocabulary, self.structure, severity),

@@ -19,6 +19,8 @@ from qpx.core.label_validation import (
     fragment_link_issues,
     grouped_run_sample_issues,
     psm_label_issues,
+    psm_reference_issues,
+    run_sample_issues,
     skipped_check_reason,
 )
 from qpx.core.ontology_fields import ontology_field_issues
@@ -96,35 +98,6 @@ def _feature_psm_references(engine):
         # direction is unpopulated and is therefore not a contradiction.
         inverse_desync = engine.execute(_FEATURE_PSM_INVERSE_DESYNC_SQL).fetchall()
     return dangling_feature_ids, dangling_psm_ids, desync, inverse_desync
-
-
-def _psm_reference_issues(dangling_feature_ids, desync, severity: str) -> list[ValidationIssue]:
-    """Build psm reference issues in reporting order."""
-    issues = []
-    for (feature_id,) in dangling_feature_ids:
-        issues.append(
-            ValidationIssue(
-                structure="psm",
-                check="dangling_feature_id",
-                severity=severity,
-                column="feature_id",
-                message=(f"psm.feature_id {feature_id!r} does not resolve to a feature.feature_id in feature.parquet"),
-            )
-        )
-    for psm_id, feature_id in desync:
-        issues.append(
-            ValidationIssue(
-                structure="psm",
-                check="feature_psm_desync",
-                severity=severity,
-                column="feature_id",
-                message=(
-                    f"psm.psm_id {psm_id!r} points to feature {feature_id!r}, but that "
-                    f"feature.psm_ids does not list this psm back (reciprocal cross-ref desync)"
-                ),
-            )
-        )
-    return issues
 
 
 def _feature_reference_issues(dangling_psm_ids, inverse_desync, severity: str) -> list[ValidationIssue]:
@@ -353,6 +326,8 @@ class _DatasetValidationMixin:
                 self._cross_view_issues(results["feature"], "label-sample", partial(feature_label_issues, self._engine), strict)
             if "pg" in present:
                 self._cross_view_issues(results["pg"], "fraction order", partial(fraction_order_issues, self._engine), strict)
+        if {"run", "sample"} <= present:
+            self._cross_view_issues(results["run"], "run-sample", partial(run_sample_issues, self._engine), strict)
         severity = "error" if strict else "warning"
         if {"feature", "fragment"} <= present:
             self._cross_view_issues(
@@ -507,7 +482,7 @@ class _DatasetValidationMixin:
             psm_result.issues.append(skipped)
             return
 
-        psm_result.issues.extend(_psm_reference_issues(dangling_feature_ids, desync, severity))
+        psm_result.issues.extend(psm_reference_issues(dangling_feature_ids, desync, severity))
         feature_result.issues.extend(_feature_reference_issues(dangling_psm_ids, inverse_desync, severity))
 
     def _check_grouped_runs_referential(self, pg_result: ValidationResult, *, strict: bool = False) -> None:

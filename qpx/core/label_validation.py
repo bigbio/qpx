@@ -156,6 +156,51 @@ def dangling_run_issues(engine, view: str) -> list[ValidationIssue]:
     ]
 
 
+def psm_reference_issues(dangling_feature_ids, desync, severity: str) -> list[ValidationIssue]:
+    """Build psm reference issues in reporting order."""
+    issues = []
+    for (feature_id,) in dangling_feature_ids:
+        issues.append(
+            ValidationIssue(
+                structure="psm",
+                check="dangling_feature_id",
+                severity=severity,
+                column="feature_id",
+                message=(f"psm.feature_id {feature_id!r} does not resolve to a feature.feature_id in feature.parquet"),
+            )
+        )
+    for psm_id, feature_id in desync:
+        issues.append(
+            ValidationIssue(
+                structure="psm",
+                check="feature_psm_desync",
+                severity=severity,
+                column="feature_id",
+                message=(
+                    f"psm.psm_id {psm_id!r} points to feature {feature_id!r}, but that "
+                    f"feature.psm_ids does not list this psm back (reciprocal cross-ref desync)"
+                ),
+            )
+        )
+    return issues
+
+
+def run_sample_issues(engine) -> list[ValidationIssue]:
+    """Samples run.samples names that the sample view lacks; their quantities resolve to no metadata."""
+    rows = engine.execute(
+        """
+        SELECT DISTINCT entry.sample_accession
+        FROM run, UNNEST(run.samples) AS t(entry)
+        WHERE entry.sample_accession NOT IN (SELECT sample_accession FROM sample)
+        ORDER BY 1
+        """
+    ).fetchall()
+    return [
+        _issue("run", "dangling_sample", "error", "samples", f"run.samples names {sample!r}, which is not in the sample view")
+        for (sample,) in rows
+    ]
+
+
 def feature_label_issues(engine) -> list[ValidationIssue]:
     """Repeated labels in one feature row, and (run, label) pairs that do not resolve to exactly one sample.
 

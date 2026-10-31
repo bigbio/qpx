@@ -200,7 +200,8 @@ class BaseStructure:
             sql_build("SELECT $columns FROM ($query)", columns=columns, query=query)
         ).to_arrow_reader(_VALIDATE_BATCH_ROWS)
         result = view.validate_batches(schema, batches, keys, referential, strict=strict)
-        if semantic:
+        # A mistyped column is already reported, and the semantic queries cannot bind to it
+        if semantic and not any(issue.check == "type_mismatch" for issue in result.issues):
             from qpx.core.semantic_validation import semantic_issues
 
             result.issues.extend(semantic_issues(self._engine, query, schema.names, view.view_name, severity))

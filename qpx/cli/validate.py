@@ -59,6 +59,11 @@ _VALID_STRUCTURES = Dataset.structure_names()
     help="Also re-derive each feature_id, psm_id and pg_id from the composite its file declares",
     is_flag=True,
 )
+@click.option(
+    "--conformance",
+    help="Run every check (--semantic and --check-identity included) and fail on warnings too",
+    is_flag=True,
+)
 @duckdb_resource_options
 @click.option("--verbose", help="Enable verbose logging", is_flag=True)
 def validate_cmd(
@@ -67,6 +72,7 @@ def validate_cmd(
     structures: tuple[str, ...],
     semantic: bool,
     check_identity: bool,
+    conformance: bool,
     verbose: bool,
 ):
     """Validate a QPX dataset or structure against the canonical schema.
@@ -95,22 +101,32 @@ def validate_cmd(
     \b
         # Also re-derive the ids from their composites
         qpxc validate --dataset-path ./PXD014414 --check-identity
+
+    \b
+        # The gate for a producer's CI: every check, warnings fail too
+        qpxc validate --dataset-path ./PXD014414 --conformance
     """
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
+    semantic = semantic or conformance
+    check_identity = check_identity or conformance
     if file_path:
-        _validate_single_file(file_path, semantic, check_identity)
+        _validate_single_file(file_path, semantic, check_identity, conformance)
         return
 
     if dataset_path:
-        _validate_dataset(dataset_path, list(structures) if structures else None, semantic, check_identity)
+        _validate_dataset(dataset_path, list(structures) if structures else None, semantic, check_identity, conformance)
         return
 
     raise click.ClickException("Provide --dataset-path or --file.")
 
 
-def _validate_single_file(file_path: Path, semantic: bool, check_identity: bool):
+def _passes(result, conformance: bool) -> bool:
+    return result.is_valid and not (conformance and result.issues)
+
+
+def _validate_single_file(file_path: Path, semantic: bool, check_identity: bool, conformance: bool):
     """Validate a single Parquet file by inferring its structure type."""
     from qpx.dataset import Dataset
 
@@ -123,7 +139,7 @@ def _validate_single_file(file_path: Path, semantic: bool, check_identity: bool)
                 message = f"{file_path.name} could not be read: {exc}"
                 result.issues.append(ValidationIssue(name, "unreadable_structure", "error", None, message))
             _print_result(result)
-            sys.exit(0 if result.is_valid else 1)
+            sys.exit(0 if _passes(result, conformance) else 1)
 
     raise click.ClickException(
         f"Cannot infer structure type from filename '{file_path.name}'. "
@@ -131,7 +147,7 @@ def _validate_single_file(file_path: Path, semantic: bool, check_identity: bool)
     )
 
 
-def _validate_dataset(dataset_path: Path, structures: list[str] | None, semantic: bool, check_identity: bool):
+def _validate_dataset(dataset_path: Path, structures: list[str] | None, semantic: bool, check_identity: bool, conformance: bool):
     """Validate a dataset directory."""
     import qpx
 
@@ -141,7 +157,7 @@ def _validate_dataset(dataset_path: Path, structures: list[str] | None, semantic
     all_valid = True
     for _, result in results.items():
         _print_result(result)
-        if not result.is_valid:
+        if not _passes(result, conformance):
             all_valid = False
 
     click.echo()

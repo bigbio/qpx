@@ -430,16 +430,41 @@ def _anchor_without_membership(table: pa.Table | pa.RecordBatch) -> int:
     return pc.sum(pc.cast(violation, pa.int64())).as_py() or 0
 
 
-def _anchor_membership_issues(bad: int, structure: str, severity: str) -> list[ValidationIssue]:
+def _anchor_outside_membership(table: pa.Table | pa.RecordBatch) -> int:
+    """Rows whose anchor_protein is not one of their pg_accessions, in either list type."""
+    names = table.schema.names
+    if "anchor_protein" not in names or "pg_accessions" not in names or len(table) == 0:
+        return 0
+    anchor = table.column("anchor_protein")
+    groups = table.column("pg_accessions")
+    if isinstance(groups, pa.ChunkedArray):
+        anchor, groups = anchor.combine_chunks(), groups.combine_chunks()
+    if not pa.types.is_list(groups.type) or not pa.types.is_string(anchor.type):
+        return 0  # reported by the type check
+    members = groups.flatten()
+    if pa.types.is_struct(members.type):
+        members = members.field("accession")
+    parents = pc.list_parent_indices(groups)
+    matched = pc.equal(members, pc.take(anchor, parents))
+    rows_with_anchor = pc.count_distinct(parents.filter(pc.fill_null(matched, False))).as_py()
+    rows_with_both = pc.count_distinct(parents.filter(pc.is_valid(pc.take(anchor, parents)))).as_py()
+    return rows_with_both - rows_with_anchor
+
+
+def _anchor_membership_issues(bad: int, outside: int, structure: str, severity: str) -> list[ValidationIssue]:
+    issues = []
+    if outside:
+        message = f"{outside} row(s) have an anchor_protein that is not one of their pg_accessions"
+        issues.append(_issue(structure, "anchor_outside_membership", "warning", "anchor_protein", message))
     if not bad:
-        return []
+        return issues
     message = (
         f"{bad} row(s) have anchor_protein set but no pg_accessions "
         "(protein-group membership). The group is the analyte and the "
         "feature->pg join key, so a row with a leading protein must carry "
         "its full pg_accessions membership."
     )
-    return [_issue(structure, "anchor_without_membership", severity, "pg_accessions", message)]
+    return [*issues, _issue(structure, "anchor_without_membership", severity, "pg_accessions", message)]
 
 
 # Link checks of the site and proteoform views, as constant queries.
