@@ -23,7 +23,7 @@ from qpx.converters.base import resolve_columns
 from qpx.converters.channel_labels import experiment_runs_from_sdrf
 from qpx.converters.mappings import get_field_mappings
 from qpx.converters.maxquant.base_adapter import MaxQuantBaseAdapter
-from qpx.converters.maxquant.constants import TMT_LABEL_TO_MQ_COL
+from qpx.converters.maxquant.channels import reporter_column_count
 from qpx.converters.utils import mq_flag_to_bool, safe_float
 from qpx.core.files import run_file_stem
 from qpx.writers.pg import PgWriter
@@ -32,6 +32,12 @@ logger = logging.getLogger(__name__)
 
 # Derive field map from central mappings
 _PG_MAP = get_field_mappings("maxquant", "pg")
+
+
+def _positive(value) -> Optional[float]:
+    """A positive quantity, or ``None`` for MaxQuant's blank or 0 (no value)."""
+    number = safe_float(value)
+    return number if number is not None and number > 0 else None
 
 
 class MaxQuantPgAdapter(MaxQuantBaseAdapter):
@@ -100,7 +106,7 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
         self._resolved = resolve_columns(_PG_MAP, actual_cols)
 
         # Step 3: Load SDRF mapping
-        sample_map, experiment_type, tmt_channels = self._load_sdrf(sdrf_path)
+        sample_map, experiment_type, tmt_channels = self._load_sdrf(sdrf_path, reporter_column_count(actual_cols))
         self._sample_keys = {key.upper() for key in sample_map}
 
         # Step 4: Detect intensity columns in the data
@@ -290,11 +296,11 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
         self,
         df: pd.DataFrame,
         intensity_cols: dict[str, list[str]],
-        tmt_channels: list[str] | None = None,
+        tmt_channels: dict[str, int] | None = None,
     ) -> list[dict]:
         records: list[dict] = []
         for row in df.to_dict("records"):
-            recs = self._transform_row(row, intensity_cols, tmt_channels or [])
+            recs = self._transform_row(row, intensity_cols, tmt_channels or {})
             records.extend(recs)
         return records
 
@@ -334,7 +340,7 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
         self,
         row,
         intensity_cols: dict[str, list[str]],
-        tmt_channels: list[str] | None = None,
+        tmt_channels: dict[str, int] | None = None,
     ) -> list[dict]:
         """Transform a single proteinGroups.txt row.
 
@@ -385,24 +391,14 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
 
     def _pg_anchor(self, row: dict, pg_accessions: list[str]) -> str:
         """Resolve the representative protein for a group."""
-        r = self._resolved
         # Anchor protein (first in Majority protein IDs, or first PG accession)
-        majority_raw = row.get(r.get("anchor_protein", "Majority protein IDs"))
-        if pd.notna(majority_raw) and majority_raw:
-            anchor_protein = self._norm_uniprot_id(str(majority_raw).split(";", maxsplit=1)[0])
-        elif pg_accessions:
-            anchor_protein = pg_accessions[0]
-        else:
-            anchor_protein = ""
-        return anchor_protein
+        return self._group_anchor(row.get(self._resolved.get("anchor_protein", "Majority protein IDs")), pg_accessions)
 
     def _pg_identity_fields(self, row: dict) -> tuple:
         """Resolve protein membership, names, genes, and representative."""
         r = self._resolved
         # Protein group identity
-        pg_acc_cell = row.get(r.get("pg_accessions", "Protein IDs"))
-        pg_acc_raw = str(pg_acc_cell) if pd.notna(pg_acc_cell) and pg_acc_cell is not None else ""
-        pg_accessions = [self._norm_uniprot_id(a.strip()) for a in pg_acc_raw.split(";") if a.strip()] if pg_acc_raw else []
+        pg_accessions = self._protein_list(row.get(r.get("pg_accessions", "Protein IDs")))
 
         pg_names_raw = row.get(r.get("pg_names", "Protein names"))
         pg_names = str(pg_names_raw).split(";") if pd.notna(pg_names_raw) and pg_names_raw else None
@@ -468,39 +464,43 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
             peptide_count_unique,
         )
 
-    def _reporter_quantities(self, row, exp, ch_cols, tmt_channels, ri_offset) -> tuple:
-        """Collect one plex's primary and corrected reporter quantities."""
+    def _reporter_quantities(self, row, exp, ch_cols, tmt_channels: dict[str, int], ri_offset) -> tuple:
+        """Collect one plex's primary and corrected reporter quantities.
+
+        ``tmt_channels`` maps each label to its 0-based reporter column (its
+        position in the plex); ``ch_cols`` maps this experiment's column
+        numbers to its column names.
+        """
         intensities: list[dict] = []
         additional_intensities: list[dict] = []
-        identified = (safe_float(row.get(f"MS/MS count {exp}")) or 0) > 0
-        channels = tmt_channels or []
         dropped_channels: list[str] = []
-        for seq_idx, channel_name in enumerate(channels):
-            col_idx = TMT_LABEL_TO_MQ_COL.get(str(channel_name).strip().upper())
-            if col_idx is None:
-                col_idx = seq_idx
-            mq_col_num = col_idx + ri_offset
-            col_name = ch_cols.get(mq_col_num)
+        identified = (safe_float(row.get(f"MS/MS count {exp}")) or 0) > 0
+        for channel_name, col_idx in (tmt_channels or {}).items():
+            col_name = ch_cols.get(col_idx + ri_offset)
             if not col_name:
-                dropped_channels.append(str(channel_name))
+                dropped_channels.append(channel_name)
                 continue
-            val = safe_float(row.get(col_name)) or 0.0
+            val = _positive(row.get(col_name))
             # A plex-level identification covers only the channels the SDRF assigns there.
-            if val > 0 or (identified and self._has_sample(exp, channel_name)):
-                intensities.append({"label": channel_name, "intensity": val if val > 0 else None})
-                corr_col = col_name.replace("Reporter intensity", "Reporter intensity corrected")
-                corr_val = safe_float(row.get(corr_col))
-                # Beside a missing reporter intensity, a zero is MaxQuant's sentinel.
-                if corr_val is not None and (val > 0 or corr_val != 0):
-                    additional_intensities.append(
-                        {
-                            "label": channel_name,
-                            "intensities": [
-                                {"intensity_name": "corrected_reporter_intensity", "intensity_value": float(corr_val)}
-                            ],
-                        }
-                    )
+            if val is None and not (identified and self._has_sample(exp, channel_name)):
+                continue
+            intensities.append({"label": channel_name, "intensity": val})
+            additional_intensities.extend(self._corrected_reporter(row, col_name, channel_name, val))
         return intensities, additional_intensities, dropped_channels
+
+    @staticmethod
+    def _corrected_reporter(row, col_name: str, channel_name: str, val: Optional[float]) -> list[dict]:
+        """The channel's corrected reporter intensity, as an ``additional_intensities`` entry."""
+        corr_val = safe_float(row.get(col_name.replace("Reporter intensity", "Reporter intensity corrected")))
+        # Beside a missing reporter intensity, a zero is MaxQuant's sentinel.
+        if corr_val is None or (val is None and corr_val == 0):
+            return []
+        return [
+            {
+                "label": channel_name,
+                "intensities": [{"intensity_name": "corrected_reporter_intensity", "intensity_value": corr_val}],
+            }
+        ]
 
     def _tmt_records(self, row, reporter_cols, tmt_channels, make_rec) -> list[dict]:
         """Expand a protein group over reporter experiments."""
@@ -530,28 +530,29 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
         # ── LFQ: one record per run using "Intensity <run>" columns ──
         for intensity_col in intensity_cols.get("intensity", []):
             run_name = intensity_col.removeprefix("Intensity ")
-            intensity_val = safe_float(row.get(intensity_col)) or 0.0
-            if intensity_val <= 0:
-                if (safe_float(row.get(f"MS/MS count {run_name}")) or 0) <= 0:
-                    continue
-                # Global counts cannot establish identification in this unit.
-                intensity_val = None
-            lfq_val = safe_float(row.get(f"LFQ intensity {run_name}"))
-            ibaq_val = safe_float(row.get(f"iBAQ {run_name}"))
-            if intensity_val is None:
-                # Beside a missing intensity, zero LFQ and iBAQ are MaxQuant's sentinels.
-                lfq_val, ibaq_val = lfq_val or None, ibaq_val or None
-            extra_vals = []
-            if lfq_val is not None:
-                extra_vals.append({"intensity_name": "lfq", "intensity_value": float(lfq_val)})
-            if ibaq_val is not None:
-                extra_vals.append({"intensity_name": "ibaq", "intensity_value": float(ibaq_val)})
-            add_int = [{"label": "LFQ", "intensities": extra_vals}] if extra_vals else []
+            intensity_val = _positive(row.get(intensity_col))
+            # Global counts cannot establish identification in this unit.
+            if intensity_val is None and (safe_float(row.get(f"MS/MS count {run_name}")) or 0) <= 0:
+                continue
             records.append(
                 make_rec(
                     self._runs_for(run_name),
                     [{"label": "LFQ", "intensity": intensity_val}],
-                    add_int,
+                    self._lfq_additional_intensities(row, run_name),
                 )
             )
         return records
+
+    @staticmethod
+    def _lfq_additional_intensities(row, experiment: str) -> list[dict]:
+        """The experiment's ``LFQ intensity``, ``iBAQ`` and spectral count.
+
+        A 0 ``LFQ intensity`` or ``iBAQ`` is MaxQuant's value for one it did not
+        compute and is left out; ``MS/MS count <experiment>`` (razor and unique
+        peptide spectra) is a count, kept when 0.
+        """
+        columns = (("lfq", f"LFQ intensity {experiment}"), ("ibaq", f"iBAQ {experiment}"))
+        values = [(name, _positive(row.get(column))) for name, column in columns]
+        values.append(("spectral_count", safe_float(row.get(f"MS/MS count {experiment}"))))
+        extra_vals = [{"intensity_name": name, "intensity_value": value} for name, value in values if value is not None]
+        return [{"label": "LFQ", "intensities": extra_vals}] if extra_vals else []

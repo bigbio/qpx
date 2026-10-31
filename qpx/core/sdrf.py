@@ -9,7 +9,7 @@ This module contains the following classes:
 import logging
 import re
 from pathlib import Path
-from typing import Union
+from typing import Callable, Optional, Union
 
 import pandas as pd
 from pandas import DataFrame
@@ -71,6 +71,41 @@ def parse_sdrf_kv(sdrf_value: str) -> dict[str, str]:
     return pairs
 
 
+def parse_modification_parameters(sdrf_table: DataFrame) -> list[dict] | None:
+    """Parse the ``comment[modification parameters]`` columns of a lower-cased SDRF table.
+
+    Each column holds one modification as ``NT=...;AC=...;MT=...;TA=...;PP=...``,
+    read from its first non-blank value (the search settings are shared by
+    all rows). Returns one ``{accession, name, fixed, position,
+    target_amino_acid}`` dict per modification, or ``None`` when there are none.
+    """
+    results: list[dict] = []
+    for col in sdrf_table.columns:
+        if not col.startswith("comment[modification parameter"):
+            continue
+        values = sdrf_table[col].dropna()
+        mod = _modification_parameter(values.iloc[0]) if not values.empty else None
+        if mod:
+            results.append(mod)
+    return results or None
+
+
+def _modification_parameter(raw: str) -> dict | None:
+    """One ``comment[modification parameters]`` value as a dict, or ``None`` without ``AC``/``NT``."""
+    kv = parse_sdrf_kv(raw)
+    accession = kv.get("AC", "")
+    name = kv.get("NT", "")
+    if not accession and not name:
+        return None
+    return {
+        "accession": accession,
+        "name": name,
+        "fixed": kv.get("MT", "").lower() in ("fixed", "fix"),
+        "position": kv.get("PP", None),
+        "target_amino_acid": kv.get("TA", None),
+    }
+
+
 def get_complex_value_sdrf_column(sdrf_table: DataFrame, column: str) -> list:
     """
     Get the complex values from a SDRF column
@@ -113,38 +148,49 @@ class SDRFHandler:
     def get_enzymes(self):
         return get_complex_value_sdrf_column(self.sdrf_table, self.ENZYME_COLUMN)
 
+    def get_modification_parameters(self) -> list[dict] | None:
+        """The SDRF's search modifications; see :func:`parse_modification_parameters`."""
+        return parse_modification_parameters(self.sdrf_table)
+
     def get_experiment_type_from_sdrf(self):
         """
         Using the SDRF file label column, we will try to extract the experiment type of an SDRF.
-        The three possible values supported in SDRF are lfq, tmt and itraq.
+        The three possible values supported in SDRF are lfq, tmt and itraq; the
+        isobaric types carry the number of distinct labels (``"TMT10"``), which
+        need not be a full plex (partial plexes, TMTpro 18). Which channels the
+        labels are is resolved by the converters from the shared channel map.
         """
+        labeling_values = [i.upper() for i in self._label_values()]
+        if any("LABEL FREE" in i for i in labeling_values):
+            return "LFQ"
+        for family in ("TMT", "ITRAQ"):
+            if any(family in i for i in labeling_values):
+                return f"{family}{len(labeling_values)}"
+        raise ValueError("The SDRF file provided does not contain any supported comment[label] value")
+
+    def _label_values(self) -> list:
+        """The distinct ``comment[label]`` names; raises when the SDRF has none."""
         if self.LABELING not in self.sdrf_table.columns:
             raise ValueError("The SDRF file provided does not contain the comment[label] column")
-
         labeling_values = get_complex_value_sdrf_column(self.sdrf_table, self.LABELING)
         if len(labeling_values) == 0:
             raise ValueError("The SDRF file provided does not contain any comment[label] value")
+        return labeling_values
 
-        labeling_values = [i.upper() for i in labeling_values]
+    def get_sample_map_run(self, label_key: Optional[Callable[[str], str]] = None):
+        """``{"<run stem>-<label>": source name}``, or ``{run stem: source name}`` for a label-free SDRF.
 
-        if any("LABEL FREE" in i for i in labeling_values):
-            return "LFQ"
-        if any("TMT" in i for i in labeling_values):
-            if len(labeling_values) in (6, 10, 11, 16):
-                return f"TMT{len(labeling_values)}"
-            raise ValueError("The SDRF file provided does not contain a supported TMT comment[label] value")
-        if any("ITRAQ" in i for i in labeling_values):
-            if len(labeling_values) in (4, 8):
-                return f"ITRAQ{len(labeling_values)}"
-            raise ValueError("The SDRF file provided does not contain a supported iTRAQ comment[label] value")
-        raise ValueError("The SDRF file provided does not contain any supported comment[label] value")
-
-    def get_sample_map_run(self):
+        ``label_key`` spells the label part of the keys (default: as the SDRF
+        writes it), so callers can match them against normalised channel labels.
+        """
         validate_sdrf_data_files(self.sdrf_table)
         sdrf = self.sdrf_table[["source name", "comment[data file]", "comment[label]"]].copy()
         sdrf["comment[data file]"] = sdrf["comment[data file]"].map(run_file_stem)
         if self.get_experiment_type_from_sdrf() != "LFQ":
-            sdrf.loc[:, "map_sample"] = sdrf["comment[data file]"] + "-" + sdrf["comment[label]"]
+            labels = sdrf["comment[label]"]
+            if label_key is not None:
+                labels = labels.map(label_key, na_action="ignore")
+            sdrf.loc[:, "map_sample"] = sdrf["comment[data file]"] + "-" + labels
         else:
             sdrf.loc[:, "map_sample"] = sdrf["comment[data file]"]
         sdrf.set_index("map_sample", inplace=True)

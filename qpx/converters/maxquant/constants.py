@@ -1,4 +1,4 @@
-"""MaxQuant converter constants — PTM parsing and label maps."""
+"""MaxQuant converter constants — PTM parsing and fixed modifications."""
 
 from __future__ import annotations
 
@@ -37,8 +37,40 @@ def _resolve_mq_mod(tag: str, residue: Optional[str] = None, terminus: Optional[
     return modification_tag(tag, residue, terminus)
 
 
+FixedModification = tuple[str, str, str]
+"""``(accession, target residues, terminus)``; terminus is ``""``, ``"N"`` or ``"C"``."""
+
+
+def _fixed_positions(sequence: str, residues: str, terminus: str) -> list[int]:
+    """Where a fixed modification applies on ``sequence`` (0 = N-term, ``len + 1`` = C-term)."""
+    if not terminus:
+        return [position for position, residue in enumerate(sequence, start=1) if residue in residues]
+    position, residue = (0, sequence[:1]) if terminus == "N" else (len(sequence) + 1, sequence[-1:])
+    return [position] if not residues or residue in residues else []
+
+
+def fixed_modification_sites(
+    sequence: str, mods: list[tuple[int, str]], fixed_mods: tuple[FixedModification, ...]
+) -> list[tuple[int, str]]:
+    """The ``(position, accession)`` pairs the fixed modifications add to a peptide.
+
+    MaxQuant leaves fixed modifications out of ``Modified sequence``. Each one
+    is placed on every matching site that carries no reported modification,
+    so a site never gets a second modification (an N-terminal acetyl keeps a
+    fixed N-term label off, as in the search).
+    """
+    occupied = {position for position, _ in mods}
+    sites: list[tuple[int, str]] = []
+    for accession, residues, terminus in fixed_mods:
+        for position in _fixed_positions(sequence, residues, terminus):
+            if position not in occupied:
+                occupied.add(position)
+                sites.append((position, accession))
+    return sites
+
+
 @lru_cache(maxsize=8192)
-def to_proforma(modified_sequence: Optional[str]) -> str:
+def to_proforma(modified_sequence: Optional[str], fixed_mods: tuple[FixedModification, ...] = ()) -> str:
     """Convert a MaxQuant Modified sequence to ProForma notation.
 
     MaxQuant wraps sequences in underscores and uses parenthetical
@@ -49,15 +81,20 @@ def to_proforma(modified_sequence: Optional[str]) -> str:
         _(ac)PEPTIDEK_                      -> [UNIMOD:1]-PEPTIDEK
         _PEPK(GlyGly (K))R_                 -> PEPK[UNIMOD:121]R
         _PEPK(Amidated (Protein C-term))_   -> PEPK-[UNIMOD:2]
+
+    ``fixed_mods`` adds the fixed modifications MaxQuant leaves out (see
+    :func:`fixed_modification_sites`)::
+
+        _PEPCK_ with (("UNIMOD:4", "C", ""),) -> PEPC[UNIMOD:4]K
     """
-    if not isinstance(modified_sequence, str) or not modified_sequence:
+    if not isinstance(modified_sequence, str) or not modified_sequence.strip("_"):
         return ""
     sequence, mods = split_modified_sequence(modified_sequence.strip("_"))
     tags: list[tuple[int, str]] = []
     for position, name in mods:
         position = vendor_position(name, position, sequence)
         tags.append((position, _resolve_mq_mod(name, *position_site(sequence, position))))
-    return build_proforma(sequence, tags)
+    return build_proforma(sequence, tags + fixed_modification_sites(sequence, tags, fixed_mods))
 
 
 def parse_phospho_probabilities(
@@ -160,46 +197,3 @@ def phospho_candidates(
             }
         )
     return candidates
-
-
-# MaxQuant orders reporter ions strictly by mass (N-isomer before C-isomer), so
-# alphabetical sorting of channel labels (C < N) would map each label to the
-# wrong column.  The i+1 fallback that was previously used to handle 0- vs
-# 1-indexed MaxQuant columns caused adjacent channels to read from the same
-# column, producing duplicate intensities (e.g. TMT126 ≡ TMT127C in 96 % of
-# features for PXD016999).  Using this explicit map avoids both issues.
-TMT_LABEL_TO_MQ_COL: dict[str, int] = {
-    "TMT126": 0,
-    "TMT127N": 1,
-    "TMT127C": 2,
-    "TMT128N": 3,
-    "TMT128C": 4,
-    "TMT129N": 5,
-    "TMT129C": 6,
-    "TMT130N": 7,
-    "TMT130C": 8,
-    "TMT131": 9,
-    "TMT131N": 9,
-    "TMT131C": 10,
-    "TMT132N": 11,
-    "TMT132C": 12,
-    "TMT133N": 13,
-    "TMT133C": 14,
-    "TMT134N": 15,
-    "TMT134C": 16,
-    "TMT135N": 17,
-    # iTRAQ 4-plex
-    "ITRAQ4PLEX-114": 0,
-    "ITRAQ4PLEX-115": 1,
-    "ITRAQ4PLEX-116": 2,
-    "ITRAQ4PLEX-117": 3,
-    # iTRAQ 8-plex
-    "ITRAQ8PLEX-113": 0,
-    "ITRAQ8PLEX-114": 1,
-    "ITRAQ8PLEX-115": 2,
-    "ITRAQ8PLEX-116": 3,
-    "ITRAQ8PLEX-117": 4,
-    "ITRAQ8PLEX-118": 5,
-    "ITRAQ8PLEX-119": 6,
-    "ITRAQ8PLEX-121": 7,
-}
