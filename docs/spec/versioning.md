@@ -164,11 +164,15 @@ This version defines all core serialized views (PSM, Feature, PG, MZ), the deriv
 
 ## Migrating Without Re-converting
 
-Re-converting from the source files is the supported route: it also picks up converter fixes. Where only QPX files survive, these rules bring them forward by hand.
+Re-converting from the source files is the better route: it also picks up converter fixes. Where only QPX files survive, `qpxc migrate --dataset-path OLD --output-folder NEW` rewrites the dataset under the current specification, by these rules:
 
 - **`pg` from 1.0.** Wrap `run_file_name` in a one-element `grouped_runs`, flatten `intensities` to one row per label with `label` and `intensity`, and derive `pg_id` from `pg_accessions, grouped_runs, label`. This reproduced all `pg_id` values of a re-converted file.
 - **`feature_id` and `psm_id`.** Hash the composite the producer used, which is not always the schema default: [Row Identity](identity.md#composites) lists each one (DIA-NN, for instance, hashes `peptidoform, charge, run_file_name`). Hash the persisted values, in canonical peptidoform spelling from 1.3 on.
 - **Labels in 1.0.2 files.** DIA-NN wrote `raw` and CDAP wrote `precursor_area` as label-free feature labels. These were non-conformant output, not an older vocabulary: rewrite both to `LFQ`.
+- **m/z sentinels.** `observed_mz` and `calculated_mz` of `0.0` meant not reported and become null.
+- **`mz.scan`.** Wrap an `int32` in a one-element list.
+
+A migration cannot recover what the old file left out: fixed modifications missing from a MaxQuant peptidoform, the columns added since, or a `.h5mu`, which is built again from the views. On a DIA-NN dataset written by QPX 1.0.2, every `feature_id` and `pg_id` of the migrated files equals those of a new conversion of the same report.
 
 ## Software Provider
 

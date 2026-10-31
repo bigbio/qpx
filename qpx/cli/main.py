@@ -15,6 +15,7 @@ import click
 from qpx._version import __version__
 from qpx.cli.convert import convert
 from qpx.cli.info import info
+from qpx.cli.migrate import migrate_cmd
 from qpx.cli.ontology import ontology
 from qpx.cli.pdc2qpx import pdc2qpx_cmd
 from qpx.cli.query import query_cmd
@@ -46,6 +47,7 @@ qpx_main.add_command(info)
 qpx_main.add_command(validate_cmd, name="validate")
 qpx_main.add_command(ontology)
 qpx_main.add_command(pdc2qpx_cmd, name="pdc2qpx")
+qpx_main.add_command(migrate_cmd, name="migrate")
 
 
 def main():

@@ -55,6 +55,10 @@ Validate QPX data against schemas:
 - Verify referential integrity
 - Generate validation reports
 
+### Migrate Command
+
+`qpxc migrate --dataset-path OLD --output-folder NEW` rewrites a dataset under the current specification when the source files are gone. See [Versioning](../spec/versioning.md#migrating-without-re-converting).
+
 ## Python API
 
 Core data operations are available through the Python API:
