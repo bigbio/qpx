@@ -15,6 +15,7 @@ from functools import partial
 from pathlib import Path
 
 import pyarrow as pa
+import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
 from qpx._version import __version__
@@ -28,6 +29,7 @@ from qpx.converters.channel_labels import (
     resolve_channel_labels,
 )
 from qpx.converters.openms.run_names import RunNormalizer, build_run_normalizer
+from qpx.converters.openms_consensus.channels import ratio_name
 from qpx.converters.orchestrator import BaseOrchestrator
 from qpx.converters.sdrf import SdrfConverter
 from qpx.core.constants import FEATURE, ONTOLOGY, PG, PSM, RUN, SAMPLE
@@ -63,6 +65,9 @@ _VIEW_WRITERS = {
 # accession slot, so the value is recorded via ``cv_name`` and round-trips
 # unambiguously under that name.
 FRACTION_GROUP_CV_NAME = "fraction_group"
+
+
+_NATIVE_RATIOS = ("ratio", "ratio_normalized")
 
 
 def _run_key_candidates(name: str | None) -> list[str]:
@@ -221,6 +226,40 @@ def _core_writer_kwargs(parquet, view: str, compression: str) -> dict:
     return writer_kwargs
 
 
+def name_native_ratios(table: pa.Table, channel_labels: dict[int, str]) -> pa.Table:
+    """Name OpenMS' ``ratio`` and ``ratio_normalized`` after their labels, as ``ratio_<num>_<den>`` on the numerator.
+
+    The native writer puts them on every label, with 1.0 on the reference: the lowest channel.
+    """
+    if "additional_intensities" not in table.column_names or not channel_labels:
+        return table
+    column = table.column("additional_intensities")
+    items = pc.list_flatten(pc.list_flatten(column).combine_chunks().field("intensities"))
+    if not pc.any(pc.is_in(items.field("intensity_name"), value_set=pa.array(_NATIVE_RATIOS))).as_py():
+        return table
+    reference = channel_labels[min(channel_labels)]
+    renamed = [_named_ratio_entries(entries, reference) for entries in column.to_pylist()]
+    index = table.schema.get_field_index("additional_intensities")
+    return table.set_column(index, "additional_intensities", pa.array(renamed, type=column.type))
+
+
+def _named_ratio_entries(entries: list[dict] | None, reference: str) -> list[dict] | None:
+    result = []
+    for entry in entries or []:
+        label = entry["label"]
+        intensities = []
+        for item in entry["intensities"] or []:
+            name = item["intensity_name"]
+            if name not in _NATIVE_RATIOS:
+                intensities.append(item)
+            elif label != reference:
+                new_name = ratio_name(label, reference, normalized=name == "ratio_normalized")
+                intensities.append({**item, "intensity_name": new_name})
+        if intensities:
+            result.append({"label": label, "intensities": intensities})
+    return result or None
+
+
 def _rewrite_core_file(view: str, src_path: Path, dst: Path, options: _RewriteOptions) -> tuple[Path, int, int]:
     """Upgrade one OpenMS core file while streaming by Parquet row group."""
     parquet = pq.ParquetFile(src_path)
@@ -251,6 +290,7 @@ def _rewrite_core_file(view: str, src_path: Path, dst: Path, options: _RewriteOp
                     cv_param_resolver=fraction_group_resolver,
                 )
                 table = options.run_normalizer(table, view)
+                table = name_native_ratios(table, options.channel_labels)
                 annotated += group_annotated
                 rows += table.num_rows
                 if view != PG or "intensities" not in table.column_names:

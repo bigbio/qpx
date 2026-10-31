@@ -77,6 +77,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `qpxc convert openms` names the `ratio` and `ratio_normalized` of OpenMS' native files `ratio_<num>_<den>` on the numerator label and drops the reference's 1.0, as the consensusXML converter and MaxQuant do. Which label is the reference was ambiguous before.
 - MuData stores no cell for a null quantity, so a stored cell is always a measurement. The sparse-matrix semantics are in [AnnData](docs/spec/anndata.md).
 - Spectronaut `unique` follows the one definition: `PEP.IsProteotypic` alone no longer marks a peptide of a multi-protein group as unique.
 - The user guides run: the statistics, visualization and project guides described `.data`, `ds.identifications`, `ds.qc` and matplotlib figures that do not exist, and are rewritten against the real API; a test runs their blocks. The `qpx.core.models` import, `pq.compute`, the `issue=None` DE example, `savefig` on plotly figures and `psm-*` file names are corrected.
