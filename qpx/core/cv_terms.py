@@ -51,6 +51,18 @@ CV_PEP_GLOBAL = "MS:1002352"  # PSM-level global FDR (global PEP)
 # Site localization scores
 # ---------------------------------------------------------------------------
 CV_MODIFICATION_INDEX = "MS:1002504"  # modification index
+# Parameters of a Modification or SearchModification that do not name the modification.
+MODIFICATION_NON_IDENTITY_ACCESSIONS = frozenset(
+    {
+        CV_MODIFICATION_INDEX,
+        "MS:1003347",  # UNIMOD derivative code
+        "MS:1003390",  # crosslinker cleavage characteristics
+        "MS:1003392",  # search modification id
+        "MS:1003393",  # search modification id ref
+    }
+)
+# Identification based on several spectra, and its PEP: values start with the identification's id.
+MULTI_SPECTRA_ACCESSIONS = frozenset({"MS:1003332", "MS:1003336"})
 
 # Per-site probabilities, the ones among the terms below.
 SITE_PROBABILITY_ACCESSIONS = frozenset(

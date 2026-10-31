@@ -67,6 +67,12 @@ This version defines all core serialized views (PSM, Feature, PG, MZ), the deriv
       ([Intensities](intensities.md#missing-values)). `psm.observed_mz` is
       nullable. `feature.unique` has one definition: a peptide of a one-protein
       group that maps to no other group.
+    - **Scan values.** A `scan` value that is not an acquisition scan number
+      must be declared with [`scan_format`](scan.md#the-scan_format-metadata-field).
+    - **Cross-links.** `xl_type` adds `noncovalent`, whose `donor_position` is
+      null. `donor_position` and `acceptor_position` are the sites on the alpha
+      peptide and its partner.
+    - **Search results.** `psm.pass_threshold` is an optional boolean.
     - **MS1 labels.** SILAC, dimethyl and mTRAQ multiplets have a normative
       encoding ([MS1 labels](intensities.md#ms1-labels-silac-dimethyl-mtraq)):
       one feature row per multiplet, with the lightest partner's peptidoform

@@ -673,3 +673,72 @@ class TestSiteLocalizationScores:
         mods, candidates = _attach_site_localization_scores(self._peptide_mods(), "CPSTK", params, {})
         assert candidates is None
         assert mods[1]["positions"][0]["scores"][0]["score_value"] == 0.9
+
+
+class TestCrossLinkFields:
+    """Battle test M90: sites per peptide, the partner's modifications, unknown m/z, no fake positions."""
+
+    def test_positions_are_per_peptide_when_the_alpha_is_the_acceptor(self, tmp_path):
+        table = _convert("scores_and_thresholds_1_3_0_draft.mzid.gz", tmp_path)
+        rows = {row["sequence"]: row["cross_links"][0] for row in table.to_pylist()}
+        link = rows["GAEDEEEEEDVGFEQNFEEMLESVTR"]
+        assert (link["donor_position"], link["acceptor_position"]) == (9, 4)
+        assert link["linker_mass"] == pytest.approx(82.04186)
+
+    def test_partner_peptidoform_carries_its_modifications(self, tmp_path):
+        table = _convert("scores_and_thresholds_1_3_0_draft.mzid.gz", tmp_path)
+        rows = {row["sequence"]: row["cross_links"][0] for row in table.to_pylist()}
+        assert rows["SCKDLQILQASK"]["partner_peptidoform"] == "TAAPTVC[UNIMOD:4]LLVLGQADKVLEEVDWLIKR"
+
+    def test_search_modification_ref_is_not_the_identity(self, tmp_path):
+        table = _convert("multiple_spectra_per_id_1_3_0_draft.mzid.gz", tmp_path)
+        names = {mod["name"] for row in table.to_pylist() for mod in row["modifications"] or []}
+        assert names == {"Xlink:DSSO"}
+
+    def test_missing_calculated_mz_is_null(self, tmp_path):
+        table = _convert("multiple_spectra_per_id_1_3_0_draft.mzid.gz", tmp_path)
+        assert table.column("calculated_mz").null_count == table.num_rows
+
+    def test_multi_spectra_identification_is_kept(self, tmp_path):
+        table = _convert("multiple_spectra_per_id_1_3_0_draft.mzid.gz", tmp_path)
+        params = {cv["cv_name"]: cv["cv_value"] for cv in table.to_pylist()[0]["cv_params"]}
+        assert params["identification_based_on_multiple_spectra"] == "1234:P"
+
+    def test_noncovalent_has_no_position(self, tmp_path):
+        table = _convert("noncovalently_assoc_1_3_0_draft.mzid.gz", tmp_path)
+        link = table.column("cross_links")[0].as_py()[0]
+        assert link["donor_position"] is None and link["acceptor_position"] is None
+
+    def test_two_pairs_in_one_group_pair_across_peptides(self):
+        alpha_light, beta_light, alpha_heavy, beta_heavy = (
+            {"id": name, "peptide_ref": name[0], "cv_params": [{"accession": "MS:1002511", "name": "xl", "value": "1"}]}
+            for name in ("a1", "b1", "a2", "b2")
+        )
+        groups = _group_siis([alpha_light, beta_light, alpha_heavy, beta_heavy])
+        assert [(g["alpha"]["id"], g["beta"]["id"]) for g in groups] == [("a1", "b1"), ("a2", "b2")]
+
+
+class TestRankAndThreshold:
+    """Battle test M63: rank is a score and every PSM says whether it passed."""
+
+    def test_rank_score_and_pass_threshold(self, tmp_path):
+        rows = _convert("scores_and_thresholds_1_3_0_draft.mzid.gz", tmp_path).to_pylist()
+        assert {row["pass_threshold"] for row in rows} == {True, False}
+        for row in rows:
+            rank = next(score for score in row["additional_scores"] if score["score_name"] == "rank")
+            assert rank["score_value"] == 1.0 and rank["higher_better"] is False
+
+    def test_rank1_only(self):
+        sii = {"id": "x", "peptide_ref": "p", "rank": 2, "pass_threshold": True, "cv_params": [], "peptide_evidence_refs": []}
+        parsed = {
+            "spectra_data": {"sd": "run"},
+            "spectrum_results": [{"spectrum_id": "scan=1", "spectra_data_ref": "sd", "siis": [sii]}],
+            "peptides": {"p": {"sequence": "PEPK", "peptidoform": "PEPK", "modifications": None}},
+            "peptide_evidence": {},
+            "db_sequences": {},
+            "linker_info": {},
+            "modification_tags": {},
+        }
+        sii.update(charge=2, exp_mz=500.0, calc_mz=500.0)
+        assert len(_build_psm_records(parsed)) == 1
+        assert _build_psm_records(parsed, rank1_only=True) == []

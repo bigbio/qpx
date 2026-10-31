@@ -20,9 +20,10 @@ except ImportError:
 
 from qpx._version import __version__
 from qpx.converters.mzidentml.pg_adapter import MzIdentMLPgAdapter
-from qpx.converters.mzidentml.psm_adapter import MzIdentMLPsmAdapter
-from qpx.converters.mzidentml.psm_records import _build_psm_records
+from qpx.converters.mzidentml.psm_adapter import MzIdentMLPsmAdapter, modification_identity_param
+from qpx.converters.mzidentml.psm_records import _build_psm_records, declared_scan_format
 from qpx.converters.orchestrator import BaseOrchestrator
+from qpx.core.files import run_file_stem
 from qpx.core.scores import field_ontology_entries, score_ontology_entries
 from qpx.writers.pepmap import PepMapWriter
 from qpx.writers.psm import PsmWriter
@@ -48,6 +49,7 @@ class MzIdentMLConverter(BaseOrchestrator):
         mgf_path: str | Path | None = None,
         include_spectra: bool = False,
         project_accession: str | None = None,
+        rank1_only: bool = False,
     ) -> Path:
         """Convert mzIdentML to QPX dataset.
 
@@ -55,10 +57,12 @@ class MzIdentMLConverter(BaseOrchestrator):
             mzid_path: Path to ``.mzid`` or ``.mzid.gz`` file.
             output_folder: Directory for output files.
             output_prefix: File prefix (e.g. ``"PXD054720"``).
-            mgf_path: Optional MGF file for spectra attachment.
+            mgf_path: Optional MGF file. ``index=N`` spectrum references become
+                the scan numbers it records, so ``psm.scan`` holds scan numbers.
             include_spectra: If ``True`` and *mgf_path* given, attach
                 spectra arrays to PSM records.
             project_accession: PRIDE / ProteomeXchange accession.
+            rank1_only: Keep only the first-ranked hit of each spectrum.
 
         Returns:
             Path to *output_folder*.
@@ -73,7 +77,7 @@ class MzIdentMLConverter(BaseOrchestrator):
         adapter = MzIdentMLPsmAdapter()
         try:
             parsed = adapter._parse_mzidentml(str(mzid_path))
-            records = _build_psm_records(parsed)
+            records = _build_psm_records(parsed, rank1_only)
         finally:
             adapter.close()
 
@@ -81,9 +85,9 @@ class MzIdentMLConverter(BaseOrchestrator):
             logger.warning("No PSM records produced from %s", mzid_path)
             return output_folder
 
-        # 2. Optionally enrich PSMs with spectra from MGF
-        if include_spectra and mgf_path is not None:
-            records = self._attach_spectra(records, mgf_path)
+        # 2. Resolve spectrum references through the MGF, optionally with its peaks
+        if mgf_path is not None:
+            records = self._attach_spectra(records, mgf_path, include_spectra, len(parsed["spectra_data"]))
 
         # 3. Track scores for ontology generation
         adapter._track_scores(records)
@@ -121,7 +125,9 @@ class MzIdentMLConverter(BaseOrchestrator):
         """Write the PSM, protein-group and peptide-map views."""
         # 4. Write PSM parquet
         psm_path = output_folder / f"{output_prefix}.psm.parquet"
-        with PsmWriter(psm_path, creator="mzidentml", compression=self._compression) as writer:
+        with PsmWriter(
+            psm_path, creator="mzidentml", compression=self._compression, scan_format=declared_scan_format(records)
+        ) as writer:
             writer.write_batch(records)
         logger.info("Wrote %d PSMs to %s", len(records), psm_path)
 
@@ -148,16 +154,20 @@ class MzIdentMLConverter(BaseOrchestrator):
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _attach_spectra(records: list[dict], mgf_path: str | Path) -> list[dict]:
-        """Attach mz_array and intensity_array from MGF to matching PSM records."""
+    def _attach_spectra(records: list[dict], mgf_path: str | Path, include_peaks: bool = True, runs: int = 1) -> list[dict]:
+        """Turn index references of matching PSM records into scan numbers and attach peaks and RT from MGF.
+
+        An MGF holds one run: in a file that searched several, only that run's records match it.
+        """
         from qpx.converters.mzidentml.mgf_parser import MgfSpectraIndex
 
-        mgf_index = MgfSpectraIndex(mgf_path)
+        mgf_index = MgfSpectraIndex(mgf_path, keep_peaks=include_peaks)
+        mgf_run = run_file_stem(str(mgf_path))
         matched_by_scan = 0
         matched_by_index = 0
         for rec in records:
             scans = rec.get("scan") or []
-            if not scans:
+            if not scans or (runs > 1 and rec.get("run_file_name") != mgf_run):
                 continue
             value = scans[0]
             # Honour the nativeID scheme: an ``index=`` value is a 0-based file
@@ -177,6 +187,9 @@ class MzIdentMLConverter(BaseOrchestrator):
                     matched_by_scan += 1
 
             if spectrum is not None:
+                if scheme == "index" and spectrum["scan"] is not None:
+                    rec["scan"] = [spectrum["scan"]]
+                    rec["_spectrum_id_scheme"] = "scan"
                 rec["mz_array"] = spectrum["mz_array"]
                 rec["intensity_array"] = spectrum["intensity_array"]
                 # Fill RT from MGF only if not already set from mzIdentML
@@ -295,7 +308,7 @@ class MzIdentMLConverter(BaseOrchestrator):
         for mod in sip.iter(f"{{{ns}}}SearchModification"):
             fixed = mod.get("fixedMod", "false").lower() == "true"
             residues = mod.get("residues", "").strip()
-            cv = mod.find(f"{{{ns}}}cvParam")
+            cv = modification_identity_param(mod, ns)
             mod_name = cv.get("name", "") if cv is not None else ""
             if mod_name:
                 label = "fixed_mod" if fixed else "variable_mod"

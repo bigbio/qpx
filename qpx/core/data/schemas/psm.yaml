@@ -94,6 +94,10 @@ fields:
     type: "list<cross_link>"
     optional: true
     doc: "Cross-link information for XL-MS experiments"
+  pass_threshold:
+    type: "bool"
+    optional: true
+    doc: "Whether the search engine or validator marks the PSM as passing its threshold"
 
   # Spectral data (optional - may be stored in mz.parquet instead)
   mz_array:

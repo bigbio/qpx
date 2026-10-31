@@ -28,12 +28,18 @@ from .postprocess import _finish_conversion
 )
 @click.option(
     "--mgf-path",
-    help="Optional MGF file for spectra attachment",
+    help="Optional MGF file: index= spectrum references become the scan numbers it records",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
 )
 @click.option(
     "--include-spectra",
     help="Attach mz_array and intensity_array from MGF to PSM records",
+    is_flag=True,
+    default=False,
+)
+@click.option(
+    "--rank1-only",
+    help="Keep only the first-ranked hit of each spectrum",
     is_flag=True,
     default=False,
 )
@@ -102,6 +108,7 @@ def convert_mzidentml_cmd(**kwargs):
         mgf_path=mgf_path,
         include_spectra=include_spectra,
         project_accession=project_accession,
+        rank1_only=kwargs["rank1_only"],
     )
 
     _finish_conversion(output_folder, output_prefix, project_accession, metadata)

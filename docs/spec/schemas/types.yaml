@@ -152,7 +152,7 @@ cross_link:
     xl_type: {type: string}
     partner_sequence: {type: string, nullable: true}
     partner_peptidoform: {type: string, nullable: true}
-    donor_position: {type: int32}
+    donor_position: {type: int32, nullable: true}
     acceptor_position: {type: int32, nullable: true}
     linker_name: {type: string}
     linker_accession: {type: string, nullable: true}

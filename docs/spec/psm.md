@@ -8,6 +8,11 @@ producer-supplied ID is preserved by default; otherwise QPX derives the ID from
 the footer-declared `identity_composite`, whose schema default is
 `[peptidoform, charge, run_file_name, scan]`.
 
+That composite names one peptidoform per spectrum. A file with several hits of
+one peptidoform and charge for a spectrum (other engines, or cross-links) needs
+a producer-supplied `psm_id`, as `qpxc convert mzidentml` writes from its
+`SpectrumIdentificationItem` ids, or an extended composite.
+
 De novo sequencing workflows set `is_decoy` to `false` and may omit
 `protein_accessions`. Record the workflow with a `de_novo_peptide_sequencing`
 step in `provenance.parquet`.
@@ -56,6 +61,7 @@ These fields are optional and may not exist in the file at all. They are include
 | Field | Description                                                                                                                                             | Type | Required |
 |-------|---------------------------------------------------------------------------------------------------------------------------------------------------------|------|----------|
 | `cross_links` | Cross-link information for XL-MS experiments. Each entry describes one cross-link site. `null` for non-cross-linked PSMs                                | array[struct], null | optional |
+| `pass_threshold` | Whether the search engine or validator marks the PSM as passing its threshold. `null` when it does not say | bool, null | optional |
 | `ion_mobility` | Ion mobility value for the precursor ion                                                                                                                | float32, null | optional |
 | `mz_array` | Array of m/z values for the spectrum                                                                                                                    | array[float32], null | optional |
 | `intensity_array` | Array of intensity values for the spectrum                                                                                                              | array[float32], null | optional |
@@ -74,10 +80,10 @@ The `cross_links` field supports XL-MS (cross-linking mass spectrometry) experim
 
 | Field | Description | Type | Required |
 |-------|-------------|------|----------|
-| `xl_type` | Type of cross-link: `"inter"` (between two peptides), `"intra"` (within same peptide), or `"dead-end"` (one reactive end) | string | yes |
+| `xl_type` | Type of cross-link: `"inter"` (between two peptides), `"intra"` (within same peptide), `"dead-end"` (one reactive end) or `"noncovalent"` (peptides associated without a link) | string | yes |
 | `partner_sequence` | Plain amino acid sequence of the beta (partner) peptide. `null` for dead-end and intra-peptide links | string, null | no |
 | `partner_peptidoform` | Beta peptide in ProForma notation. `null` for dead-end and intra-peptide links | string, null | no |
-| `donor_position` | Cross-link attachment position on the alpha peptide (1-indexed) | int32 | yes |
+| `donor_position` | Cross-link attachment position on the alpha peptide (1-indexed). `null` for noncovalent associations | int32, null | no |
 | `acceptor_position` | Attachment position on the beta peptide (1-indexed). `null` for dead-end links | int32, null | no |
 | `linker_name` | Name of the cross-linker reagent (e.g., `"DSS"`, `"BS3"`, `"DSSO"`) | string | yes |
 | `linker_accession` | XLMOD controlled vocabulary accession for the linker (e.g., `"XLMOD:02001"`) | string, null | no |

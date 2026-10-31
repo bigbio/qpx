@@ -71,6 +71,15 @@ update its footer declaration: conversion warns and leaves `scan_format`
 unset. PyArrow 17 or newer supports the late update. A declaration known before
 the first batch is written works on all supported versions.
 
+The mzIdentML converter declares `scan` or `index` from the spectrum references
+in the same way. With `--mgf-path`, `index=N` references become the scan numbers
+the MGF records (`SCANS=` or a `scan=` title), and the PSM view declares `scan`;
+without it they stay file positions and the view declares `index`. `qpxc` joins of
+PSMs to spectra follow the declaration, and the mz view declares its own format.
+
+A value that is not a scan number must be declared: a file without `scan_format`
+is read as holding scan numbers.
+
 For a declared PSM format, validation checks non-empty scan arrays against the
 lengths above. A mismatch is a warning by default and an error under strict
 validation, including `qpxc validate`. Legacy files without `scan_format` remain

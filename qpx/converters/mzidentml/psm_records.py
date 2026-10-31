@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import copy
+import logging
 import re
 from typing import NamedTuple, Optional
 
 from qpx.converters.mzidentml.crosslinks import _build_interlink, _build_looplink, _group_siis
 from qpx.converters.mzidentml.scores import _attach_site_localization_scores, _extract_pep, _extract_scores
+from qpx.core.cv_terms import MULTI_SPECTRA_ACCESSIONS
 from qpx.core.data.identity import derive_id
+from qpx.core.scores import normalize_score_name
+
+logger = logging.getLogger(__name__)
 
 
 class _SpectrumContext(NamedTuple):
@@ -19,8 +24,17 @@ class _SpectrumContext(NamedTuple):
     rt: float | None
 
 
-def _build_psm_records(parsed: dict) -> list[dict]:
-    """Convert parsed mzIdentML data into QPX PSM record dicts."""
+def declared_scan_format(records: list[dict]) -> str | None:
+    """The scan format of a PSM file, when all its spectrum references have the same one."""
+    schemes = {record.get("_spectrum_id_scheme") for record in records}
+    if len(schemes) == 1:
+        return schemes.pop()
+    logger.warning("Spectrum references mix formats %s; scan_format is left undeclared", sorted(map(str, schemes)))
+    return None
+
+
+def _build_psm_records(parsed: dict, rank1_only: bool = False) -> list[dict]:
+    """Convert parsed mzIdentML data into QPX PSM record dicts, optionally only the first-ranked hits."""
     spectra_data = parsed["spectra_data"]
     spectrum_results = parsed["spectrum_results"]
 
@@ -36,6 +50,8 @@ def _build_psm_records(parsed: dict) -> list[dict]:
         groups = _group_siis(siis)
 
         for group in groups:
+            if rank1_only and group["alpha"]["rank"] > 1:
+                continue
             record = _build_one_psm(group, context, parsed)
             if record is not None:
                 # Transient hint (dropped by the writer) telling
@@ -109,11 +125,13 @@ def _psm_confidence_fields(alpha_sii, parsed) -> dict:
     proteins = _resolve_proteins(alpha_sii["peptide_evidence_refs"], pep_evidence, parsed["db_sequences"])
     is_decoy = any(pep_evidence.get(ref, {}).get("is_decoy", False) for ref in alpha_sii["peptide_evidence_refs"])
     additional_scores = _extract_scores(alpha_sii["cv_params"])
+    additional_scores.append({"score_name": "rank", "score_value": float(alpha_sii["rank"]), "higher_better": False})
     pep_value = _extract_pep(alpha_sii["cv_params"])
     return {
         "posterior_error_probability": pep_value,
         "is_decoy": is_decoy,
-        "additional_scores": additional_scores or None,
+        "additional_scores": additional_scores,
+        "pass_threshold": alpha_sii["pass_threshold"],
         "protein_accessions": proteins or None,
     }
 
@@ -159,15 +177,14 @@ def _missed_cleavages(cv_params) -> int | None:
 
 
 def _psm_source_fields(run_file, alpha_sii, beta_sii, pep_evidence) -> dict:
-    """Build source identity, rank and the first evidence's positional fields."""
-    # Build cv_params from rank, pass_threshold, and PeptideEvidence positional info
+    """Build source identity and the first evidence's positional fields."""
     psm_id, cv_params = _source_sii_identity(run_file, alpha_sii, beta_sii)
-    rank = alpha_sii.get("rank", 1)
-    pass_threshold = alpha_sii.get("pass_threshold", True)
-    if rank > 1:
-        cv_params.append({"cv_name": "rank", "cv_value": str(rank)})
-    if not pass_threshold:
-        cv_params.append({"cv_name": "pass_threshold", "cv_value": "false"})
+    # Which SIIs make up one identification based on several spectra (MS2 and MS3 of a cleavable link).
+    cv_params += [
+        {"cv_name": normalize_score_name(cv["name"]), "cv_value": cv["value"]}
+        for cv in alpha_sii["cv_params"]
+        if cv["accession"] in MULTI_SPECTRA_ACCESSIONS
+    ]
 
     # Extract positional info (pre/post/start/end) from first PeptideEvidence
     for ref in alpha_sii["peptide_evidence_refs"]:

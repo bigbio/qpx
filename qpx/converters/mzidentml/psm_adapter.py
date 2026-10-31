@@ -18,13 +18,27 @@ except ImportError:
     etree: Any = None
 
 from qpx.converters.base import BaseConverter
-from qpx.converters.mzidentml.psm_records import _build_psm_records
+from qpx.converters.mzidentml.psm_records import _build_psm_records, declared_scan_format
 from qpx.converters.ptm import build_proforma, canonical_mod_tag
-from qpx.core.cv_terms import CV_MODIFICATION_INDEX, CV_SCAN_START_TIME, CV_XL_ACCEPTOR, CV_XL_DONOR
+from qpx.core.cv_terms import (
+    CV_MODIFICATION_INDEX,
+    CV_SCAN_START_TIME,
+    CV_XL_ACCEPTOR,
+    CV_XL_DONOR,
+    MODIFICATION_NON_IDENTITY_ACCESSIONS,
+)
 from qpx.core.files import run_file_stem
 from qpx.writers.psm import PsmWriter
 
 logger = logging.getLogger(__name__)
+
+
+def modification_identity_param(element, ns: str):
+    """The cvParam that names a Modification or SearchModification; ``None`` when none does."""
+    for cv in element.findall(f"{{{ns}}}cvParam"):
+        if cv.get("accession") not in MODIFICATION_NON_IDENTITY_ACCESSIONS:
+            return cv
+    return None
 
 
 class MzIdentMLPsmAdapter(BaseConverter):
@@ -36,7 +50,7 @@ class MzIdentMLPsmAdapter(BaseConverter):
         output_path: str,
         creator: str = "mzidentml",
     ) -> None:
-        """Parse *mzid_path* and write QPX PSM records to *output_path*."""
+        """Parse *mzid_path* and write QPX PSM records to *output_path*, declaring the scan format."""
         parsed = self._parse_mzidentml(mzid_path)
         records = _build_psm_records(parsed)
 
@@ -46,7 +60,8 @@ class MzIdentMLPsmAdapter(BaseConverter):
 
         self._track_scores(records)
 
-        with PsmWriter(output_path, creator=creator, compression=self._compression) as writer:
+        scan_format = declared_scan_format(records)
+        with PsmWriter(output_path, creator=creator, compression=self._compression, scan_format=scan_format) as writer:
             writer.write_batch(records)
 
         logger.info(
@@ -127,14 +142,9 @@ class MzIdentMLPsmAdapter(BaseConverter):
     @staticmethod
     def _regular_modification(mod, ns: str, location: int, mass_text, sequence: str) -> tuple[dict, str]:
         """The QPX modification and canonical ProForma tag of a non-cross-link Modification."""
-        mod_name = ""
-        mod_accession = None
-        for cv in mod.findall(f"{{{ns}}}cvParam"):
-            if cv.get("accession") == CV_MODIFICATION_INDEX:
-                continue
-            mod_name = cv.get("name", "")
-            mod_accession = cv.get("accession")
-            break  # Take first cvParam as the mod identity
+        identity = modification_identity_param(mod, ns)
+        mod_name = identity.get("name", "") if identity is not None else ""
+        mod_accession = identity.get("accession") if identity is not None else None
         residue = sequence[location - 1] if 0 < location <= len(sequence) else None
         mass = float(mass_text) if mass_text else None
         terminus = "N" if location == 0 else "C" if location > len(sequence) else None
@@ -211,11 +221,10 @@ class MzIdentMLPsmAdapter(BaseConverter):
         """Canonical tag of each SearchModification with a ``modification index``, the key of MS:1002505 scores."""
         tags: dict[int, str] = {}
         for search_mod in root.iter(f"{{{ns}}}SearchModification"):
-            params = {cv.get("accession"): cv for cv in search_mod.findall(f"{{{ns}}}cvParam")}
-            index = params.pop(CV_MODIFICATION_INDEX, None)
-            if index is None or not params:
+            index = search_mod.find(f"{{{ns}}}cvParam[@accession='{CV_MODIFICATION_INDEX}']")
+            identity = modification_identity_param(search_mod, ns)
+            if index is None or identity is None:
                 continue
-            identity = next(iter(params.values()))
             residue = search_mod.get("residues", ".")[0]
             tag = canonical_mod_tag(
                 identity.get("accession"),
@@ -294,7 +303,8 @@ class MzIdentMLPsmAdapter(BaseConverter):
                     "id": sii.get("id", ""),
                     "charge": int(sii.get("chargeState", "0")),
                     "exp_mz": float(sii.get("experimentalMassToCharge", "0")),
-                    "calc_mz": float(sii.get("calculatedMassToCharge", "0")),
+                    # Optional in mzIdentML; cross-link SIIs commonly leave it out.
+                    "calc_mz": float(sii.get("calculatedMassToCharge")) if sii.get("calculatedMassToCharge") else None,
                     "rank": int(sii.get("rank", "1")),
                     "pass_threshold": sii.get("passThreshold", "false").lower() == "true",
                     "peptide_ref": sii.get("peptide_ref", ""),

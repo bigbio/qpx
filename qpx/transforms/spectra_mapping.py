@@ -32,8 +32,9 @@ from typing import Optional, Union
 import numpy as np
 import pandas as pd
 import pyarrow as pa
+import pyarrow.parquet as pq
 
-from qpx.core.scan import scan_from_native_id
+from qpx.core.scan import scan_format_from_native_id, scan_from_native_id
 
 logger = logging.getLogger(__name__)
 
@@ -220,6 +221,19 @@ class _MzMLCache:
 
         return self._spectrum_arrays(exp.getSpectrum(index))
 
+    def get_spectrum_at(self, mzml_path: str, position: int) -> tuple[int, np.ndarray, np.ndarray]:
+        """The spectrum at a 0-based *position* in an mzML file (``scan_format`` index)."""
+        import pyopenms as oms
+
+        if mzml_path not in self._experiments:
+            exp = oms.MSExperiment()
+            oms.MzMLFile().load(mzml_path, exp)
+            self._experiments[mzml_path] = exp
+        exp = self._experiments[mzml_path]
+        if isinstance(position, int) and 0 <= position < exp.getNrSpectra():
+            return self._spectrum_arrays(exp.getSpectrum(position))
+        return 0, np.array([], dtype=np.float32), np.array([], dtype=np.float32)
+
     @staticmethod
     def _spectrum_arrays(spectrum) -> tuple[int, np.ndarray, np.ndarray]:
         """Return peak arrays with the transform's stable output dtypes."""
@@ -236,6 +250,15 @@ class _MzMLCache:
         self._lookups.clear()
         self._patterns.clear()
         self._component_indices.clear()
+
+
+def _psm_scan_format(psm) -> str | None:
+    """The scan_format a single PSM file declares; several files may declare different ones."""
+    paths = psm.file_paths
+    if len(paths) != 1 or not Path(paths[0]).is_file():
+        return None
+    declared = (pq.read_metadata(paths[0]).metadata or {}).get(b"scan_format")
+    return declared.decode() if declared else None
 
 
 class SpectraMappingTransform:
@@ -341,6 +364,7 @@ class SpectraMappingTransform:
         self,
         run_file_name: str,
         scan_numbers: list[Union[int, tuple[int, ...]]],
+        position: bool = False,
     ) -> list[tuple[int, np.ndarray, np.ndarray]]:
         """
         Get multiple spectra from the same run file.
@@ -351,6 +375,7 @@ class SpectraMappingTransform:
         Args:
             run_file_name: Name of the MS run.
             scan_numbers: Scan numbers or complete native ID component tuples.
+            position: The values are 0-based file positions (``scan_format`` index).
 
         Returns:
             List of (num_peaks, mz_array, intensity_array) tuples.
@@ -362,16 +387,9 @@ class SpectraMappingTransform:
             return [(0, empty.copy(), empty.copy()) for _ in scan_numbers]
 
         mzml_str = str(mzml_path)
-        results = []
-        for scan in scan_numbers:
-            result = self._cache.get_spectrum(
-                mzml_str,
-                scan,
-                native_id_pattern=self._native_id_pattern,
-            )
-            results.append(result)
-
-        return results
+        if position:
+            return [self._cache.get_spectrum_at(mzml_str, value) for value in scan_numbers]
+        return [self._cache.get_spectrum(mzml_str, scan, native_id_pattern=self._native_id_pattern) for scan in scan_numbers]
 
     def annotate_dataset_psms(
         self,
@@ -396,6 +414,7 @@ class SpectraMappingTransform:
             raise ValueError("Dataset does not contain PSM data.")
 
         annotated_chunks = []
+        position = _psm_scan_format(dataset.psm) == "index"
 
         for run_files, batch_df in dataset.psm.iter_batches(
             partition_by="run_file_name",
@@ -420,7 +439,7 @@ class SpectraMappingTransform:
                         scan_numbers.append(())
 
                 # Batch-extract spectra for this run
-                spectra = self.get_spectra_batch(run_file, scan_numbers)
+                spectra = self.get_spectra_batch(run_file, scan_numbers, position=position)
 
                 # Add spectral data to DataFrame
                 run_df["num_peaks"] = [s[0] for s in spectra]
@@ -518,9 +537,12 @@ class SpectraMappingTransform:
 
         total_spectra = 0
         with MzWriter(output_path) as writer:
+            formats: set[str | None] = set()
             for mzml_path in mzml_paths:
                 run_name = self._mzml_run_name(mzml_path)
-                total_spectra += self._write_mzml_spectra(mzml_path, run_name, writer, ms_levels)
+                total_spectra += self._write_mzml_spectra(mzml_path, run_name, writer, ms_levels, formats)
+            if len(formats) == 1 and None not in formats:
+                writer.set_scan_format(formats.pop())
 
         logger.info("Wrote %d spectra from %d mzML files to %s", total_spectra, len(mzml_paths), output_path)
         return output_path
@@ -541,10 +563,10 @@ class SpectraMappingTransform:
                 return name[: -len(ext)]
         return mzml_path.stem
 
-    def _write_mzml_spectra(self, mzml_path, run_name, writer, ms_levels) -> int:
+    def _write_mzml_spectra(self, mzml_path, run_name, writer, ms_levels, formats: set | None = None) -> int:
         """Stream one mzML and write its spectra (optionally filtered by MS level).
 
-        Returns the number of spectra written.
+        Returns the number of spectra written; *formats* collects their scan formats.
         """
         try:
             import pyopenms as oms
@@ -552,11 +574,15 @@ class SpectraMappingTransform:
             raise ImportError("pyopenms is required for mzML parsing. Install it with: pip install pyopenms")
 
         logger.info("Processing mzML: %s", mzml_path)
+
         # Stream spectra rather than loading the whole experiment, so memory stays
         # bounded by one peak-limited batch instead of growing with the file.
-        consumer = _MzRecordWriter(
-            writer, lambda spectrum, index: self._build_mz_record(spectrum, run_name, index, oms), ms_levels
-        )
+        def build_record(spectrum, index):
+            if formats is not None:
+                formats.add(scan_format_from_native_id(spectrum.getNativeID()))
+            return self._build_mz_record(spectrum, run_name, index, oms)
+
+        consumer = _MzRecordWriter(writer, build_record, ms_levels)
         oms.MzMLFile().transform(str(mzml_path), consumer)
         consumer.flush()
         return consumer.written

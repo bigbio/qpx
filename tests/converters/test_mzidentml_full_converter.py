@@ -378,3 +378,46 @@ class TestImport:
         from qpx.converters.mzidentml.converter import MzIdentMLConverter as Cls
 
         assert Cls is not None
+
+
+class TestScanSemantics:
+    """psm.scan says what it holds: an MGF turns index references into scan numbers (bigbio/qpx battle test H25)."""
+
+    @staticmethod
+    def _footer(tmp_path, prefix="mz"):
+        return pq.read_metadata(tmp_path / f"{prefix}.psm.parquet").metadata.get(b"scan_format")
+
+    def test_index_references_become_scans_of_the_mgf(self, tmp_path):
+        mgf = tmp_path / "test.mgf"
+        mgf.write_text("BEGIN IONS\nSCANS=999\n100.0 500\nEND IONS\nBEGIN IONS\nSCANS=998\n200.0 600\nEND IONS\n")
+        records = [
+            {"scan": [0], "_spectrum_id_scheme": "index", "mz_array": None, "intensity_array": None, "rt": None},
+            {"scan": [1], "_spectrum_id_scheme": "index", "mz_array": None, "intensity_array": None, "rt": None},
+        ]
+        result = MzIdentMLConverter._attach_spectra(records, str(mgf), include_peaks=False)
+        assert [r["scan"] for r in result] == [[999], [998]]
+        assert {r["_spectrum_id_scheme"] for r in result} == {"scan"}
+        assert result[0]["mz_array"] is None
+
+    def test_title_with_an_index_is_not_a_scan(self, tmp_path):
+        mgf = tmp_path / "test.mgf"
+        mgf.write_text("BEGIN IONS\nTITLE=run.0.0 index=0\n100.0 500\nEND IONS\n")
+        records = [{"scan": [0], "_spectrum_id_scheme": "index", "mz_array": None, "intensity_array": None, "rt": None}]
+        result = MzIdentMLConverter._attach_spectra(records, str(mgf))
+        assert result[0]["scan"] == [0]
+        assert result[0]["_spectrum_id_scheme"] == "index"
+
+    def test_mgf_of_one_run_leaves_other_runs_alone(self, tmp_path):
+        mgf = tmp_path / "run_a.mgf"
+        mgf.write_text("BEGIN IONS\nSCANS=999\n100.0 500\nEND IONS\n")
+        records = [
+            {"scan": [0], "run_file_name": "run_a", "_spectrum_id_scheme": "index", "mz_array": None, "intensity_array": None},
+            {"scan": [0], "run_file_name": "run_b", "_spectrum_id_scheme": "index", "mz_array": None, "intensity_array": None},
+        ]
+        result = MzIdentMLConverter._attach_spectra(records, str(mgf), runs=2)
+        assert [r["scan"] for r in result] == [[999], [0]]
+
+    def test_file_declares_the_format_of_its_references(self, tmp_path):
+        mzid = Path(__file__).resolve().parent.parent / "examples/mzidentml/xl/scores_and_thresholds_1_3_0_draft.mzid.gz"
+        MzIdentMLConverter().convert(mzid, tmp_path, output_prefix="mz")
+        assert self._footer(tmp_path) == b"index"

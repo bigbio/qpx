@@ -24,6 +24,7 @@ _SCAN_PATTERNS = [
     re.compile(r"\bScan\s+(\d+)\b"),  # "Scan 154" (Distiller style)
 ]
 _BARE_INT = re.compile(r"^(\d+)$")
+_POSITION_TITLE = re.compile(r"index=\d+", re.IGNORECASE)
 
 
 def _extract_scan(title: str, scans_value: str | None) -> int | None:
@@ -63,6 +64,8 @@ class MgfSpectraIndex:
     ----------
     mgf_path : str or Path
         Path to an MGF file (plain-text ``.mgf`` or gzip-compressed ``.mgf.gz``).
+    keep_peaks : bool
+        Hold each spectrum's peaks; without them only its scan number and RT are kept.
 
     Examples
     --------
@@ -72,8 +75,9 @@ class MgfSpectraIndex:
     [200.123, 201.456, 202.789]
     """
 
-    def __init__(self, mgf_path: str | Path) -> None:
+    def __init__(self, mgf_path: str | Path, keep_peaks: bool = True) -> None:
         self._path = Path(mgf_path)
+        self._keep_peaks = keep_peaks
         self._index: dict[int, dict] = {}
         self._by_position: dict[int, dict] = {}
         self._position_counter: int = 0
@@ -200,17 +204,19 @@ class MgfSpectraIndex:
         pos = self._position_counter
         self._position_counter += 1
 
+        scan = _extract_scan(title or "", scans_value)
         spectrum = {
-            "mz_array": mz_list,
-            "intensity_array": int_list,
+            "mz_array": mz_list if self._keep_peaks else None,
+            "intensity_array": int_list if self._keep_peaks else None,
             "rt": rt_value,
+            # A TITLE with index=N names a file position, not an acquisition scan.
+            "scan": None if scans_value is None and _POSITION_TITLE.search(title or "") else scan,
         }
 
         # Always store by position
         self._by_position[pos] = spectrum
 
         # Also store by scan if parseable
-        scan = _extract_scan(title or "", scans_value)
         if scan is None:
             logger.debug("Spectrum at position %d has no parseable scan: TITLE=%s", pos, title)
             return

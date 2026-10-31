@@ -7,6 +7,13 @@ Everything with an MS: accession is resolved from the OBO file.
 from __future__ import annotations
 
 BUILTIN_SCORES: dict[str, dict] = {
+    "rank": {
+        "ontology_name": "rank",
+        "ontology_accession": None,
+        "ontology_source": None,
+        "description": "Rank of the peptide among the search engine's hits for the spectrum, 1 being the best",
+        "higher_better": False,
+    },
     # --- DIA-NN (no MS accessions yet) ---
     "diann_qvalue": {
         "ontology_name": "DIA-NN:Q.Value",
