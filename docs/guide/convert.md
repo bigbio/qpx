@@ -107,7 +107,7 @@ The `convert` command group provides converters for multiple proteomics software
 ## Available Commands
 
 - [openms](#openms) - Enrich native OpenMS `-out_qpx` output into a full QPX dataset
-- [openms-consensus](#openms-consensus) - Convert an OpenMS consensusXML (+ SDRF) to QPX (interim; pg intensity = unnormalized unique-peptide sum)
+- [openms-consensus](#openms-consensus) - Convert an OpenMS consensusXML (+ SDRF) to QPX (interim; pg intensity = OpenMS abundance or unnormalized unique-peptide sum)
 - [diann](#diann) - Convert DIA-NN report to QPX format
 - [spectronaut](#spectronaut) - Convert Spectronaut report to QPX format
 - [maxquant](#maxquant) - Convert MaxQuant output to QPX format
@@ -866,18 +866,36 @@ identification of the exported peptide with a spectrum reference. Transferred
 features without their own identification, unresolved source runs and conflicting
 peptide assignments keep this field null.
 
-!!! warning "Protein intensity is an interim, unnormalized rollup"
-    The consensusXML has no protein-level abundance — that quantity lived only in
-    the mzTab (`protein_abundance_assay`, from ProteinQuantifier). Until OpenMS
-    `-out_qpx` provides the authoritative number, each `(protein group,
-    grouped_runs, label)` row's `intensity` is a stopgap we compute ourselves: the
-    **unnormalized sum of the group's unique peptides** for that channel (the
-    quantms `unique_peptides` policy, no normalization). Every quantified row
-    carries a `quantification_method` cv_param (`unnormalized_unique_peptide_sum`)
-    so it is never mistaken for the real quant, and rows stay `intensity`-null
-    where a group has no unique-peptide signal. Use `--pg-top 3` to mirror the
-    quantms ProteomicsLFQ/IsobaricWorkflow default (top-3 peptides) instead of
-    summing all.
+!!! warning "Protein intensity is OpenMS' abundance or an unnormalized rollup"
+    ProteomicsLFQ, IsobaricWorkflow and MS1LabeledWorkflow record their protein
+    abundance in the consensusXML header (`fraction_group_level_abundance`), and
+    `intensity` is that value (`quantification_method` = `openms_protein_abundance`);
+    a zero is "not quantified" and becomes null. Files without one (quantms runs
+    ProteinQuantifier separately) get a stopgap instead: the **unnormalized sum of
+    the group's unique peptides** for that channel (the quantms `unique_peptides`
+    policy, no normalization), marked `unnormalized_unique_peptide_sum`. Where
+    OpenMS' abundance is present, the sum stays in `additional_intensities` under
+    that name. `--pg-top N` limits the sum to the N most abundant peptides; it does
+    not reproduce OpenMS' aggregation, which depends on its own settings.
+
+!!! note "Quantification units"
+    `grouped_runs` comes from the SDRF, else from the `fraction_group` of the map
+    list. Without either, each run is its own unit, with a warning: fractions of one
+    sample then stay separate, which an SDRF fixes.
+
+!!! note "MS1 labels (SILAC, dimethyl, mTRAQ)"
+    One feature row per multiplet per run, one `intensities` entry per channel. A
+    two-plex calls its non-light channel `SILAC heavy` and a three-plex is
+    light/medium/heavy, as the native OpenMS writer does; labels that cannot be
+    resolved stop the conversion. The feature peptidoform is the peptide identity
+    MS1LabeledWorkflow reports, without labels, also for dimethyl and mTRAQ.
+    `observed_mz` and `rt` are the lightest measured partner's; when that is not the
+    run's lightest channel, `mass_error_ppm` is null. A PSM is the partner the
+    spectrum was matched with (`MS1Label:labeled_sequence`), with `psm.label`, and
+    the label state is kept in `cv_params`. Ratios go to the numerator label as
+    `ratio_h_l` and `ratio_h_l_normalized` (feature: `MS1Label:evidence_ratio`; pg:
+    `fraction_group_level_ratio`), relative to the run's or fraction group's lowest
+    channel.
 
 ### Parameters {#openms-consensus-parameters}
 
@@ -927,7 +945,7 @@ qpxc convert openms-consensus \
 
 - `<prefix>.feature.parquet` — one row per `(peptidoform, charge, run, rt)` with per-run/channel intensities.
 - `<prefix>.psm.parquet` — one row per spectrum match (scan, PEP, q-value, decoy).
-- `<prefix>.pg.parquet` — protein groups (`pg_accessions`, `grouped_runs`, peptide/feature counts, `global_qvalue`, decoy, genes); one row per channel with a populated `label` and an interim `intensity` = unnormalized sum of the group's unique peptides (stamped with a `quantification_method` cv_param; null where a group has no unique-peptide signal). See `--pg-top`.
+- `<prefix>.pg.parquet` — protein groups (`pg_accessions`, `grouped_runs`, peptide/feature counts, `global_qvalue`, decoy, genes); one row per channel with a populated `label` and an `intensity` = unnormalized sum of the group's unique peptides (stamped with a `quantification_method` cv_param; null where a group has no unique-peptide signal). See `--pg-top`.
 - `<prefix>.run.parquet`, `<prefix>.sample.parquet` — from the SDRF (when provided).
 - `<prefix>.h5mu` — the dataset's MuData view, written by default; disable with `--no-mudata`. Best-effort: a view that cannot be built is reported and the conversion still succeeds, because the Parquet views are the dataset's source of truth.
 

@@ -213,8 +213,9 @@ The following names are commonly used in `additional_intensities` for the PG vie
 | `total_spectral_count` | FragPipe | Number of PSMs for all peptides (razor + shared) |
 | `genes_maxlfq` | DIA-NN | Gene-group level MaxLFQ quantity |
 | `genes_maxlfq_unique` | DIA-NN | Gene-group MaxLFQ using only proteotypic peptides |
-| `ratio_h_l` | MaxQuant (SILAC) | Heavy-to-light protein ratio, on the `SILAC heavy` row |
-| `ratio_h_l_normalized` | MaxQuant (SILAC) | Normalised heavy-to-light ratio, on the `SILAC heavy` row |
+| `ratio_h_l` | MaxQuant, OpenMS (SILAC) | Heavy-to-light protein ratio, on the `SILAC heavy` row |
+| `ratio_h_l_normalized` | MaxQuant, OpenMS (SILAC) | Normalised heavy-to-light ratio, on the `SILAC heavy` row |
+| `unnormalized_unique_peptide_sum` | OpenMS consensusXML | Sum of the group's unique peptides, beside OpenMS' own protein abundance |
 | `reporter_intensity` | MaxQuant (TMT/iTRAQ) | Raw reporter-ion intensity |
 | `reporter_intensity_corrected` | MaxQuant (TMT/iTRAQ) | Isotope-purity-corrected reporter intensity |
 

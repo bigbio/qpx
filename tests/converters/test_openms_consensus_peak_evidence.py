@@ -105,7 +105,7 @@ def test_shared_peak_preserves_evidence_and_pg_quantity(tmp_path, monkeypatch, s
             psm = next(rec for rec in _rows(written, "psm") if rec["scan"] == [7])
             assert psm["feature_id"] == expected
     if "pg" in structures:
-        assert [rec["intensity"] for rec in _rows(written, "pg")] == [9000]
+        assert sorted(rec["intensity"] for rec in _rows(written, "pg")) == [4000, 5000]
     if "feature" not in structures and "psm" in structures:
         assert all(rec["feature_id"] is None for rec in _rows(written, "psm"))
     _assert_valid(out, structures)

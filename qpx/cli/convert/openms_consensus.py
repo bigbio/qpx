@@ -69,8 +69,8 @@ def _consensusxml_list(ctx, param, value) -> tuple[Path, ...]:
     show_default=True,
     type=int,
     help=(
-        "Peptides used for the interim pg intensity (unnormalized unique-peptide sum): "
-        "0 = all; 3 mirrors the quantms ProteomicsLFQ/IsobaricWorkflow default."
+        "Peptides in the pg unnormalized unique-peptide sum, the intensity of inputs without an "
+        "OpenMS protein abundance and an additional intensity otherwise: 0 = all."
     ),
 )
 @click.option(

@@ -152,14 +152,6 @@ def read_provenance_header(path: str) -> ProvenanceHeader:
 # ---------------------------------------------------------------------------
 
 
-class _ColHeader:
-    __slots__ = ("filename", "label")
-
-    def __init__(self, filename: str, label: str):
-        self.filename = filename
-        self.label = label
-
-
 class _MetaMixin:
     """metaValueExists / getMetaValue backed by a ``_meta`` dict of strings."""
 
@@ -170,6 +162,13 @@ class _MetaMixin:
 
     def getMetaValue(self, key: str):
         return self._meta.get(key)
+
+
+class _ColHeader(_MetaMixin):
+    def __init__(self, filename: str, label: str, meta: dict[str, str]):
+        self.filename = filename
+        self.label = label
+        self._meta = meta
 
 
 class _PrecursorPosition(NamedTuple):
@@ -216,12 +215,13 @@ class _PeptideIdentification(_MetaMixin):
 
 
 class _SubFeature:
-    __slots__ = ("_map", "_rt", "_it")
+    __slots__ = ("_map", "_rt", "_it", "_mz")
 
-    def __init__(self, map_index: int, rt: float, intensity: float):
+    def __init__(self, map_index: int, rt: float, intensity: float, mz: float):
         self._map = map_index
         self._rt = rt
         self._it = intensity
+        self._mz = mz
 
     def getMapIndex(self) -> int:
         return self._map
@@ -232,15 +232,19 @@ class _SubFeature:
     def getIntensity(self) -> float:
         return self._it
 
+    def getMZ(self) -> float:
+        """Element m/z (pyopenms accessor name)."""
+        return self._mz
 
-class _ConsensusFeature:
-    __slots__ = ("_charge", "_mz", "_rt", "_subs", "_pids", "_quality", "_uid")
 
-    def __init__(self, charge, position: _PrecursorPosition, subs, pids, quality=0.0, uid=0):
+class _ConsensusFeature(_MetaMixin):
+    __slots__ = ("_charge", "_position", "_subs", "_pids", "_quality", "_uid", "_meta")
+
+    def __init__(self, charge, position: _PrecursorPosition, subs, pids, quality=0.0, uid=0, meta=None):
+        self._meta = meta or {}
         self._uid = uid
         self._charge = charge
-        self._mz = position.mz
-        self._rt = position.rt
+        self._position = position
         self._subs = subs
         self._pids = pids
         self._quality = quality
@@ -257,12 +261,12 @@ class _ConsensusFeature:
         return self._uid
 
     def getMZ(self):
-        return self._mz
+        return self._position.mz
 
     @property
     def consensus_rt(self):
         """Parent ConsensusFeature retention time."""
-        return self._rt
+        return self._position.rt
 
     def getFeatureList(self):
         return self._subs
@@ -413,14 +417,16 @@ def _parse_consensus_element(el, ph_to_acc: dict[str, str]) -> _ConsensusFeature
                             int(e.attrib["map"]),
                             float(e.attrib.get("rt") or 0.0),
                             _f32(e.attrib.get("it") or 0.0),  # intensity is float32 in OpenMS
+                            float(e.attrib.get("mz") or 0.0),
                         )
                     )
         elif tag == "PeptideIdentification":
             pids.append(_parse_peptide_id(child, ph_to_acc))
     # quality is a C++ float in OpenMS, like the sub-feature intensities
     uid = el.attrib.get("id", "").removeprefix("e_")
+    quality = _f32(el.attrib.get("quality") or 0.0)
     return _ConsensusFeature(
-        charge, _PrecursorPosition(mz, rt), subs, pids, _f32(el.attrib.get("quality") or 0.0), int(uid) if uid.isdigit() else 0
+        charge, _PrecursorPosition(mz, rt), subs, pids, quality, int(uid) if uid.isdigit() else 0, _user_params(el)
     )
 
 
@@ -471,7 +477,9 @@ class StreamingConsensusMap:
         for event, el in _iterparse(self._path, events=("start", "end")):
             tag = _localname(el.tag)
             if (event, tag) == ("end", "map"):
-                self._headers[int(el.attrib["id"])] = _ColHeader(el.attrib.get("name", ""), el.attrib.get("label", ""))
+                self._headers[int(el.attrib["id"])] = _ColHeader(
+                    el.attrib.get("name", ""), el.attrib.get("label", ""), _user_params(el)
+                )
                 el.clear()
             elif (event, tag) == ("end", "SearchParameters"):
                 # The enzyme used for the search; needed to count missed cleavages.

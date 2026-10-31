@@ -45,10 +45,10 @@ def _read_provenance_header(consensusxml_path: str):
 
 def _consensus_is_isobaric(header) -> bool:
     """Return whether a parsed header's map labels indicate an isobaric (TMT/iTRAQ) run."""
-    from qpx.converters.openms_consensus.feature_adapter import consensus_channels
+    from qpx.converters.openms_consensus.channels import _map_label
 
     try:
-        return bool(consensus_channels(header))
+        return any(_map_label(column.label) != "LFQ" for column in header.getColumnHeaders().values())
     except (ValueError, KeyError, AttributeError) as exc:
         _log.warning("could not determine isobaric labeling: %s", exc)
         return False

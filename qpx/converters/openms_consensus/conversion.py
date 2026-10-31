@@ -258,7 +258,11 @@ def _stream_feature_psm(cm, writers, context, pg, config, scan_formats: set[str 
                 seen.unassigned = True
             if pw is not None and config.include_unassigned_psms:
                 # Unassigned PSMs map to no feature -> feature_id stays null.
-                psm_buf.extend(psm_records_for_pid(obj, context.resolve_run, seen, enzyme=context.enzyme, confidence=confidence))
+                psm_buf.extend(
+                    psm_records_for_pid(
+                        obj, context.resolve_run, seen, enzyme=context.enzyme, confidence=confidence, ms1=context.ms1
+                    )
+                )
                 collect_psm_scan_formats([obj], scan_formats)
             if maps is not None:
                 # Protein inference always sees every identification, whether or
@@ -333,7 +337,7 @@ def _convert_streaming(consensusxml_paths, config) -> dict:
             _warn_channel_mismatch(cm, config.sdrf_path)
             context = _RecordContext.from_map(cm, config.structures, seen, dedup, config.sdrf_path)
             if pg is not None:
-                pg.add_source(cm, context.map_info)
+                pg.add_source(cm, context.map_info, path)
             seen.start_file()
             _stream_feature_psm(cm, writers, context, pg, config, scan_formats)
         declare_psm_scan_format(writers[1], scan_formats)
@@ -343,7 +347,7 @@ def _convert_streaming(consensusxml_paths, config) -> dict:
     return written
 
 
-def _memory_map_records(cm, seen, dedup, pg, config, scan_formats) -> tuple[list, list]:
+def _memory_map_records(cm, path, seen, dedup, pg, config, scan_formats) -> tuple[list, list]:
     """Collect assigned records before unassigned PSMs from one loaded map."""
     context = _RecordContext.from_map(cm, config.structures, seen, dedup, config.sdrf_path)
     seen.start_file()
@@ -365,10 +369,12 @@ def _memory_map_records(cm, seen, dedup, pg, config, scan_formats) -> tuple[list
     seen.unassigned = True
     if "psm" in config.structures and config.include_unassigned_psms:
         for pid in cm.getUnassignedPeptideIdentifications():
-            psm_recs.extend(psm_records_for_pid(pid, context.resolve_run, seen, enzyme=context.enzyme, confidence=confidence))
+            psm_recs.extend(
+                psm_records_for_pid(pid, context.resolve_run, seen, enzyme=context.enzyme, confidence=confidence, ms1=context.ms1)
+            )
             collect_psm_scan_formats([pid], scan_formats)
     if pg is not None:
-        pg.add_source(cm, context.map_info)
+        pg.add_source(cm, context.map_info, path)
         accumulate_consensus_map(cm, context.map_info, context.resolve_run, pg.maps)
     return feat_recs, psm_recs
 
@@ -412,7 +418,7 @@ def _convert_in_memory(consensusxml_paths, config) -> dict:
         cm = load_consensus_map(path)
         _claim_runs(run_owner, path, cm)
         _warn_channel_mismatch(cm, config.sdrf_path)
-        features, psms = _memory_map_records(cm, seen, dedup, pg, config, scan_formats)
+        features, psms = _memory_map_records(cm, path, seen, dedup, pg, config, scan_formats)
         feat_recs.extend(features)
         psm_recs.extend(psms)
     dedup.log()

@@ -4,20 +4,22 @@ Protein groups come from the OpenMS protein-inference graph: indistinguishable
 protein groups when present, else each protein hit as a singleton group. Peptide
 counts come from the peptide→protein evidence links.
 
-**Interim protein intensity**: the consensusXML has no protein-level abundance
-(that lived in the mzTab), so until OpenMS ``-out_qpx`` provides the authoritative
-number we roll one up ourselves — the **unnormalized sum of the group's unique
-peptides** (quantms ``unique_peptides`` policy, no normalization), per
-``(protein group, grouped_runs unit, label)``. It is *not* the authoritative
-quant, so every quantified row carries a ``quantification_method`` cv_param; set
-``top=3`` to mirror the ProteomicsLFQ/IsobaricWorkflow default instead of summing
-all peptides. Rows stay ``intensity``-null where a group has no unique-peptide
-signal. One row per ``(protein group, grouped_runs, label)`` — the quantification
-unit(s) from the SDRF when given, otherwise the whole run set as a single unit.
+**Protein intensity**: the abundance OpenMS recorded for the group
+(``fraction_group_level_abundance``, see :mod:`.protein_quant`) when the input has
+any. Files without one (quantms feeds ProteinQuantifier separately) get a roll-up
+instead: the **unnormalized sum of the group's unique peptides** (quantms
+``unique_peptides`` policy, no normalization), per ``(protein group, grouped_runs
+unit, label)``, optionally over the ``top`` most abundant peptides. A
+``quantification_method`` cv_param names the source of every quantified row, and
+the roll-up stays available as an additional intensity beside OpenMS' value. Rows
+stay ``intensity``-null where a group has no signal. One row per ``(protein group,
+grouped_runs, label)``; a quantification unit comes from the SDRF, else from the
+``fraction_group`` of the map list, else it is one run.
 """
 
 from __future__ import annotations
 
+import logging
 import re
 from collections import defaultdict
 from typing import Optional
@@ -25,10 +27,13 @@ from typing import Optional
 from qpx.converters.channel_labels import fraction_groups_from_sdrf
 from qpx.converters.openms_consensus.feature_adapter import is_decoy_hit, to_proforma
 from qpx.converters.openms_consensus.protein_groups import ProteinGroupIndex, identification_identifier
+from qpx.converters.openms_consensus.protein_quant import fraction_group_units, quant_by_unit
 from qpx.converters.utils import is_contaminant_accession, safe_float, uniprot_entry_name
 from qpx.core.protein_sequence import average_molecular_weight_kda
 
+_log = logging.getLogger(__name__)
 _GENE_RE = re.compile(r"GN=([^\s]+)")
+_OPENMS_QUANT_METHOD = "openms_protein_abundance"
 
 
 class _ProteinMaps:
@@ -63,14 +68,20 @@ class ProteinGroupAccumulator:
         self.maps = _ProteinMaps()
         self.pep_intensity: dict = defaultdict(float)
         self.map_info: dict = {}
+        self.fraction_units: set[tuple[str, ...]] = set()
+        self.protein_quant: dict = {}
         self._protein_ids: list = []
         self._inputs = 0
 
-    def add_source(self, cm, map_info) -> None:
-        """Register one input's protein identifications and map columns."""
+    def add_source(self, cm, map_info, path: str) -> None:
+        """Register one input's protein identifications, map columns, units and abundances."""
         self.map_info.update({(self._inputs, idx): info for idx, info in map_info.items()})
         self._protein_ids.extend(cm.getProteinIdentifications())
         self._inputs += 1
+        runs = {idx: run for idx, (run, _label) in map_info.items()}
+        labels = {idx: label for idx, (_run, label) in map_info.items()}
+        self.fraction_units.update(fraction_group_units(cm, runs).values())
+        self.protein_quant.update(quant_by_unit(cm, runs, labels, path))
 
     def getProteinIdentifications(self) -> list:  # pylint: disable=invalid-name
         """ProteinIdentifications of every input (pyopenms accessor name)."""
@@ -78,7 +89,9 @@ class ProteinGroupAccumulator:
 
     def build(self, sdrf_path, top) -> list[dict]:
         """pg records over all inputs."""
-        return build_pg_records(self, self.map_info, self.maps, self.pep_intensity, sdrf_path, top)
+        return build_pg_records(
+            self, self.map_info, self.maps, self.pep_intensity, sdrf_path, top, self.fraction_units, self.protein_quant
+        )
 
 
 def _evidence_accession(ev) -> str | None:
@@ -308,12 +321,11 @@ def protein_group_maps(cm) -> tuple[ProteinGroupIndex, dict[tuple[str, ...], tup
 
 
 def _protein_intensity(group_peps, group_accs, unit, label, pep_intensity, pep_accs, top) -> Optional[float]:
-    """Interim protein-group intensity for one ``(unit, label)``.
+    """Unnormalized protein-group roll-up for one ``(unit, label)``.
 
     Sum of the group's **unique** peptides — those mapping only to proteins in the
     group (the quantms ``unique_peptides`` policy) — with **no normalization**.
-    ``top > 0`` keeps only the N most-abundant peptides (quantms/ProteomicsLFQ
-    default is 3); ``top = 0`` sums all. Returns ``None`` when the group has no
+    ``top > 0`` keeps only the N most-abundant peptides; ``top = 0`` sums all. Returns ``None`` when the group has no
     unique-peptide signal in this unit+label (stays identification-only).
     """
     abundances = []
@@ -331,21 +343,27 @@ def _protein_intensity(group_peps, group_accs, unit, label, pep_intensity, pep_a
     return sum(abundances)
 
 
-def pg_units_and_labels(map_info, sdrf_path) -> tuple[set[tuple[str, ...]], list[str]]:
+def pg_units_and_labels(map_info, sdrf_path, fraction_units=()) -> tuple[set[tuple[str, ...]], list[str]]:
     """Return the ``(grouped_runs units, labels)`` a pg build spans for this map.
 
     Used by :func:`build_pg_records` (which emits one row per (group, unit,
     label)) to decide how runs are grouped into quantification units and which
-    labels exist. A unit is the set of raw files aggregated together (SDRF
-    fractions grouped; else all runs as one unit); labels are the isobaric
-    channels or ``LFQ``.
+    labels exist. A unit is the set of raw files aggregated together: from the
+    SDRF, else the map list's ``fraction_group``, else each run on its own.
     """
-    all_runs = sorted({run for run, _ in map_info.values()})
-    # grouped_runs unit per run, from the SDRF (fractions grouped); else one unit.
-    run_to_grouped = fraction_groups_from_sdrf(sdrf_path)
-    units = {tuple(v) for v in run_to_grouped.values()} if run_to_grouped else {tuple(all_runs)}
     labels = sorted({label for _, label in map_info.values()})
-    return units, labels
+    run_to_grouped = fraction_groups_from_sdrf(sdrf_path)
+    if run_to_grouped:
+        return {tuple(v) for v in run_to_grouped.values()}, labels
+    all_runs = sorted({run for run, _ in map_info.values()})
+    covered = {run for unit in fraction_units for run in unit}
+    if len(all_runs) > 1 and covered != set(all_runs):
+        _log.warning(
+            "No SDRF and no complete fraction_group in the map list: each of the %d runs becomes its own "
+            "pg quantification unit. Pass an SDRF if runs are fractions of one sample.",
+            len(all_runs),
+        )
+    return set(fraction_units) | {(run,) for run in all_runs if run not in covered}, labels
 
 
 def _group_sequence_counts(accs, m: _ProteinMaps) -> tuple[set, set, dict]:
@@ -396,14 +414,36 @@ def _pg_group_fields(accs, m, acc_decoy, acc_qvalue, acc_gene, properties) -> di
     }
 
 
-def build_pg_records(cm, map_info, m: _ProteinMaps, pep_intensity: dict, sdrf_path, top: int) -> list[dict]:
+def _quant_fields(openms, rollup, method: str, label: str, reported: bool) -> dict:
+    """Intensity of one pg row: OpenMS' abundance in an input that reports them, else the roll-up."""
+    if not reported:
+        return {
+            "intensity": rollup,
+            "cv_params": [{"cv_name": "quantification_method", "cv_value": method}] if rollup is not None else None,
+        }
+    openms = openms or {}
+    extra = [{"intensity_name": method, "intensity_value": rollup}] if rollup is not None else []
+    extra += [{"intensity_name": name, "intensity_value": value} for name, value in openms.get("ratios", {}).items()]
+    abundance = openms.get("abundance")
+    return {
+        "intensity": abundance,
+        "cv_params": [{"cv_name": "quantification_method", "cv_value": _OPENMS_QUANT_METHOD}] if abundance is not None else None,
+        "additional_intensities": [{"label": label, "intensities": extra}] if extra else None,
+    }
+
+
+def build_pg_records(
+    cm, map_info, m: _ProteinMaps, pep_intensity: dict, sdrf_path, top: int, fraction_units=(), protein_quant=None
+) -> list[dict]:
     """Build pg records from already-accumulated maps + peptide intensities.
 
     Separated from the accumulation so both the multi-pass adapter and the
     streaming driver share the exact record-building logic.
     """
-    # One pg row per (protein group, unit, label): the isobaric channels, or "LFQ".
-    units, labels = pg_units_and_labels(map_info, sdrf_path)
+    # One pg row per (protein group, unit, label): the isobaric or MS1 channels, or "LFQ".
+    units, labels = pg_units_and_labels(map_info, sdrf_path, fraction_units)
+    protein_quant = protein_quant or {}
+    reported_units = {key[1] for key in protein_quant}
     acc_decoy, acc_qvalue, acc_gene, groups = _merge_protein_ids(cm)
     properties = _protein_properties(cm)
     quant_method = "unnormalized_unique_peptide_sum" if not top else f"unnormalized_unique_peptide_top{top}_sum"
@@ -421,22 +461,20 @@ def build_pg_records(cm, map_info, m: _ProteinMaps, pep_intensity: dict, sdrf_pa
         group_units = [unit for unit in units if group_runs.intersection(unit)]
         for unit in group_units:
             for label in labels:
-                intensity = _protein_intensity(peptide_seqs, group_accs, unit, label, pep_intensity, m.pep_to_accs, top)
+                rollup = _protein_intensity(peptide_seqs, group_accs, unit, label, pep_intensity, m.pep_to_accs, top)
+                unit_key = tuple(sorted(unit))
+                openms = protein_quant.get((frozenset(accs), unit_key, label))
                 # Without a PSM of the group in this unit, only a measured quantity
                 # (e.g. a transferred feature) is evidence: no null row.
-                if intensity is None and not psm_runs.intersection(unit):
+                if rollup is None and not (openms and openms["abundance"]) and not psm_runs.intersection(unit):
                     continue
-                cv_params = [{"cv_name": "quantification_method", "cv_value": quant_method}] if intensity is not None else None
                 records.append(
                     {
                         **group_fields,
                         "grouped_runs": list(unit),
                         "label": label,
-                        # interim unnormalized total; null when the group has no
-                        # unique-peptide signal in this unit+label (see cv_params).
-                        "intensity": intensity,
                         **counts,
-                        "cv_params": cv_params,
+                        **_quant_fields(openms, rollup, quant_method, label, unit_key in reported_units),
                     }
                 )
     return records

@@ -12,21 +12,19 @@ from __future__ import annotations
 
 import logging
 import re
+from collections import defaultdict
 from itertools import chain
 from typing import Optional
 
 from qpx.converters.channel_labels import normalize_label
+from qpx.converters.openms_consensus.channels import Ms1Channels, column_labels, label_state_params, list_value, ratio_name
 from qpx.converters.openms_consensus.modifications import localization_scores, to_modifications
 from qpx.converters.openms_consensus.protein_groups import ProteinGroupIndex, identification_identifier
 from qpx.converters.utils import mass_error_ppm, safe_float
 from qpx.core.cleavage import count_missed_cleavages
 from qpx.core.files import run_file_stem as _run_stem
 
-# OpenMS isobaric channel labels look like ``tmt6plex_126`` / ``itraq4plex_114``.
 _log = logging.getLogger(__name__)
-
-# OpenMS isobaric channel labels look like ``tmt6plex_126`` / ``itraq4plex_114``.
-_CHANNEL_RE = re.compile(r"(tmt|itraq)\d*plex?_(\d+[NC]?)", re.IGNORECASE)
 
 # Meta values OpenMS uses for the posterior error probability, best first.
 _PEP_META_KEYS = ("Posterior Error Probability_score", "PEP", "pep", "MS:1001493")
@@ -207,38 +205,9 @@ def _min_or(current: float | None, value: float | None) -> float | None:
     return value if current is None else min(current, value)
 
 
-def _canonical_channel(label: Optional[str]) -> str:
-    """Canonicalize an OpenMS map label to the QPX channel label.
-
-    ``tmt6plex_126`` -> ``TMT126``; ``itraq4plex_114`` -> ``ITRAQ114``. Falls back
-    to :func:`normalize_label`, then the raw string, so unknown labels are kept
-    rather than dropped.
-    """
-    if not label:
-        return "LFQ"
-    m = _CHANNEL_RE.search(str(label))
-    if m:
-        family = "TMT" if m.group(1).lower() == "tmt" else "ITRAQ"
-        return normalize_label(f"{family}{m.group(2).upper()}")
-    return normalize_label(str(label))
-
-
-def _map_label(raw_label) -> str:
-    """Resolve a consensusXML map label to a QPX channel, or ``LFQ``.
-
-    Detection is by the label itself, NOT ``experiment_type``: quantms/OpenMS
-    write ``experiment_type="label-free"`` even for isobaric runs (the maps still
-    carry ``tmt6plex_126`` / ``itraq4plex_114`` labels; label-free maps carry the
-    literal ``"label-free"``). Only a real isobaric channel pattern becomes a
-    channel; everything else (``"label-free"``, empty, unknown) is ``LFQ``.
-    """
-    return _canonical_channel(raw_label) if _CHANNEL_RE.search(str(raw_label or "")) else "LFQ"
-
-
 def consensus_channels(cm) -> set[str]:
-    """Canonical isobaric channels present in the consensusXML maps (excludes LFQ)."""
-    headers = cm.getColumnHeaders()
-    return {lab for i in headers if (lab := _map_label(headers[i].label)) != "LFQ"}
+    """Canonical isobaric and MS1-label channels of the consensusXML maps (excludes LFQ)."""
+    return set(column_labels(cm).values()) - {"LFQ"}
 
 
 def check_channels_vs_sdrf(cm, sdrf_path) -> list[str]:
@@ -378,9 +347,11 @@ def _confidence_by_run(
 def _group_subfeatures_by_run(cf, map_info: dict[int, tuple[str, str]]) -> dict[str, dict]:
     """Group a consensus feature's sub-feature intensities by run.
 
-    For isobaric, one run carries several channel maps (same rt); for label-free,
-    one map == one run. One entry per label — if a channel is linked twice, keep
-    the max rather than emit it twice (which would double-count downstream).
+    For isobaric and MS1-labelled, one run carries several channel maps; for
+    label-free, one map == one run. One entry per label — if a channel is linked
+    twice, keep the max rather than emit it twice (which would double-count
+    downstream). ``rt`` and ``mz`` come from the run's first element in map order,
+    the lightest measured partner of an MS1-label multiplet.
     """
     by_run: dict[str, dict] = {}
     for sub in cf.getFeatureList():
@@ -390,7 +361,7 @@ def _group_subfeatures_by_run(cf, map_info: dict[int, tuple[str, str]]) -> dict[
         run, label = map_info.get(sub.getMapIndex(), (None, None))
         if run is None:
             continue
-        entry = by_run.setdefault(run, {"rt": float(sub.getRT()), "labels": {}})
+        entry = by_run.setdefault(run, {"rt": float(sub.getRT()), "mz": float(sub.getMZ()), "labels": {}})
         entry["labels"][label] = max(entry["labels"].get(label, 0.0), intensity)
     return by_run
 
@@ -422,6 +393,7 @@ def consensus_features_to_records(
 
     resolve_run = _run_resolver(cm)
     removed, confidence = identification_context(cm)
+    ms1 = Ms1Channels(cm, column_runs(cm))
     records: list[dict] = []
     for cf in cm:
         records.extend(
@@ -434,6 +406,7 @@ def consensus_features_to_records(
                 resolve_run=resolve_run,
                 removed_pids=removed_same_peptide_ids(cf, removed),
                 confidence=confidence,
+                ms1=ms1,
             )
         )
     return records
@@ -469,12 +442,11 @@ def column_runs(cm) -> dict[int, str]:
 def feature_map_info(cm) -> dict[int, tuple[str, str]]:
     """Map index -> (run_file_name, label) from the consensusXML column headers.
 
-    Label comes from the map label itself (isobaric channel -> canonical, else
-    LFQ) — experiment_type is unreliable (quantms writes "label-free" for TMT).
+    Label comes from the map labels themselves (see :func:`column_labels`) —
+    experiment_type is unreliable (quantms writes "label-free" for TMT).
     """
-    headers = cm.getColumnHeaders()
     runs = column_runs(cm)
-    return {idx: (runs[idx], _map_label(headers[idx].label)) for idx in headers}
+    return {idx: (runs[idx], label) for idx, label in column_labels(cm).items()}
 
 
 def _protein_group_fields(pid, group_map, group_meta) -> dict:
@@ -686,6 +658,61 @@ def _feature_peptide_fields(cf, hit, enzyme) -> dict:
     }
 
 
+def _identified_labels_by_run(pids, map_info, cf_runs, resolve_run, ms1) -> dict[str, list[str]]:
+    """Per run, the labels whose partner was identified by MS/MS, lightest first."""
+    identified: dict[str, set[str]] = defaultdict(set)
+    for pid in pids:
+        run = _pid_run(pid, map_info, cf_runs, resolve_run)
+        for hit in pid.getHits():
+            label = ms1.identified_label(pid, hit, run)
+            if label:
+                identified[run].add(label)
+    return {run: [label for label in ms1.run_labels(run) if label in labels] for run, labels in identified.items()}
+
+
+def _evidence_ratios_by_run(cf, ms1) -> dict[str, list[dict]]:
+    """``MS1Label:evidence_ratio`` as ``ratio_<num>_<den>`` on the numerator label of each run.
+
+    OpenMS lists the reference channel, the lowest of the run, with a ratio of 1.0.
+    """
+    if not cf.metaValueExists("MS1Label:evidence_ratio"):
+        return {}
+    by_run: dict[str, dict[int, float]] = defaultdict(dict)
+    for run, channel, ratio in zip(
+        list_value(cf.getMetaValue("MS1Label:evidence_ratio_run")),
+        list_value(cf.getMetaValue("MS1Label:evidence_ratio_channel")),
+        list_value(cf.getMetaValue("MS1Label:evidence_ratio")),
+    ):
+        by_run[_run_stem(run)][int(channel)] = float(ratio)
+    entries: dict[str, list[dict]] = {}
+    for run, ratios in by_run.items():
+        reference = ms1.by_run_channel[(run, min(ratios))]
+        entries[run] = [
+            {
+                "label": ms1.by_run_channel[(run, channel)],
+                "intensities": [
+                    {"intensity_name": ratio_name(ms1.by_run_channel[(run, channel)], reference), "intensity_value": ratio}
+                ],
+            }
+            for channel, ratio in sorted(ratios.items())
+            if channel != min(ratios)
+        ]
+    return entries
+
+
+def _multiplet_fields(record: dict, entry: dict, lightest: str | None) -> dict:
+    """Position of an MS1-label multiplet row: its lightest measured partner.
+
+    ``calculated_mz`` is the unlabelled peptide's, so a mass error exists only when
+    that partner is the run's lightest channel.
+    """
+    measured_lightest = next(iter(entry["labels"]), None) == lightest
+    return {
+        "observed_mz": entry["mz"],
+        "mass_error_ppm": mass_error_ppm(record["calculated_mz"], entry["mz"]) if measured_lightest else None,
+    }
+
+
 def feature_records_for_cf(
     cf,
     map_info: dict[int, tuple[str, str]],
@@ -695,6 +722,7 @@ def feature_records_for_cf(
     resolve_run=None,
     removed_pids=None,
     confidence=None,
+    ms1=None,
 ) -> list[dict]:
     """Feature records for one consensus feature (one per run, channels as intensities).
 
@@ -703,6 +731,7 @@ def feature_records_for_cf(
     so ``pg_ids`` is left unset here. ``removed_pids`` are same-peptide
     identifications IDConflictResolver dropped from this feature; the best one of
     each run without a kept identification supplies that run's scan and confidence.
+    ``ms1`` (:class:`Ms1Channels`) adds the multiplet fields of MS1-labelled input.
     """
     pids = cf.getPeptideIdentifications()
     if not pids or not pids[0].getHits():
@@ -720,22 +749,29 @@ def feature_records_for_cf(
     protein_fields_by_run = _protein_groups_by_run(pids, map_info, cf_runs, group_map, group_meta, resolve_run=resolve_run)
     if any(fields != protein_fields for fields in protein_fields_by_run.values()):
         protein_fields = dict.fromkeys(protein_fields)
+    identified = _identified_labels_by_run(pids, map_info, cf_runs, resolve_run, ms1) if ms1 else {}
+    ratios = _evidence_ratios_by_run(cf, ms1) if ms1 else {}
     records: list[dict] = []
     for run, entry in by_run.items():
         intensities = [{"label": label, "intensity": inten} for label, inten in entry["labels"].items()]
         posterior_error_probability, peptide_qvalue = confidence_by_run.get(run, (None, None))
         run_protein_fields = protein_fields_by_run.get(run, protein_fields)
-        records.append(
-            {
-                **peptide_fields,
-                "run_file_name": run,
-                "scan": scan_by_run.get(run, []),
-                "rt": entry["rt"],
-                "intensities": intensities,
-                "posterior_error_probability": posterior_error_probability,
-                "peptide_qvalue": peptide_qvalue,
-                **run_protein_fields,
-                **_feature_identification_fields(run, run_protein_fields, evidence_by_run, all_positions),
-            }
-        )
+        record = {
+            **peptide_fields,
+            "run_file_name": run,
+            "scan": scan_by_run.get(run, []),
+            "rt": entry["rt"],
+            "intensities": intensities,
+            "posterior_error_probability": posterior_error_probability,
+            "peptide_qvalue": peptide_qvalue,
+            **run_protein_fields,
+            **_feature_identification_fields(run, run_protein_fields, evidence_by_run, all_positions),
+        }
+        if ms1:
+            lightest = next(iter(ms1.run_labels(run)), None)
+            record.update(_multiplet_fields(record, entry, lightest))
+            record["identified_labels"] = identified.get(run)
+            record["additional_intensities"] = ratios.get(run)
+            record["cv_params"] = label_state_params(hit)
+        records.append(record)
     return records

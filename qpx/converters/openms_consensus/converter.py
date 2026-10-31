@@ -1,8 +1,8 @@
 """Orchestrate consensusXML (+ SDRF) -> a QPX dataset (feature/psm/pg [+ run/sample]).
 
-Interim quantms path while OpenMS ``-out_qpx`` is pre-1.1. pg carries an interim
-unnormalized unique-peptide-sum intensity (until ``-out_qpx`` provides the real
-quant). run/sample come from the SDRF (reusing :class:`SdrfConverter`) when an
+Interim quantms path while OpenMS ``-out_qpx`` is pre-1.1. pg carries the protein
+abundance OpenMS recorded in the file, else an unnormalized unique-peptide sum.
+run/sample come from the SDRF (reusing :class:`SdrfConverter`) when an
 SDRF is provided; when it is, the consensusXML channels are also checked against
 the SDRF ``comment[label]`` and mismatches are logged as warnings.
 """
@@ -173,8 +173,9 @@ class OpenMSConsensusConverter(BaseOrchestrator):  # pylint: disable=too-few-pub
         option.
 
         ``structures`` selects which of feature/psm/pg/run/sample to emit. pg
-        carries an interim unnormalized unique-peptide-sum intensity; ``pg_top``
-        bounds the peptides used (0 = all; 3 mirrors ProteomicsLFQ/IsobaricWorkflow).
+        carries the protein abundance OpenMS recorded in the file, else an
+        unnormalized unique-peptide sum, which ``pg_top`` bounds (0 = all). The sum
+        stays an additional intensity beside OpenMS' value.
 
         ``streaming`` picks the consensusXML reader: ``None`` (default) auto-selects
         — the low-memory streaming reader when any input is above ``_STREAM_THRESHOLD_BYTES``
