@@ -8,8 +8,9 @@ from pathlib import Path
 import duckdb
 
 from qpx.core.data.schema import ValidationIssue, ValidationResult
-from qpx.core.data.validation import _LINK_CONTEXT_MESSAGE, _LINK_MEMBERSHIP_MESSAGE, _LINK_SQL
+from qpx.core.data.validation import _LINK_CONTEXT_MESSAGE, _LINK_MEMBERSHIP_MESSAGE, _LINK_SQL, _issue
 from qpx.core.files import sha256_file
+from qpx.core.sql import sql_build
 
 _log = logging.getLogger("qpx.dataset")
 
@@ -48,60 +49,219 @@ _FEATURE_PSM_INVERSE_DESYNC_SQL = """
                     ORDER BY f.feature_id, p.psm_id
                     """
 
-_GROUPED_RUN_SAMPLE_MAPPING_SQL = """
-                WITH numbered_pg AS MATERIALIZED (
-                    SELECT ROW_NUMBER() OVER () AS pg_row_id, *
-                    FROM pg
-                ),
-                pg_labels AS (
-                    -- pg is flattened since 1.1: scalar p.label (no intensities
-                    -- list). ID-only rows (null label) have no sample to resolve.
-                    SELECT p.pg_row_id,
-                           p.anchor_protein,
-                           p.grouped_runs,
-                           p.label
-                    FROM numbered_pg p
-                    WHERE p.label IS NOT NULL
-                ),
-                sample_matches AS (
-                    SELECT pl.pg_row_id,
-                           pl.label,
-                           rs.sample_accession
-                    FROM pg_labels pl
-                    CROSS JOIN UNNEST(list_distinct(pl.grouped_runs)) AS _g(run_file_name)
-                    JOIN run r USING (run_file_name)
-                    CROSS JOIN UNNEST(r.samples) AS _s(rs)
-                    WHERE rs.label = pl.label
+# The distinct pg.grouped_runs elements that run.parquet does not list. pg is
+# reduced to its distinct runs before the anti-join: a lateral UNNEST per pg row
+# with a correlated lookup each ran out of memory on a fractionated TMT pg.
+_DANGLING_GROUPED_RUN_SQL = """
+                WITH pg_runs AS (
+                    SELECT DISTINCT grouped_run
+                    FROM (SELECT UNNEST(grouped_runs) AS grouped_run FROM pg)
+                    WHERE grouped_run IS NOT NULL
                 )
-                SELECT pl.anchor_protein,
-                       pl.grouped_runs,
-                       pl.label,
-                       COUNT(DISTINCT sm.sample_accession) AS sample_count,
-                       LIST(DISTINCT sm.sample_accession)
-                           FILTER (WHERE sm.sample_accession IS NOT NULL) AS samples
-                FROM pg_labels pl
-                LEFT JOIN sample_matches sm
-                  ON pl.pg_row_id = sm.pg_row_id
-                 AND pl.label = sm.label
-                GROUP BY pl.pg_row_id,
-                         pl.anchor_protein,
-                         pl.grouped_runs,
-                         pl.label
-                HAVING COUNT(DISTINCT sm.sample_accession) != 1
-                ORDER BY pl.anchor_protein, pl.label
+                SELECT g.grouped_run
+                FROM pg_runs g
+                WHERE NOT EXISTS (SELECT 1 FROM run r WHERE r.run_file_name = g.grouped_run)
+                ORDER BY g.grouped_run
                 """
+
+# run.samples as one row per (run, channel). It is unnested in the select list of
+# its own subquery: an UNNEST(r.samples) placed after a join to run is evaluated
+# for every joined row, and under DuckDB 2.0 that made the pg sample-mapping check
+# spill gigabytes on a fractionated TMT dataset of a few MB.
+_RUN_CHANNELS_SQL = """
+                    SELECT run_file_name, sc.label AS label, sc.sample_accession AS sample_accession
+                    FROM (SELECT run_file_name, UNNEST(samples) AS sc FROM run)
+"""
+
+# pg is flattened since 1.1 (scalar label). Every protein group of a plex repeats
+# the same (grouped runs, label) unit, so each distinct unit is resolved once
+# instead of once per pg row. ID-only rows (null label) have no sample to resolve.
+_GROUPED_RUN_SAMPLE_MAPPING_SQL = sql_build(
+    """
+                WITH units AS MATERIALIZED (
+                    SELECT ROW_NUMBER() OVER () AS unit_id, *
+                    FROM (
+                        SELECT list_sort(list_distinct(grouped_runs)) AS unit_runs,
+                               label,
+                               COUNT(*) AS pg_rows,
+                               MIN(anchor_protein) AS example_protein
+                        FROM pg
+                        WHERE label IS NOT NULL
+                        GROUP BY ALL
+                    )
+                ),
+                unit_members AS (
+                    SELECT unit_id, label, UNNEST(unit_runs) AS run_file_name
+                    FROM units
+                ),
+                run_channels AS ($run_channels),
+                unit_samples AS (
+                    SELECT um.unit_id, rc.sample_accession
+                    FROM unit_members um
+                    JOIN run_channels rc
+                      ON rc.run_file_name = um.run_file_name
+                     AND rc.label = um.label
+                )
+                SELECT u.example_protein,
+                       u.unit_runs,
+                       u.label,
+                       u.pg_rows,
+                       COUNT(DISTINCT us.sample_accession) AS sample_count,
+                       list_sort(LIST(DISTINCT us.sample_accession)
+                           FILTER (WHERE us.sample_accession IS NOT NULL)) AS samples
+                FROM units u
+                LEFT JOIN unit_samples us USING (unit_id)
+                GROUP BY u.unit_id, u.example_protein, u.unit_runs, u.label, u.pg_rows
+                HAVING COUNT(DISTINCT us.sample_accession) != 1
+                ORDER BY u.example_protein, u.label, u.unit_runs
+                """,
+    run_channels=_RUN_CHANNELS_SQL,
+)
+
+
+# Each distinct (run, label) of the feature intensities, with the number of
+# intensities that carry it, resolved once against the run's channels. Runs that
+# are not in the run view are left to the run_file_name check.
+_FEATURE_LABEL_SAMPLE_SQL = sql_build(
+    """
+                WITH units AS MATERIALIZED (
+                    SELECT ROW_NUMBER() OVER () AS unit_id, *
+                    FROM (
+                        SELECT run_file_name, i.label AS label, COUNT(*) AS n_values
+                        FROM (SELECT run_file_name, UNNEST(intensities) AS i FROM feature)
+                        GROUP BY ALL
+                    )
+                    WHERE run_file_name IN (SELECT run_file_name FROM run)
+                ),
+                run_channels AS ($run_channels),
+                unit_samples AS (
+                    SELECT u.unit_id, rc.sample_accession
+                    FROM units u
+                    JOIN run_channels rc
+                      ON rc.run_file_name = u.run_file_name
+                     AND rc.label = u.label
+                )
+                SELECT u.run_file_name,
+                       u.label,
+                       u.n_values,
+                       COUNT(DISTINCT us.sample_accession) AS sample_count,
+                       list_sort(LIST(DISTINCT us.sample_accession)
+                           FILTER (WHERE us.sample_accession IS NOT NULL)) AS samples
+                FROM units u
+                LEFT JOIN unit_samples us USING (unit_id)
+                GROUP BY u.unit_id, u.run_file_name, u.label, u.n_values
+                HAVING COUNT(DISTINCT us.sample_accession) != 1
+                ORDER BY u.run_file_name, u.label
+                """,
+    run_channels=_RUN_CHANNELS_SQL,
+)
+
+# Feature rows that list a (non-null) label more than once in intensities.
+_DUPLICATE_FEATURE_LABEL_SQL = """
+                SELECT COUNT(*)
+                FROM (SELECT list_transform(intensities, lambda x: x.label) AS labels FROM feature)
+                WHERE len(list_distinct(labels)) < len(list_filter(labels, lambda x: x IS NOT NULL))
+                """
+
+# Views whose rows name the acquisition run they were measured in.
+_RUN_KEYED_VIEWS = ("feature", "psm", "mz")
+
+# Per view: the distinct run_file_name values that run.parquet does not list,
+# with the number of rows that carry each. The view is reduced to its distinct
+# values before the anti-join, so memory follows the number of runs.
+_DANGLING_RUN_FILE_NAME_SQL = {
+    view: sql_build(
+        """
+                WITH view_runs AS (
+                    SELECT run_file_name, COUNT(*) AS n_rows
+                    FROM $view
+                    WHERE run_file_name IS NOT NULL
+                    GROUP BY run_file_name
+                )
+                SELECT v.run_file_name, v.n_rows
+                FROM view_runs v
+                WHERE NOT EXISTS (SELECT 1 FROM run r WHERE r.run_file_name = v.run_file_name)
+                ORDER BY v.run_file_name
+                """,
+        view=view,
+    )
+    for view in _RUN_KEYED_VIEWS
+}
+
+# How many example values an aggregated issue message lists.
+_MAX_EXAMPLES = 5
+
+
+def _examples(items: list[str]) -> str:
+    """The first few of the formatted *items*, for an issue message that counts them all."""
+    shown = ", ".join(items[:_MAX_EXAMPLES])
+    return f"{shown}, ..." if len(items) > _MAX_EXAMPLES else shown
+
+
+def _feature_label_issues(duplicated: int, units: list[tuple]) -> list[ValidationIssue]:
+    """Issues for feature labels that list a sample twice or name no single sample.
+
+    *units* are the (run_file_name, label, n_values, sample_count, samples)
+    rows of the (run, label) pairs that resolve to no sample or to several.
+    """
+    issues = []
+    if duplicated:
+        message = (
+            f"{duplicated} feature row(s) list a label more than once in intensities; a label names one sample, "
+            "which would receive several quantities from one row"
+        )
+        issues.append(_issue("feature", "duplicate_intensity_label", "error", "intensities", message))
+    unresolved = [unit for unit in units if unit[3] == 0]
+    if unresolved:
+        issues.append(_label_pair_issue(unresolved, "match no sample_channel label"))
+    ambiguous = [unit for unit in units if unit[3] > 1]
+    if ambiguous:
+        issues.append(_label_pair_issue(ambiguous, "match the labels of several samples"))
+    return issues
+
+
+def _label_pair_issue(units: list[tuple], what: str) -> ValidationIssue:
+    """One ambiguous_label_sample issue for the (run, label, n_values, sample_count, samples) *units*."""
+    examples = [f"({run!r}, {label!r})" + (f" -> {samples!r}" if count > 1 else "") for run, label, _, count, samples in units]
+    message = (
+        f"{sum(unit[2] for unit in units)} feature intensities in {len(units)} (run_file_name, label) pair(s) "
+        f"{what} of their run ({_examples(examples)}); each label must name exactly one sample in run.samples"
+    )
+    return _issue("feature", "ambiguous_label_sample", "error", "intensities", message)
+
+
+def _view_columns(engine, view: str) -> set[str]:
+    """Column names of a registered view."""
+    return {row[0] for row in engine.execute(sql_build('DESCRIBE "$view"', view=view)).fetchall()}
+
+
+def _skipped_issue(structure: str, check: str, what: str, exc: duckdb.Error, *, strict: bool) -> ValidationIssue:
+    """The issue for a cross-structure check that could not run: an error under strict validation."""
+    reason = _skipped_check_reason(exc)
+    _log.warning("%s could not run (%s): %s", what, reason, exc)
+    return _issue(structure, check, "error" if strict else "warning", None, f"{what} could not run ({reason}): {exc}")
 
 
 def _skipped_check_reason(exc: duckdb.Error) -> str:
     """Why a cross-structure check could not run, for its skipped issue.
 
-    An I/O failure says nothing about the data: DuckDB spills large queries to
-    its temp directory (``.tmp`` under the working directory by default), so a
-    read-only working directory fails the query (bigbio/qpx#300).
+    Only a binder or catalog error (a view or column the check reads is missing
+    or has another type) points at the data. DuckDB spills large queries to its
+    temp directory (``.tmp`` under the working directory by default): a
+    read-only working directory fails the query with an I/O error
+    (bigbio/qpx#300), and a query that outgrows the memory limit and the temp
+    space fails with an out-of-memory error.
     """
+    if isinstance(exc, duckdb.OutOfMemoryException):
+        return (
+            "DuckDB ran out of memory or temp space, which says nothing about the data; "
+            "raise the memory limit (Dataset(duckdb_memory=...)) or free temp space"
+        )
     if isinstance(exc, duckdb.IOException):
         return "I/O error; if DuckDB could not create its temp directory, run from a writable directory"
-    return "possible schema drift"
+    if isinstance(exc, (duckdb.BinderException, duckdb.CatalogException)):
+        return "possible schema drift"
+    return "query error"
 
 
 def _feature_psm_references(engine):
@@ -303,33 +463,53 @@ class _DatasetValidationMixin:
             Mapping of structure name to its validation result.
         """
         targets = structures or self.available_structures
-        results: dict[str, ValidationResult] = {}
-        for name in targets:
-            struct = self._structures.get(name)
-            if struct is None:
-                result = ValidationResult(structure=name)
-                result.issues.append(
-                    ValidationIssue(
-                        structure=name,
-                        check="missing_structure",
-                        severity="error",
-                        column=None,
-                        message=f"Structure '{name}' not found in dataset at {self.path}",
-                    )
-                )
-                results[name] = result
-            else:
-                results[name] = struct.validate(strict=strict)
-
+        results = {name: self._validate_structure(name, strict=strict) for name in targets}
         present = {name for name in results if self._structures.get(name) is not None}
+        self._check_run_resolution(results, present, strict=strict)
+        self._check_cross_references(results, present, strict=strict)
+        return results
 
-        # Cross-structure invariant: every pg.grouped_runs element must be a
-        # real run.run_file_name. A grouped run that names no acquisition run is
-        # dropped by every sample-joined view, so flag it as an error on pg.
-        if "pg" in present and self.run is not None:
+    def _validate_structure(self, name: str, *, strict: bool) -> ValidationResult:
+        """Validate one registered structure, or report it missing."""
+        struct = self._structures.get(name)
+        if struct is not None:
+            return struct.validate(strict=strict)
+        result = ValidationResult(structure=name)
+        result.issues.append(
+            ValidationIssue(
+                structure=name,
+                check="missing_structure",
+                severity="error",
+                column=None,
+                message=f"Structure '{name}' not found in dataset at {self.path}",
+            )
+        )
+        return result
+
+    def _check_run_resolution(self, results: dict[str, ValidationResult], present: set[str], *, strict: bool) -> None:
+        """Cross-structure checks that resolve rows through the run view.
+
+        A row that names no acquisition run, or a label that names no single
+        sample of its runs, is dropped (or counted twice) by every sample-joined
+        view, so these findings are errors.
+        """
+        if self.run is None:
+            return
+        # Every pg.grouped_runs element must be a real run.run_file_name, and each
+        # pg label must name exactly one sample across its grouped runs.
+        if "pg" in present:
             self._check_grouped_runs_referential(results["pg"], strict=strict)
             self._check_grouped_runs_sample_mapping(results["pg"], strict=strict)
+        # feature, psm and mz rows each name the run they were measured in, and
+        # each feature label must name exactly one sample of that run.
+        for view in _RUN_KEYED_VIEWS:
+            if view in present:
+                self._check_run_file_names(view, results[view], strict=strict)
+        if "feature" in present:
+            self._check_feature_label_samples(results["feature"], strict=strict)
 
+    def _check_cross_references(self, results: dict[str, ValidationResult], present: set[str], *, strict: bool) -> None:
+        """Cross-structure checks of the id links between views."""
         # Cross-structure invariant: the optional feature<->psm cross-references
         # must resolve. Every non-null psm.feature_id must name a real
         # feature.feature_id, and every feature.psm_ids element a real psm.psm_id.
@@ -349,7 +529,50 @@ class _DatasetValidationMixin:
             if view in present:
                 self._check_pg_link(view, results[view], strict=strict)
 
-        return results
+    def _check_run_file_names(self, view: str, result: ValidationResult, *, strict: bool) -> None:
+        """Flag ``run_file_name`` values of *view* that are not in run.run_file_name.
+
+        Each distinct value is looked up once. The check is skipped when the view
+        has no ``run_file_name`` column: it is optional in mz, and a missing
+        required column is already reported by the schema check.
+        """
+        try:
+            if "run_file_name" not in _view_columns(self._engine, view):
+                return
+            rows = self._engine.execute(_DANGLING_RUN_FILE_NAME_SQL[view]).fetchall()
+        except duckdb.Error as exc:
+            what = f"{view} run_file_name referential check"
+            result.issues.append(_skipped_issue(view, "referential_check_skipped", what, exc, strict=strict))
+            return
+        if not rows:
+            return
+        result.issues.append(
+            _issue(
+                view,
+                "dangling_run_file_name",
+                "error",
+                "run_file_name",
+                f"{sum(n for _, n in rows)} {view} row(s) name {len(rows)} run_file_name value(s) that are not "
+                f"in run.parquet ({_examples([repr(name) for name, _ in rows])}); these rows resolve to no run or sample",
+            )
+        )
+
+    def _check_feature_label_samples(self, result: ValidationResult, *, strict: bool) -> None:
+        """Require each feature label to name exactly one sample of its run, once per row.
+
+        ``run.samples[].label`` is the canonical channel name and must match
+        ``feature.intensities[].label`` exactly (see the data-model spec). Each
+        distinct (run_file_name, label) pair is resolved once; rows of a run that
+        is not in the run view are left to :meth:`_check_run_file_names`.
+        """
+        try:
+            duplicated = self._engine.execute(_DUPLICATE_FEATURE_LABEL_SQL).fetchall()[0][0]
+            units = self._engine.execute(_FEATURE_LABEL_SAMPLE_SQL).fetchall()
+        except duckdb.Error as exc:
+            what = "feature label sample-mapping check"
+            result.issues.append(_skipped_issue("feature", "sample_mapping_check_skipped", what, exc, strict=strict))
+            return
+        result.issues.extend(_feature_label_issues(duplicated, units))
 
     def _check_pg_link(self, view: str, result: ValidationResult, *, strict: bool = False) -> None:
         """Flag site/proteoform links that do not resolve, or resolve to another context.
@@ -486,19 +709,12 @@ class _DatasetValidationMixin:
         """Flag pg.grouped_runs values that are not present in run.run_file_name.
 
         Appends an ``error`` issue to *pg_result* for each dangling grouped-run
-        token. Any query failure (e.g. missing columns) is swallowed so schema
-        validation is never masked by this referential check.
+        token; each distinct token is looked up once. A query failure (e.g. a
+        missing column) does not mask schema validation: it is reported as
+        ``referential_check_skipped``.
         """
         try:
-            rows = self._engine.execute(
-                """
-                SELECT DISTINCT gr AS grouped_run
-                FROM pg, UNNEST(pg.grouped_runs) AS _g(gr)
-                WHERE gr IS NOT NULL
-                  AND NOT EXISTS (SELECT 1 FROM run r WHERE r.run_file_name = gr)
-                ORDER BY grouped_run
-                """
-            ).fetchall()
+            rows = self._engine.execute(_DANGLING_GROUPED_RUN_SQL).fetchall()
         except duckdb.Error as exc:
             # Do not fail silently: a query error here can mean genuine schema
             # drift (a referenced pg/run column was removed/renamed), which is how
@@ -532,7 +748,12 @@ class _DatasetValidationMixin:
             )
 
     def _check_grouped_runs_sample_mapping(self, pg_result: ValidationResult, *, strict: bool) -> None:
-        """Require each PG intensity label to resolve to exactly one sample."""
+        """Require each PG label to resolve to exactly one sample across its grouped runs.
+
+        Each distinct (grouped-run set, label) unit is resolved once, and a unit
+        that resolves to no sample or to several is reported once, with the
+        number of pg rows that share it.
+        """
         try:
             rows = self._engine.execute(_GROUPED_RUN_SAMPLE_MAPPING_SQL).fetchall()
         except duckdb.Error as exc:
@@ -550,7 +771,7 @@ class _DatasetValidationMixin:
             )
             return
 
-        for anchor_protein, grouped_runs, label, sample_count, samples in rows:
+        for example_protein, grouped_runs, label, pg_rows, sample_count, samples in rows:
             pg_result.issues.append(
                 ValidationIssue(
                     structure="pg",
@@ -558,10 +779,10 @@ class _DatasetValidationMixin:
                     severity="error",
                     column="grouped_runs",
                     message=(
-                        f"PG {anchor_protein!r} label {label!r} across "
-                        f"grouped_runs={grouped_runs!r} resolves to "
-                        f"{sample_count} samples ({samples or []!r}); exactly "
-                        "one sample is required"
+                        f"{pg_rows} pg row(s) with label {label!r} across "
+                        f"grouped_runs={grouped_runs!r} (e.g. PG {example_protein!r}) "
+                        f"resolve to {sample_count} samples ({samples or []!r}); "
+                        "exactly one sample is required"
                     ),
                 )
             )
