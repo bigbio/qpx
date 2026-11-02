@@ -318,9 +318,7 @@ def test_run_samples_without_the_later_nullable_members_stay_valid():
     expected = RunSchema.get_arrow_schema().field("samples").type
 
     def type_issues(samples_type):
-        table = pa.table(
-            {"run_accession": ["r"], "run_file_name": ["r"], "samples": pa.nulls(1, type=pa.list_(samples_type))}
-        )
+        table = pa.table({"run_accession": ["r"], "run_file_name": ["r"], "samples": pa.nulls(1, type=pa.list_(samples_type))})
         return [issue for issue in RunSchema.validate_full(table).issues if issue.check == "type_mismatch"]
 
     assert expected.value_type.num_fields > written.num_fields
