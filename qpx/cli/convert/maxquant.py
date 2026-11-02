@@ -60,7 +60,7 @@ def _maxquant_structures(structures, msms_file, evidence_file, protein_groups_fi
 )
 @click.option(
     "--sdrf-file",
-    help="SDRF metadata file (required for feature and PG)",
+    help="SDRF metadata file (required for feature and PG; its fixed modifications are added to PSM and feature peptidoforms)",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
 )
 @_output_folder_option

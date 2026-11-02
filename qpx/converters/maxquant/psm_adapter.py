@@ -71,6 +71,7 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
         chunksize: int = 500_000,
         spectral_data: bool = False,
         creator: str = "maxquant",
+        sdrf_path: Optional[str] = None,
     ) -> None:
         """Run the msms.txt -> psm.parquet conversion.
 
@@ -80,7 +81,12 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
             chunksize: Rows per batch.
             spectral_data: Whether to include spectral arrays.
             creator: Creator tag in Parquet metadata.
+            sdrf_path: Optional SDRF whose fixed modifications are added to
+                the peptidoforms (MaxQuant leaves them out of
+                ``Modified sequence``).
         """
+        self._fixed_mods = self._load_fixed_modifications(sdrf_path)
+
         # Step 1: Load msms.txt into DuckDB
         self._load_msms(msms_path)
 
@@ -200,6 +206,7 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
         sequence = str(row.get(r.get("sequence", "Sequence"), ""))
         peptidoform = to_proforma(
             str(row.get(r.get("modified_sequence", "Modified sequence"), "")),
+            self._fixed_mods,
         )
 
         # Parse phospho site localization probabilities (if available)

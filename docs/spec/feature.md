@@ -88,9 +88,9 @@ These fields are shared with the PSM view and describe the peptide identificatio
 
 | Field | Description | Type | Required |
 |-------|-------------|------|----------|
-| `pg_accessions` | Protein group accessions of all proteins that the peptide maps to | array[string], null | no |
+| `pg_accessions` | Full membership of the peptide's protein group, the same accessions as the group's `pg.pg_accessions`; null under the same conditions as `anchor_protein` | array[string], null | no |
 | `anchor_protein` | One protein accession that represents the protein group; null when no protein mapping was performed (converters normalize blank/whitespace to null) | string, null | yes |
-| `unique` | Whether the peptide maps uniquely to a single protein group | bool, null | no |
+| `unique` | True when the peptide resolves to a protein group of exactly one protein; false when that group has several members, or when the peptide is shared and the producer assigned it to one of its groups (MaxQuant's razor group); null when the group is unresolved | bool, null | no |
 | `pg_positions` | Peptide start and end positions within each protein in the protein group | array[struct], null | optional |
 | `pg_global_qvalue` | Global q-value of the protein group at the experiment level | float64, null | optional |
 | `gg_accessions` | Gene accessions associated with the protein group | array[string], null | optional |
@@ -105,7 +105,7 @@ Each entry in `pg_positions` contains:
 | `end` | 1-based end position of the peptide in the protein sequence (inclusive) | `int` |
 
 !!! note "Gene and protein inference data"
-    Gene accessions, gene names, and unique peptide indicators are optionally included in the feature file for convenience. Protein-level scores are stored in the [Protein Group View](pg.md). When `pg_ids` is populated, join it directly to `pg.pg_id`. Otherwise use the semantic protein mapping (for example, `anchor_protein`) and require `feature.run_file_name` to be a member of `pg.grouped_runs`.
+    Gene accessions, gene names, and unique peptide indicators are optionally included in the feature file for convenience. Protein-level scores are stored in the [Protein Group View](pg.md). When `pg_ids` is populated, join it directly to `pg.pg_id`. Otherwise use the computed softlink `Dataset.link_feature_pg()`, which matches the canonical `pg_accessions` membership (not `anchor_protein`, which several groups can share), requires `feature.run_file_name` to be a member of `pg.grouped_runs`, and matches a label the feature carries (see [Protein group semantics](pg.md#protein-group-semantics)).
 
 !!! info "Optional vs nullable"
     `pg_global_qvalue` and `peptide_qvalue` are **optional** — the column may be absent from the file entirely if the search engine does not provide that q-value. When present, individual values may be null.

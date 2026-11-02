@@ -15,6 +15,7 @@ from qpx.converters.ptm import (
     mass_to_unimod,
     modification_tag,
     name_to_unimod,
+    unimod_names,
 )
 
 
@@ -185,6 +186,19 @@ class TestNameToUnimod:
 
     def test_unknown_name(self):
         assert name_to_unimod("SomeNewMod (K)", "K") is None
+
+
+class TestUnimodNames:
+    @pytest.mark.parametrize(
+        ("accession", "name"),
+        [(4, "carbamidomethyl"), (737, "tmt6plex"), (2016, "tmtpro"), (214, "itraq4plex"), (259, "label:13c(6)15n(2)")],
+    )
+    def test_names_of_accession(self, accession, name):
+        assert name in unimod_names(accession)
+
+    def test_unknown_and_openms_entries_have_no_names(self):
+        assert unimod_names(99900) == frozenset()
+        assert unimod_names(10**6) == frozenset()
 
 
 class TestModificationTag:

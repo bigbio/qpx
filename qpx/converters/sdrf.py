@@ -16,7 +16,12 @@ import pandas as pd
 from qpx.converters.base import BaseConverter
 from qpx.converters.channel_labels import normalize_label
 from qpx.core.files import run_file_stem
-from qpx.core.sdrf import get_name_from_complex_sdrf_value, parse_sdrf_kv, validate_sdrf_data_files
+from qpx.core.sdrf import (
+    get_name_from_complex_sdrf_value,
+    parse_modification_parameters,
+    parse_sdrf_kv,
+    validate_sdrf_data_files,
+)
 from qpx.writers.run import RunWriter
 from qpx.writers.sample import SampleWriter
 
@@ -399,7 +404,7 @@ class SdrfConverter(BaseConverter):
         run_groups = sdrf_df.groupby("_run_file")
 
         # Parse modification parameters (same across all rows usually)
-        mod_params = self._parse_modification_params(sdrf_df)
+        mod_params = parse_modification_parameters(sdrf_df)
 
         records: list[dict] = []
         for run_file, group in run_groups:
@@ -512,41 +517,3 @@ class SdrfConverter(BaseConverter):
             )
 
         return entries
-
-    # ------------------------------------------------------------------
-    # Modification parsing
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _parse_modification_params(sdrf_df: pd.DataFrame) -> list[dict] | None:
-        """Extract modification parameters from SDRF comment columns."""
-        mod_cols = [c for c in sdrf_df.columns if c.startswith("comment[modification parameter")]
-        if not mod_cols:
-            return None
-
-        results: list[dict] = []
-        for col in mod_cols:
-            raw = sdrf_df[col].dropna().iloc[0] if not sdrf_df[col].dropna().empty else None
-            if not raw:
-                continue
-            kv = parse_sdrf_kv(raw)
-
-            accession = kv.get("AC", "")
-            name = kv.get("NT", "")
-            if not accession and not name:
-                continue
-            is_fixed = kv.get("MT", "").lower() in ("fixed", "fix")
-            position = kv.get("PP", None)
-            target_aa = kv.get("TA", None)
-
-            results.append(
-                {
-                    "accession": accession,
-                    "name": name,
-                    "fixed": is_fixed,
-                    "position": position,
-                    "target_amino_acid": target_aa,
-                }
-            )
-
-        return results if results else None

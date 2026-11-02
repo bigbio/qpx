@@ -239,6 +239,20 @@ def name_to_unimod(name: str, residue: Optional[str] = None, terminus: Optional[
     return None
 
 
+@lru_cache(maxsize=1)
+def _names_by_accession() -> dict[int, frozenset[str]]:
+    names: dict[int, set[str]] = {}
+    for name, sites in _unimod_index().by_name.items():
+        for site in sites:
+            names.setdefault(site.accession, set()).add(name)
+    return {accession: frozenset(found) for accession, found in names.items()}
+
+
+def unimod_names(accession: int) -> frozenset[str]:
+    """Lower-cased Unimod title, full name and synonyms of a Unimod *accession*; empty when it is unknown."""
+    return _names_by_accession().get(accession, frozenset())
+
+
 @lru_cache(maxsize=4096)
 def modification_tag(name: str, residue: Optional[str] = None, terminus: Optional[str] = None) -> str:
     """ProForma tag for a vendor modification name at *residue* / *terminus*.

@@ -17,7 +17,7 @@ The PSM (Peptide Spectrum Match) view captures spectrum-level identification res
 | QPX Field | MaxQuant | DIA-NN | FragPipe |
 | --- | --- | --- | --- |
 | `sequence` | Sequence | Stripped.Sequence | Peptide |
-| `peptidoform` | Modified sequence | Modified.Sequence | Modified Peptide |
+| `peptidoform` | Modified sequence, plus the SDRF fixed modifications MaxQuant leaves out | Modified.Sequence | Modified Peptide |
 | `charge` | Charge | Precursor.Charge | Charge |
 | `posterior_error_probability` | PEP | PEP | --- |
 | `is_decoy` | Reverse | --- | --- |
@@ -38,7 +38,7 @@ The Feature view captures quantified peptide features with intensity data. Featu
 | QPX Field | MaxQuant | DIA-NN | FragPipe | QuantMS MSstats |
 | --- | --- | --- | --- | --- |
 | `sequence` | Sequence | Stripped.Sequence | Peptide | PeptideSequence (unmodified) |
-| `peptidoform` | Modified sequence | Modified.Sequence | Modified Peptide | PeptideSequence (ProForma-normalized) |
+| `peptidoform` | Modified sequence, plus the SDRF fixed modifications MaxQuant leaves out | Modified.Sequence | Modified Peptide | PeptideSequence (ProForma-normalized) |
 | `charge` | Charge | Precursor.Charge | --- | Charge / PrecursorCharge |
 | `is_decoy` | Reverse | Decoy (`--report-decoys`), else accession prefix | --- | ProteinName prefix |
 | `peptide_qvalue` | --- | --- | --- | --- |
@@ -49,12 +49,14 @@ The Feature view captures quantified peptide features with intensity data. Featu
 | `rt_stop` | --- | RT.Stop | --- | --- |
 | `predicted_rt` | --- | Predicted.RT | --- | --- |
 | `intensities` | Intensity | Precursor.Quantity | Intensity | Intensity + Channel |
-| `pg_accessions` | Proteins | Protein.Group (`DECOY_`-prefixed on decoy rows) | --- | ProteinName |
-| `anchor_protein` | --- | First Protein.Group accession | --- | First ProteinName accession |
+| `pg_accessions` | `Protein IDs` of the group in `Protein group IDs` (the razor group of a shared peptide); `Leading proteins` without proteinGroups.txt | Protein.Group (`DECOY_`-prefixed on decoy rows) | --- | ProteinName |
+| `anchor_protein` | First `Majority protein IDs` entry of that group; `Leading razor protein` without proteinGroups.txt | First Protein.Group accession | --- | First ProteinName accession |
 | `pg_positions` | --- | --- | --- | --- |
 | `run_file_name` | Raw file | Run | --- | Reference / Run resolved through SDRF |
 
 DIA-NN `Q.Value` is precursor-level and is stored in `additional_scores` as `precursor_qvalue`; it is not mapped to the peptide-level `peptide_qvalue` field.
+
+MaxQuant `unique` follows the group the feature takes. With proteinGroups.txt, it is true when the peptide is in a single group (`Protein group IDs` names one id) and that group has one protein; a shared peptide carries its razor group and is false. Without proteinGroups.txt, or for a row whose `Protein group IDs` do not resolve, the group falls back to `Leading proteins`, which lists one leader per group, so the group's size is unknown: `unique` is then true when the peptide is in a single group of any size. In ontology.parquet the feature `pg_accessions` and `anchor_protein` name the column they were read from: `Protein IDs` and `Majority protein IDs` (proteinGroups.txt) when `Protein group IDs` resolve, otherwise `Leading proteins` and `Leading razor protein`.
 
 ## Protein Group Field Mappings
 
