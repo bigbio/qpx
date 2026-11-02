@@ -351,8 +351,8 @@ class TestIntensity:
         with Dataset(dataset_dir) as ds:
             rows = list(ds.intensity(level="protein"))
             assert len(rows) == 2
-            # Each row is a tuple: (sample_accession, label, unit, feature_id, intensity)
-            assert len(rows[0]) == 5
+            # Each row is a tuple: (sample_accession, feature_id, intensity, quantification_unit)
+            assert ("SAMPLE_01", "P12345;P12346", 5000.0, "run_01|TMT126") in rows
 
     def test_intensity_missing_structure_raises(self, tmp_path):
         """Missing structures raise ValueError."""

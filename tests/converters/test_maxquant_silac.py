@@ -132,6 +132,26 @@ def test_silac_psms_need_the_label_definitions(tmp_path):
             adapter.convert(str(msms), str(tmp_path / "psm.parquet"))
 
 
+def test_sdrf_silac_label_is_not_a_fixed_modification(tmp_path):
+    """A SILAC label the SDRF declares fixed for the heavy samples stays on the heavy PSMs only."""
+    from qpx.converters.maxquant.converter import MaxQuantConverter
+    from qpx.core.constants import PSM
+
+    _, msms, _ = _write_silac_inputs(tmp_path)
+    sdrf = tmp_path / "sdrf.tsv"
+    sdrf.write_text(
+        "source name\tcomment[data file]\tcomment[label]\tcomment[modification parameters]\n"
+        "S_light\trun1.raw\tSILAC light\t\n"
+        "S_heavy\trun1.raw\tSILAC heavy\tAC=UNIMOD:259;TA=K;MT=fixed\n"
+    )
+    out = tmp_path / "out"
+    MaxQuantConverter().convert(
+        output_folder=str(out), msms_file=str(msms), sdrf_file=str(sdrf), output_prefix="mq", structures=[PSM]
+    )
+    psms = {(row["sequence"], row["scan"][0]): row["peptidoform"] for row in pq.read_table(out / "mq.psm.parquet").to_pylist()}
+    assert (psms[("PEPTIDEK", 100)], psms[("PEPTIDEK", 101)]) == ("PEPTIDEK", "PEPTIDEK[UNIMOD:259]")
+
+
 def test_silac_output_rejects_a_label_free_sdrf(tmp_path):
     """SILAC multiplets are never summed into one label-free intensity."""
     from qpx.converters.maxquant.feature_adapter import MaxQuantFeatureAdapter

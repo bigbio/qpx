@@ -1,23 +1,26 @@
-"""MaxQuant converter constants — PTM parsing and label maps."""
+"""MaxQuant converter constants — PTM parsing and fixed modifications."""
 
 from __future__ import annotations
 
 import csv
+import logging
 import re
 from functools import lru_cache
 from typing import Optional
 
 from qpx.converters.localization import parse_site_probabilities
 from qpx.converters.ptm import (
-    NTERM,
     build_proforma,
     compute_precursor_mz,
     modification_tag,
     name_to_unimod,
     position_site,
     split_modified_sequence,
+    unimod_names,
     vendor_position,
 )
+
+logger = logging.getLogger(__name__)
 
 PROTON_MASS: float = 1.007_276_466_77
 
@@ -49,51 +52,85 @@ def _resolve_mq_mod(tag: str, residue: Optional[str] = None, terminus: Optional[
     return modification_tag(tag, residue, terminus)
 
 
-FixedMods = tuple[tuple[str, str], ...]
+FixedModification = tuple[str, str, str]
+"""``(accession, target residues, terminus)``; terminus is ``""``, ``"N"`` or ``"C"``."""
+
+FixedMods = tuple[FixedModification, ...]
+
+LabelMods = tuple[tuple[str, str], ...]
+"""``(residue, "UNIMOD:n")`` pairs of the SILAC labels of one labeling state."""
+
+# Unimod names of quantification labels, which MaxQuant configures as labels, not as fixed
+# modifications: isobaric tags (TMT, iTRAQ) and the isotopic ``Label:`` modifications of SILAC.
+_LABEL_NAME = re.compile(r"(?i)tmt|itraq|^label:")
+
+# SDRF ``PP`` values and MaxQuant site names a fixed modification can be placed for from the
+# peptide alone; protein termini need the peptide's protein position, which MaxQuant does not give.
+_TERMINUS = {"anywhere": "", "any n-term": "N", "n-term": "N", "any c-term": "C", "c-term": "C"}
+
+_RESIDUES = frozenset("ACDEFGHIKLMNPQRSTUVWY")
 
 
-def _site_list(sites: str) -> list[str]:
-    """Residues and ``N-term`` named by a MaxQuant or SDRF site field; protein N-term sites are skipped."""
-    text = sites.strip()
-    if text.lower() in ("n-term", "any n-term"):
-        return [NTERM]
-    if "term" in text.lower():
-        return []
-    return [aa for aa in text.replace(",", "") if aa.isalpha() and aa.isupper()]
+def _is_quantification_label(name: Optional[str], uid: Optional[int]) -> bool:
+    """Whether an SDRF modification is a TMT, iTRAQ or SILAC label, by its ``NT`` or its Unimod names."""
+    if name and _LABEL_NAME.search(name):
+        return True
+    return uid is not None and any(_LABEL_NAME.search(known) for known in unimod_names(uid))
+
+
+def _sdrf_target(entry: dict) -> Optional[tuple[str, str]]:
+    """``(residues, terminus)`` of an SDRF fixed modification, or ``None`` when it cannot be placed.
+
+    ``TA`` lists the target residues (comma-separated); a terminal ``PP`` without
+    a residue (``TA=N-term``, ``TA=X``) applies to any terminal residue.
+    """
+    terminus = _TERMINUS.get((entry["position"] or "Anywhere").strip().lower())
+    tokens = (entry["target_amino_acid"] or "").upper().replace(" ", "").split(",")
+    residues = "".join(token for token in tokens if token in _RESIDUES)
+    if terminus is None or (terminus == "" and not residues):
+        return None
+    return residues, terminus
 
 
 def sdrf_fixed_mods(entries: Optional[list[dict]]) -> FixedMods:
     """Fixed modifications from the SDRF ``comment[modification parameters]`` entries.
 
-    *entries* is :meth:`SdrfConverter.parse_modification_params` output.
+    *entries* is :func:`qpx.core.sdrf.parse_modification_parameters` output. Each one
+    is taken by its accession (``AC=UNIMOD:n``; without one, the Unimod accession of
+    its ``NT`` name), on its target residues or peptide terminus. Quantification
+    labels are left out: MaxQuant carries a SILAC label on the labelled rows only,
+    and the isobaric label is added from the SDRF channel labels.
     """
-    fixed: list[tuple[str, str]] = []
+    fixed: list[FixedModification] = []
     for entry in entries or []:
         if not entry["fixed"]:
             continue
-        accession = re.match(r"(?i)unimod:(\d+)$", entry["accession"] or "")
-        uid = int(accession.group(1)) if accession else name_to_unimod(entry["name"] or "")
-        if uid is None:
+        accession = re.fullmatch(r"(?i)\s*unimod:(\d+)\s*", entry["accession"] or "")
+        uid = int(accession.group(1)) if accession else name_to_unimod((entry["name"] or "").strip())
+        if _is_quantification_label(entry["name"], uid):
             continue
-        position = (entry["position"] or "").strip().lower()
-        if position in ("any n-term", "n-term"):
-            sites = [NTERM]
-        elif "term" in position:
-            sites = []
+        target = _sdrf_target(entry)
+        if uid is None or target is None:
+            logger.warning("Cannot place SDRF fixed modification %r on MaxQuant peptides; peptidoforms omit it", entry)
         else:
-            sites = _site_list(entry["target_amino_acid"] or "")
-        fixed.extend((site, f"UNIMOD:{uid}") for site in sites)
+            fixed.append((f"UNIMOD:{uid}", *target))
     return tuple(fixed)
 
 
 def _named_fixed_mods(names: str) -> FixedMods:
-    """``(site, "UNIMOD:n")`` pairs of a MaxQuant modification list such as ``Carbamidomethyl (C);Oxidation (M)``."""
-    fixed: list[tuple[str, str]] = []
+    """Fixed modifications of a MaxQuant modification list such as ``Carbamidomethyl (C);Oxidation (M)``."""
+    fixed: list[FixedModification] = []
     for name in names.strip().split(";"):
         match = re.match(r"(.+?)\s+\(([^()]*)\)$", name.strip())
         uid = name_to_unimod(name) if match else None
-        if uid is not None:
-            fixed.extend((site, f"UNIMOD:{uid}") for site in _site_list(match.group(2)))
+        if uid is None:
+            continue
+        site = match.group(2).strip()
+        terminus = _TERMINUS.get(site.lower())
+        if terminus is not None:
+            fixed.append((f"UNIMOD:{uid}", "", terminus))
+        elif "term" not in site.lower():
+            fixed.append((f"UNIMOD:{uid}", "".join(aa for aa in site if aa in _RESIDUES), ""))
     return tuple(fixed)
 
 
@@ -137,13 +174,13 @@ def summary_fixed_mods(summary_path) -> FixedMods:
     return _named_fixed_mods(names)
 
 
-def summary_label_mods(summary_path) -> dict[str, tuple[FixedMods, ...]]:
+def summary_label_mods(summary_path) -> dict[str, tuple[LabelMods, ...]]:
     """Label modifications of each labeling state, per raw file, from MaxQuant's ``summary.txt``.
 
     ``Labels<n>`` names the labels of state *n* (``Arg6;Lys6``); a state without
     labels has none. Empty when ``summary.txt`` is absent.
     """
-    states: dict[str, tuple[FixedMods, ...]] = {}
+    states: dict[str, tuple[LabelMods, ...]] = {}
     for row in _summary_runs(summary_path):
         per_state = []
         for state in range(int(row["Multiplicity"])):
@@ -156,25 +193,34 @@ def summary_label_mods(summary_path) -> dict[str, tuple[FixedMods, ...]]:
     return states
 
 
-def _with_fixed_mods(sequence: str, mods: list[tuple[int, str]], fixed_mods: FixedMods) -> list[tuple[int, str]]:
-    """Add the fixed modifications MaxQuant leaves out of ``Modified sequence``.
+def _fixed_positions(sequence: str, residues: str, terminus: str) -> list[int]:
+    """Where a fixed modification applies on ``sequence`` (0 = N-term, ``len + 1`` = C-term)."""
+    if not terminus:
+        return [position for position, residue in enumerate(sequence, start=1) if residue in residues]
+    position, residue = (0, sequence[:1]) if terminus == "N" else (len(sequence) + 1, sequence[-1:])
+    return [position] if not residues or residue in residues else []
 
-    A fixed modification goes on every matching site that carries no other modification.
+
+def fixed_modification_sites(sequence: str, mods: list[tuple[int, str]], fixed_mods: FixedMods) -> list[tuple[int, str]]:
+    """The ``(position, accession)`` pairs the fixed modifications add to a peptide.
+
+    MaxQuant leaves fixed modifications out of ``Modified sequence``. Each one
+    is placed on every matching site that carries no reported modification,
+    so a site never gets a second modification (an N-terminal acetyl keeps a
+    fixed N-term label off, as in the search).
     """
-    taken = {position for position, _ in mods}
-    extra = [(0, tag) for site, tag in fixed_mods if site == NTERM and 0 not in taken]
-    extra += [
-        (position, tag)
-        for position, aa in enumerate(sequence, start=1)
-        if position not in taken
-        for site, tag in fixed_mods
-        if site == aa
-    ]
-    return mods + extra
+    occupied = {position for position, _ in mods}
+    sites: list[tuple[int, str]] = []
+    for accession, residues, terminus in fixed_mods:
+        for position in _fixed_positions(sequence, residues, terminus):
+            if position not in occupied:
+                occupied.add(position)
+                sites.append((position, accession))
+    return sites
 
 
 @lru_cache(maxsize=8192)
-def to_proforma(modified_sequence: Optional[str], fixed_mods: FixedMods = (), label_mods: FixedMods = ()) -> str:
+def to_proforma(modified_sequence: Optional[str], fixed_mods: FixedMods = (), label_mods: LabelMods = ()) -> str:
     """Convert a MaxQuant Modified sequence to ProForma notation.
 
     MaxQuant wraps sequences in underscores and uses parenthetical
@@ -186,12 +232,12 @@ def to_proforma(modified_sequence: Optional[str], fixed_mods: FixedMods = (), la
         _PEPK(GlyGly (K))R_                 -> PEPK[UNIMOD:121]R
         _PEPK(Amidated (Protein C-term))_   -> PEPK-[UNIMOD:2]
 
-    *fixed_mods* (``(site, tag)`` pairs) are written inline, since MaxQuant
-    omits fixed modifications and isobaric labels from the sequence. The SILAC
-    *label_mods* of a labelled PSM go on every matching residue, beside any
+    *fixed_mods* are written inline (see :func:`fixed_modification_sites`), since
+    MaxQuant omits fixed modifications and isobaric labels from the sequence. The
+    SILAC *label_mods* of a labelled PSM go on every matching residue, beside any
     other modification there.
     """
-    if not isinstance(modified_sequence, str) or not modified_sequence:
+    if not isinstance(modified_sequence, str) or not modified_sequence.strip("_"):
         return ""
     sequence, mods = split_modified_sequence(modified_sequence.strip("_"))
     tags: list[tuple[int, str]] = []
@@ -199,7 +245,7 @@ def to_proforma(modified_sequence: Optional[str], fixed_mods: FixedMods = (), la
         position = vendor_position(name, position, sequence)
         tags.append((position, _resolve_mq_mod(name, *position_site(sequence, position))))
     labels = [(position, tag) for position, aa in enumerate(sequence, start=1) for site, tag in label_mods if site == aa]
-    return build_proforma(sequence, labels + _with_fixed_mods(sequence, tags, fixed_mods))
+    return build_proforma(sequence, labels + tags + fixed_modification_sites(sequence, tags, fixed_mods))
 
 
 def mq_calculated_mz(peptidoform: Optional[str], charge: int, neutral_mass: Optional[float]) -> Optional[float]:
@@ -210,15 +256,19 @@ def mq_calculated_mz(peptidoform: Optional[str], charge: int, neutral_mass: Opti
     return calculated
 
 
-def mq_observed_mz(mz: Optional[float], error_ppm: Optional[float]) -> Optional[float]:
+def mq_observed_mz(mz: Optional[float], error_ppm: Optional[float], calculated_mz: Optional[float] = None) -> Optional[float]:
     """Measured precursor m/z, or ``None`` when MaxQuant reports no mass error.
 
-    MaxQuant's ``m/z`` column is the theoretical value of its peptide mass; its
-    ``Mass error [ppm]`` is the recalibrated measurement's deviation from it.
+    MaxQuant's ``m/z`` column is the theoretical value of its peptide mass, which
+    leaves isobaric labels out; its ``Mass error [ppm]`` is the recalibrated
+    measurement's deviation from it. In evidence.txt that deviation includes the
+    labels the measured ion carries, so ``m/z`` shifted by it is the measurement.
+    msms.txt leaves the labels out of the deviation too; give *calculated_mz*,
+    the theoretical m/z of the peptidoform that carries them, to shift instead.
     """
     if mz is None or error_ppm is None:
         return None
-    return mz * (1 + error_ppm * 1e-6)
+    return (mz if calculated_mz is None else calculated_mz) + mz * error_ppm * 1e-6
 
 
 def localization_columns(columns) -> list[tuple[str, str]]:

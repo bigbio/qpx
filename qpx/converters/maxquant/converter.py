@@ -22,6 +22,12 @@ logger = logging.getLogger(__name__)
 _BATCH_SIZE = 100_000
 
 
+def _views_with_input(msms_file, evidence_file, protein_groups_file) -> list[str]:
+    """The views whose MaxQuant input file was given."""
+    inputs = ((PSM, msms_file), (FEATURE, evidence_file), (PG, protein_groups_file))
+    return [view for view, path in inputs if path]
+
+
 class MaxQuantConverter(BaseOrchestrator):
     """Orchestrate full MaxQuant conversion to QPX format."""
 
@@ -49,7 +55,7 @@ class MaxQuantConverter(BaseOrchestrator):
         prefix = output_prefix or "maxquant"
 
         if structures is None:
-            structures = [view for view, path in ((PSM, msms_file), (FEATURE, evidence_file), (PG, protein_groups_file)) if path]
+            structures = _views_with_input(msms_file, evidence_file, protein_groups_file)
 
         ontology_entries: list[dict] = []
         if sdrf_file:

@@ -132,8 +132,13 @@ def _numeric(series: pd.Series) -> pd.Series:
     return pd.to_numeric(series, errors="coerce").astype("float64")
 
 
-def _measured(series: pd.Series) -> pd.Series:
-    """Quantities as float64, NaN where missing or not positive: DIA-NN writes 0 for a quantity it has not estimated."""
+def _positive(series: pd.Series) -> pd.Series:
+    """Positive quantities as float64, NaN for missing, NaN, zero or negative values.
+
+    DIA-NN writes 0 for a quantity it did not compute: QuantUMS (DIA-NN 2.x)
+    reports ``PG.MaxLFQ = 0`` for an identified group it could not quantify, and
+    leaves the group's pg_matrix cell empty. pg.md represents that sentinel as null.
+    """
     values = _numeric(series)
     return values.where(values > 0)
 
@@ -186,7 +191,7 @@ def _aggregate_groups(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def _matrix_fallback(groups: pd.DataFrame, pg_matrix_indexed: pd.DataFrame) -> list[float | None]:
-    """Return each group's PG matrix quantity, None when missing, NaN or zero."""
+    """Return each group's PG matrix quantity, None when missing, NaN, zero or negative."""
     runs = groups.index.get_level_values("run_file_name")
     matrix_runs = [run for run in runs.unique() if run in pg_matrix_indexed.columns]
     values = np.full(len(groups), np.nan)
@@ -539,7 +544,7 @@ class DiannPgAdapter(DiaNNBaseAdapter):
         the group's position in *group_index* and the label.
         """
         present = [column for column in _QUANTITY_COLUMNS if column in frame.columns]
-        values = pd.DataFrame({column: _measured(frame[column]) for column in present}, index=frame.index)
+        values = pd.DataFrame({column: _positive(frame[column]) for column in present}, index=frame.index)
         for column in _CHANNEL_SCORES:
             values[column] = _numeric(frame[column]) if column in frame.columns else float("nan")
         values["group"] = frame.groupby(_GROUP_KEYS, sort=True, dropna=False).ngroup()

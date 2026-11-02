@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from qpx.core.convert import QueryResult
-from qpx.core.sample_resolution import RUN_SAMPLES_SQL, feature_samples_sql
+from qpx.core.sample_sql import feature_sample_ctes, pg_sample_ctes
 from qpx.core.sql import sql_build
 from qpx.views.base import BaseView
 
@@ -47,21 +47,23 @@ class ProteinView(BaseView):
             if q_value_threshold is None
             else f"AND (p.global_qvalue IS NULL OR p.global_qvalue <= {float(q_value_threshold)!r})"
         )
-        # Any member run of grouped_runs resolves the label to the unit's sample.
-        sql = """
-        WITH run_samples AS ($run_samples)
+        sql = pg_sample_ctes() + sql_build(
+            """
         SELECT p.anchor_protein AS protein_accession,
                array_to_string(list_sort(p.pg_accessions), ';') AS protein_group,
-               rs.sample_accession,
+               us.sample_accession,
                p.label,
                p.intensity,
                p.global_qvalue,
                p.gg_names AS gene_names
         FROM pg p
-        JOIN run_samples rs ON rs.run_file_name = p.grouped_runs[1] AND rs.label = p.label
+        JOIN pg_unit_samples us
+          ON us.grouped_runs = p.grouped_runs
+         AND us.sample_label = p.label
         WHERE NOT p.is_decoy $threshold
-        """
-        sql = sql_build(sql, run_samples=RUN_SAMPLES_SQL, threshold=threshold)
+        """,
+            threshold=threshold,
+        )
         return QueryResult(self._engine.connection, sql)
 
 
@@ -71,13 +73,16 @@ class PeptideView(BaseView):
     def intensity(self) -> QueryResult:
         """Target peptide intensity per sample and label."""
         self._require("feature", "run")
-        sql = sql_build(
-            """
-        SELECT sequence, peptidoform, charge, anchor_protein, sample_accession, label, intensity
-        FROM ($feature_samples)
-        WHERE NOT is_decoy
-        """,
-            feature_samples=feature_samples_sql("feature", ("sequence", "peptidoform", "charge", "anchor_protein", "is_decoy")),
+        # A label-free run attributes its intensities to its lone sample whatever
+        # the feature label (DIA-NN's ``raw`` against the run's ``LFQ``);
+        # multiplexed runs need the exact label (see qpx.core.sample_sql).
+        sql = (
+            feature_sample_ctes(("sequence", "peptidoform", "charge", "anchor_protein"), feature_where="NOT f.is_decoy")
+            + """
+        SELECT sequence, peptidoform, charge, anchor_protein,
+               sample_accession, sample_label AS label, intensity
+        FROM feature_samples
+        """
         )
         return QueryResult(self._engine.connection, sql)
 
@@ -228,15 +233,14 @@ class SampleSummaryView(BaseView):
     def peptides_per_sample(self):
         """Count distinct peptide sequences per sample, resolved through the label of each intensity."""
         self._require("feature", "run")
-        sql = sql_build(
-            """
+        sql = (
+            feature_sample_ctes(("sequence",), feature_where="f.is_decoy = false")
+            + """
         SELECT sample_accession, COUNT(DISTINCT sequence) AS n_peptides
-        FROM ($feature_samples)
-        WHERE is_decoy = false
+        FROM feature_samples
         GROUP BY sample_accession
         ORDER BY sample_accession
-        """,
-            feature_samples=feature_samples_sql("feature", ("sequence", "is_decoy")),
+        """
         )
         return self._execute_cached("peptides_per_sample", sql)
 
@@ -247,19 +251,19 @@ class SampleSummaryView(BaseView):
         row (no label) resolves in a single-sample run.
         """
         self._require("pg", "run")
-        sql = sql_build(
-            """
-        WITH run_samples AS ($run_samples)
+        # Any member run of grouped_runs resolves the row to its sample.
+        sql = (
+            pg_sample_ctes()
+            + """
         SELECT rs.sample_accession, COUNT(DISTINCT list_sort(p.pg_accessions)) AS n_proteins
         FROM pg p
         JOIN run_samples rs
           ON rs.run_file_name = p.grouped_runs[1]
-         AND (rs.label = p.label OR (p.label IS NULL AND rs.single_sample))
+         AND (rs.sample_label = p.label OR (p.label IS NULL AND rs.n_samples = 1))
         WHERE p.is_decoy = false
         GROUP BY rs.sample_accession
         ORDER BY rs.sample_accession
-        """,
-            run_samples=RUN_SAMPLES_SQL,
+        """
         )
         return self._execute_cached("proteins_per_sample", sql)
 

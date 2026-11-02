@@ -16,6 +16,7 @@ channel indices present in the data.
 
 from __future__ import annotations
 
+import logging
 import re
 from collections import defaultdict
 from typing import Iterable, Optional
@@ -33,6 +34,8 @@ from sdrf_pipelines.converters.openms.utils import infer_itraqplex, infer_tmtple
 
 from qpx.core.files import run_file_stem
 from qpx.writers.base import parquet_write_options
+
+logger = logging.getLogger(__name__)
 
 _MS1_LABEL = re.compile(r"(?i)^(?:silac|dimethyl|mtraq)")
 
@@ -267,10 +270,19 @@ def plex_for_columns(family: str, labels: set[str], n_columns: int) -> dict[int,
     and channel 2 of iTRAQ8, so four labels in an 8-column table read 8-plex columns.
     """
     plex = resolve_channel_labels(family, labels)
-    if n_columns and len(plex) != n_columns:
-        for name, channels in CHANNEL_LABELS.items():
-            if name.startswith(_FAMILY_PREFIX[family]) and len(channels) == n_columns and labels <= set(channels.values()):
-                return channels
+    if not plex or not n_columns or len(plex) == n_columns:
+        return plex
+    for name, channels in CHANNEL_LABELS.items():
+        if name.startswith(_FAMILY_PREFIX[family]) and len(channels) == n_columns and labels <= set(channels.values()):
+            return channels
+    logger.warning(
+        "The table has %d reporter columns, but the SDRF labels %s are channels of a %d-channel %s plex; "
+        "each is read from the column of its position in that plex, so check the labels if the run used another plex",
+        n_columns,
+        sorted(labels),
+        len(plex),
+        family,
+    )
     return plex
 
 

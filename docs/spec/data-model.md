@@ -157,7 +157,7 @@ The join keys, spelled out:
 | From | To | Join predicate |
 |------|----|----------------|
 | `feature` | `pg` | A **computed softlink** (`Dataset.link_feature_pg()`, bigbio/qpx#269), not a persisted column: `canonical(feature.pg_accessions) = canonical(pg.pg_accessions)` (order-independent set) **AND** `feature.run_file_name ∈ pg.grouped_runs` **AND** a label in `feature.intensities` `IS NOT DISTINCT FROM pg.label` (label-aware, so no over-linking to a channel the feature lacks). `pg_id` is read from the matched pg row. No match = identified but not quantified in that channel/fraction. `feature.pg_ids` is an optional producer hardlink (`unnest(feature.pg_ids) = pg.pg_id` when a producer supplies it); qpx converters do not materialize it. Do **not** fall back to `anchor_protein`, which is not unique across groups that share a leading protein (see pg.md → *Protein group semantics*). |
-| `feature` / `pg` | `run` | `run_file_name = run.run_file_name` (for pg: any file in `grouped_runs`) |
+| `feature` / `psm` / `mz` / `pg` | `run` | `run_file_name = run.run_file_name` (for pg: any file in `grouped_runs`). When the run view is present, validation reports a `run_file_name` or `grouped_runs` value that names no run as an error. |
 | `(file, label)` | `sample` | unnest `run.samples[]`, match `label`, take `sample_accession`; then `sample.sample_accession` |
 | `psm` ↔ `feature` | — | `psm.feature_id` is the **authoritative** (optional) foreign key: `psm.feature_id = feature.feature_id` (null when a producer does not assign one). Its inverse, `feature.psm_ids`, is a **computed softlink** (`Dataset.link_feature_psm()`, bigbio/qpx#267) — the `(feature_id, psm_id)` pairs from `psm` where `feature_id IS NOT NULL`, grouped by `feature_id`; qpx does not materialize it. `feature.psm_ids` is an optional producer hardlink (`psm.psm_id ∈ feature.psm_ids` when a producer supplies it). When explicit references are absent, shared identification fields can be used for semantic matching but are not a guaranteed row-level link. |
 | `psm` / `feature` | `pepmap` | shared `peptidoform` |
@@ -240,32 +240,45 @@ The invariant that keeps this sound:
     `run.samples[].label` is the **canonical** channel name. It MUST match
     `feature.intensities[].label` and `pg.label` exactly. A quantity whose `label`
     has no matching `sample_channel` in the run cannot be resolved to a sample.
-    `qpxc validate` reports a `(run, label)` pair, or a pg `(grouped_runs, label)`
-    unit, that resolves to no sample or to several as an error.
+    This holds for a run with a single sample too: the feature → pg softlink
+    matches labels exactly. A feature row lists each label at most once.
+    Validation reports a feature or pg label that matches no sample of its runs,
+    or several, and a label repeated within a feature row, as errors.
 
 Worked example (flatten the run samples, match the label):
 
 ```sql
 -- protein abundance per sample, from the flattened pg + run
 WITH run_samples AS (
-    SELECT r.run_file_name, sc.label, sc.sample_accession
-    FROM 'PXD.run.parquet' r
-    CROSS JOIN UNNEST(r.samples) AS s(sc)
+    SELECT run_file_name, s.sample_accession, s.label
+    FROM (SELECT run_file_name, UNNEST(samples) AS s FROM 'PXD.run.parquet')
+),
+unit_samples AS (              -- each quantification unit resolved once
+    SELECT DISTINCT u.grouped_runs, rs.sample_accession, rs.label
+    FROM (
+        SELECT grouped_runs, UNNEST(grouped_runs) AS run_file_name
+        FROM (SELECT DISTINCT grouped_runs FROM 'PXD.pg.parquet')
+    ) u
+    JOIN run_samples rs USING (run_file_name)
 )
 SELECT pg.anchor_protein   AS protein_accession,
-       rs.sample_accession,
+       us.sample_accession,
        pg.label,
        pg.intensity        AS abundance
 FROM 'PXD.pg.parquet' pg
-JOIN run_samples rs
-  ON rs.run_file_name = pg.grouped_runs[1]
- AND rs.label = pg.label;      -- flattened: scalar pg.label, no intensities list
+JOIN unit_samples us
+  ON us.grouped_runs = pg.grouped_runs
+ AND us.label = pg.label;      -- flattened: scalar pg.label, no intensities list
 ```
 
-Any member run of `grouped_runs` resolves the label to the unit's sample, so the
-first one is enough and the quantity comes back once per sample and label.
-Unnesting every member run against every sample instead multiplies a
-fractionated multiplex pg by fractions × channels before the label filter.
+`DISTINCT` is required because several member runs can be fractions of the same
+sample; the quantity is already aggregated across those fractions and must be
+returned once per sample and label. Resolving each distinct `grouped_runs` set
+once, instead of joining every pg row to every member run and every channel,
+keeps the query linear in the number of pg rows. On 1.28 million synthetic
+TMT16 pg rows (8 plexes of 3 or 12 fractions), the per-row form ran out of
+memory under a 3–4 GB limit, while the query above returned them in about a
+second.
 
 ## Where each concept lives (cheat sheet)
 

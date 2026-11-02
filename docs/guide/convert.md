@@ -451,11 +451,16 @@ Depending on `--structures` parameter:
 
 - **Solution**: Provide `--protein-groups-file` for accurate Q-value mapping
 
+**Issue**: `The SDRF TMT labels [...] match no TMT plex`
+
+- **Solution**: Each `Reporter intensity N` column is read as the channel at that position of the TMT or iTRAQ plex (TMT6 to TMTpro 18, iTRAQ 4 and 8; partial plexes too) that holds all SDRF `comment[label]` values, so labels from different plexes cannot be mapped. Every conversion given `--sdrf-file`, a PSM-only one too, resolves the plex first and stops before writing any file.
+
 ### Best Practices {#maxquant-best-practices}
 
 - Use `--structures` to control which output files are generated
-- Always provide `--protein-groups-file` when available for better data quality
+- Always provide `--protein-groups-file` when available: features then take the protein group their `Protein group IDs` name, the membership the pg view carries
 - Ensure SDRF sample names match MaxQuant experiment names
+- Provide `--sdrf-file` with the PSM and feature conversions: MaxQuant leaves fixed modifications out of `Modified sequence`, so the SDRF's `MT=fixed` modifications, else those of the `parameters.txt` or `summary.txt` next to the input, are added to the peptidoforms to match `calculated_mz`. TMT, iTRAQ and SILAC labels among the SDRF's are skipped: the isobaric label comes from the SDRF channel labels, a SILAC label from `Labeling state`. A warning is logged for each fixed modification that cannot be placed, and when no source declares one
 - Use compressed files (.gz) to save disk space
 - Use `--spectral-data` flag if downstream analysis requires spectral information
 

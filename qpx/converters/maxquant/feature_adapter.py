@@ -34,7 +34,7 @@ from qpx.converters.maxquant.constants import (
     to_proforma,
 )
 from qpx.converters.maxquant.evidence_fields import identification_fields
-from qpx.converters.maxquant.protein_fields import group_ids, parse_genes
+from qpx.converters.maxquant.protein_fields import group_ids
 from qpx.converters.maxquant.silac import (
     identified_labels,
     identified_states,
@@ -43,7 +43,7 @@ from qpx.converters.maxquant.silac import (
     ratio_letters,
 )
 from qpx.converters.ptm import from_proforma
-from qpx.converters.utils import canonical_accession, mass_error_ppm, mq_flag_to_bool, safe_float
+from qpx.converters.utils import mass_error_ppm, mq_flag_to_bool, safe_float
 from qpx.core.files import run_file_stem
 from qpx.core.sql import sql_build, validate_identifier
 from qpx.writers.feature import FeatureWriter, derive_feature_ids
@@ -108,6 +108,19 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         self._states_by_evidence: dict[int, list[int]] = {}
         # The batch's ``<mod> Probabilities`` columns and their modification names.
         self._localization_columns: list[tuple[str, str]] = []
+        # proteinGroups.txt columns pg_accessions/anchor_protein are read from
+        # when groups resolve through ``Protein group IDs`` (see get_resolved_columns).
+        self._group_columns: dict[str, str] = {}
+
+    def get_resolved_columns(self) -> dict[str, str]:
+        """QPX field -> source column, as recorded in ontology.parquet.
+
+        When groups resolve through ``Protein group IDs``, ``pg_accessions`` and
+        ``anchor_protein`` are read from the proteinGroups.txt columns the pg
+        view also maps (``Protein IDs``, ``Majority protein IDs``), not from
+        ``Leading proteins`` / ``Leading razor protein``.
+        """
+        return {**super().get_resolved_columns(), **self._group_columns}
 
     def convert(
         self,
@@ -128,8 +141,12 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
             evidence_path: Path to MaxQuant ``evidence.txt``.
             output_path: Destination Parquet path.
             sdrf_path: Optional SDRF file for sample/channel mapping.
-            protein_groups_path: Optional ``proteinGroups.txt`` for
-                populating ``pg_global_qvalue`` and gene names on features.
+            protein_groups_path: Optional ``proteinGroups.txt``. With it, each
+                feature takes the group its ``Protein group IDs`` name (the
+                razor group for a shared peptide): the group's full membership
+                in ``pg_accessions``, its representative in ``anchor_protein``,
+                ``unique``, ``pg_global_qvalue`` and gene names. Without it,
+                ``pg_accessions`` falls back to ``Leading proteins``.
             chunksize: Rows per batch.
             creator: Creator tag in Parquet metadata.
             link_evidence: Record each evidence ``id``'s feature_id in
@@ -157,6 +174,7 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
 
         # Step 3b: Build lookup maps from proteinGroups.txt
         pg_maps = self._build_protein_group_maps(protein_groups_path)
+        self._group_columns = self._group_source_columns(pg_maps, actual_cols)
 
         # Step 4: Stream and transform
         self.logger.info("Transforming MaxQuant features ...")
@@ -296,104 +314,59 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
     # Transform
     # ------------------------------------------------------------------
 
-    def _build_protein_group_maps(self, protein_groups_path: Optional[str]) -> dict:
-        """Build protein-group lookup maps from proteinGroups.txt.
-
-        Returns a dict with three sub-maps:
-            ``by_id``: proteinGroups.txt ``id`` -> ``{"accessions", "qvalue",
-                "genes"}``, resolving the evidence ``Protein group IDs``.
-            ``by_group``: full protein-group membership (a ``frozenset`` of
-                normalised accessions) -> ``{"qvalue", "genes"}``. This is the
-                primary key, consistent with the pg identity fix which keys on
-                the whole ``pg_accessions`` membership rather than the leader.
-            ``by_accession``: single accession -> ``{"qvalue", "genes"}``, but
-                *only* for accessions that belong to exactly one protein group.
-                Ambiguous razor accessions (shared across groups) are excluded
-                so a feature cannot inherit another group's q-value/genes via
-                its leader.
-        """
-        empty = {"by_id": {}, "by_group": {}, "by_accession": {}}
-        if not protein_groups_path:
-            return empty
-        df = self._conn.execute(
-            "SELECT * FROM read_csv_auto($1, delim='\t', header=true, auto_detect=true, null_padding=true)",
-            [protein_groups_path],
-        ).df()
-        acc_col, qval_col, gene_col = self._detect_pg_columns(df)
-        if not acc_col:
-            raise ValueError(f"{protein_groups_path} has no 'Protein IDs' or 'Majority protein IDs' column")
-        maps = self._build_pg_lookup(df, acc_col, qval_col, gene_col)
-        self.logger.info(
-            "Built protein group maps: %d group id(s), %d group(s), %d unambiguous accession(s)",
-            len(maps["by_id"]),
-            len(maps["by_group"]),
-            len(maps["by_accession"]),
-        )
-        return maps
-
     @staticmethod
-    def _detect_pg_columns(df: pd.DataFrame) -> tuple:
-        """Detect accession, q-value, and gene name columns in proteinGroups."""
-        acc_col = next(
-            (c for c in ["Protein IDs", "Majority protein IDs"] if c in df.columns),
-            None,
-        )
-        qval_col = next((c for c in ["Q-value", "q-value", "Q.value"] if c in df.columns), None)
-        gene_col = next((c for c in ["Gene names", "Gene Names"] if c in df.columns), None)
-        return acc_col, qval_col, gene_col
+    def _group_source_columns(pg_maps: dict, evidence_columns: set[str]) -> dict[str, str]:
+        """The proteinGroups.txt columns of the group fields, when ``Protein group IDs`` can resolve groups."""
+        return pg_maps.get("columns", {}) if pg_maps.get("by_id") and "Protein group IDs" in evidence_columns else {}
 
-    @staticmethod
-    def _canonical_group_key(accessions) -> frozenset:
-        """Order-independent key for a protein-group membership."""
-        return frozenset(a.strip() for a in accessions if a and a.strip())
+    def _group_from_ids(self, row: dict, pg_maps: Optional[dict]) -> Optional[tuple]:
+        """Resolve the row's protein group from ``Protein group IDs``, MaxQuant's own key.
 
-    def _build_pg_lookup(self, df: pd.DataFrame, acc_col: str, qval_col: Optional[str], gene_col: Optional[str]) -> dict:
-        """Build the ``by_id``/``by_group``/``by_accession`` lookup maps (see caller)."""
-        by_id: dict[int, dict] = {}
-        by_group: dict[frozenset, dict] = {}
-        acc_to_groups: dict[str, set] = {}
-        acc_value: dict[str, dict] = {}
-
-        def values(column: Optional[str]) -> list:
-            return df[column].tolist() if column and column in df.columns else [None] * len(df)
-
-        acc_vals = df[acc_col].astype(str).tolist()
-        qval_vals = pd.to_numeric(df[qval_col], errors="coerce").tolist() if qval_col else [None] * len(df)
-
-        for acc_raw, qval, gene_raw, fasta_raw, group_id in zip(
-            acc_vals, qval_vals, values(gene_col), values("Fasta headers"), values("id")
-        ):
-            accs = [canonical_accession(a.strip()) for a in acc_raw.split(";") if a.strip()]
-            if not accs:
-                continue
-            value = {"qvalue": safe_float(qval), "genes": parse_genes(gene_raw, fasta_raw)}
-            if pd.notna(group_id):
-                by_id[int(group_id)] = {**value, "accessions": accs}
-            key = self._canonical_group_key(accs)
-            by_group.setdefault(key, value)
-            for acc in accs:
-                acc_to_groups.setdefault(acc, set()).add(key)
-                acc_value.setdefault(acc, value)
-
-        # Keep only accessions that map to a single protein group for the
-        # leader fallback; ambiguous accessions would otherwise collide.
-        by_accession = {acc: acc_value[acc] for acc, keys in acc_to_groups.items() if len(keys) == 1}
-        return {"by_id": by_id, "by_group": by_group, "by_accession": by_accession}
-
-    def _lookup_pg_metadata(self, pg_maps: Optional[dict], pg_acc_list: list[str], anchor_protein: str) -> tuple:
-        """Resolve ``(pg_global_qvalue, genes)`` for a feature's protein group.
-
-        Keyed on the full protein-group membership first; only falls back to the
-        leader accession when that leader is unambiguous (belongs to one group).
+        Returns ``(group, unique)``, where ``group`` is a ``by_id`` value, or
+        ``None`` when the ids do not resolve (no proteinGroups.txt, no column, or
+        ids it does not contain). A peptide in one group takes that group, and is
+        unique when the group has a single protein. A peptide shared by several
+        groups takes the group MaxQuant assigned it to, the one whose leading
+        protein is the ``Leading razor protein``, and is not unique; when no
+        single group matches, the group is unresolved (``(None, None)``).
         """
-        if not pg_maps:
-            return None, None
-        entry = pg_maps.get("by_group", {}).get(self._canonical_group_key(pg_acc_list))
-        if entry is None and anchor_protein:
-            entry = pg_maps.get("by_accession", {}).get(anchor_protein)
-        if entry is None:
-            return None, None
-        return entry.get("qvalue"), entry.get("genes")
+        by_id = pg_maps.get("by_id") if pg_maps else None
+        if not by_id:
+            return None
+        ids = group_ids(row.get("Protein group IDs"))
+        groups = [by_id[group_id] for group_id in ids if group_id in by_id]
+        if not groups:
+            return None
+        if len(ids) == 1:
+            return groups[0], len(groups[0]["accessions"]) == 1
+        razor_group = self._razor_group(row, groups)
+        return (razor_group, False) if razor_group else (None, None)
+
+    def _razor_group(self, row: dict, groups: list[dict]) -> Optional[dict]:
+        """The one group led by the row's ``Leading razor protein``, else the one containing it."""
+        razor = next(iter(self._protein_list(row.get(self._resolved.get("anchor_protein", "Leading razor protein")))), "")
+        matches = [group for group in groups if group["anchor"] == razor]
+        if len(matches) != 1:
+            matches = [group for group in groups if razor in group["accessions"]]
+        return matches[0] if len(matches) == 1 else None
+
+    def _group_from_leading_proteins(self, row: dict, pg_maps: Optional[dict]) -> tuple:
+        """Fallback group for rows ``Protein group IDs`` cannot resolve: ``Leading proteins``.
+
+        ``Leading proteins`` holds one leader per group, so the group's size is
+        unknown here; ``unique`` is whether the peptide maps to a single protein
+        (``Proteins``), else whether it has a single leader.
+        """
+        r = self._resolved
+        pg_acc_raw = str(row.get(r.get("pg_accessions", "Leading proteins"), ""))
+        pg_acc_list = [self._norm_uniprot_id(a) for a in pg_acc_raw.split(";")] if pg_acc_raw else []
+        anchor_protein = self._norm_uniprot_id(str(row.get(r.get("anchor_protein", "Leading razor protein"), "")))
+        if not anchor_protein and pg_acc_list:
+            anchor_protein = pg_acc_list[0]
+        pg_qvalue, pg_genes = self._lookup_pg_metadata(pg_maps, pg_acc_list, anchor_protein)
+        group = {"accessions": pg_acc_list, "anchor": anchor_protein, "qvalue": pg_qvalue, "genes": pg_genes}
+        proteins = row.get("Proteins")
+        return group, len(proteins.split(";")) == 1 if isinstance(proteins, str) else len(pg_acc_list) <= 1
 
     def _detect_ri_offset(self, columns) -> int:
         """Detect whether reporter intensity columns are 0-indexed or 1-indexed.
@@ -633,60 +606,22 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
             "ccs": safe_float(row.get("CCS")),
         }
 
-    def _assigned_group(self, row: dict, pg_maps: dict | None, razor: str) -> tuple[Optional[dict], bool]:
-        """The proteinGroups.txt entry MaxQuant assigns an evidence row, and whether its peptide is shared.
-
-        A peptide in one group belongs to it; a peptide shared by several groups
-        is assigned to the group of its leading razor protein. ``None`` when the
-        groups are not in proteinGroups.txt or no group holds the razor protein.
-        """
-        by_id = (pg_maps or {}).get("by_id")
-        ids = group_ids(row.get("Protein group IDs")) if by_id else []
-        groups = [by_id[group_id] for group_id in ids if group_id in by_id]
-        if len(ids) == 1:
-            return (groups[0] if groups else None), False
-        return next((group for group in groups if razor in group["accessions"]), None), len(ids) > 1
-
     def _evidence_protein_fields(self, row: dict, pg_maps: dict | None) -> tuple:
         """Resolve protein membership, group confidence, and genes."""
-        r = self._resolved
-        anchor_protein = self._norm_uniprot_id(str(row.get(r.get("anchor_protein", "Leading razor protein"), "")))
-        if (pg_maps or {}).get("by_id") and "Protein group IDs" in row:
-            pg_acc_list, anchor_protein, unique, pg_qvalue, pg_genes = self._assigned_group_fields(row, pg_maps, anchor_protein)
-        else:
-            pg_acc_list, anchor_protein, unique, pg_qvalue, pg_genes = self._leading_protein_fields(row, pg_maps, anchor_protein)
-        pg_accessions = [{"accession": acc, "start": None, "end": None, "pre": None, "post": None} for acc in pg_acc_list] or None
+        resolved = self._group_from_ids(row, pg_maps)
+        group, unique = resolved if resolved is not None else self._group_from_leading_proteins(row, pg_maps)
+        group = group or {"accessions": [], "anchor": None, "qvalue": None, "genes": None}
+        # Protein accessions (list of pg_protein structs)
+        pg_accessions = [
+            {"accession": acc, "start": None, "end": None, "pre": None, "post": None} for acc in group["accessions"]
+        ] or None
 
         # Gene names
-        gg_raw = row.get(r.get("gg_names", "Gene names"))
+        gg_raw = row.get(self._resolved.get("gg_names", "Gene names"))
         gg_names = str(gg_raw).split(";") if pd.notna(gg_raw) and gg_raw else None
         if not gg_names:
-            gg_names = pg_genes
-        return pg_accessions, anchor_protein, unique, pg_qvalue, gg_names
-
-    def _assigned_group_fields(self, row: dict, pg_maps: dict, razor: str) -> tuple:
-        """``(members, anchor, unique, qvalue, genes)`` of the group MaxQuant assigns the evidence row."""
-        group, shared = self._assigned_group(row, pg_maps, razor)
-        if group is None:
-            return [], None, None, None, None
-        members = group["accessions"]
-        anchor = razor if razor in members else members[0]
-        return members, anchor, len(members) == 1 and not shared, group["qvalue"], group["genes"]
-
-    def _leading_protein_fields(self, row: dict, pg_maps: dict | None, anchor: str) -> tuple:
-        """``(members, anchor, unique, qvalue, genes)`` without proteinGroups.txt group ids.
-
-        The group membership is unknown, so the evidence's leading proteins stand in for it.
-        """
-        pg_acc_raw = str(row.get(self._resolved.get("pg_accessions", "Leading proteins"), ""))
-        members = [self._norm_uniprot_id(a) for a in pg_acc_raw.split(";")] if pg_acc_raw else []
-        if not anchor and members:
-            anchor = members[0]
-        proteins = row.get("Proteins")
-        unique = len(proteins.split(";")) == 1 if isinstance(proteins, str) else len(members) <= 1
-        # Protein-group q-value and genes, keyed on the full membership.
-        qvalue, genes = self._lookup_pg_metadata(pg_maps, members, anchor)
-        return members, anchor, unique, qvalue, genes
+            gg_names = group["genes"]
+        return pg_accessions, group["anchor"], unique, group["qvalue"], gg_names
 
     def _evidence_scores(self, row: dict) -> list[dict]:
         """Collect Andromeda score fields from an evidence row."""

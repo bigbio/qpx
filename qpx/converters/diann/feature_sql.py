@@ -45,8 +45,13 @@ _CV_MAPPINGS = [
     ("iIM", "iim"),
 ]
 
-# Ion mobility columns, 0 in a report of data acquired without ion mobility.
-_ION_MOBILITY_CV = {"Predicted.IM", "Predicted.iIM", "iIM"}
+# Ion mobility fields and cv columns. For data acquired without ion mobility
+# separation, DIA-NN reports IM (IM.Start / IM.Stop), Predicted.IM and
+# Predicted.iIM as 0; DIA-NN 1.8 also writes iIM = 0, while DIA-NN 2.x reports a
+# library iIM. A 1/K0 or drift time is never 0, so each value is checked on its
+# own and a 0 is written as null (or left out of cv_params).
+_ION_MOBILITY_FIELDS = ("ion_mobility", "ion_mobility_start", "ion_mobility_stop")
+_ION_MOBILITY_CV_COLUMNS = frozenset({"Predicted.IM", "Predicted.iIM", "iIM"})
 
 
 _RT_SECONDS_FACTOR = 60.0
@@ -104,14 +109,16 @@ def _safe_double_sql(column: str) -> str:
     return f'CASE WHEN r."{column}" IS NOT NULL AND NOT isnan(CAST(r."{column}" AS DOUBLE)) THEN CAST(r."{column}" AS DOUBLE) END'
 
 
-def _positive_sql(column: str) -> str:
-    """Whether a value is finite and above zero: DIA-NN writes 0 for a quantity or ion mobility it has not measured."""
-    return f'(isfinite(CAST(r."{column}" AS DOUBLE)) AND CAST(r."{column}" AS DOUBLE) > 0)'
+def _quantity_sql(column: str) -> str:
+    """Build a SQL expression that keeps a positive quantity as FLOAT, NULL otherwise.
 
-
-def _measured_float_sql(column: str) -> str:
-    """Build a SQL expression that converts a measured (positive) value to FLOAT, null for DIA-NN's 0."""
-    return f'CASE WHEN {_positive_sql(column)} THEN CAST(r."{column}" AS FLOAT) END'
+    DIA-NN writes 0 for a quantity it did not measure (an unquantified channel's
+    ``Precursor.Quantity``, an ``Ms1.Area`` without MS1 signal, QuantUMS's
+    ``PG.MaxLFQ``); a tool's zero sentinel is not a measured zero. DuckDB orders
+    NaN above every number, so NaN is excluded explicitly.
+    """
+    value = f'CAST(r."{column}" AS DOUBLE)'
+    return f'CASE WHEN {value} > 0 AND NOT isnan({value}) THEN CAST(r."{column}" AS FLOAT) END'
 
 
 def _build_mass_select_parts(resolved: dict, report_cols: set[str]) -> list[str]:
@@ -188,13 +195,18 @@ def _build_acquisition_select_parts(resolved: dict, report_cols: set[str]) -> li
         else "NULL::FLOAT AS rt"
     )
 
-    # DIA-NN writes ion mobility 0 for data acquired without it.
-    ion_mobility_col = resolved.get("ion_mobility")
-    parts.append(
-        f"{_measured_float_sql(ion_mobility_col)} AS ion_mobility"
-        if ion_mobility_col and has_column(ion_mobility_col)
-        else "NULL::FLOAT AS ion_mobility"
-    )
+    parts.extend(_build_ion_mobility_select_parts(resolved, report_cols))
+    return parts
+
+
+def _build_ion_mobility_select_parts(resolved: dict, report_cols: set[str]) -> list[str]:
+    """Build ion mobility expressions: NULL when the column is absent or holds DIA-NN's 0 (no ion mobility data)."""
+    parts: list[str] = []
+    for field in _ION_MOBILITY_FIELDS:
+        column = resolved.get(field)
+        parts.append(
+            f"NULLIF({_safe_float_sql(column)}, 0) AS {field}" if column and column in report_cols else f"NULL::FLOAT AS {field}"
+        )
     return parts
 
 
@@ -329,10 +341,6 @@ def _build_metadata_select_parts(
         else "NULL::DOUBLE AS pg_global_qvalue"
     )
 
-    for field in ("ion_mobility_start", "ion_mobility_stop"):
-        column = resolved.get(field)
-        parts.append(f"{_measured_float_sql(column)} AS {field}" if column and has_column(column) else f"NULL::FLOAT AS {field}")
-
     genes_col = resolved.get("gg_names")
     if genes_col and has_column(genes_col):
         genes_expr = (
@@ -392,7 +400,7 @@ def _build_batch_sql(
     int_col = r["intensity"]
     # A precursor DIA-NN reports without a quantity (0) keeps its label with a
     # null intensity.
-    parts.append(f"[STRUCT_PACK(label := {label_expr}, intensity := {_measured_float_sql(int_col)})] AS intensities")
+    parts.append(f"[STRUCT_PACK(label := {label_expr}, intensity := {_quantity_sql(int_col)})] AS intensities")
 
     # --- Nested columns built by helpers ---
     parts.append(_build_additional_intensities_sql(r, has_column, label_expr))
@@ -562,11 +570,10 @@ def _build_additional_intensities_sql(r: dict, _has, label_expr: str = "'LFQ'") 
     entries, checks = [], []
     for col, name in candidates:
         if _has(col):
-            chk = _positive_sql(col)
+            quantity = _quantity_sql(col)
+            chk = f"({quantity} IS NOT NULL)"
             checks.append(chk)
-            entries.append(
-                f"CASE WHEN {chk} THEN STRUCT_PACK(intensity_name := '{name}', intensity_value := CAST(r.\"{col}\" AS FLOAT)) END"
-            )
+            entries.append(f"CASE WHEN {chk} THEN STRUCT_PACK(intensity_name := '{name}', intensity_value := {quantity}) END")
     if not entries:
         return "NULL AS additional_intensities"
     ai_list = ", ".join(entries)
@@ -615,8 +622,8 @@ def _build_cv_params_sql(r: dict, _has) -> str:
     for diann_col, cv_name in _CV_MAPPINGS:
         if _has(diann_col):
             chk = f'(r."{diann_col}" IS NOT NULL AND CAST(r."{diann_col}" AS VARCHAR) != \'\')'
-            if diann_col in _ION_MOBILITY_CV:
-                chk = _positive_sql(diann_col)
+            if diann_col in _ION_MOBILITY_CV_COLUMNS:
+                chk = f'({chk} AND TRY_CAST(r."{diann_col}" AS DOUBLE) IS DISTINCT FROM 0)'
             checks.append(chk)
             entries.append(
                 f"CASE WHEN {chk} THEN STRUCT_PACK(cv_name := '{cv_name}', cv_value := CAST(r.\"{diann_col}\" AS VARCHAR)) END"

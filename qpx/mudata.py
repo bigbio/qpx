@@ -18,7 +18,8 @@ import pandas as pd
 from scipy import sparse
 
 from qpx._version import __version__
-from qpx.core.mudata_obs import _has_view, _load_run_obs
+from qpx.core.mudata_expression import _build_differential_adata, _build_expression_adata
+from qpx.core.mudata_obs import UNIT_SEPARATOR, _has_view, _load_run_obs, _load_unit_obs
 from qpx.core.query import _escape_sql_string
 from qpx.core.sql import sql_build
 from qpx.version import QPX_SPEC_VERSION
@@ -71,10 +72,31 @@ def _pivot_arrow_to_sparse(
     row_index: pd.Index,
     col_index: pd.Index,
 ) -> sparse.csr_matrix:
-    """Pivot long rows into a sparse matrix, working on Arrow columns.
+    """Pivot long rows into a sparse matrix, summing the rows of one cell.
 
-    Same result, without converting the long table to pandas object columns first.
+    Works on the Arrow columns, without converting the long table to pandas
+    object columns first.
     """
+    matrix, _ = _pivot_arrow_combining_duplicates(table, row_col, col_col, value_col, (row_index, col_index), "sum")
+    return matrix
+
+
+def _pivot_arrow_combining_duplicates(
+    table,
+    row_col: str,
+    col_col: str,
+    value_col: str,
+    axes: tuple[pd.Index, pd.Index],
+    duplicates: str,
+) -> tuple[sparse.csr_matrix, int]:
+    """Pivot like :func:`_pivot_arrow_to_sparse` and count the cells measured twice.
+
+    Several long rows can land in one matrix cell, e.g. a MaxQuant precursor
+    quantified by an MS/MS and a match-between-runs feature in one run. They are
+    combined with *duplicates* (``"sum"`` or ``"mean"``) and the number of such
+    cells is returned, so the caller can report it instead of summing silently.
+    """
+    row_index, col_index = axes
     row_pos = _dictionary_positions(table.column(row_col), row_index)
     col_pos = _dictionary_positions(table.column(col_col), col_index)
 
@@ -82,12 +104,19 @@ def _pivot_arrow_to_sparse(
     # A cell without a stored value is not measured, so a null quantity stores nothing
     mask = (row_pos >= 0) & (col_pos >= 0) & ~np.isnan(values)
     data = values[mask]
+    positions = (row_pos[mask], col_pos[mask])
+    shape = (len(row_index), len(col_index))
 
-    mat = sparse.coo_matrix(
-        (data, (row_pos[mask], col_pos[mask])),
-        shape=(len(row_index), len(col_index)),
-    )
-    return mat.tocsr()
+    # tocsr() sums duplicate coordinates; fewer stored cells than rows means some
+    # cells got more than one value.
+    matrix = sparse.coo_matrix((data, positions), shape=shape).tocsr()
+    if matrix.nnz == len(data):
+        return matrix, 0
+    # Same coordinates, so the counts line up with matrix.data cell for cell.
+    counts = sparse.coo_matrix((np.ones(len(data), dtype=np.float32), positions), shape=shape).tocsr()
+    if duplicates == "mean":
+        matrix.data /= counts.data
+    return matrix, int(np.count_nonzero(counts.data > 1))
 
 
 def _combine_chunks(column):
@@ -141,10 +170,11 @@ _MULTIPLEXED_QUERIES: dict[str, str] = {
 }
 
 
-# Long rows of the precursors modality. The pivot sums the rows of one cell: the
-# features of one precursor in one run and label, as MaxQuant sums the evidence
-# rows of a peptide in a run. Decoys and entries without a quantity are left out,
-# so an absent cell is not quantified. $label selects one label or every label.
+# Long rows of the precursors modality. Entries without a quantity are left out,
+# so an absent cell is not quantified; several rows of one cell (the features of
+# one precursor in one run and label) are combined as ``duplicates`` says.
+# $label selects one label or every label, and $decoy_filter leaves decoys out
+# unless they are asked for.
 # UNNEST stays in the select list: a filter on a lateral CROSS JOIN UNNEST runs ~30x slower.
 _PRECURSOR_QUERY = """
     SELECT run_file_name, CAST(i.label AS VARCHAR) AS intensity_label, precursor_id, i.intensity
@@ -153,7 +183,7 @@ _PRECURSOR_QUERY = """
                f.peptidoform || '|' || CAST(f.charge AS VARCHAR) AS precursor_id,
                UNNEST(f.intensities) AS i
         FROM feature f
-        WHERE NOT f.is_decoy
+        WHERE $decoy_filter
     )
     WHERE i.intensity IS NOT NULL AND $label
     """
@@ -169,7 +199,7 @@ _PRECURSOR_LAYER_QUERY = """
                    f.peptidoform || '|' || CAST(f.charge AS VARCHAR) AS precursor_id,
                    UNNEST(f.additional_intensities) AS a
             FROM feature f
-            WHERE NOT f.is_decoy
+            WHERE $decoy_filter
         )
     )
     WHERE x.intensity_value IS NOT NULL AND $label
@@ -182,48 +212,53 @@ _PRECURSOR_IMPUTED_QUERY = """
                f.peptidoform || '|' || CAST(f.charge AS VARCHAR) AS precursor_id,
                UNNEST(f.imputed_labels) AS intensity_label
         FROM feature f
-        WHERE NOT f.is_decoy
+        WHERE $decoy_filter
     )
     WHERE $label
     """
 
-# A protein group is quantified once for its unit, the runs in grouped_runs (the
-# fractions of one sample or plex), so an observation of the proteins modality is
-# a unit, named after its first run. Variables are groups keyed by their sorted
-# membership, since two groups can be led by the same protein. The pg view is
-# flattened: one row per label, scalar label and intensity.
-_UNIT_SQL = "list_sort(list_distinct(p.grouped_runs))[1]"
+# A protein group is quantified once per quantification unit -- the grouped_runs
+# set of fractions aggregated together -- and label (docs/spec/data-model.md), so
+# the unit is the observation, named by its distinct member runs (sorted, joined
+# by UNIT_SEPARATOR; a single-run unit keeps its run_file_name). Exploding
+# grouped_runs instead gave every fraction an observation holding a copy of the
+# unit's value, which multiplied any sum over observations by the fraction count.
+# Variables are groups keyed by their sorted membership, since two groups can be
+# led by the same protein. The pg view is flattened: one row per label, scalar
+# label and intensity. Rows without grouped_runs (empty or null) belong to no unit.
+_UNIT_SQL = f"array_to_string(list_sort(list_distinct(p.grouped_runs)), '{UNIT_SEPARATOR}')"
 _GROUP_SQL = "array_to_string(list_sort(p.pg_accessions), ';')"
+_PG_ROWS_SQL = "$decoy_filter AND len(p.grouped_runs) > 0 AND $label"
 
 _PROTEIN_QUERY = f"""
-    SELECT {_UNIT_SQL} AS run_file_name,
+    SELECT {_UNIT_SQL} AS grouped_runs,
            CAST(p.label AS VARCHAR) AS intensity_label,
            {_GROUP_SQL} AS protein_group,
            p.intensity
     FROM pg p
-    WHERE NOT p.is_decoy AND p.intensity IS NOT NULL AND $label
+    WHERE p.intensity IS NOT NULL AND {_PG_ROWS_SQL}
     """
 
 _PROTEIN_IMPUTED_QUERY = f"""
-    SELECT {_UNIT_SQL} AS run_file_name,
+    SELECT {_UNIT_SQL} AS grouped_runs,
            CAST(p.label AS VARCHAR) AS intensity_label,
            {_GROUP_SQL} AS protein_group,
            1.0::FLOAT AS intensity
     FROM pg p
-    WHERE NOT p.is_decoy AND p.is_imputed AND $label
+    WHERE p.is_imputed AND {_PG_ROWS_SQL}
     """
 
 _PROTEIN_LAYER_QUERY = f"""
-    SELECT run_file_name, intensity_label, protein_group, x.intensity_name, x.intensity_value AS intensity
+    SELECT grouped_runs, intensity_label, protein_group, x.intensity_name, x.intensity_value AS intensity
     FROM (
-        SELECT run_file_name, intensity_label, protein_group, UNNEST(a.intensities) AS x
+        SELECT grouped_runs, intensity_label, protein_group, UNNEST(a.intensities) AS x
         FROM (
-            SELECT {_UNIT_SQL} AS run_file_name,
+            SELECT {_UNIT_SQL} AS grouped_runs,
                    CAST(p.label AS VARCHAR) AS intensity_label,
                    {_GROUP_SQL} AS protein_group,
                    UNNEST(p.additional_intensities) AS a
             FROM pg p
-            WHERE NOT p.is_decoy AND $label
+            WHERE {_PG_ROWS_SQL}
         )
         WHERE a.label = intensity_label
     )
@@ -235,20 +270,24 @@ _PROTEIN_VAR_QUERY = f"""
            min(p.anchor_protein) AS anchor_protein,
            min(p.gg_names[1]) AS gene_name
     FROM pg p
-    WHERE NOT p.is_decoy
     GROUP BY ALL
     """
 
-_UNIT_RUNS_QUERY = f"""
-    SELECT {_UNIT_SQL} AS unit,
-           array_to_string(list_sort(list_distinct(flatten(list(p.grouped_runs)))), ';') AS runs
-    FROM pg p
-    WHERE NOT p.is_decoy
-    GROUP BY ALL
-    """
+# Decoys are left out unless asked for: pg.md requires consumers to filter them,
+# and a MuData matrix has no row-level flag a consumer could filter on.
+_DECOY_FILTERS = {
+    "feature": "f.is_decoy IS NOT TRUE",
+    "pg": "p.is_decoy IS NOT TRUE",
+}
 
-# Columns of a run, not of the unit the proteins modality observes.
-_RUN_ONLY_OBS_COLUMNS = ["run_accession", "fraction"]
+_DECOY_VAR_QUERIES = {
+    "feature": """
+        SELECT f.peptidoform || '|' || CAST(f.charge AS VARCHAR) AS name, bool_or(f.is_decoy) AS is_decoy
+        FROM feature f GROUP BY 1""",
+    "pg": f"SELECT {_GROUP_SQL} AS name, bool_or(p.is_decoy) AS is_decoy FROM pg p GROUP BY 1",
+}
+
+_DUPLICATE_AGGREGATIONS = ("sum", "mean")
 
 
 def _label_condition(column: str, intensity_label: str | None) -> str:
@@ -258,10 +297,15 @@ def _label_condition(column: str, intensity_label: str | None) -> str:
     return f"{column} = '{_escape_sql_string(intensity_label)}'"
 
 
-def _query_arrow(engine: DuckDBEngine, query: str, label_column: str, intensity_label: str | None):
+def _query_arrow(engine: DuckDBEngine, query: str, label_column: str, intensity_label: str | None, decoy_filter: str):
     """Run one of the modality queries for the selected labels as an Arrow table."""
-    sql = sql_build(query, label=_label_condition(label_column, intensity_label))
+    sql = sql_build(query, label=_label_condition(label_column, intensity_label), decoy_filter=decoy_filter)
     return engine.connection.sql(sql).to_arrow_table()
+
+
+def _decoy_filter(table: str, include_decoys: bool) -> str:
+    """SQL predicate on *table*'s rows: every row, or targets only."""
+    return "TRUE" if include_decoys else _DECOY_FILTERS[table]
 
 
 def _detect_intensity_label(engine: DuckDBEngine, table: str = "feature") -> str | None:
@@ -270,26 +314,34 @@ def _detect_intensity_label(engine: DuckDBEngine, table: str = "feature") -> str
     return rows[0][0] if rows else None
 
 
-def _with_observation_id(table):
-    """Append ``observation_id`` (``run|label``) to an Arrow table of every label."""
+def _with_observation_id(table, key_col: str):
+    """Append ``observation_id`` (``<key>|<label>``) to an Arrow table of every label."""
     import pyarrow as pa
     import pyarrow.compute as pc
 
-    runs = _combine_chunks(table.column("run_file_name"))
+    keys = _combine_chunks(table.column(key_col))
     labels = _combine_chunks(table.column("intensity_label"))
     observation_id = pc.binary_join_element_wise(
-        pc.cast(runs, pa.large_string()),
+        pc.cast(keys, pa.large_string()),
         pc.cast(labels, pa.large_string()),
         pa.scalar("|", pa.large_string()),
     )
     return table.append_column("observation_id", observation_id)
 
 
+def _observation_rows(table, intensity_label: str | None, key_col: str):
+    """Return *table* and its observation column: *key_col*, or ``observation_id`` over every label."""
+    if intensity_label is None:
+        return _with_observation_id(table, key_col), "observation_id"
+    return table, key_col
+
+
 def _prepare_observations_arrow(
     table,
     intensity_label: str | None,
+    key_col: str = "run_file_name",
 ):
-    """Create matrix row IDs and their run/label lookup keys.
+    """Create matrix row IDs and their *key_col* (run or unit) / label lookup keys.
 
     Returns ``(table, row_col, obs_index, observation_keys)``. When every label is
     requested the ``observation_id`` column is appended to the Arrow table rather
@@ -297,14 +349,14 @@ def _prepare_observations_arrow(
     concatenated two object columns for every row, which on a large experiment is
     hundreds of millions of throwaway Python strings.
     """
+    table, row_col = _observation_rows(table, intensity_label, key_col)
     if intensity_label is None:
-        table = _with_observation_id(table)
         obs_index = _sorted_unique(table, "observation_id")
         # Reduce to one row per observation in Arrow *before* touching pandas -
         # the distinct set is the number of run/label pairs, not the row count.
         distinct = (
-            table.select(["observation_id", "run_file_name", "intensity_label"])
-            .group_by(["observation_id", "run_file_name", "intensity_label"])
+            table.select(["observation_id", key_col, "intensity_label"])
+            .group_by(["observation_id", key_col, "intensity_label"])
             .aggregate([])
         )
         pairs = (
@@ -313,17 +365,17 @@ def _prepare_observations_arrow(
             .set_index("observation_id")
             .reindex(obs_index)
         )
-        return table, "observation_id", obs_index, pairs
+        return table, row_col, obs_index, pairs
 
-    obs_index = _sorted_unique(table, "run_file_name")
+    obs_index = _sorted_unique(table, key_col)
     keys = pd.DataFrame(
         {
-            "run_file_name": obs_index,
+            key_col: obs_index,
             "intensity_label": str(intensity_label),
         },
         index=obs_index,
     )
-    return table, "run_file_name", obs_index, keys
+    return table, row_col, obs_index, keys
 
 
 def _attach_uns_metadata(engine: DuckDBEngine, mdata) -> None:
@@ -354,125 +406,118 @@ def _attach_uns_metadata(engine: DuckDBEngine, mdata) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _additional_layers(
-    engine: DuckDBEngine,
-    query: str,
-    label_column: str,
-    intensity_label: str | None,
-    var_col: str,
-    observations: pd.Index,
-    variables: pd.Index,
-) -> dict[str, sparse.csr_matrix]:
+def _pivot_modality(name: str, table, row_col: str, var_col: str, axes, duplicates: str):
+    """Pivot a modality's intensities and report cells that received several values."""
+    matrix, n_cells = _pivot_arrow_combining_duplicates(table, row_col, var_col, "intensity", axes, duplicates)
+    if n_cells:
+        logger.warning(
+            "MuData %s: %d cells received more than one intensity (several features or groups for one "
+            "observation); combined with %r. Pass duplicates= to choose.",
+            name,
+            n_cells,
+            duplicates,
+        )
+    return matrix, {"aggregation": duplicates, "cells": n_cells}
+
+
+def _decoy_flags(engine: DuckDBEngine, table: str, names: pd.Index) -> np.ndarray:
+    """Return ``is_decoy`` for each var name (precursor id or anchor protein)."""
+    flags = engine.execute(_DECOY_VAR_QUERIES[table]).fetchdf().set_index("name")["is_decoy"]
+    return flags.reindex(names).fillna(False).astype(bool).to_numpy()
+
+
+def _additional_layers(table, intensity_label: str | None, key_col: str, var_col: str, axes, duplicates: str):
     """One layer per additional intensity name, on the observations and variables of X."""
     import pyarrow.compute as pc
 
-    table = _query_arrow(engine, query, label_column, intensity_label)
-    row_col = "run_file_name"
-    if intensity_label is None:
-        table = _with_observation_id(table)
-        row_col = "observation_id"
+    table, row_col = _observation_rows(table, intensity_label, key_col)
     layers = {}
     for name in sorted(table.column("intensity_name").unique().to_pylist()):
         rows = table.filter(pc.field("intensity_name") == name)
-        layers[name] = _pivot_arrow_to_sparse(rows, row_col, var_col, "intensity", observations, variables)
+        layers[name], _ = _pivot_arrow_combining_duplicates(rows, row_col, var_col, "intensity", axes, duplicates)
     return layers
 
 
-def _imputed_mask_layer(
-    engine: DuckDBEngine,
-    query: str,
-    label_column: str,
-    intensity_label: str | None,
-    var_col: str,
-    observations: pd.Index,
-    variables: pd.Index,
-) -> dict[str, sparse.csr_matrix]:
+def _imputed_mask_layer(table, intensity_label: str | None, key_col: str, var_col: str, axes):
     """The ``imputed_mask`` layer, 1 in the cells the tool imputed; empty when none are."""
-    table = _query_arrow(engine, query, label_column, intensity_label)
     if table.num_rows == 0:
         return {}
-    row_col = "run_file_name"
-    if intensity_label is None:
-        table = _with_observation_id(table)
-        row_col = "observation_id"
+    table, row_col = _observation_rows(table, intensity_label, key_col)
     # Summed cells stack the flags of the rows behind them.
-    return {"imputed_mask": _pivot_arrow_to_sparse(table, row_col, var_col, "intensity", observations, variables).sign()}
+    return {"imputed_mask": _pivot_arrow_to_sparse(table, row_col, var_col, "intensity", *axes).sign()}
 
 
 def _build_precursor_adata(
     engine: DuckDBEngine,
     intensity_label: str | None,
+    include_decoys: bool = False,
+    duplicates: str = "sum",
 ):
     """Build AnnData from feature.parquet.
 
     obs = runs (one label) or run/label pairs (all labels),
-    var = peptidoform|charge, X = sparse intensity matrix,
-    layers = the additional intensities by name.
+    var = peptidoform|charge (with is_decoy when decoys are included),
+    X = sparse intensity matrix, layers = the additional intensities by name.
     """
     import anndata as ad
 
-    table = _query_arrow(engine, _PRECURSOR_QUERY, "i.label", intensity_label)
+    decoys = _decoy_filter("feature", include_decoys)
+    table = _query_arrow(engine, _PRECURSOR_QUERY, "i.label", intensity_label, decoys)
     if table.num_rows == 0:
         return ad.AnnData()
 
     table, row_col, observations, observation_keys = _prepare_observations_arrow(table, intensity_label)
     precursors = _sorted_unique(table, "precursor_id")
+    axes = (observations, precursors)
 
-    intensity_matrix = _pivot_arrow_to_sparse(table, row_col, "precursor_id", "intensity", observations, precursors)
-    layers = _additional_layers(
-        engine, _PRECURSOR_LAYER_QUERY, "a.label", intensity_label, "precursor_id", observations, precursors
-    )
+    intensity_matrix, duplicate_info = _pivot_modality("precursors", table, row_col, "precursor_id", axes, duplicates)
+    layer_rows = _query_arrow(engine, _PRECURSOR_LAYER_QUERY, "a.label", intensity_label, decoys)
+    layers = _additional_layers(layer_rows, intensity_label, "run_file_name", "precursor_id", axes, duplicates)
     if "imputed_labels" in engine.view_columns("feature"):
-        layers |= _imputed_mask_layer(
-            engine, _PRECURSOR_IMPUTED_QUERY, "intensity_label", intensity_label, "precursor_id", observations, precursors
-        )
+        imputed = _query_arrow(engine, _PRECURSOR_IMPUTED_QUERY, "intensity_label", intensity_label, decoys)
+        layers |= _imputed_mask_layer(imputed, intensity_label, "run_file_name", "precursor_id", axes)
 
     obs = _load_run_obs(engine, observation_keys, all_labels=intensity_label is None)
     var = pd.DataFrame(index=precursors)
+    if include_decoys:
+        var["is_decoy"] = _decoy_flags(engine, "feature", precursors)
 
-    return ad.AnnData(X=intensity_matrix, obs=obs, var=var, layers=layers)
-
-
-def _unit_obs(engine: DuckDBEngine, obs: pd.DataFrame, all_labels: bool) -> pd.DataFrame:
-    """Turn the run metadata of each unit's first run into the unit's metadata."""
-    obs = obs.drop(columns=[column for column in _RUN_ONLY_OBS_COLUMNS if column in obs.columns])
-    units = obs["run_file_name"] if all_labels else obs.index.to_series()
-    runs = engine.execute(_UNIT_RUNS_QUERY).fetchdf().set_index("unit")["runs"]
-    obs.insert(1 if all_labels else 0, "runs", units.map(runs).fillna("").values)
-    if all_labels:
-        obs = obs.rename(columns={"run_file_name": "unit"})
-    return obs
+    return ad.AnnData(X=intensity_matrix, obs=obs, var=var, layers=layers, uns={"qpx_duplicates": duplicate_info})
 
 
 def _build_protein_adata(
     engine: DuckDBEngine,
     intensity_label: str | None,
+    include_decoys: bool = False,
+    duplicates: str = "sum",
 ):
     """Build AnnData from pg.parquet.
 
-    obs = quantification units (one label) or unit/label pairs (all labels), with
-    their member runs in ``runs``; var = protein groups (sorted ``pg_accessions``
-    joined by ``;``) with ``anchor_protein`` and ``gene_name``; X = sparse
-    intensity matrix; layers = the additional intensities by name.
+    obs = quantification units (one label) or unit/label pairs (all labels);
+    var = protein groups (sorted ``pg_accessions`` joined by ``;``) with
+    ``anchor_protein`` and ``gene_name`` (and ``is_decoy`` when decoys are
+    included); X = sparse intensity matrix; layers = the additional intensities
+    by name.
     """
     import anndata as ad
 
-    table = _query_arrow(engine, _PROTEIN_QUERY, "p.label", intensity_label)
+    decoys = _decoy_filter("pg", include_decoys)
+    table = _query_arrow(engine, _PROTEIN_QUERY, "p.label", intensity_label, decoys)
     if table.num_rows == 0:
         return ad.AnnData()
 
-    table, row_col, observations, observation_keys = _prepare_observations_arrow(table, intensity_label)
+    table, row_col, observations, observation_keys = _prepare_observations_arrow(table, intensity_label, key_col="grouped_runs")
     groups = _sorted_unique(table, "protein_group")
+    axes = (observations, groups)
 
-    intensity_matrix = _pivot_arrow_to_sparse(table, row_col, "protein_group", "intensity", observations, groups)
-    layers = _additional_layers(engine, _PROTEIN_LAYER_QUERY, "p.label", intensity_label, "protein_group", observations, groups)
+    intensity_matrix, duplicate_info = _pivot_modality("proteins", table, row_col, "protein_group", axes, duplicates)
+    layer_rows = _query_arrow(engine, _PROTEIN_LAYER_QUERY, "p.label", intensity_label, decoys)
+    layers = _additional_layers(layer_rows, intensity_label, "grouped_runs", "protein_group", axes, duplicates)
     if "is_imputed" in engine.view_columns("pg"):
-        layers |= _imputed_mask_layer(
-            engine, _PROTEIN_IMPUTED_QUERY, "p.label", intensity_label, "protein_group", observations, groups
-        )
+        imputed = _query_arrow(engine, _PROTEIN_IMPUTED_QUERY, "p.label", intensity_label, decoys)
+        layers |= _imputed_mask_layer(imputed, intensity_label, "grouped_runs", "protein_group", axes)
 
-    obs = _load_run_obs(engine, observation_keys, all_labels=intensity_label is None)
-    obs = _unit_obs(engine, obs, all_labels=intensity_label is None)
+    obs = _load_unit_obs(engine, observation_keys, all_labels=intensity_label is None)
 
     # A missing gene must still serialise as a string. When every protein lacks a
     # gene the column comes back float64 (all NaN) and h5py refuses to write var
@@ -481,8 +526,10 @@ def _build_protein_adata(
     # is NULL on every row. Same reason _load_run_obs fills its string columns.
     var = engine.execute(_PROTEIN_VAR_QUERY).fetchdf().set_index("protein_group").reindex(groups)
     var = var.fillna("").astype(str)
+    if include_decoys:
+        var["is_decoy"] = _decoy_flags(engine, "pg", groups)
 
-    return ad.AnnData(X=intensity_matrix, obs=obs, var=var, layers=layers)
+    return ad.AnnData(X=intensity_matrix, obs=obs, var=var, layers=layers, uns={"qpx_duplicates": duplicate_info})
 
 
 def _build_feature_mapping(engine: DuckDBEngine, mdata) -> sparse.csr_matrix:
@@ -520,7 +567,6 @@ def _build_feature_mapping(engine: DuckDBEngine, mdata) -> sparse.csr_matrix:
            f.peptidoform || '|' || CAST(f.charge AS VARCHAR) AS precursor_id,
            array_to_string(list_sort(list_transform(f.pg_accessions, lambda x: x.accession)), ';') AS protein_group
     FROM feature f
-    WHERE NOT f.is_decoy
     """
     df = engine.execute(sql).fetchdf()
 
@@ -540,108 +586,6 @@ def _build_feature_mapping(engine: DuckDBEngine, mdata) -> sparse.csr_matrix:
 
     mat = sparse.coo_matrix((data, (rows, cols)), shape=(n, n))
     return mat.tocsr()
-
-
-def _build_expression_adata(ds_path: Path, file_prefix: str | None = None):
-    """Auto-detect and load the absolute-expression AnnData: ``.ae``, or the older ``.pe``, as h5ad or zarr.
-
-    Returns None if not found.
-    """
-    import anndata as ad
-
-    stem = file_prefix or "*"
-    for view in ("ae", "pe"):
-        candidates = list(ds_path.glob(f"{stem}.{view}.h5ad"))
-        if candidates:
-            return ad.read_h5ad(candidates[0])
-        candidates = list(ds_path.glob(f"{stem}.{view}.zarr"))
-        if candidates:
-            return ad.read_zarr(candidates[0])
-
-    return None
-
-
-def _build_differential_adata(ds_path: Path, file_prefix: str | None = None):
-    """Auto-detect and load ``.de.h5ad`` or ``.de.zarr``.
-
-    Restructures ``uns["de_results"]`` into matrix form:
-    obs = contrasts, var = proteins, X = log2FC,
-    layers = {pvals_adj, scores, pvals, se}.
-
-    Returns None if not found.
-    """
-    import anndata as ad
-
-    # Try h5ad first
-    h5ad_pattern = f"{file_prefix}.de.h5ad" if file_prefix else "*.de.h5ad"
-    candidates = list(ds_path.glob(h5ad_pattern))
-    if not candidates:
-        zarr_pattern = f"{file_prefix}.de.zarr" if file_prefix else "*.de.zarr"
-        candidates = list(ds_path.glob(zarr_pattern))
-        if not candidates:
-            return None
-        adata = ad.read_zarr(candidates[0])
-    else:
-        adata = ad.read_h5ad(candidates[0])
-
-    # If it has de_results in uns, restructure into matrix form
-    if "de_results" in adata.uns:
-        de = adata.uns["de_results"]
-        if isinstance(de, dict):
-            de = _long_de_results(de)
-        if not de.empty:
-            return _reshape_de_results(de)
-
-    # Already in matrix form or no de_results — return as-is
-    return adata
-
-
-def _long_de_results(contrasts: dict) -> pd.DataFrame:
-    """Flatten the specification's ``{contrast: {names, logfoldchanges, ...}}`` layout into long form."""
-    frames = []
-    for contrast, fields in contrasts.items():
-        frame = pd.DataFrame(
-            {"contrast": contrast, "protein": list(fields["names"]), "log2FC": fields.get("logfoldchanges", np.nan)}
-        )
-        for column in ("pvals_adj", "scores", "pvals", "se"):
-            if column in fields:
-                frame[column] = fields[column]
-        frames.append(frame)
-    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
-
-
-def _reshape_de_results(de: pd.DataFrame):
-    """Reshape long-form DE results into an AnnData matrix.
-
-    Expects columns: contrast, protein, log2FC and optionally pvals_adj, scores,
-    pvals, se. A protein a contrast did not test is NaN, because 0 would read as
-    no change and a p-value of 0.
-    """
-    import anndata as ad
-
-    # Identify contrast and protein columns
-    contrast_col = "contrast" if "contrast" in de.columns else de.columns[0]
-    protein_col = "protein" if "protein" in de.columns else de.columns[1]
-
-    if "log2FC" not in de.columns:
-        raise ValueError(f"DE results missing required 'log2FC' column. Found columns: {list(de.columns)}")
-
-    contrasts = pd.Index(sorted(de[contrast_col].unique()), name="contrast")
-    proteins = pd.Index(sorted(de[protein_col].unique()), name="protein")
-
-    def matrix(column: str) -> np.ndarray:
-        return (
-            de.pivot_table(index=contrast_col, columns=protein_col, values=column, aggfunc="first", dropna=False)
-            .reindex(index=contrasts, columns=proteins)
-            .to_numpy(dtype="float64")
-        )
-
-    return ad.AnnData(
-        X=matrix("log2FC"),
-        obs=pd.DataFrame(index=contrasts),
-        var=pd.DataFrame(index=proteins),
-        layers={column: matrix(column) for column in ("pvals_adj", "scores", "pvals", "se") if column in de.columns},
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -719,11 +663,32 @@ def _select_intensity_labels(
     return feature_label, protein_label
 
 
+def _requested_modalities(dataset: Dataset, modalities: list[str] | None) -> set[str]:
+    """Validate *modalities*, defaulting to every available one."""
+    if modalities is None:
+        return _available_quant_modalities(dataset) | {"expression", "differential"}
+    unknown = set(modalities) - _VALID_MODALITIES
+    if unknown:
+        raise ValueError(f"Unknown modalities: {unknown}. Valid: {sorted(_VALID_MODALITIES)}")
+    return set(modalities)
+
+
+def _fill_string_nans(mdata) -> None:
+    """Replace NaN in object columns, which h5py cannot write in vlen-string arrays."""
+    for adata in mdata.mod.values():
+        for frame in (adata.obs, adata.var):
+            str_cols = frame.select_dtypes(include=["object"]).columns
+            if len(str_cols):
+                frame[str_cols] = frame[str_cols].fillna("")
+
+
 def build_mudata(
     dataset: Dataset,
     intensity_label: str | None = None,
     modalities: list[str] | None = None,
     all_intensity_labels: bool = False,
+    include_decoys: bool = False,
+    duplicates: str = "sum",
 ):
     """Assemble QPX dataset into a MuData object.
 
@@ -734,41 +699,48 @@ def build_mudata(
     intensity_label : str, optional
         Intensity label to extract (e.g. "TMT126").  When omitted, label-free
         data auto-detects its single label, while multiplexed (isobaric/plexDIA)
-        data expands over every channel as ``run|label`` observations.
+        data expands over every channel as ``run|label`` (precursors) and
+        ``grouped_runs|label`` (proteins) observations.
     modalities : list of str, optional
         Which modalities to include.  Valid values:
         ``"precursors"``, ``"proteins"``, ``"expression"``, ``"differential"``.
         Defaults to all available.
     all_intensity_labels : bool
-        Force every intensity label into a separate ``run|label`` observation.
-        Defaults to False: label-free data then stays run-level, while
-        multiplexed data still auto-expands over its channels (so isobaric/
-        plexDIA never collapses to a single channel).
+        Force every intensity label into a separate ``run|label`` (precursors)
+        or ``grouped_runs|label`` (proteins) observation; obs then carries the
+        ``run_file_name`` or ``grouped_runs`` and ``intensity_label`` columns.
+        Defaults to False: label-free data then keeps one observation per run
+        (per unit for proteins), while multiplexed data still auto-expands over
+        its channels (so isobaric/plexDIA never collapses to a single channel).
+    include_decoys : bool
+        Keep decoy precursors and protein groups, flagged in ``var["is_decoy"]``.
+        Defaults to False: decoys are left out of both matrices.
+    duplicates : {"sum", "mean"}
+        How to combine several intensities that land in one cell, such as two
+        features of one precursor in one run. The count of such cells is
+        stored in each modality's ``uns["qpx_duplicates"]`` and logged.
 
     Returns
     -------
     mudata.MuData
+        ``proteins`` observations are quantification units (one ``grouped_runs``
+        set, per label when expanded), named by their member runs joined by
+        ``;``; a single-run unit keeps its run name.
     """
     import mudata as mu
 
+    if duplicates not in _DUPLICATE_AGGREGATIONS:
+        raise ValueError(f"duplicates must be one of {_DUPLICATE_AGGREGATIONS}, got {duplicates!r}")
     engine = dataset._engine
     ds_path = Path(dataset.path)
     file_prefix = dataset.file_prefix
-
-    if modalities is not None:
-        unknown = set(modalities) - _VALID_MODALITIES
-        if unknown:
-            raise ValueError(f"Unknown modalities: {unknown}. Valid: {sorted(_VALID_MODALITIES)}")
-        requested = set(modalities)
-    else:
-        requested = _available_quant_modalities(dataset) | {"expression", "differential"}
-
+    requested = _requested_modalities(dataset, modalities)
     feat_intensity, pg_intensity = _select_intensity_labels(engine, intensity_label, all_intensity_labels)
 
     mod: dict = {}
     builders = {
-        "precursors": lambda: _build_precursor_adata(engine, feat_intensity),
-        "proteins": lambda: _build_protein_adata(engine, pg_intensity),
+        "precursors": lambda: _build_precursor_adata(engine, feat_intensity, include_decoys, duplicates),
+        "proteins": lambda: _build_protein_adata(engine, pg_intensity, include_decoys, duplicates),
         "expression": lambda: _build_expression_adata(ds_path, file_prefix),
         "differential": lambda: _build_differential_adata(ds_path, file_prefix),
     }
@@ -783,6 +755,7 @@ def build_mudata(
     # incomplete view without scraping the log. Always set the key, so its
     # absence means "built by an older qpx", not "nothing failed".
     mdata.uns["qpx_failed_modalities"] = dict(failures)
+    mdata.uns["qpx_include_decoys"] = bool(include_decoys)
 
     # Attach feature mapping if both precursors and proteins are present
     if "precursors" in mod and "proteins" in mod:
@@ -794,15 +767,7 @@ def build_mudata(
 
     # Attach dataset-level metadata
     _attach_uns_metadata(engine, mdata)
-
-    # Sanitize NaN in object columns across all modalities to prevent
-    # h5py serialization errors (can't write NaN in vlen-string arrays).
-    for adata in mdata.mod.values():
-        for frame in (adata.obs, adata.var):
-            str_cols = frame.select_dtypes(include=["object"]).columns
-            if len(str_cols):
-                frame[str_cols] = frame[str_cols].fillna("")
-
+    _fill_string_nans(mdata)
     return mdata
 
 

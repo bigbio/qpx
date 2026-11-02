@@ -94,7 +94,7 @@ def test_maxquant_lfq_retains_only_units_with_identification(tmp_path, missing_q
         assert retained[0]["grouped_runs"] == ["run1", "run2"]
         assert retained[0]["label"] == "LFQ"
         assert retained[0]["intensity"] is None
-        # The experiment's MS/MS count is a real quantity even without an intensity.
+        # The zero LFQ and iBAQ are left out; the experiment's MS/MS count is the spectral count.
         assert retained[0]["additional_intensities"] == [
             {"label": "LFQ", "intensities": [{"intensity_name": "spectral_count", "intensity_value": 2.0}]}
         ]
@@ -167,7 +167,7 @@ def test_maxquant_tmt_identification_skips_channels_without_a_sample(tmp_path):
     rows = {row["label"]: row for row in pq.read_table(output).to_pylist()}
     assert sorted(rows, key=labels.index) == labels[:6]
     assert rows["TMT129N"]["intensity"] is None
-    assert rows["TMT129N"]["additional_intensities"] == [
-        {"label": "TMT129N", "intensities": [{"intensity_name": "spectral_count", "intensity_value": 3.0}]}
-    ]
+    # The zero corrected intensity beside a missing one is MaxQuant's sentinel, and
+    # the experiment's MS/MS count is a spectral count of the label-free rows only.
+    assert rows["TMT129N"]["additional_intensities"] is None
     assert rows["TMT126"]["intensity"] == 100

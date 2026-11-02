@@ -35,7 +35,10 @@ mdata.write("PXD000000.h5mu")  # serialize to HDF5
 ```
 
 Use `build_mudata(ds, all_intensity_labels=True)` to represent every TMT/iTRAQ
-channel as a separate `run|label` observation.
+channel as a separate observation (`run|label` for precursors, `grouped_runs|label`
+for proteins). Protein observations are quantification units, so the fractions of
+one sample form one observation. Decoys are left out unless you pass
+`include_decoys=True` (see [MuData](docs/spec/anndata.md#mudata-h5mu)).
 
 > MuData support is included in the default QPX installation.
 

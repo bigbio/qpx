@@ -1,4 +1,4 @@
-"""Dataset validation of run references and label-to-sample resolution across views."""
+"""Cross-view checks beside run and label resolution: PSM labels, grouped-run fraction order and feature-to-pg coverage."""
 
 import pytest
 
@@ -45,53 +45,6 @@ def test_resolving_labels_raise_no_issue(tmp_path):
     with Dataset(ds_dir) as ds:
         results = ds.validate(strict=True)
     assert results["feature"].issues == []
-
-
-def test_feature_naming_an_unknown_run_is_an_error(tmp_path):
-    """Orphaned feature runs resolve to no sample, as in FragPipe output with renamed runs."""
-    features = [make_feature_record(run_file_name="NOT_A_RUN", charge=charge) for charge in (1, 2, 3)]
-    ds_dir = _write_dataset(tmp_path, features=features, run_labels=TMT_RUN)
-    [issue] = _issues(ds_dir, "feature", "dangling_run")
-    assert issue.severity == "error"
-    assert "3 feature row(s)" in issue.message
-    assert "'NOT_A_RUN'" in issue.message
-
-
-def test_psm_naming_an_unknown_run_is_an_error(tmp_path):
-    """The run reference check covers PSMs as well."""
-    ds_dir = _write_dataset(
-        tmp_path,
-        features=[make_feature_record()],
-        run_labels=TMT_RUN,
-        psms=[make_psm_record(run_file_name="NOT_A_RUN")],
-    )
-    [issue] = _issues(ds_dir, "psm", "dangling_run")
-    assert issue.severity == "error"
-
-
-def test_repeated_label_in_one_row_is_an_error(tmp_path):
-    """A label listed twice in one row would be counted twice by every consumer."""
-    feature = make_feature_record(intensities=[{"label": "TMT126", "intensity": 1.0}] * 3)
-    ds_dir = _write_dataset(tmp_path, features=[feature], run_labels=TMT_RUN)
-    [issue] = _issues(ds_dir, "feature", "duplicate_label")
-    assert issue.severity == "error"
-
-
-@pytest.mark.parametrize(
-    ("run_labels", "label", "check", "severity"),
-    [
-        (TMT_RUN, "TMT128N", "unresolved_label", "error"),
-        ([("S1", "TMT126"), ("S2", "TMT126")], "TMT126", "ambiguous_label_sample", "error"),
-        ([("S1", "LFQ")], "raw", "label_single_sample_fallback", "warning"),
-    ],
-)
-def test_label_must_resolve_to_one_sample(tmp_path, run_labels, label, check, severity):
-    """A (run, label) pair resolves to exactly one sample; a single-sample run only falls back."""
-    feature = make_feature_record(intensities=[{"label": label, "intensity": 1.0}])
-    ds_dir = _write_dataset(tmp_path, features=[feature], run_labels=run_labels)
-    [issue] = _issues(ds_dir, "feature", check)
-    assert issue.severity == severity
-    assert f"('run_01', '{label}')" in issue.message
 
 
 def test_psm_label_outside_identified_labels(tmp_path):

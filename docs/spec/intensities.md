@@ -151,6 +151,8 @@ additional_intensities: array[struct{
 }]
 ```
 
+A label normally has a primary entry too, whose `intensity` may be null: a label-free MaxQuant feature identified by MS/MS only keeps its `spectral_count` under the label `LFQ`, whose intensity is null.
+
 ### Example
 
 ```json

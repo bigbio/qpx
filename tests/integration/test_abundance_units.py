@@ -1,7 +1,5 @@
 """Quantification units, labels and analyte keys of Dataset.intensity(), design_matrix() and MuData."""
 
-import logging
-
 import pyarrow.parquet as pq
 import pytest
 
@@ -54,23 +52,25 @@ def _replicates(tmp_path):
 
 
 def test_technical_replicates_are_combined_by_agg(replicates):
-    """A sample's replicate units are averaged by default, not summed."""
+    """A sample's replicate units are combined only as agg says, never summed by default."""
     with Dataset(replicates) as ds:
-        assert ds.design_matrix("protein").loc["S1", "P1"] == 200.0
+        with pytest.raises(ValueError, match="technical replicates"):
+            ds.design_matrix("protein")
+        assert ds.design_matrix("protein", agg="mean").loc["S1", "P1"] == 200.0
         assert ds.design_matrix("protein", agg="sum").loc["S1", "P1"] == 400.0
         units = ds.design_matrix("protein", by="unit")
-    assert units.loc[("S1", "LFQ", "r1"), "P1"] == 100.0
-    assert units.loc[("S1", "LFQ", "r2"), "P1"] == 300.0
+    assert units.loc[("S1", "r1|LFQ"), "P1"] == 100.0
+    assert units.loc[("S1", "r2|LFQ"), "P1"] == 300.0
 
 
 def test_output_path_applies_agg_and_rows(replicates, tmp_path):
     """The out-of-core pivot groups and aggregates like the in-memory one."""
     with Dataset(replicates) as ds:
-        samples = pq.read_table(ds.design_matrix("protein", output_path=tmp_path / "s.parquet")).to_pylist()
+        samples = pq.read_table(ds.design_matrix("protein", agg="mean", output_path=tmp_path / "s.parquet")).to_pylist()
         units = pq.read_table(ds.design_matrix("protein", by="unit", output_path=tmp_path / "u.parquet"))
     assert {row["sample_accession"]: row["P1"] for row in samples} == {"S1": 200.0, "S2": 50.0}
     assert units.num_rows == 3
-    assert {"sample_accession", "label", "unit"} <= set(units.column_names)
+    assert {"sample_accession", "quantification_unit"} <= set(units.column_names)
 
 
 def test_bridge_channel_is_one_unit_per_plex(tmp_path):
@@ -85,12 +85,12 @@ def test_bridge_channel_is_one_unit_per_plex(tmp_path):
     ]
     with Dataset(_write(tmp_path, runs, pgs, features)) as ds:
         proteins = ds.intensity("protein").to_df()
-        assert sorted(proteins["unit"]) == ["a_f1", "b_f1"]
-        assert ds.design_matrix("protein").loc["POOL", "P1"] == 5000.0
+        assert sorted(proteins["quantification_unit"]) == ["a_f1;a_f2|TMT126", "b_f1|TMT126"]
+        assert ds.design_matrix("protein", agg="mean").loc["POOL", "P1"] == 5000.0
         peptides = ds.design_matrix("peptide", by="unit")
     # Fractions a_f1 and a_f2 add up within their unit.
-    assert peptides.loc[("POOL", "TMT126", "a_f1"), "PEPTIDEK"] == 40.0
-    assert peptides.loc[("POOL", "TMT126", "b_f1"), "PEPTIDEK"] == 20.0
+    assert peptides.loc[("POOL", "a_f1;a_f2|TMT126"), "PEPTIDEK"] == 40.0
+    assert peptides.loc[("POOL", "b_f1|TMT126"), "PEPTIDEK"] == 20.0
 
 
 def test_groups_sharing_a_leader_stay_apart(tmp_path):
@@ -132,28 +132,34 @@ def test_peptide_key(tmp_path):
             ds.intensity("protein", key="sequence")
 
 
-def test_two_labels_of_one_sample(tmp_path, caplog):
-    """Pulsed SILAC: light and heavy of one sample are kept apart by unit rows and flagged by sample rows."""
+def test_two_labels_of_one_sample(tmp_path):
+    """Pulsed SILAC: light and heavy of one sample are kept apart by unit rows and not combined by sample rows."""
     runs = [_run("r1", [("S1", "SILAC light", 1), ("S1", "SILAC heavy", 1)])]
     feature = _feature(intensities=[{"label": "SILAC light", "intensity": 1000.0}, {"label": "SILAC heavy", "intensity": 10.0}])
     with Dataset(_write(tmp_path, runs, features=[feature])) as ds:
         units = ds.design_matrix("peptide", by="unit")
-        with caplog.at_level(logging.WARNING, logger="qpx.core.dataset_queries"):
-            samples = ds.design_matrix("peptide")
-    assert units.loc[("S1", "SILAC light", "r1"), "PEPTIDEK"] == 1000.0
-    assert units.loc[("S1", "SILAC heavy", "r1"), "PEPTIDEK"] == 10.0
+        with pytest.raises(ValueError, match="several labels of one sample"):
+            ds.design_matrix("peptide")
+        samples = ds.design_matrix("peptide", agg="mean")
+    assert units.loc[("S1", "r1|SILAC light"), "PEPTIDEK"] == 1000.0
+    assert units.loc[("S1", "r1|SILAC heavy"), "PEPTIDEK"] == 10.0
     assert samples.loc["S1", "PEPTIDEK"] == 505.0
-    assert "several labels within one unit" in caplog.text
 
 
 def test_unmatched_labels_of_a_single_sample_run_do_not_add_up(tmp_path):
-    """Only a lone intensity falls back to the run's single sample; a light/heavy pair matching no label is not summed."""
+    """A single-sample run takes intensities of any label, each label its own unit; a light/heavy pair is not summed."""
     runs = [_run("r1", [("S1", "LFQ", 1)])]
     pair = _feature(intensities=[{"label": "L", "intensity": 1e6}, {"label": "H", "intensity": 4e6}])
     lone = _feature(peptidoform="ANOTHERK", sequence="ANOTHERK", intensities=[{"label": "raw", "intensity": 5.0}])
     with Dataset(_write(tmp_path, runs, features=[pair, lone])) as ds:
         rows = ds.intensity("peptide").to_df()
-    assert rows[["feature_id", "intensity"]].values.tolist() == [["ANOTHERK", 5.0]]
+        with pytest.raises(ValueError, match="more than one quantification unit"):
+            ds.design_matrix("peptide")
+    assert sorted(rows[["feature_id", "quantification_unit", "intensity"]].values.tolist()) == [
+        ["ANOTHERK", "r1|raw", 5.0],
+        ["PEPTIDEK", "r1|H", 4e6],
+        ["PEPTIDEK", "r1|L", 1e6],
+    ]
 
 
 def _lfq(name, intensity):
@@ -200,9 +206,8 @@ def test_mudata_proteins_observe_units_and_groups(fractionated):
     """One observation per unit with its runs, one variable per group, no decoys, additional intensities as layers."""
     with Dataset(fractionated) as ds:
         proteins = build_mudata(ds, modalities=["proteins"], all_intensity_labels=True).mod["proteins"]
-    assert list(proteins.obs.index) == ["f1|LFQ"]
-    assert proteins.obs.loc["f1|LFQ", ["unit", "runs", "sample_accession", "organism"]].tolist() == [
-        "f1",
+    assert list(proteins.obs.index) == ["f1;f2|LFQ"]
+    assert proteins.obs.loc["f1;f2|LFQ", ["grouped_runs", "sample_accession", "organism"]].tolist() == [
         "f1;f2",
         "S1",
         "Homo sapiens",

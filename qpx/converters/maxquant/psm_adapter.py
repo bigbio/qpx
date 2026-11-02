@@ -24,7 +24,7 @@ from qpx.converters.mappings import get_field_mappings
 from qpx.converters.maxquant.base_adapter import MaxQuantBaseAdapter
 from qpx.converters.maxquant.constants import (
     MQ_LABEL_LETTERS,
-    FixedMods,
+    LabelMods,
     localization_columns,
     localization_sites,
     mq_calculated_mz,
@@ -73,7 +73,7 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
 
     _evidence_feature_ids: dict[int, int] = {}
     # Raw file -> (label, label modifications) of each SILAC labeling state.
-    _states: dict[str, tuple[tuple[str, FixedMods], ...]] = {}
+    _states: dict[str, tuple[tuple[str, LabelMods], ...]] = {}
 
     def convert(
         self,
@@ -148,7 +148,7 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
             run: tuple((labels[letter], mods) for letter, mods in zip(letters[run], states)) for run, states in label_mods.items()
         }
 
-    def _psm_label(self, row: dict) -> tuple[Optional[str], FixedMods]:
+    def _psm_label(self, row: dict) -> tuple[Optional[str], LabelMods]:
         """The SILAC label and label modifications of a PSM; none when its labeling state is unknown (-1)."""
         state = row.get("Labeling state")
         if not self._states or pd.isna(state) or state < 0:
@@ -289,7 +289,9 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
 
         calculated_mz = mq_calculated_mz(peptidoform, charge, safe_float(row.get("Mass")))
         observed_mz = mq_observed_mz(
-            safe_float(row.get(r.get("observed_mz", "m/z"))), safe_float(row.get(r.get("mass_error_ppm", "Mass error [ppm]")))
+            safe_float(row.get(r.get("observed_mz", "m/z"))),
+            safe_float(row.get(r.get("mass_error_ppm", "Mass error [ppm]"))),
+            calculated_mz,
         )
 
         # RT (minutes → seconds)

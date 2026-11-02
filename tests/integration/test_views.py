@@ -4,7 +4,6 @@ import pandas as pd
 import pytest
 
 from qpx.core.convert import QueryResult
-from qpx.core.sample_resolution import feature_samples_sql
 from qpx.dataset import Dataset
 from qpx.views.api import IdentificationSummaryView, PeptideView, ProteinView
 
@@ -346,8 +345,12 @@ class TestMultiRunGroupedRuns:
         assert abundance.iloc[0]["intensity"] == 5000.0
         assert matrix.loc["SAMPLE_A", "P12346;PROT1"] == 5000.0
 
-    def test_mudata_proteins_observe_the_unit_once(self, multi_run_dataset_dir):
-        """The muData proteins modality has one observation per unit, listing its runs, not a copy per fraction."""
+    def test_mudata_proteins_observe_the_quantification_unit(self, multi_run_dataset_dir):
+        """The muData proteins modality has one observation per grouped_runs set.
+
+        It used to have one per member run, each holding a copy of the unit's
+        value, so summing over observations doubled this two-fraction group.
+        """
         from qpx.mudata import build_mudata
 
         with Dataset(multi_run_dataset_dir) as ds:
@@ -356,10 +359,9 @@ class TestMultiRunGroupedRuns:
         proteins = mdata.mod["proteins"]
         assert list(proteins.var.index) == ["P12346;PROT1"]
         assert proteins.var.loc["P12346;PROT1", "anchor_protein"] == "PROT1"
-        assert list(proteins.obs.index) == ["run_A"]
-        assert proteins.obs.loc["run_A", "runs"] == "run_A;run_B"
-        assert proteins.obs.loc["run_A", "sample_accession"] == "SAMPLE_A"
-        assert "fraction" not in proteins.obs.columns
+        assert list(proteins.obs.index) == ["run_A;run_B"]
+        assert list(proteins.obs["sample_accession"]) == ["SAMPLE_A"]
+        assert list(proteins.obs["run_accession"]) == ["assay_A;assay_B"]
         assert proteins.X.toarray().tolist() == [[5000.0]]
 
     def test_invariant_check_passes(self, multi_run_dataset_dir):
@@ -392,16 +394,6 @@ class TestMultiRunGroupedRuns:
         assert len(quantified) == 2
         assert set(quantified["sample_accession"]) == {"SAMPLE_A"}
         assert set(quantified["label"]) == {"LFQ"}
-
-    def test_feature_sample_resolution_plans_no_cross_product(self, multi_run_dataset_dir):
-        """Feature intensities reach their samples through equi-joins; UNNEST(run.samples) per joined row planned a product."""
-        with Dataset(multi_run_dataset_dir) as ds:
-            plan = ds.sql("EXPLAIN " + feature_samples_sql("feature", ("sequence",))).fetchall()
-        # DuckDB 1.x names the operators HASH_JOIN, DuckDB 2.0 Hash Join.
-        text = "\n".join(row[1] for row in plan).upper().replace(" ", "_")
-        assert "HASH_JOIN" in text
-        assert "CROSS_PRODUCT" not in text
-        assert "NESTED_LOOP_JOIN" not in text
 
 
 class TestViewIntegration:

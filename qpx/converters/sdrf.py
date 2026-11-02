@@ -16,11 +16,15 @@ import pandas as pd
 
 from qpx.converters.base import BaseConverter
 from qpx.converters.channel_labels import is_ms1_label, normalize_label
-from qpx.converters.ptm import unimod_mass
 from qpx.core.files import run_file_stem
 from qpx.core.ontology import PublicOntology
 from qpx.core.scores import field_ontology_entries
-from qpx.core.sdrf import get_name_from_complex_sdrf_value, parse_sdrf_kv, validate_sdrf_data_files
+from qpx.core.sdrf import (
+    get_name_from_complex_sdrf_value,
+    parse_modification_parameters,
+    parse_sdrf_kv,
+    validate_sdrf_data_files,
+)
 from qpx.writers.run import RunWriter
 from qpx.writers.sample import SampleWriter
 
@@ -78,7 +82,6 @@ _COL_CHANNEL_ROLE = "comment[channel role]"
 _COL_REFERENCE_CHANNEL = "comment[reference channel]"
 _COL_MIXTURE = "comment[mixture]"
 _LABEL_MOD = re.compile(r"(?i)^(?:label:|dimethyl|mtraq)")
-_UNIMOD_ACCESSION = re.compile(r"(?i)UNIMOD:(\d+)")
 _DURATION = re.compile(r"(?i)(\d+(?:\.\d+)?)\s*(h|hr|hours?|m|min|mins|minutes?|s|sec|seconds?)?")
 _SECONDS_PER_UNIT = {"h": 3600.0, "m": 60.0, "s": 1.0}
 _COL_MOD_PARAM = "comment[modification parameter"  # prefix, may have ]s suffix
@@ -274,15 +277,6 @@ def _run_samples(group: pd.DataFrame, run_file: str) -> list[dict]:
     return samples
 
 
-def _modification_mass(kv: dict) -> float | None:
-    """The mass delta an SDRF modification declares (``MM=``), else that of its Unimod accession."""
-    declared = kv.get("MM")
-    if declared:
-        return float(declared)
-    match = _UNIMOD_ACCESSION.fullmatch(kv.get("AC", ""))
-    return unimod_mass(int(match.group(1))) if match else None
-
-
 def _gradient_seconds(group: pd.DataFrame) -> float | None:
     """``comment[gradient length]`` in seconds: ``120 min``, ``2 h``, ``7200 s``; a bare number is minutes."""
     if _COL_GRADIENT not in group.columns or group[_COL_GRADIENT].dropna().empty:
@@ -476,7 +470,7 @@ class SdrfConverter(BaseConverter):
                 "file_name": file_name,
                 "samples": samples,
                 **acquisition_fields,
-                "modification_parameters": self.parse_modification_params(group),
+                "modification_parameters": parse_modification_parameters(group),
                 "label_definitions": self._label_definitions(group),
                 "gradient_length": _gradient_seconds(group),
             }
@@ -561,39 +555,13 @@ class SdrfConverter(BaseConverter):
     # Modification parsing
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def parse_modification_params(sdrf_df: pd.DataFrame) -> list[dict] | None:
-        """Extract the distinct modification parameters of the given SDRF rows, e.g. those of one run."""
-        mod_cols = [c for c in sdrf_df.columns if c.startswith("comment[modification parameter")]
-        results: dict[tuple, dict] = {}
-        for col in mod_cols:
-            for raw in sdrf_df[col].dropna().unique():
-                kv = parse_sdrf_kv(raw)
-                accession = kv.get("AC", "")
-                name = kv.get("NT", "")
-                if not accession and not name:
-                    continue
-                position, target_aa = kv.get("PP", None), kv.get("TA", None)
-                results.setdefault(
-                    (accession, name, position, target_aa),
-                    {
-                        "accession": accession,
-                        "name": name,
-                        "fixed": kv.get("MT", "").lower() in ("fixed", "fix"),
-                        "position": position,
-                        "target_amino_acid": target_aa,
-                        "mass_delta": _modification_mass(kv),
-                    },
-                )
-        return list(results.values()) or None
-
     @classmethod
     def _label_definitions(cls, group: pd.DataFrame) -> list[dict] | None:
         """The label modifications declared on the rows of each MS1 label of a run."""
         definitions = []
         for raw_label, rows in group.groupby(_COL_LABEL, sort=True):
             label = normalize_label(_extract_nt(raw_label))
-            modifications = [mod for mod in cls.parse_modification_params(rows) or [] if _LABEL_MOD.match(mod["name"] or "")]
+            modifications = [mod for mod in parse_modification_parameters(rows) or [] if _LABEL_MOD.match(mod["name"] or "")]
             if is_ms1_label(label) and modifications:
                 definitions.append({"label": label, "modifications": modifications})
         return definitions or None

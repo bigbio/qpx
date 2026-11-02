@@ -113,7 +113,7 @@ class TestMaxQuantToProforma:
     def test_fixed_mods_written_inline(self):
         from qpx.converters.maxquant.constants import to_proforma
 
-        fixed = (("C", "UNIMOD:4"), ("N-term", "UNIMOD:737"), ("K", "UNIMOD:737"))
+        fixed = (("UNIMOD:4", "C", ""), ("UNIMOD:737", "", "N"), ("UNIMOD:737", "K", ""))
         assert to_proforma("_ACM(Oxidation (M))K_", fixed) == "[UNIMOD:737]-AC[UNIMOD:4]M[UNIMOD:35]K[UNIMOD:737]"
         # A blocked N-terminus takes no label.
         assert to_proforma("_(Acetyl (Protein N-term))ACK_", fixed) == "[UNIMOD:1]-AC[UNIMOD:4]K[UNIMOD:737]"
@@ -126,10 +126,11 @@ class TestMaxQuantToProforma:
             {"accession": "", "name": "TMT6plex", "fixed": True, "position": "Any N-term", "target_amino_acid": None},
             {"accession": "UNIMOD:35", "name": "Oxidation", "fixed": False, "position": None, "target_amino_acid": "M"},
         ]
-        assert sdrf_fixed_mods(entries) == (("C", "UNIMOD:4"), ("N-term", "UNIMOD:737"))
+        # TMT6plex is a quantification label: it comes from the SDRF channel labels instead.
+        assert sdrf_fixed_mods(entries) == (("UNIMOD:4", "C", ""),)
         params = tmp_path / "parameters.txt"
         params.write_text("Parameter\tValue\nFixed modifications\tCarbamidomethyl (C);TMTpro (K)\n")
-        assert parameters_fixed_mods(params) == (("C", "UNIMOD:4"), ("K", "UNIMOD:2016"))
+        assert parameters_fixed_mods(params) == (("UNIMOD:4", "C", ""), ("UNIMOD:2016", "K", ""))
         assert parameters_fixed_mods(tmp_path / "missing.txt") == ()
 
 

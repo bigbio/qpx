@@ -10,125 +10,32 @@ import duckdb
 
 from qpx.core.anndata_validation import validate_anndata_view
 from qpx.core.data.schema import ValidationIssue, ValidationResult
-from qpx.core.data.validation import _LINK_CONTEXT_MESSAGE, _LINK_MEMBERSHIP_MESSAGE, _LINK_SQL
+from qpx.core.data.validation import _LINK_CONTEXT_MESSAGE, _LINK_MEMBERSHIP_MESSAGE, _LINK_SQL, _issue
 from qpx.core.files import sha256_file
 from qpx.core.label_validation import (
-    dangling_run_issues,
-    feature_label_issues,
+    _DANGLING_GROUPED_RUN_SQL,
+    _DANGLING_RUN_FILE_NAME_SQL,
+    _DUPLICATE_FEATURE_LABEL_SQL,
+    _FEATURE_LABEL_SAMPLE_SQL,
+    _GROUPED_RUN_SAMPLE_MAPPING_SQL,
+    _RUN_KEYED_VIEWS,
+    _examples,
+    _feature_label_issues,
+    _feature_psm_references,
+    _feature_reference_issues,
+    _skipped_check_reason,
+    _skipped_issue,
+    _view_columns,
     fraction_order_issues,
     fragment_link_issues,
-    grouped_run_sample_issues,
     pg_link_coverage_issues,
     psm_label_issues,
     psm_reference_issues,
     run_sample_issues,
-    skipped_check_reason,
 )
 from qpx.core.ontology_fields import ontology_field_issues
 
 _log = logging.getLogger("qpx.dataset")
-
-_DANGLING_FEATURE_IDS_SQL = """
-                    SELECT DISTINCT p.feature_id AS feature_id
-                    FROM psm p
-                    WHERE p.feature_id IS NOT NULL
-                      AND NOT EXISTS (SELECT 1 FROM feature f WHERE f.feature_id = p.feature_id)
-                    ORDER BY feature_id
-                    """
-
-_DANGLING_PSM_IDS_SQL = """
-                    SELECT DISTINCT pid AS psm_id
-                    FROM feature f, UNNEST(f.psm_ids) AS _u(pid)
-                    WHERE pid IS NOT NULL
-                      AND NOT EXISTS (SELECT 1 FROM psm p WHERE p.psm_id = pid)
-                    ORDER BY psm_id
-                    """
-
-_FEATURE_PSM_DESYNC_SQL = """
-                    SELECT DISTINCT p.psm_id AS psm_id, p.feature_id AS feature_id
-                    FROM psm p JOIN feature f ON f.feature_id = p.feature_id
-                    WHERE p.feature_id IS NOT NULL
-                      AND f.psm_ids IS NOT NULL AND len(f.psm_ids) > 0
-                      AND NOT list_contains(f.psm_ids, p.psm_id)
-                    ORDER BY psm_id
-                    """
-
-_FEATURE_PSM_INVERSE_DESYNC_SQL = """
-                    SELECT DISTINCT f.feature_id, p.psm_id, p.feature_id AS actual_feature_id
-                    FROM feature f
-                    CROSS JOIN UNNEST(f.psm_ids) AS _u(referenced_psm_id)
-                    JOIN psm p ON p.psm_id = referenced_psm_id
-                    WHERE p.feature_id IS NOT NULL
-                      AND p.feature_id <> f.feature_id
-                    ORDER BY f.feature_id, p.psm_id
-                    """
-
-
-def _feature_psm_references(engine):
-    """Query dangling and contradictory feature/PSM references."""
-    feature_columns = {row[0] for row in engine.execute('DESCRIBE "feature"').fetchall()}
-    psm_columns = {row[0] for row in engine.execute('DESCRIBE "psm"').fetchall()}
-    has_psm_feature_id = "feature_id" in psm_columns
-    # feature.psm_ids is an OPTIONAL producer hardlink (qpx computes the
-    # inverse on read instead). Only run its referential/desync checks when
-    # a producer actually populated it — an absent/all-null column cannot
-    # desync from the authoritative psm.feature_id.
-    has_feature_psm_ids = "psm_ids" in feature_columns
-    feature_psm_ids_populated = False
-    if has_feature_psm_ids:
-        (feature_psm_ids_populated,) = engine.execute(
-            "SELECT EXISTS (SELECT 1 FROM feature WHERE psm_ids IS NOT NULL AND len(psm_ids) > 0)"
-        ).fetchall()[0]
-
-    dangling_feature_ids = []
-    if has_psm_feature_id:
-        dangling_feature_ids = engine.execute(_DANGLING_FEATURE_IDS_SQL).fetchall()
-
-    dangling_psm_ids = []
-    if feature_psm_ids_populated:
-        dangling_psm_ids = engine.execute(_DANGLING_PSM_IDS_SQL).fetchall()
-
-    # Reciprocal desync: a psm points at a feature whose (non-empty) psm_ids
-    # does not list it back — i.e. the two directions describe different edges.
-    desync = []
-    inverse_desync = []
-    if feature_psm_ids_populated and has_psm_feature_id:
-        desync = engine.execute(_FEATURE_PSM_DESYNC_SQL).fetchall()
-        # The inverse contradiction: a feature lists a psm that explicitly
-        # points at a different feature. A null psm.feature_id means that
-        # direction is unpopulated and is therefore not a contradiction.
-        inverse_desync = engine.execute(_FEATURE_PSM_INVERSE_DESYNC_SQL).fetchall()
-    return dangling_feature_ids, dangling_psm_ids, desync, inverse_desync
-
-
-def _feature_reference_issues(dangling_psm_ids, inverse_desync, severity: str) -> list[ValidationIssue]:
-    """Build feature reference issues in reporting order."""
-    issues = []
-    for (psm_id,) in dangling_psm_ids:
-        issues.append(
-            ValidationIssue(
-                structure="feature",
-                check="dangling_psm_id",
-                severity=severity,
-                column="psm_ids",
-                message=(f"feature.psm_ids contains {psm_id!r}, which does not resolve to a psm.psm_id in psm.parquet"),
-            )
-        )
-    for feature_id, psm_id, actual_feature_id in inverse_desync:
-        issues.append(
-            ValidationIssue(
-                structure="feature",
-                check="feature_psm_desync",
-                severity=severity,
-                column="psm_ids",
-                message=(
-                    f"feature.feature_id {feature_id!r} lists psm {psm_id!r}, but that "
-                    f"psm.feature_id points to feature {actual_feature_id!r} "
-                    "(reciprocal cross-ref desync)"
-                ),
-            )
-        )
-    return issues
 
 
 def _verify_one_file(
@@ -220,15 +127,6 @@ class _DatasetValidationMixin:
     """Validate registered structures, cross-references and file integrity."""
 
     # --- Validation ---
-    def _unavailable_result(self, name: str) -> ValidationResult:
-        """An error result for a structure the dataset does not have or could not read."""
-        if name in self._skipped:
-            check, message = "unreadable_structure", f"Structure '{name}' could not be read: {self._skipped[name]}"
-        else:
-            check, message = "missing_structure", f"Structure '{name}' not found in dataset at {self.path}"
-        issue = ValidationIssue(structure=name, check=check, severity="error", column=None, message=message)
-        return ValidationResult(structure=name, issues=[issue])
-
     def validate(
         self, structures: list[str] | None = None, *, strict: bool = False, semantic: bool = False, check_identity: bool = False
     ) -> dict[str, ValidationResult]:
@@ -256,51 +154,85 @@ class _DatasetValidationMixin:
             message = f"No QPX views found in {self.path}"
             issue = ValidationIssue(structure="dataset", check="no_structures", severity="error", column=None, message=message)
             return {"dataset": ValidationResult(structure="dataset", issues=[issue])}
-        results: dict[str, ValidationResult] = {}
-        for name in targets:
-            struct = self._structures.get(name)
-            results[name] = (
-                self._unavailable_result(name)
-                if struct is None
-                else struct.validate(strict=strict, semantic=semantic, check_identity=check_identity)
-            )
-
+        results = {
+            name: self._validate_structure(name, strict=strict, semantic=semantic, check_identity=check_identity)
+            for name in targets
+        }
         present = {name for name in results if self._structures.get(name) is not None}
-
         if "dataset" in present and (rows := self.dataset_meta.count()) != 1:
             message = f"The dataset view describes one dataset, so it has one row; it has {rows}"
             results["dataset"].issues.append(
                 ValidationIssue(structure="dataset", check="single_row", severity="error", column=None, message=message)
             )
+        self._check_run_resolution(results, present, strict=strict)
+        self._check_cross_references(results, present, semantic=semantic, strict=strict)
+        if structures is None and not self._is_s3:
+            for view in ("ae", "de"):
+                for path in sorted(Path(self.path).glob(f"{self._file_prefix or '*'}.{view}.h5ad")):
+                    results[view] = validate_anndata_view(path, view)
+        return results
 
-        # Cross-structure invariant: every pg.grouped_runs element must be a
-        # real run.run_file_name. A grouped run that names no acquisition run is
-        # dropped by every sample-joined view, so flag it as an error on pg.
-        if "pg" in present and self.run is not None:
+    def _validate_structure(self, name: str, *, strict: bool, semantic: bool, check_identity: bool) -> ValidationResult:
+        """Validate one registered structure, or report it missing or unreadable."""
+        struct = self._structures.get(name)
+        if struct is not None:
+            return struct.validate(strict=strict, semantic=semantic, check_identity=check_identity)
+        if name in self._skipped:
+            check, message = "unreadable_structure", f"Structure '{name}' could not be read: {self._skipped[name]}"
+        else:
+            check, message = "missing_structure", f"Structure '{name}' not found in dataset at {self.path}"
+        return ValidationResult(structure=name, issues=[_issue(name, check, "error", None, message)])
+
+    def _check_run_resolution(self, results: dict[str, ValidationResult], present: set[str], *, strict: bool) -> None:
+        """Cross-structure checks that resolve rows through the run view.
+
+        A row that names no acquisition run, or a label that names no single
+        sample of its runs, is dropped (or counted twice) by every sample-joined
+        view, so these findings are errors.
+        """
+        if self.run is None:
+            return
+        # Every pg.grouped_runs element must be a real run.run_file_name, and each
+        # pg label must name exactly one sample across its grouped runs.
+        if "pg" in present:
             self._check_grouped_runs_referential(results["pg"], strict=strict)
             self._check_grouped_runs_sample_mapping(results["pg"], strict=strict)
+            self._cross_view_issues(results["pg"], "fraction order", partial(fraction_order_issues, self._engine), strict)
+        # feature, psm and mz rows each name the run they were measured in, and
+        # each feature label must name exactly one sample of that run.
+        for view in _RUN_KEYED_VIEWS:
+            if view in present:
+                self._check_run_file_names(view, results[view], strict=strict)
+        if "feature" in present:
+            self._check_feature_label_samples(results["feature"], strict=strict)
+        # Every sample that run.samples names is in the sample view.
+        if {"run", "sample"} <= present:
+            self._cross_view_issues(results["run"], "run-sample", partial(run_sample_issues, self._engine), strict)
 
+    def _check_cross_references(
+        self, results: dict[str, ValidationResult], present: set[str], *, semantic: bool, strict: bool
+    ) -> None:
+        """Cross-structure checks of the id links between views."""
+        severity = "error" if strict else "warning"
         # Cross-structure invariant: the optional feature<->psm cross-references
         # must resolve. Every non-null psm.feature_id must name a real
         # feature.feature_id, and every feature.psm_ids element a real psm.psm_id.
         # Unresolved references are warnings during normal use and errors under
-        # strict validation, but only when both views are present.
+        # strict validation, but only when both views are present. A PSM's label
+        # must be one its feature was identified in.
         if {"feature", "psm"} <= present:
             self._check_feature_psm_referential(results["feature"], results["psm"], strict=strict)
+            self._cross_view_issues(results["psm"], "psm label", partial(psm_label_issues, self._engine, severity), strict)
 
         # feature.pg_ids is the canonical feature -> protein-group reference.
         # When both views are present, every populated id must resolve to pg.pg_id.
         if {"feature", "pg"} <= present:
             self._check_feature_pg_links(results["feature"], semantic=semantic, strict=strict)
 
-        # Every run a view names exists, each feature label resolves to one
-        # sample, and a PSM's label is one its feature was identified in.
-        self._check_runs_and_labels(results, present, strict=strict)
-
-        if structures is None and not self._is_s3:
-            for view in ("ae", "de"):
-                for path in sorted(Path(self.path).glob(f"{self._file_prefix or '*'}.{view}.h5ad")):
-                    results[view] = validate_anndata_view(path, view)
+        if {"feature", "fragment"} <= present:
+            self._cross_view_issues(
+                results["fragment"], "fragment link", partial(fragment_link_issues, self._engine, severity), strict
+            )
 
         if "ontology" in present:
             self._cross_view_issues(
@@ -313,29 +245,50 @@ class _DatasetValidationMixin:
             if view in present:
                 self._check_pg_link(view, results[view], strict=strict)
 
-        return results
+    def _check_run_file_names(self, view: str, result: ValidationResult, *, strict: bool) -> None:
+        """Flag ``run_file_name`` values of *view* that are not in run.run_file_name.
 
-    def _check_runs_and_labels(self, results: dict[str, ValidationResult], present: set[str], *, strict: bool) -> None:
-        """Flag rows naming unknown runs, feature labels that resolve to no or several samples, and stray PSM labels."""
-        if self.run is not None:
-            for view in ("feature", "psm", "mz"):
-                if view in present:
-                    self._cross_view_issues(
-                        results[view], "run reference", partial(dangling_run_issues, self._engine, view), strict
-                    )
-            if "feature" in present:
-                self._cross_view_issues(results["feature"], "label-sample", partial(feature_label_issues, self._engine), strict)
-            if "pg" in present:
-                self._cross_view_issues(results["pg"], "fraction order", partial(fraction_order_issues, self._engine), strict)
-        if {"run", "sample"} <= present:
-            self._cross_view_issues(results["run"], "run-sample", partial(run_sample_issues, self._engine), strict)
-        severity = "error" if strict else "warning"
-        if {"feature", "fragment"} <= present:
-            self._cross_view_issues(
-                results["fragment"], "fragment link", partial(fragment_link_issues, self._engine, severity), strict
+        Each distinct value is looked up once. The check is skipped when the view
+        has no ``run_file_name`` column: it is optional in mz, and a missing
+        required column is already reported by the schema check.
+        """
+        try:
+            if "run_file_name" not in _view_columns(self._engine, view):
+                return
+            rows = self._engine.execute(_DANGLING_RUN_FILE_NAME_SQL[view]).fetchall()
+        except duckdb.Error as exc:
+            what = f"{view} run_file_name referential check"
+            result.issues.append(_skipped_issue(view, "referential_check_skipped", what, exc, strict=strict))
+            return
+        if not rows:
+            return
+        result.issues.append(
+            _issue(
+                view,
+                "dangling_run_file_name",
+                "error",
+                "run_file_name",
+                f"{sum(n for _, n in rows)} {view} row(s) name {len(rows)} run_file_name value(s) that are not "
+                f"in run.parquet ({_examples([repr(name) for name, _ in rows])}); these rows resolve to no run or sample",
             )
-        if {"feature", "psm"} <= present:
-            self._cross_view_issues(results["psm"], "psm label", partial(psm_label_issues, self._engine, severity), strict)
+        )
+
+    def _check_feature_label_samples(self, result: ValidationResult, *, strict: bool) -> None:
+        """Require each feature label to name exactly one sample of its run, once per row.
+
+        ``run.samples[].label`` is the canonical channel name and must match
+        ``feature.intensities[].label`` exactly (see the data-model spec). Each
+        distinct (run_file_name, label) pair is resolved once; rows of a run that
+        is not in the run view are left to :meth:`_check_run_file_names`.
+        """
+        try:
+            duplicated = self._engine.execute(_DUPLICATE_FEATURE_LABEL_SQL).fetchall()[0][0]
+            units = self._engine.execute(_FEATURE_LABEL_SAMPLE_SQL).fetchall()
+        except duckdb.Error as exc:
+            what = "feature label sample-mapping check"
+            result.issues.append(_skipped_issue("feature", "sample_mapping_check_skipped", what, exc, strict=strict))
+            return
+        result.issues.extend(_feature_label_issues(duplicated, units))
 
     @staticmethod
     def _cross_view_issues(result: ValidationResult, check: str, issues, strict: bool) -> None:
@@ -343,17 +296,8 @@ class _DatasetValidationMixin:
         try:
             result.issues.extend(issues())
         except duckdb.Error as exc:
-            reason = skipped_check_reason(exc)
-            _log.warning("%s %s check could not run (%s): %s", result.structure, check, reason, exc)
-            result.issues.append(
-                ValidationIssue(
-                    structure=result.structure,
-                    check="referential_check_skipped",
-                    severity="error" if strict else "warning",
-                    column=None,
-                    message=f"{result.structure} {check} check could not run ({reason}): {exc}",
-                )
-            )
+            what = f"{result.structure} {check} check"
+            result.issues.append(_skipped_issue(result.structure, "referential_check_skipped", what, exc, strict=strict))
 
     def _check_pg_link(self, view: str, result: ValidationResult, *, strict: bool = False) -> None:
         """Flag site/proteoform links that do not resolve, or resolve to another context.
@@ -385,7 +329,7 @@ class _DatasetValidationMixin:
             try:
                 count = self._engine.execute(sql).fetchall()[0][0]
             except duckdb.Error as exc:
-                reason = skipped_check_reason(exc)
+                reason = _skipped_check_reason(exc)
                 _log.warning("%s link check could not run (%s): %s", view, reason, exc)
                 result.issues.append(
                     ValidationIssue(
@@ -432,7 +376,7 @@ class _DatasetValidationMixin:
                 """
             ).fetchall()
         except duckdb.Error as exc:
-            reason = skipped_check_reason(exc)
+            reason = _skipped_check_reason(exc)
             _log.warning("feature->pg referential check could not run (%s): %s", reason, exc)
             feature_result.issues.append(
                 ValidationIssue(
@@ -482,7 +426,7 @@ class _DatasetValidationMixin:
         try:
             dangling_feature_ids, dangling_psm_ids, desync, inverse_desync = _feature_psm_references(self._engine)
         except duckdb.Error as exc:
-            reason = skipped_check_reason(exc)
+            reason = _skipped_check_reason(exc)
             _log.warning("feature<->psm referential check could not run (%s): %s", reason, exc)
             skipped = ValidationIssue(
                 structure="psm",
@@ -501,24 +445,17 @@ class _DatasetValidationMixin:
         """Flag pg.grouped_runs values that are not present in run.run_file_name.
 
         Appends an ``error`` issue to *pg_result* for each dangling grouped-run
-        token. Any query failure (e.g. missing columns) is swallowed so schema
-        validation is never masked by this referential check.
+        token; each distinct token is looked up once. A query failure (e.g. a
+        missing column) does not mask schema validation: it is reported as
+        ``referential_check_skipped``.
         """
         try:
-            rows = self._engine.execute(
-                """
-                SELECT DISTINCT gr AS grouped_run
-                FROM pg, UNNEST(pg.grouped_runs) AS _g(gr)
-                WHERE gr IS NOT NULL
-                  AND NOT EXISTS (SELECT 1 FROM run r WHERE r.run_file_name = gr)
-                ORDER BY grouped_run
-                """
-            ).fetchall()
+            rows = self._engine.execute(_DANGLING_GROUPED_RUN_SQL).fetchall()
         except duckdb.Error as exc:
             # Do not fail silently: a query error here can mean genuine schema
             # drift (a referenced pg/run column was removed/renamed), which is how
             # the last release's bug hid. Surface it in the validation result.
-            reason = skipped_check_reason(exc)
+            reason = _skipped_check_reason(exc)
             _log.warning("pg grouped_runs referential check could not run (%s): %s", reason, exc)
             pg_result.issues.append(
                 ValidationIssue(
@@ -547,12 +484,17 @@ class _DatasetValidationMixin:
             )
 
     def _check_grouped_runs_sample_mapping(self, pg_result: ValidationResult, *, strict: bool) -> None:
-        """Require each PG intensity label to resolve to exactly one sample."""
+        """Require each PG label to resolve to exactly one sample across its grouped runs.
+
+        Each distinct (grouped-run set, label) unit is resolved once, and a unit
+        that resolves to no sample or to several is reported once, with the
+        number of pg rows that share it.
+        """
         try:
-            pg_result.issues.extend(grouped_run_sample_issues(self._engine))
+            rows = self._engine.execute(_GROUPED_RUN_SAMPLE_MAPPING_SQL).fetchall()
         except duckdb.Error as exc:
             # Do not fail silently on drift (see _check_grouped_runs_referential).
-            reason = skipped_check_reason(exc)
+            reason = _skipped_check_reason(exc)
             _log.warning("pg grouped_runs sample-mapping check could not run (%s): %s", reason, exc)
             pg_result.issues.append(
                 ValidationIssue(
@@ -561,6 +503,23 @@ class _DatasetValidationMixin:
                     severity="error" if strict else "warning",
                     column=None,
                     message=f"grouped_runs sample-mapping check could not run ({reason}): {exc}",
+                )
+            )
+            return
+
+        for example_protein, grouped_runs, label, pg_rows, sample_count, samples in rows:
+            pg_result.issues.append(
+                ValidationIssue(
+                    structure="pg",
+                    check="ambiguous_grouped_run_sample",
+                    severity="error",
+                    column="grouped_runs",
+                    message=(
+                        f"{pg_rows} pg row(s) with label {label!r} across "
+                        f"grouped_runs={grouped_runs!r} (e.g. PG {example_protein!r}) "
+                        f"resolve to {sample_count} samples ({samples or []!r}); "
+                        "exactly one sample is required"
+                    ),
                 )
             )
 
