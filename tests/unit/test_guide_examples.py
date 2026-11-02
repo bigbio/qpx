@@ -45,7 +45,21 @@ def guide_cwd(tmp_path_factory):
         ],
     )
     assert result.exit_code == 0, result.output
-    psm = next((EXAMPLES / "maxquant" / "maxquant_simple").glob("*.psm.parquet"))
+    result = CliRunner().invoke(
+        qpx_main,
+        [
+            "convert",
+            "maxquant",
+            "--msms-file",
+            str(EXAMPLES / "maxquant" / "maxquant_simple" / "msms.txt"),
+            "--structures",
+            "psm",
+            "--output-folder",
+            str(cwd / "maxquant"),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    psm = next((cwd / "maxquant").glob("*.psm.parquet"))
     shutil.copy(psm, cwd / "output" / "guide.psm.parquet")
     return cwd
 
