@@ -502,16 +502,18 @@ class _DatasetQueryMixin:
         if output_path is not None:
             # Out-of-core: DuckDB PIVOT → Parquet, never touches pandas
             output_path = Path(output_path)
+            # DuckDB 1.6 development builds crash on PIVOT of a subquery holding CTEs, but not of a view.
+            self._engine.execute(f"CREATE OR REPLACE TEMP VIEW _matrix_source AS {sql}")
             pivot_sql = sql_build(
                 """COPY (
-                PIVOT ($base_sql) ON feature_id USING $agg(intensity) GROUP BY $rows
+                PIVOT _matrix_source ON feature_id USING $agg(intensity) GROUP BY $rows
             ) TO '$out_path' (FORMAT PARQUET)""",
-                base_sql=sql,
                 agg=_UNIT_AGGREGATES[agg],
                 rows=", ".join(rows),
                 out_path=escape_path(str(output_path)),
             )
             self._engine.execute(pivot_sql)
+            self._engine.execute("DROP VIEW _matrix_source")
             return output_path
 
         # In-memory path for small/medium datasets
