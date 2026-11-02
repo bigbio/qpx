@@ -96,6 +96,17 @@ def _numeric(series: pd.Series) -> pd.Series:
     return pd.to_numeric(series, errors="coerce").astype("float64")
 
 
+def _positive(series: pd.Series) -> pd.Series:
+    """Positive quantities as float64, NaN for missing, NaN, zero or negative values.
+
+    DIA-NN writes 0 for a quantity it did not compute: QuantUMS (DIA-NN 2.x)
+    reports ``PG.MaxLFQ = 0`` for an identified group it could not quantify, and
+    leaves the group's pg_matrix cell empty. pg.md represents that sentinel as null.
+    """
+    values = _numeric(series)
+    return values.where(values > 0)
+
+
 def _optional(value: float) -> float | None:
     """Map a NaN from a float64 column to None."""
     return None if math.isnan(value) else value
@@ -147,7 +158,7 @@ def _aggregate_groups(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def _matrix_fallback(groups: pd.DataFrame, pg_matrix_indexed: pd.DataFrame) -> list[float | None]:
-    """Return each group's PG matrix quantity, None when missing, NaN or zero."""
+    """Return each group's PG matrix quantity, None when missing, NaN, zero or negative."""
     runs = groups.index.get_level_values("run_file_name")
     matrix_runs = [run for run in runs.unique() if run in pg_matrix_indexed.columns]
     values = np.full(len(groups), np.nan)
@@ -156,30 +167,28 @@ def _matrix_fallback(groups: pd.DataFrame, pg_matrix_indexed: pd.DataFrame) -> l
         cols = pd.Index(matrix_runs).get_indexer(runs)
         found = (rows >= 0) & (cols >= 0)
         values[found] = pg_matrix_indexed[matrix_runs].to_numpy(dtype="float64")[rows[found], cols[found]]
-    return [None if math.isnan(value) or value == 0 else value for value in values.tolist()]
+    return [None if math.isnan(value) or value <= 0 else value for value in values.tolist()]
 
 
-def _quantity_entries(label: str, raw_quantity: float | None, maxlfq: float | None) -> tuple[dict | None, dict | None]:
+def _quantity_entries(label: str, raw_quantity: float | None, maxlfq: float | None) -> tuple[dict, dict | None]:
     """Build one channel's intensity and additional-intensity entries.
 
     Raw PG.Quantity is preferred for the primary value. Reports that omit it use
     MaxLFQ as a compatibility fallback; the experimental channel remains the
     label, while "maxlfq" is recorded as the algorithm name in
-    additional_intensities.
+    additional_intensities. Every report row is an identification in its run, so
+    a channel without a quantity keeps its label with a null intensity (pg.md).
     """
     primary = raw_quantity if raw_quantity is not None else maxlfq
-    intensity = None
+    intensity = {"label": label, "intensity": None, "cv_params": None}
     if primary is not None:
-        intensity = {
-            "label": label,
-            "intensity": float(primary),
-            "cv_params": [
-                {
-                    "cv_name": "quantification_method",
-                    "cv_value": "PG.Quantity" if raw_quantity is not None else "PG.MaxLFQ",
-                }
-            ],
-        }
+        intensity["intensity"] = float(primary)
+        intensity["cv_params"] = [
+            {
+                "cv_name": "quantification_method",
+                "cv_value": "PG.Quantity" if raw_quantity is not None else "PG.MaxLFQ",
+            }
+        ]
     additional = None
     if maxlfq is not None and raw_quantity is not None:
         additional = {
@@ -206,8 +215,7 @@ def _group_quantities(
         if maxlfq is None:
             maxlfq = matrix_quantity
         intensity, additional = _quantity_entries(str(label), _optional(raw_quantity), maxlfq)
-        if intensity is not None:
-            intensities.append(intensity)
+        intensities.append(intensity)
         if additional is not None:
             additional_intensities.append(additional)
     return intensities, additional_intensities
@@ -505,7 +513,7 @@ class DiannPgAdapter(DiaNNBaseAdapter):
         return self._build_pg_records(groups, quantities, fallback)
 
     def _aggregate_quantities(self, frame: pd.DataFrame, group_index: pd.MultiIndex) -> pd.DataFrame:
-        """Collapse each (group, run, channel) quantity to the max of its finite values.
+        """Collapse each (group, run, channel) quantity to the max of its positive values.
 
         PG.Quantity / PG.MaxLFQ are protein-group-level values that DIA-NN repeats
         identically on every precursor row of a group within a run, so a group's
@@ -515,9 +523,11 @@ class DiannPgAdapter(DiaNNBaseAdapter):
         is deterministic, order-independent, and equal to the shared value in the
         normal (consistent) case; a warning keeps a real disagreement visible.
         Rows are indexed by the group's position in *group_index* and the label.
+        DIA-NN's 0 for a quantity it did not compute counts as missing, so it
+        neither becomes the intensity nor blocks the PG matrix fallback.
         """
         present = [column for column in _QUANTITY_COLUMNS if column in frame.columns]
-        values = pd.DataFrame({column: _numeric(frame[column]) for column in present}, index=frame.index)
+        values = pd.DataFrame({column: _positive(frame[column]) for column in present}, index=frame.index)
         values["group"] = frame.groupby(_GROUP_KEYS, sort=True, dropna=False).ngroup()
         values["label"] = frame["channel_label"] if "channel_label" in frame.columns else "LFQ"
         grouped = values.groupby(["group", "label"], sort=True)

@@ -312,8 +312,8 @@ DIA-NN's main report is precursor-level. PG-level columns (`PG.*`, `Genes.*`) ar
 
     | DIA-NN column | QPX field | Notes |
     |---|---|---|
-    | `PG.Quantity` | `intensity` | Non-normalised protein group quantity (scalar; DIA `label` = `LFQ`) |
-    | `PG.MaxLFQ` | `additional_intensities` → `maxlfq` | QuantUMS/MaxLFQ normalised |
+    | `PG.Quantity` | `intensity` | Non-normalised protein group quantity (scalar; DIA `label` = `LFQ`). Without a positive value, `PG.MaxLFQ` (then the PG matrix value) is the intensity. A 0 is DIA-NN's value for a quantity it did not compute: an identified group without a positive quantity keeps its `label` with `intensity` = null |
+    | `PG.MaxLFQ` | `additional_intensities` → `maxlfq` | QuantUMS/MaxLFQ normalised. QuantUMS writes 0 for a group it did not quantify (and leaves its `pg_matrix` cell empty); a 0 is left out |
     | `PG.Normalised` | `additional_intensities` → `normalize_intensity` | Normalised PG quantity |
     | `PG.TopN` | `additional_intensities` → `topn` | Top-N normalised quantity |
     | `Genes.MaxLFQ` | `additional_intensities` → `genes_maxlfq` | Gene-group MaxLFQ |
