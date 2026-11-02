@@ -345,17 +345,23 @@ class TestMultiRunGroupedRuns:
         assert abundance.iloc[0]["intensity"] == 5000.0
         assert matrix.loc["SAMPLE_A", "PROT1"] == 5000.0
 
-    def test_mudata_proteins_reflect_all_grouped_runs(self, multi_run_dataset_dir):
-        """The muData proteins modality has an observation for every grouped run."""
+    def test_mudata_proteins_observe_the_quantification_unit(self, multi_run_dataset_dir):
+        """The muData proteins modality has one observation per grouped_runs set.
+
+        It used to have one per member run, each holding a copy of the unit's
+        value, so summing over observations doubled this two-fraction group.
+        """
         from qpx.mudata import build_mudata
 
         with Dataset(multi_run_dataset_dir) as ds:
             mdata = build_mudata(ds, modalities=["proteins"])
 
         proteins = mdata.mod["proteins"]
-        assert "PROT1" in list(proteins.var.index)
-        obs_runs = set(proteins.obs.index)
-        assert "run_A" in obs_runs and "run_B" in obs_runs
+        assert list(proteins.var.index) == ["PROT1"]
+        assert list(proteins.obs.index) == ["run_A;run_B"]
+        assert list(proteins.obs["sample_accession"]) == ["SAMPLE_A"]
+        assert list(proteins.obs["run_accession"]) == ["assay_A;assay_B"]
+        assert proteins.X.toarray().sum() == 5000.0
 
     def test_invariant_check_passes(self, multi_run_dataset_dir):
         """Both grouped_runs values resolve to the same sample without errors."""
