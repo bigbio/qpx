@@ -51,9 +51,7 @@ _FEATURE_ADDITIONAL_SQL = """(
 )"""
 _ADDITIONAL_NAMES_SQL = """
     SELECT DISTINCT x.intensity_name
-    FROM $table
-    CROSS JOIN UNNEST(additional_intensities) AS _a(a)
-    CROSS JOIN UNNEST(a.intensities) AS _x(x)
+    FROM (SELECT UNNEST(a.intensities) AS x FROM (SELECT UNNEST(additional_intensities) AS a FROM $table))
     ORDER BY 1
 """
 

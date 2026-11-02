@@ -28,12 +28,15 @@ _SEMANTIC_TABLE = "_qpx_semantic_peptidoforms"
 
 _POSITION_SQL = """
     SELECT count(*)
-    FROM ($query) v, UNNEST(v.modifications) AS _m(m), UNNEST(m.positions) AS _p(p)
+    FROM (
+        SELECT sequence, UNNEST(m.positions) AS p
+        FROM (SELECT sequence, UNNEST(modifications) AS m FROM ($query))
+    )
     WHERE p.position < 0
-       OR p.position > len(v.sequence) + 1
-       OR (p.position BETWEEN 1 AND len(v.sequence)
+       OR p.position > len(sequence) + 1
+       OR (p.position BETWEEN 1 AND len(sequence)
            AND p.amino_acid IS NOT NULL
-           AND p.amino_acid <> substr(v.sequence, p.position, 1))
+           AND p.amino_acid <> substr(sequence, p.position, 1))
 """
 
 # Rows whose calculated_mz is off the theoretical m/z of their peptidoform;
