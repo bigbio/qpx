@@ -13,14 +13,23 @@ from qpx.transforms.protein_properties import _stamped_schema
 from qpx.writers.base import _cast_column
 from qpx.writers.encoding import ROW_GROUP_ROWS, SampledParquetWriter, row_group_rows
 
-# Protein lookups read feature and pg, and run-by-run processing reads psm and mz.
+# Protein and peptide lookups read feature, pg and psm, and run-by-run processing reads mz.
+# Rows of one peptide sit together, which also makes feature and psm about a third
+# smaller on TMT data; pg keeps a group's runs together for the same reason.
 DEFAULT_SORT_KEYS = {
-    "feature": ("anchor_protein", "run_file_name"),
-    "pg": ("anchor_protein", "label"),
-    "psm": ("run_file_name", "scan"),
+    "feature": ("anchor_protein", "peptidoform", "charge", "run_file_name"),
+    "pg": ("anchor_protein", "grouped_runs", "label"),
+    "psm": ("peptidoform", "charge", "run_file_name", "scan"),
     "mz": ("run_file_name", "scan"),
 }
 SORT_ORDER_FOOTER_KEY = b"qpx.sort_order"
+
+
+def _sortable(field: pa.Field) -> bool:
+    """Whether DuckDB can order rows by *field*: a flat column, or a list of flat values."""
+    if pa.types.is_list(field.type) or pa.types.is_large_list(field.type):
+        return not pa.types.is_nested(field.type.value_type)
+    return not pa.types.is_nested(field.type)
 
 
 def relayout_view(
@@ -34,14 +43,21 @@ def relayout_view(
     """Write *source* to *destination* sorted by *sort_by*, recording the order in the footer.
 
     Rows stream from a DuckDB sort that spills to disk, so the view may be larger
-    than memory. Values, ids and the schema are unchanged.
+    than memory. Values, ids and the schema are unchanged. Parquet's
+    ``sorting_columns`` cannot name a list column, so it records the keys before
+    the first one; ``qpx.sort_order`` records them all.
     """
     schema, compression = _stamped_schema(pq.read_schema(source))
-    unsortable = [column for column in sort_by if column not in schema.names or pa.types.is_nested(schema.field(column).type)]
+    unsortable = [column for column in sort_by if column not in schema.names or not _sortable(schema.field(column))]
     if unsortable:
-        raise ValueError(f"{source.name} has no flat column named {', '.join(unsortable)}")
+        raise ValueError(f"{source.name} has no sortable column named {', '.join(unsortable)}")
     schema = schema.with_metadata({**schema.metadata, SORT_ORDER_FOOTER_KEY: ",".join(sort_by).encode()})
-    sorting = pq.SortingColumn.from_ordering(schema, [(column, "ascending") for column in sort_by])
+    flat = []
+    for column in sort_by:
+        if pa.types.is_nested(schema.field(column).type):
+            break
+        flat.append((column, "ascending"))
+    sorting = pq.SortingColumn.from_ordering(schema, flat)
     order_by = ", ".join(validate_identifier(column) for column in sort_by)
     quoted_source = "'" + str(source).replace("'", "''") + "'"
     with (

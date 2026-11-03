@@ -64,11 +64,14 @@ For a published dataset, `qpxc transform relayout` sorts the views, records the 
 
 | View | Sorted by | Good for |
 |---|---|---|
-| `feature` | `anchor_protein`, `run_file_name` | Looking up a protein |
-| `pg` | `anchor_protein`, `label` | Looking up a protein |
-| `psm`, `mz` | `run_file_name`, `scan` | Reading a run, looking up a scan |
+| `feature` | `anchor_protein`, `peptidoform`, `charge`, `run_file_name` | Looking up a protein or a peptide |
+| `pg` | `anchor_protein`, `grouped_runs`, `label` | Looking up a protein |
+| `psm` | `peptidoform`, `charge`, `run_file_name`, `scan` | Looking up a peptide |
+| `mz` | `run_file_name`, `scan` | Reading a run, looking up a scan |
 
-Choose by the reads you expect, because one order serves one kind of query well. Sorting by protein costs per-run reads their pruning; Hive partitioning by run is fastest per run, and measured 57% more bytes and 3.5× slower for proteins. Partition by a batch of runs rather than one file per run, and only for a dataset mostly read run by run.
+`sorting_columns` cannot name a list column, so for `pg` it records `anchor_protein` only. Rows of one peptide sitting together also compress better: on MSV000085836 (TMT, 6.2 million features) relayout took feature from 674.6 to 430.7 MB and psm from 390.7 to 245.4 MB in 36 s. pg stays at the 55.8 MB of its file order, which keeps a group's runs together; sorted by `anchor_protein` and `label` alone it measured 62.2 MB.
+
+Choose by the reads you expect, because one order serves one kind of query well. On that sorted feature view, one protein's rows took 0.06 s to read instead of 2.12 s, and one run's 2.23 s instead of 0.22 s (DuckDB, 24 threads, warm cache). Sorting by protein costs per-run reads their pruning; Hive partitioning by run is fastest per run, and measured 57% more bytes and 3.5× slower for proteins. Partition by a batch of runs rather than one file per run, and only for a dataset mostly read run by run.
 
 ### Size of the long pg format
 

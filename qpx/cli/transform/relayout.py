@@ -46,9 +46,10 @@ def transform_relayout_cmd(**options):
 
     Rows are sorted within each view, written in row groups with a page index,
     and the order is recorded in the footer (``sorting_columns`` and
-    ``qpx.sort_order``). By default feature and pg are sorted by protein
-    (feature then by run, pg by label), which suits protein lookups, and psm and mz by run then scan. Values
-    and ids do not change.
+    ``qpx.sort_order``). By default feature is sorted by protein, peptidoform,
+    charge and run, pg by protein, its runs and label, and psm by peptidoform,
+    charge, run and scan, which suits protein and peptide lookups; mz is sorted
+    by run then scan. Values and ids do not change.
 
     \b
     Example:

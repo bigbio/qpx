@@ -112,10 +112,16 @@ def test_relayout_sorts_rows_keeps_values_and_refreshes_integrity(tmp_path):
     assert anchors == sorted(anchors)
     assert sorted(after.column("feature_id").to_pylist()) == sorted(before.column("feature_id").to_pylist())
     assert after.schema.equals(before.schema)
-    assert after.schema.metadata[b"qpx.sort_order"] == b"anchor_protein,run_file_name"
+    assert after.schema.metadata[b"qpx.sort_order"] == b"anchor_protein,peptidoform,charge,run_file_name"
     assert after_file.metadata.row_group(0).num_rows == 50
     sorting = after_file.metadata.row_group(0).sorting_columns
-    assert [after_file.schema.column(column.column_index).path for column in sorting] == ["anchor_protein", "run_file_name"]
+    keys = ["anchor_protein", "peptidoform", "charge", "run_file_name"]
+    assert [after_file.schema.column(column.column_index).path for column in sorting] == keys
+    # sorting_columns cannot name the list column grouped_runs, so it stops before it.
+    pg_file = pq.ParquetFile(target / "sn.pg.parquet")
+    assert pg_file.schema_arrow.metadata[b"qpx.sort_order"] == b"anchor_protein,grouped_runs,label"
+    pg_sorting = pg_file.metadata.row_group(0).sorting_columns
+    assert [pg_file.schema.column(column.column_index).path for column in pg_sorting] == ["anchor_protein"]
     with Dataset(str(target), file_prefix="sn") as dataset:
         assert not any(dataset.verify_integrity().values())
 
@@ -129,4 +135,4 @@ def test_relayout_refuses_a_column_it_cannot_sort_by(tmp_path):
     )
 
     assert result.exit_code != 0
-    assert "no flat column named intensities" in result.output
+    assert "no sortable column named intensities" in result.output

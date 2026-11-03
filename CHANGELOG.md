@@ -57,7 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `factor value[X]` SDRF columns are written as `factor_X` columns of the sample view, and `qpxc transform quantify --factor X` chooses the condition. Several factors without a choice now warn; the first column used to be taken silently.
 - `run.additional_terms` holds the resolved ontology term of each instrument, enzyme, dissociation and acquisition value, per run.
 - `qpxc validate` warns (`ontology_unknown_field`) on an ontology row naming nothing its view emits.
-- `qpxc transform relayout` sorts a dataset's views for selective reads, records the order in `sorting_columns` and `qpx.sort_order`, and takes `--row-group-size` and `--compression-level`.
+- `qpxc transform relayout` sorts a dataset's views for selective reads, records the order in `sorting_columns` and `qpx.sort_order`, and takes `--row-group-size` and `--compression-level`. By default feature and psm rows of one peptide sit together and pg rows of one group and set of runs, which took MSV000085836 feature from 674.6 to 430.7 MB and psm from 390.7 to 245.4 MB; mz is sorted by run and scan.
 - **MuData reports cells with more than one intensity** — values that land in one matrix cell, such as two features of one precursor in one run, were summed without a trace: 14,020 of the 196,004 PXD001819 precursor cells (7.2%) receive more than one MaxQuant feature, 9,862 of them an MS/MS and a match-between-runs feature. `build_mudata(duplicates=...)` now takes `"sum"` (the default, as before) or `"mean"`; each modality's `uns["qpx_duplicates"]` records the aggregation and the number of such cells, and the build logs a warning when there are any. Values are unchanged by default.
 
 ### Changed
