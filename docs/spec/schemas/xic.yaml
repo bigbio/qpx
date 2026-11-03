@@ -8,7 +8,7 @@ fields:
   xic_id:
     type: string
     required: true
-    doc: "Opaque identifier of one chromatogram trace. Producer-supplied (e.g. <run_file_name>|<precursor_id>|<transition>) and unique within the file; the primary key of this view."
+    doc: "Opaque identifier of one chromatogram trace. Producer-supplied (e.g. <run_file_name>|<precursor_id>|<transition>|<isotope>|<compensation_voltage>) and unique within the file; the primary key of this view."
   run_file_name:
     type: string
     required: true
@@ -17,11 +17,16 @@ fields:
     type: string
     required: true
     doc: "Channel label. Use 'LFQ' for label-free DIA, or the reporter/plex channel name (e.g. 'TMT126') for multiplexed traces. Matches feature.intensities[].label."
-  feature_id:
-    type: int64
+  feature_ids:
+    type: "list<int64>"
     optional: true
     nullable: true
-    doc: "Optional link to the feature.feature_id this trace supports. Null when the producer does not assign a feature or the trace was not used to quantify one."
+    doc: "Optional links to the feature.feature_id rows this trace supports. A trace is precursor-level evidence and can support several candidate peak groups, so this is a list rather than one feature id."
+  compensation_voltage:
+    type: float32
+    optional: true
+    nullable: true
+    doc: "FAIMS compensation voltage of the trace, when the acquisition uses FAIMS; part of the trace identity because one precursor can be traced at several voltages."
 
   # Precursor identity
   precursor_id:
@@ -41,7 +46,7 @@ fields:
   transition:
     type: string
     required: true
-    doc: "Raw transition label as reported by the producer: 'ms1' for the precursor trace, or a fragment label such as 'y7^1' or 'b4^2'."
+    doc: "Transition annotation: 'ms1' for the precursor trace, or a fragment label such as 'y7^1' or 'b4^2'. Fragment annotations should follow mzPAF (the PSI peak annotation format) where the producer supports it; ms1 is reserved for the precursor trace."
   transition_type:
     type: string
     required: true
@@ -66,34 +71,83 @@ fields:
     optional: true
     nullable: true
     doc: "Neutral-loss annotation of the traced ion (e.g. '-H2O'). Null when the trace has no neutral loss."
-  product_mz:
+  isotope:
+    type: int16
+    optional: true
+    nullable: true
+    doc: "Isotope index of the traced ion: 0 is monoisotopic, 1 is M+1, and so on. Applies to both precursor (ms1) and fragment traces; null when the producer does not report isotope resolution."
+  target_mz:
     type: float32
     optional: true
     nullable: true
-    doc: "m/z of the traced fragment ion. Null when the producer does not report it or for an ms1 trace."
+    doc: "m/z the trace was extracted at: the precursor m/z for an ms1 trace, or the product-ion m/z for a fragment trace. Null when the producer does not report it."
+  target_rt:
+    type: float32
+    optional: true
+    nullable: true
+    doc: "Expected/target retention time of the trace in seconds, when the producer reports one (e.g. the library or predicted apex)."
+  rt_start:
+    type: float32
+    optional: true
+    nullable: true
+    doc: "Start of the extraction window in seconds. Null when the producer does not report the window or the whole run was extracted."
+  rt_stop:
+    type: float32
+    optional: true
+    nullable: true
+    doc: "End of the extraction window in seconds. Null when the producer does not report the window or the whole run was extracted."
+  target_ion_mobility:
+    type: float32
+    optional: true
+    nullable: true
+    doc: "Target ion-mobility value of the trace (1/K0), when the acquisition is ion-mobility coupled and the producer reports it."
+  ion_mobility_start:
+    type: float32
+    optional: true
+    nullable: true
+    doc: "Start of the ion-mobility extraction window (1/K0), when applicable."
+  ion_mobility_stop:
+    type: float32
+    optional: true
+    nullable: true
+    doc: "End of the ion-mobility extraction window (1/K0), when applicable."
   library_intensity:
     type: float32
     optional: true
     nullable: true
     doc: "Library or predicted relative intensity of this fragment, when available; useful as an ML feature or for transition prioritisation."
+  used_for_quantification:
+    type: bool
+    optional: true
+    nullable: true
+    doc: "True when the producer used this trace for quantification or scoring, false when it was only extracted for inspection. Null when the producer does not mark it."
 
   # Measurement
   rt:
     type: "list<float32>"
     required: true
-    doc: "Retention times of the trace in seconds, in acquisition order (normally ascending). MUST have the same length as intensity."
+    doc: "Raw retention times of the trace in seconds, strictly increasing and in acquisition order. Not aligned or iRT-corrected. MUST have the same length as intensity and, when present, mz."
   intensity:
     type: "list<float32>"
     required: true
-    doc: "Raw intensity at each retention time. MUST have the same length as rt; element i corresponds to rt[i]."
+    doc: "Raw intensity at each retention time, as exported by the producer; zero-intensity points are kept and QPX does not smooth them. MUST have the same length as rt; element i corresponds to rt[i]."
+  mz:
+    type: "list<float32>"
+    optional: true
+    nullable: true
+    doc: "Optional observed m/z at each retention time, aligned with rt; enables mass-error traces. Null when the producer does not report a per-point m/z."
   is_decoy:
     type: bool
     optional: true
     nullable: true
     doc: "Decoy flag for the precursor when the producer reports one; null when the trace is not classified."
+  additional_scores:
+    type: "list<score>"
+    optional: true
+    doc: "Trace-level scores reported by the producer. Feature-by-trace score tables (several candidate features sharing one trace) are outside this view."
 
   # Metadata
   cv_params:
     type: "list<cv_param>"
     optional: true
-    doc: "Controlled-vocabulary parameters for trace-level metadata (e.g. extraction window width or smoothing method)."
+    doc: "Controlled-vocabulary parameters for trace-specific metadata. Settings that are constant for a run (m/z tolerance, extraction-window width, smoothing method) belong in run/provenance metadata, not repeated on every row."

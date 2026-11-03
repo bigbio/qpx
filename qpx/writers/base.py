@@ -65,6 +65,7 @@ _BYTE_STREAM_SPLIT_LEAVES: tuple[str, ...] = (
     "observed_mz",
     "mz.list.element",
     "intensity.list.element",
+    "rt.list.element",
 )
 
 # ZSTD level 9 (vs the pyarrow default of 3) buys a few extra percent at modest

@@ -87,6 +87,9 @@ def convert_diann_xic(
     *,
     label: str = "LFQ",
     compression: str = "zstd",
+    selection: str = "targets",
+    window: str = "apex",
+    extraction_window_seconds: float | None = None,
 ) -> int:
     """Merge DIA-NN per-run XIC exports into one dataset-level QPX XIC file.
 
@@ -101,6 +104,14 @@ def convert_diann_xic(
         label-free, so the default is ``"LFQ"``.
     compression:
         Parquet compression codec passed to :class:`~qpx.writers.xic.XicWriter`.
+    selection:
+        What the export contains: ``targets``, ``targets_and_decoys`` or ``all``.
+        Written to the file footer as ``xic_selection``.
+    window:
+        Whether traces cover only the apex region or the full extraction window.
+        Written to the file footer as ``xic_window``.
+    extraction_window_seconds:
+        Optional extraction-window width in seconds, written to the footer when known.
 
     Returns
     -------
@@ -130,7 +141,15 @@ def convert_diann_xic(
     transition_cache: dict[str, dict] = {}
     total = 0
     try:
-        with XicWriter(output_path, compression=compression) as writer:
+        with XicWriter(
+            output_path,
+            compression=compression,
+            selection=selection,
+            window=window,
+            extraction_window_seconds=extraction_window_seconds,
+            smoothed=False,
+            zero_points="kept",
+        ) as writer:
             for path, run in zip(paths, runs):
                 traces = con.execute(_trace_query(path)).fetchall()
                 rows = []
@@ -149,17 +168,28 @@ def convert_diann_xic(
                             "xic_id": f"{run}|{precursor_id}|{transition}",
                             "run_file_name": run,
                             "label": label,
-                            "feature_id": None,
+                            "feature_ids": None,
+                            "compensation_voltage": None,
                             "precursor_id": precursor_id,
                             "peptidoform": peptidoform,
                             "charge": charge,
                             "transition": transition,
                             **annotation,
-                            "product_mz": None,
+                            "isotope": 0,
+                            "target_mz": None,
+                            "target_rt": None,
+                            "rt_start": None,
+                            "rt_stop": None,
+                            "target_ion_mobility": None,
+                            "ion_mobility_start": None,
+                            "ion_mobility_stop": None,
                             "library_intensity": None,
+                            "used_for_quantification": None,
                             "rt": rt,
                             "intensity": intensity,
+                            "mz": None,
                             "is_decoy": None,
+                            "additional_scores": None,
                             "cv_params": None,
                         }
                     )

@@ -74,13 +74,21 @@ The XIC view stores extracted-ion chromatograms as one row per traced ion. DIA-N
 | `fragment_number` | `feature` | Parsed from `y7^1` → `7` |
 | `fragment_charge` | `feature` | Parsed from `y7^1` → `1` |
 | `neutral_loss` | `feature` | Suffix after the fragment charge, e.g. `-H2O` |
+| `isotope` | — | Set to `0` (DIA-NN extracts monoisotopic targets) |
+| `target_mz` | — | Not reported by DIA-NN XIC; null |
+| `feature_ids` | — | Null unless the converter also links the trace to feature rows |
+| `used_for_quantification` | — | Null when the producer does not mark it |
 | `rt` | `rt` | Multiply by 60 (DIA-NN reports minutes) |
 | `intensity` | `value` | Raw intensity |
+| `mz` | — | Not reported by DIA-NN XIC; null |
 | `label` | — | Set to `LFQ` for label-free DIA-NN output |
-| `xic_id` | — | `<run_file_name>|<pr>|<feature>` |
+| `xic_id` | — | `<run_file_name>|<pr>|<feature>|<isotope>|<compensation_voltage>` |
 | `is_decoy` | — | Optional, from the DIA-NN report/feature row |
+| `additional_scores` | — | Null; DIA-NN XIC carries no trace-level scores |
 
 DIA-NN also emits rows with `feature = index`, `rt = 0`, and `value = 0`; these are precursor chunk indexes, not measurements, and must be excluded.
+
+The converter declares the trace selection in the file footer: `xic_selection=targets`, `xic_window=apex`, `xic_smoothed=false`, `xic_zero_points=kept`, and `xic_rt_unit=seconds`, plus `xic_extraction_window_seconds` when provided.
 
 ## Protein Group Field Mappings
 

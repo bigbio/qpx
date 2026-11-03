@@ -51,7 +51,7 @@ class Xic(BaseStructure):
         """
         stmt = sql_build(
             """SELECT xic_id, run_file_name, label, precursor_id, peptidoform,
-                      charge, feature_id, transition, transition_type,
+                      charge, feature_ids, transition, transition_type,
                       UNNEST(rt) AS trace_rt,
                       UNNEST(intensity) AS trace_intensity
                FROM $src""",

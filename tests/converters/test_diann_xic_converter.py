@@ -48,12 +48,19 @@ def test_convert_diann_xic_merges_runs_and_annotates_transitions(tmp_path):
     assert XicSchema.validate_full(table, strict=True).issues == []
     assert set(table.column("run_file_name").to_pylist()) == {"run1", "run2"}
     assert "index" not in set(table.column("transition").to_pylist())
+    metadata = pq.read_schema(output).metadata
+    assert metadata[b"xic_selection"] == b"targets"
+    assert metadata[b"xic_window"] == b"apex"
+    assert metadata[b"xic_rt_unit"] == b"seconds"
 
     by_id = {row["xic_id"]: row for row in table.to_pylist()}
     ms1 = by_id["run1|PEPTIDEK2|ms1"]
     assert ms1["transition_type"] == "ms1"
     assert ms1["peptidoform"] == "PEPTIDEK"
     assert ms1["charge"] == 2
+    assert ms1["isotope"] == 0
+    assert ms1["feature_ids"] is None
+    assert ms1["target_mz"] is None
     assert ms1["rt"] == [60.0]
     assert ms1["intensity"] == [10.0]
 

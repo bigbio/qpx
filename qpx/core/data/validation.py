@@ -167,27 +167,59 @@ def _vocabulary_count(values: pa.Array | pa.ChunkedArray, allowed: tuple[str, ..
 
 
 def _chromatogram_length_counts(table: pa.Table | pa.RecordBatch) -> int:
-    """XIC rows whose parallel ``rt`` and ``intensity`` arrays differ in length.
+    """XIC rows whose parallel ``rt``/``intensity``/``mz`` arrays differ in length.
 
-    The two arrays are positionally aligned, so a mismatch means the trace cannot
-    be plotted or integrated. Null lists are reported by the non-nullable check.
+    The arrays are positionally aligned, so a mismatch means the trace cannot be
+    plotted, integrated or scored. Null lists are reported by the non-nullable
+    check for ``rt``/``intensity``; ``mz`` is optional.
     """
     names = set(table.schema.names)
     if not {"rt", "intensity"} <= names:
         return 0
-    rt = table.column("rt")
-    intensity = table.column("intensity")
-    if not (pa.types.is_list(rt.type) and pa.types.is_list(intensity.type)):
+    arrays = [table.column("rt"), table.column("intensity")]
+    if "mz" in names and pa.types.is_list(table.column("mz").type):
+        arrays.append(table.column("mz"))
+    if not all(pa.types.is_list(array.type) for array in arrays):
         return 0
-    mismatch = pc.not_equal(pc.list_value_length(rt), pc.list_value_length(intensity))
-    return pc.sum(pc.cast(pc.fill_null(mismatch, False), pa.int64())).as_py() or 0
+    expected = pc.list_value_length(arrays[0])
+    mismatch = pa.scalar(False)
+    for array in arrays[1:]:
+        differs = pc.fill_null(pc.not_equal(expected, pc.list_value_length(array)), False)
+        mismatch = pc.or_(mismatch, differs)
+    return pc.sum(pc.cast(mismatch, pa.int64())).as_py() or 0
 
 
 def _chromatogram_length_issues(count: int, structure: str, severity: str) -> list[ValidationIssue]:
     if not count:
         return []
-    message = f"{count} row(s) have rt and intensity arrays of different length"
+    message = f"{count} row(s) have rt, intensity and mz arrays of different length"
     return [_issue(structure, "chromatogram_length_mismatch", severity, "rt", message)]
+
+
+def _rt_monotonic_counts(values: pa.Array | pa.ChunkedArray) -> int:
+    """XIC rows whose retention times are not strictly increasing."""
+    if not (pa.types.is_list(values.type) or pa.types.is_large_list(values.type)):
+        return 0
+    bad = 0
+    for trace in values.to_pylist():
+        if not trace:
+            continue
+        previous = None
+        for rt in trace:
+            if rt is None:
+                bad += 1
+                continue
+            if previous is not None and rt <= previous:
+                bad += 1
+            previous = rt
+    return bad
+
+
+def _rt_monotonic_issues(count: int, structure: str, severity: str) -> list[ValidationIssue]:
+    if not count:
+        return []
+    message = f"{count} XIC row(s) have retention times that are not strictly increasing"
+    return [_issue(structure, "rt_not_increasing", severity, "rt", message)]
 
 
 def _vocabulary_issues(counts: dict[str, int], structure: str, severity: str) -> list[ValidationIssue]:

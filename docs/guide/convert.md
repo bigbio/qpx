@@ -254,14 +254,18 @@ print(generate_params_table(convert_diann_xic_cmd))
 qpxc convert diann-xic \
     --xic-folder ./diann_xic \
     --output-folder ./output \
-    --output-prefix PXD014414
+    --output-prefix PXD014414 \
+    --xic-selection targets \
+    --xic-window apex
 ```
 
 `--xic-folder` must contain the `*.xic.parquet` files written by DIA-NN's
 `--xic` option. All runs are merged into `PXD014414.xic.parquet`; `run_file_name`
-distinguishes them. Use `qpxc convert diann --xic-folder ...` instead when you
-are also converting the DIA-NN report and want the XIC view in the same output
-folder.
+distinguishes them. The file footer records `xic_selection`, `xic_window`,
+`xic_smoothed`, `xic_zero_points` and `xic_rt_unit`; use
+`--xic-extraction-window-seconds` to record the DIA-NN `--xic` window. Use
+`qpxc convert diann --xic-folder ...` instead when you are also converting the
+DIA-NN report and want the XIC view in the same output folder.
 
 ### Output Files {#diann-xic-output}
 

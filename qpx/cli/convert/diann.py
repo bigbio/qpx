@@ -63,6 +63,9 @@ def _write_diann_views(converter, options: dict, prefix: str) -> None:
                 xic_files,
                 output_folder / f"{prefix}.xic.parquet",
                 compression=options["compression"],
+                selection=options.get("xic_selection", "targets"),
+                window=options.get("xic_window", "apex"),
+                extraction_window_seconds=options.get("xic_extraction_window_seconds"),
             )
             click.echo(f"XIC view: {traces} traces across {len(xic_files)} runs")
     converter.convert_sdrf(output_folder=output_folder, prefix=prefix)
@@ -113,6 +116,25 @@ def _write_diann_views(converter, options: dict, prefix: str) -> None:
         "When given, merges them into a single {PREFIX}.xic.parquet view."
     ),
     type=click.Path(exists=True, file_okay=False, path_type=Path),
+)
+@click.option(
+    "--xic-selection",
+    help="What the XIC export contains: targets, targets_and_decoys or all.",
+    type=click.Choice(["targets", "targets_and_decoys", "all"], case_sensitive=False),
+    default="targets",
+    show_default=True,
+)
+@click.option(
+    "--xic-window",
+    help="Whether the XIC traces cover only the apex region or the full extraction window.",
+    type=click.Choice(["apex", "full"], case_sensitive=False),
+    default="apex",
+    show_default=True,
+)
+@click.option(
+    "--xic-extraction-window-seconds",
+    help="XIC extraction-window width in seconds, stored in the file footer when known.",
+    type=float,
 )
 @_max_memory_option
 @_max_cpus_option
@@ -208,11 +230,40 @@ def convert_diann_cmd(**kwargs):
     show_default=True,
     help="Channel label written for every trace",
 )
+@click.option(
+    "--xic-selection",
+    help="What the XIC export contains: targets, targets_and_decoys or all.",
+    type=click.Choice(["targets", "targets_and_decoys", "all"], case_sensitive=False),
+    default="targets",
+    show_default=True,
+)
+@click.option(
+    "--xic-window",
+    help="Whether the XIC traces cover only the apex region or the full extraction window.",
+    type=click.Choice(["apex", "full"], case_sensitive=False),
+    default="apex",
+    show_default=True,
+)
+@click.option(
+    "--xic-extraction-window-seconds",
+    help="XIC extraction-window width in seconds, stored in the file footer when known.",
+    type=float,
+)
 @_output_folder_option
 @_output_prefix_option
 @_compression_option
 @_verbose_option
-def convert_diann_xic_cmd(xic_folder, label, output_folder, output_prefix, compression, verbose):
+def convert_diann_xic_cmd(
+    xic_folder,
+    label,
+    xic_selection,
+    xic_window,
+    xic_extraction_window_seconds,
+    output_folder,
+    output_prefix,
+    compression,
+    verbose,
+):
     """Merge DIA-NN XIC exports into one QPX xic view.
 
     DIA-NN writes one ``*.xic.parquet`` per run when ``--xic`` is enabled.
@@ -243,6 +294,9 @@ def convert_diann_xic_cmd(xic_folder, label, output_folder, output_prefix, compr
         output_folder / f"{prefix}.xic.parquet",
         label=label,
         compression=compression,
+        selection=xic_selection,
+        window=xic_window,
+        extraction_window_seconds=xic_extraction_window_seconds,
     )
     click.echo(
         f"XIC conversion complete: {traces} traces from {len(xic_files)} run(s). "
