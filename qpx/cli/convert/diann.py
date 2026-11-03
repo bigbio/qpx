@@ -66,6 +66,7 @@ def _write_diann_views(converter, options: dict, prefix: str) -> None:
                 selection=options.get("xic_selection", "targets"),
                 window=options.get("xic_window", "apex"),
                 extraction_window_seconds=options.get("xic_extraction_window_seconds"),
+                qvalue_threshold=options.get("xic_qvalue_threshold"),
             )
             click.echo(f"XIC view: {traces} traces across {len(xic_files)} runs")
     converter.convert_sdrf(output_folder=output_folder, prefix=prefix)
@@ -134,6 +135,11 @@ def _write_diann_views(converter, options: dict, prefix: str) -> None:
 @click.option(
     "--xic-extraction-window-seconds",
     help="XIC extraction-window width in seconds, stored in the file footer when known.",
+    type=float,
+)
+@click.option(
+    "--xic-qvalue-threshold",
+    help="Q-value threshold used to select the exported XIC precursors, stored in the footer.",
     type=float,
 )
 @_max_memory_option
@@ -249,6 +255,11 @@ def convert_diann_cmd(**kwargs):
     help="XIC extraction-window width in seconds, stored in the file footer when known.",
     type=float,
 )
+@click.option(
+    "--xic-qvalue-threshold",
+    help="Q-value threshold used to select the exported XIC precursors, stored in the footer.",
+    type=float,
+)
 @_output_folder_option
 @_output_prefix_option
 @_compression_option
@@ -259,6 +270,7 @@ def convert_diann_xic_cmd(
     xic_selection,
     xic_window,
     xic_extraction_window_seconds,
+    xic_qvalue_threshold,
     output_folder,
     output_prefix,
     compression,
@@ -297,6 +309,7 @@ def convert_diann_xic_cmd(
         selection=xic_selection,
         window=xic_window,
         extraction_window_seconds=xic_extraction_window_seconds,
+        qvalue_threshold=xic_qvalue_threshold,
     )
     click.echo(
         f"XIC conversion complete: {traces} traces from {len(xic_files)} run(s). "

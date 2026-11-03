@@ -90,6 +90,8 @@ def convert_diann_xic(
     selection: str = "targets",
     window: str = "apex",
     extraction_window_seconds: float | None = None,
+    qvalue_threshold: float | None = None,
+    transition_format: str = "mzPAF",
 ) -> int:
     """Merge DIA-NN per-run XIC exports into one dataset-level QPX XIC file.
 
@@ -112,6 +114,10 @@ def convert_diann_xic(
         Written to the file footer as ``xic_window``.
     extraction_window_seconds:
         Optional extraction-window width in seconds, written to the footer when known.
+    qvalue_threshold:
+        Optional q-value threshold used to select the exported precursors.
+    transition_format:
+        Annotation grammar declared for fragment ``transition`` values; defaults to mzPAF.
 
     Returns
     -------
@@ -147,6 +153,8 @@ def convert_diann_xic(
             selection=selection,
             window=window,
             extraction_window_seconds=extraction_window_seconds,
+            qvalue_threshold=qvalue_threshold,
+            transition_format=transition_format,
             smoothed=False,
             zero_points="kept",
         ) as writer:
@@ -169,6 +177,7 @@ def convert_diann_xic(
                             "run_file_name": run,
                             "label": label,
                             "feature_ids": None,
+                            "feature_scores": None,
                             "compensation_voltage": None,
                             "precursor_id": precursor_id,
                             "peptidoform": peptidoform,

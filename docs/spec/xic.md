@@ -18,7 +18,7 @@ Point-level access is still one `UNNEST` away; see [Querying](#querying).
     `rt`, `intensity` and, when present, `mz` MUST have the same length within a row; element `i` is the measurement at `rt[i]`. Retention times are stored in **seconds**, are **raw run RTs** (not aligned or iRT-corrected), and must be **strictly increasing**. Validation reports length mismatches as `chromatogram_length_mismatch` and non-increasing RTs as `rt_not_increasing`. Zero-intensity points are kept, and QPX does not smooth the arrays; a producer that smooths should declare it in the file metadata. Note that `mz.scan_start_time` is in minutes while `xic.rt` and `feature.rt` are in seconds.
 
 !!! note "Selection and size"
-    A trace-level file is not automatically smaller than a long export. More importantly, the `17 GB` projection in the proposal assumes DIA-NN apex windows (~5 points per trace). A full extraction window (e.g. ±300 s) has tens of times more points per trace and can make the file hundreds of GB, approaching the size of the inline spectra. The XIC file therefore declares its selection in the footer: `xic_selection` (`targets`, `targets_and_decoys`, `all`), `xic_window` (`apex`, `full`), and optionally `xic_extraction_window_seconds`. Rescoring that needs decoys or sub-threshold targets must use an export that contains them.
+    A trace-level file is not automatically smaller than a long export. More importantly, the `17 GB` projection in the proposal assumes DIA-NN apex windows (~5 points per trace). A full extraction window (e.g. ±300 s) has tens of times more points per trace and can make the file hundreds of GB, approaching the size of the inline spectra. The XIC file therefore declares its selection in the footer: `xic_selection` (`targets`, `targets_and_decoys`, `all`), `xic_window` (`apex`, `full`), optionally `xic_extraction_window_seconds` and `xic_qvalue_threshold`, and `transition_format` (default `mzPAF`). Rescoring that needs decoys or sub-threshold targets must use an export that contains them.
 
 ## Schema
 
@@ -32,6 +32,7 @@ See the full YAML schema in [`xic.yaml`](schemas/xic.yaml).
 | `run_file_name` | Raw file containing the trace (without extension); links to `run`, `feature`, `psm`, `mz` | `string` | Yes |
 | `label` | Channel label: `"LFQ"` for label-free DIA, or a reporter/plex label; matches `feature.intensities[].label` | `string` | Yes |
 | `feature_ids` | Optional links to the `feature.feature_id` rows this trace supports; a trace can support several candidate peak groups | `array[int64]` | Optional |
+| `feature_scores` | Per-feature scores for this trace (area, apex, mass error, shape, …) when they depend on the feature | `array[struct]` | Optional |
 | `compensation_voltage` | FAIMS compensation voltage; part of the trace identity when the acquisition uses FAIMS | `float32` | Optional |
 
 ### Precursor identity
@@ -71,7 +72,7 @@ See the full YAML schema in [`xic.yaml`](schemas/xic.yaml).
 | `intensity` | Raw intensity at each retention time; zeros kept, not smoothed by QPX | `array[float32]` | Yes |
 | `mz` | Optional observed m/z at each retention time, aligned with `rt` | `array[float32]` | Optional |
 | `is_decoy` | Decoy flag for the precursor when the producer reports one | `boolean` | Optional |
-| `additional_scores` | Trace-level producer scores; feature-by-trace scores are outside this view | `array[struct]` | Optional |
+| `additional_scores` | Trace-level producer scores that do not depend on a specific feature | `array[struct]` | Optional |
 | `cv_params` | Trace-specific controlled-vocabulary metadata; run-level extraction settings belong in run/provenance metadata | `array[struct]` | Optional |
 
 ## Tracing one entity through QPX
@@ -127,7 +128,7 @@ DIA-NN writes one `*.xic.parquet` per run with the columns `pr`, `feature`, `inf
 | — | `target_mz`, `target_rt`, windows, IM | not reported by DIA-NN XIC; null |
 | — | `is_decoy` | optional, from the DIA-NN report/feature row |
 
-The DIA-NN converter writes file-level selection metadata: `xic_selection=targets`, `xic_window=apex`, `xic_smoothed=false`, `xic_zero_points=kept`, and `xic_rt_unit=seconds`. Override `--xic-selection`, `--xic-window` and `--xic-extraction-window-seconds` when the export differs.
+The DIA-NN converter writes file-level selection metadata: `xic_selection=targets`, `xic_window=apex`, `xic_smoothed=false`, `xic_zero_points=kept`, `xic_rt_unit=seconds`, and `transition_format=mzPAF`. Override `--xic-selection`, `--xic-window`, `--xic-extraction-window-seconds` and `--xic-qvalue-threshold` when the export differs.
 
 !!! warning "Exclude DIA-NN `index` rows"
     DIA-NN also writes rows with `feature = "index"`, `rt = 0`, and `value = 0`. They are **not chromatogram points**: they chunk the precursors in blocks of 128 and carry the block number in `info` (0, 1, 2, …). Discard them when building QPX traces; only `feature = "ms1"` and fragment labels are measurements.
@@ -142,6 +143,7 @@ One row for the `y7^1` fragment trace of a precursor:
   "run_file_name": "RD139_Narrow_UPS1_0_1fmol_inj1",
   "label": "LFQ",
   "feature_ids": [1048576],
+  "feature_scores": null,
   "compensation_voltage": null,
   "precursor_id": "PEPTIDEK2",
   "peptidoform": "PEPTIDEK",
@@ -242,7 +244,7 @@ ds.xic.by_precursor("PEPTIDEK2").points().to_df()  # one row per RT point
     `xic` stores intensity versus retention time. Mobilograms (intensity versus ion mobility at a feature apex) are a different axis and are not represented by the `rt`/`intensity` arrays; a future `xim` view should cover them. For diaPASEF XIC traces, the ion-mobility *window* is carried as per-trace scalars (`target_ion_mobility`, `ion_mobility_start`, `ion_mobility_stop`) without changing the RT axis.
 
 !!! note "Feature links are many-to-many"
-    A trace is precursor-level evidence and may support several candidate peak groups, so `feature_ids` is a list and may be null when the producer assigns no feature. The fallback join on `(run_file_name, peptidoform, charge[, label])` is not unique in general: the default feature identity includes `rt`, and FAIMS producers can include `compensation_voltage`. Use `feature_ids` when it is present, and treat the fallback as a precursor-level association rather than a row-level foreign key.
+    A trace is precursor-level evidence and may support several candidate peak groups, so `feature_ids` is a list and may be null when the producer assigns no feature. Scores that depend on a feature go in `feature_scores` (one entry per `feature_id`), while `additional_scores` holds trace-level scores. The fallback join on `(run_file_name, peptidoform, charge[, label])` is not unique in general: the default feature identity includes `rt`, and FAIMS producers can include `compensation_voltage`. Use `feature_ids` when it is present, and treat the fallback as a precursor-level association rather than a row-level foreign key.
 
 !!! note "Decoys"
     When a producer extracts traces for decoy precursors, keep them and set `is_decoy = true`; consumers filter explicitly. A null `is_decoy` means the trace was not classified.

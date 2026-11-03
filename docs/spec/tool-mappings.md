@@ -88,7 +88,7 @@ The XIC view stores extracted-ion chromatograms as one row per traced ion. DIA-N
 
 DIA-NN also emits rows with `feature = index`, `rt = 0`, and `value = 0`; these are precursor chunk indexes, not measurements, and must be excluded.
 
-The converter declares the trace selection in the file footer: `xic_selection=targets`, `xic_window=apex`, `xic_smoothed=false`, `xic_zero_points=kept`, and `xic_rt_unit=seconds`, plus `xic_extraction_window_seconds` when provided.
+The converter declares the trace selection in the file footer: `xic_selection=targets`, `xic_window=apex`, `xic_smoothed=false`, `xic_zero_points=kept`, `xic_rt_unit=seconds`, and `transition_format=mzPAF`, plus `xic_extraction_window_seconds` and `xic_qvalue_threshold` when provided.
 
 ## Protein Group Field Mappings
 

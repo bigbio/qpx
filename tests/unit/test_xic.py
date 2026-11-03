@@ -14,6 +14,7 @@ def _trace(**overrides):
         "run_file_name": "run1",
         "label": "LFQ",
         "feature_ids": [1],
+        "feature_scores": None,
         "compensation_voltage": None,
         "precursor_id": "PEPTIDEK2",
         "peptidoform": "PEPTIDEK",

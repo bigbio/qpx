@@ -22,6 +22,11 @@ fields:
     optional: true
     nullable: true
     doc: "Optional links to the feature.feature_id rows this trace supports. A trace is precursor-level evidence and can support several candidate peak groups, so this is a list rather than one feature id."
+  feature_scores:
+    type: "list<feature_score>"
+    optional: true
+    nullable: true
+    doc: "Per-feature scores for this trace, for producers whose fragment scores depend on the feature (e.g. area, apex intensity/RT, mass error or shape scores). Use trace-level additional_scores for scores that do not depend on a feature."
   compensation_voltage:
     type: float32
     optional: true

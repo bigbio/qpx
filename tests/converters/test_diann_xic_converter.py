@@ -52,6 +52,7 @@ def test_convert_diann_xic_merges_runs_and_annotates_transitions(tmp_path):
     assert metadata[b"xic_selection"] == b"targets"
     assert metadata[b"xic_window"] == b"apex"
     assert metadata[b"xic_rt_unit"] == b"seconds"
+    assert metadata[b"transition_format"] == b"mzPAF"
 
     by_id = {row["xic_id"]: row for row in table.to_pylist()}
     ms1 = by_id["run1|PEPTIDEK2|ms1"]
@@ -60,6 +61,7 @@ def test_convert_diann_xic_merges_runs_and_annotates_transitions(tmp_path):
     assert ms1["charge"] == 2
     assert ms1["isotope"] == 0
     assert ms1["feature_ids"] is None
+    assert ms1["feature_scores"] is None
     assert ms1["target_mz"] is None
     assert ms1["rt"] == [60.0]
     assert ms1["intensity"] == [10.0]

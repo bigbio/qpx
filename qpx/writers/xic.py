@@ -16,6 +16,8 @@ class XicWriter(BaseWriter):
         selection: str | None = None,
         window: str | None = None,
         extraction_window_seconds: float | None = None,
+        qvalue_threshold: float | None = None,
+        transition_format: str | None = None,
         smoothed: bool | None = None,
         zero_points: str | None = None,
         **kwargs,
@@ -29,6 +31,10 @@ class XicWriter(BaseWriter):
             self._file_metadata[b"xic_window"] = window.encode()
         if extraction_window_seconds is not None:
             self._file_metadata[b"xic_extraction_window_seconds"] = str(extraction_window_seconds).encode()
+        if qvalue_threshold is not None:
+            self._file_metadata[b"xic_qvalue_threshold"] = str(qvalue_threshold).encode()
+        if transition_format is not None:
+            self._file_metadata[b"transition_format"] = transition_format.encode()
         if smoothed is not None:
             self._file_metadata[b"xic_smoothed"] = str(smoothed).lower().encode()
         if zero_points is not None:
