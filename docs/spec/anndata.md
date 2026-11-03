@@ -120,7 +120,7 @@ AnnData enables integration of proteomics data with other omics modalities:
 
 ## MuData (`.h5mu`) {#mudata-h5mu}
 
-Converters that produce expression output also emit a single combined **MuData** container, `<prefix>.h5mu`, that bundles the per-precursor and per-protein matrices (and the standalone expression views, when present) into one multi-modal object for the scverse / `muon` ecosystem. It is written by `qpx/mudata.py` (`build_mudata`).
+Converters that produce expression output also emit a single combined **MuData** container, `<prefix>.h5mu`, that bundles the per-precursor and per-protein matrices (and the standalone expression views, when present) into one multi-modal object for the scverse / `muon` ecosystem. It is written by `qpx/mudata.py` (`build_mudata`), with gzip-compressed (level 4) datasets that `mudata`, `muon` and h5py read as they are, in backed mode too.
 
 ### Modalities
 

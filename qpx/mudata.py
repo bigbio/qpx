@@ -817,7 +817,9 @@ def write_dataset_mudata(
                 reasons = reasons.get("qpx_failed_modalities") or {}
                 detail = "; ".join(f"{name} ({reasons[name]})" if name in reasons else name for name in sorted(missing))
                 raise ValueError(f"Missing required quantification modalities: {detail}")
-            mdata.write(str(h5mu_tmp))
+            # gzip took MSV000085836 from 587 to 404 MB and reads back identical; the shuffle
+            # filter cannot be passed, because anndata applies it to scalar datasets in uns.
+            mdata.write(str(h5mu_tmp), compression="gzip", compression_opts=4)
             h5mu_tmp.replace(h5mu_path)
         finally:
             dataset.close()
