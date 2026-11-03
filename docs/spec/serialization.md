@@ -110,10 +110,11 @@ Writers choose each column's encoding from its data (see [Physical Layout](#phys
 | PyArrow, pandas with `engine="pyarrow"` | Reads everything | 24.0, read in the test suite |
 | DuckDB | Reads everything | 1.5, 2.0 |
 | Polars | Reads everything, nested columns included | 1.41 |
-| Apache Spark, R `arrow` | Support the encoding; nested columns not confirmed here | Not tested here |
+| R `arrow` | Reads everything, nested columns included | 25.0 |
+| Apache Spark | Reads everything, nested columns included, with `spark.sql.parquet.enableVectorizedReader=false`. The default vectorized reader **fails** on `BYTE_STREAM_SPLIT` columns, which published 1.1 files already have for `rt` and m/z: `Unsupported encoding: BYTE_STREAM_SPLIT` | 4.2.1 |
 | fastparquet | **Fails** on `BYTE_STREAM_SPLIT` columns: `NotImplementedError: Encoding 9` (it reads `DELTA_BINARY_PACKED`). Even without that encoding it returns `None` for every `list<struct>` value, silently; strings and scalars read | 2026.3 |
 
-To read with fastparquet, rewrite through PyArrow without the encoding, and expect nested columns to be lost.
+Each reader read every column of a relayouted DIA-NN feature view (struct lists) and a TMT feature and psm view (`list<struct>`), and gave DuckDB's row counts and sums. To read with Spark, turn its vectorized reader off: `spark.conf.set("spark.sql.parquet.enableVectorizedReader", "false")`. To read with fastparquet, rewrite through PyArrow without the encoding, and expect nested columns to be lost.
 
 ### Comparing two conversions
 
