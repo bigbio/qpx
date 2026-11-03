@@ -9,8 +9,7 @@ counts come from the peptide→protein evidence links.
 any. Files without one (quantms feeds ProteinQuantifier separately) get a roll-up
 instead: the **unnormalized sum of the group's unique peptides** (quantms
 ``unique_peptides`` policy, no normalization), per ``(protein group, grouped_runs
-unit, label)``, optionally over the ``top`` most abundant peptides. A
-``quantification_method`` cv_param names the source of every quantified row, and
+unit, label)``. A ``quantification_method`` cv_param names the source of every quantified row, and
 the roll-up stays available as an additional intensity beside OpenMS' value. Rows
 stay ``intensity``-null where a group has no signal. One row per ``(protein group,
 grouped_runs, label)``; a quantification unit comes from the SDRF, else from the
@@ -34,6 +33,7 @@ from qpx.core.protein_sequence import average_molecular_weight_kda
 _log = logging.getLogger(__name__)
 _GENE_RE = re.compile(r"GN=([^\s]+)")
 _OPENMS_QUANT_METHOD = "openms_protein_abundance"
+_SUM_QUANT_METHOD = "unnormalized_unique_peptide_sum"
 
 
 class _ProteinMaps:
@@ -87,10 +87,10 @@ class ProteinGroupAccumulator:
         """ProteinIdentifications of every input (pyopenms accessor name)."""
         return self._protein_ids
 
-    def build(self, sdrf_path, top) -> list[dict]:
+    def build(self, sdrf_path) -> list[dict]:
         """pg records over all inputs."""
         return build_pg_records(
-            self, self.map_info, self.maps, self.pep_intensity, sdrf_path, top, self.fraction_units, self.protein_quant
+            self, self.map_info, self.maps, self.pep_intensity, sdrf_path, self.fraction_units, self.protein_quant
         )
 
 
@@ -320,13 +320,13 @@ def protein_group_maps(cm) -> tuple[ProteinGroupIndex, dict[tuple[str, ...], tup
     return group_map, group_meta
 
 
-def _protein_intensity(group_peps, group_accs, unit, label, pep_intensity, pep_accs, top) -> Optional[float]:
+def _protein_intensity(group_peps, group_accs, unit, label, pep_intensity, pep_accs) -> Optional[float]:
     """Unnormalized protein-group roll-up for one ``(unit, label)``.
 
     Sum of the group's **unique** peptides — those mapping only to proteins in the
     group (the quantms ``unique_peptides`` policy) — with **no normalization**.
-    ``top > 0`` keeps only the N most-abundant peptides; ``top = 0`` sums all. Returns ``None`` when the group has no
-    unique-peptide signal in this unit+label (stays identification-only).
+    Returns ``None`` when the group has no unique-peptide signal in this
+    unit+label (stays identification-only).
     """
     abundances = []
     for pep in group_peps:
@@ -337,9 +337,6 @@ def _protein_intensity(group_peps, group_accs, unit, label, pep_intensity, pep_a
             abundances.append(ab)
     if not abundances:
         return None
-    abundances.sort(reverse=True)
-    if top and top > 0:
-        abundances = abundances[:top]
     return sum(abundances)
 
 
@@ -414,15 +411,15 @@ def _pg_group_fields(accs, m, acc_decoy, acc_qvalue, acc_gene, properties) -> di
     }
 
 
-def _quant_fields(openms, rollup, method: str, label: str, reported: bool) -> dict:
+def _quant_fields(openms, rollup, label: str, reported: bool) -> dict:
     """Intensity of one pg row: OpenMS' abundance in an input that reports them, else the roll-up."""
     if not reported:
         return {
             "intensity": rollup,
-            "cv_params": [{"cv_name": "quantification_method", "cv_value": method}] if rollup is not None else None,
+            "cv_params": [{"cv_name": "quantification_method", "cv_value": _SUM_QUANT_METHOD}] if rollup is not None else None,
         }
     openms = openms or {}
-    extra = [{"intensity_name": method, "intensity_value": rollup}] if rollup is not None else []
+    extra = [{"intensity_name": _SUM_QUANT_METHOD, "intensity_value": rollup}] if rollup is not None else []
     extra += [{"intensity_name": name, "intensity_value": value} for name, value in openms.get("ratios", {}).items()]
     abundance = openms.get("abundance")
     return {
@@ -433,7 +430,7 @@ def _quant_fields(openms, rollup, method: str, label: str, reported: bool) -> di
 
 
 def build_pg_records(
-    cm, map_info, m: _ProteinMaps, pep_intensity: dict, sdrf_path, top: int, fraction_units=(), protein_quant=None
+    cm, map_info, m: _ProteinMaps, pep_intensity: dict, sdrf_path, fraction_units=(), protein_quant=None
 ) -> list[dict]:
     """Build pg records from already-accumulated maps + peptide intensities.
 
@@ -446,7 +443,6 @@ def build_pg_records(
     reported_units = {key[1] for key in protein_quant}
     acc_decoy, acc_qvalue, acc_gene, groups = _merge_protein_ids(cm)
     properties = _protein_properties(cm)
-    quant_method = "unnormalized_unique_peptide_sum" if not top else f"unnormalized_unique_peptide_top{top}_sum"
     records: list[dict] = []
     for accs in groups:
         peptide_seqs, group_accs, counts = _group_sequence_counts(accs, m)
@@ -461,7 +457,7 @@ def build_pg_records(
         group_units = [unit for unit in units if group_runs.intersection(unit)]
         for unit in group_units:
             for label in labels:
-                rollup = _protein_intensity(peptide_seqs, group_accs, unit, label, pep_intensity, m.pep_to_accs, top)
+                rollup = _protein_intensity(peptide_seqs, group_accs, unit, label, pep_intensity, m.pep_to_accs)
                 unit_key = tuple(sorted(unit))
                 openms = protein_quant.get((frozenset(accs), unit_key, label))
                 # Without a PSM of the group in this unit, only a measured quantity
@@ -474,7 +470,7 @@ def build_pg_records(
                         "grouped_runs": list(unit),
                         "label": label,
                         **counts,
-                        **_quant_fields(openms, rollup, quant_method, label, unit_key in reported_units),
+                        **_quant_fields(openms, rollup, label, unit_key in reported_units),
                     }
                 )
     return records

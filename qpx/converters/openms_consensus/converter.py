@@ -136,7 +136,6 @@ class OpenMSConsensusConverter(BaseOrchestrator):  # pylint: disable=too-few-pub
         sdrf_path: Optional[str] = None,
         structures: tuple[str, ...] = _STRUCTURE_ALL,
         creator: str = "openms-consensus",
-        pg_top: int = 0,
         streaming: Optional[bool] = None,
         project_accession: Optional[str] = None,
         compression: str = "zstd",
@@ -174,8 +173,8 @@ class OpenMSConsensusConverter(BaseOrchestrator):  # pylint: disable=too-few-pub
 
         ``structures`` selects which of feature/psm/pg/run/sample to emit. pg
         carries the protein abundance OpenMS recorded in the file, else an
-        unnormalized unique-peptide sum, which ``pg_top`` bounds (0 = all). The sum
-        stays an additional intensity beside OpenMS' value.
+        unnormalized unique-peptide sum. The sum stays an additional intensity
+        beside OpenMS' value.
 
         ``streaming`` picks the consensusXML reader: ``None`` (default) auto-selects
         — the low-memory streaming reader when any input is above ``_STREAM_THRESHOLD_BYTES``
@@ -196,7 +195,7 @@ class OpenMSConsensusConverter(BaseOrchestrator):  # pylint: disable=too-few-pub
         written: dict[str, Path] = {}
 
         config = _ConversionConfig(
-            _OutputConfig(out, output_prefix, creator, compression), structures, sdrf_path, pg_top, include_unassigned_psms
+            _OutputConfig(out, output_prefix, creator, compression), structures, sdrf_path, include_unassigned_psms
         )
 
         if {"feature", "psm", "pg"}.intersection(structures):

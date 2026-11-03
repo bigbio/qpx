@@ -201,7 +201,7 @@ def test_pg_peptide_counts_are_per_protein(monkeypatch):
     )
 
     cm = ConsensusMap()
-    records = pg_adapter.build_pg_records(cm, feature_map_info(cm), protein_maps, {}, None, 0)
+    records = pg_adapter.build_pg_records(cm, feature_map_info(cm), protein_maps, {}, None)
 
     assert records[0]["peptide_counts"]["unique_sequences"] == 2
     assert records[0]["peptides"] == [

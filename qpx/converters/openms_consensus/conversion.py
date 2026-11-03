@@ -61,7 +61,6 @@ class _ConversionConfig:
     output: _OutputConfig
     structures: tuple[str, ...]
     sdrf_path: Optional[str]
-    pg_top: int
     include_unassigned_psms: bool
 
 
@@ -214,7 +213,7 @@ def _finalize_in_memory_records(feat_recs, psm_recs, seen, dedup):
 def _write_pg(pg, config, written) -> None:
     """Write accumulated protein groups when they contain exportable rows."""
     if pg is not None:
-        records = pg.build(config.sdrf_path, config.pg_top)
+        records = pg.build(config.sdrf_path)
         if records:
             output = config.output
             written["pg"] = _write_view(

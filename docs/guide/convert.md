@@ -962,8 +962,8 @@ peptide assignments keep this field null.
     the group's unique peptides** for that channel (the quantms `unique_peptides`
     policy, no normalization), marked `unnormalized_unique_peptide_sum`. Where
     OpenMS' abundance is present, the sum stays in `additional_intensities` under
-    that name. `--pg-top N` limits the sum to the N most abundant peptides; it does
-    not reproduce OpenMS' aggregation, which depends on its own settings.
+    that name. The sum does not reproduce OpenMS' aggregation, which depends on its
+    own settings.
 
 !!! note "Quantification units"
     `grouped_runs` comes from the SDRF, else from the `fraction_group` of the map
@@ -1032,7 +1032,7 @@ qpxc convert openms-consensus \
 
 - `<prefix>.feature.parquet` — one row per `(peptidoform, charge, run, rt)` with per-run/channel intensities.
 - `<prefix>.psm.parquet` — one row per spectrum match (scan, PEP, q-value, decoy).
-- `<prefix>.pg.parquet` — protein groups (`pg_accessions`, `grouped_runs`, peptide/feature counts, `global_qvalue`, decoy, genes); one row per channel with a populated `label` and an `intensity` = unnormalized sum of the group's unique peptides (stamped with a `quantification_method` cv_param; null where a group has no unique-peptide signal). See `--pg-top`.
+- `<prefix>.pg.parquet` — protein groups (`pg_accessions`, `grouped_runs`, peptide/feature counts, `global_qvalue`, decoy, genes); one row per channel with a populated `label` and an `intensity` = unnormalized sum of the group's unique peptides (stamped with a `quantification_method` cv_param; null where a group has no unique-peptide signal).
 - `<prefix>.run.parquet`, `<prefix>.sample.parquet` — from the SDRF (when provided).
 - `<prefix>.h5mu` — the dataset's MuData view, written by default; disable with `--no-mudata`. Best-effort: a view that cannot be built is reported and the conversion still succeeds, because the Parquet views are the dataset's source of truth.
 

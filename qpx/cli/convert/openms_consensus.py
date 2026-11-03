@@ -64,16 +64,6 @@ def _consensusxml_list(ctx, param, value) -> tuple[Path, ...]:
     help="Comma-separated views to write (run/sample require --sdrf-file).",
 )
 @click.option(
-    "--pg-top",
-    default=0,
-    show_default=True,
-    type=int,
-    help=(
-        "Peptides in the pg unnormalized unique-peptide sum, the intensity of inputs without an "
-        "OpenMS protein abundance and an additional intensity otherwise: 0 = all."
-    ),
-)
-@click.option(
     "--streaming/--no-streaming",
     default=None,
     help=(
@@ -115,7 +105,6 @@ def convert_openms_consensus_cmd(**kwargs):
     output_folder = kwargs["output_folder"]
     output_prefix = kwargs["output_prefix"]
     structures = kwargs["structures"]
-    pg_top = kwargs["pg_top"]
     streaming = kwargs["streaming"]
     verbose = kwargs["verbose"]
     project_accession = kwargs["project_accession"]
@@ -138,7 +127,6 @@ def convert_openms_consensus_cmd(**kwargs):
             include_unassigned_psms=include_unassigned_psms,
             sdrf_path=str(sdrf_path) if sdrf_path else None,
             structures=structs,
-            pg_top=pg_top,
             streaming=streaming,
             project_accession=project_accession,
             compression=compression,
