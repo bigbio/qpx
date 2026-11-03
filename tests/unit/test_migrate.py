@@ -120,6 +120,43 @@ def test_a_psm_follows_the_new_feature_id(old_dataset, tmp_path):
     assert row["psm_id"] != 1
 
 
+def test_a_site_follows_the_new_pg_and_psm_ids(old_dataset, tmp_path):
+    """relayout numbers ids 1, 2, ...; migrate derives them again, and the site's links follow."""
+    feature = pq.read_table(old_dataset / "old.feature.parquet").to_pylist()[0]
+    psm = {key: feature[key] for key in ("sequence", "peptidoform", "charge", "is_decoy", "run_file_name", "scan")}
+    _write(old_dataset / "old.psm.parquet", [{**psm, "psm_id": 1}])
+    pg = {
+        "pg_id": 1,
+        "pg_accessions": [PROTEIN],
+        "anchor_protein": PROTEIN,
+        "grouped_runs": [RUN],
+        "is_decoy": False,
+        "peptides": [{"protein_name": PROTEIN, "peptide_count": 1}],
+    }
+    _write(old_dataset / "old.pg.parquet", [pg])
+    site = {
+        "protein_accession": PROTEIN,
+        "position": 5,
+        "amino_acid": "M",
+        "modification_name": "Oxidation",
+        "modification_accession": "UNIMOD:35",
+        "mass_delta": 15.994915,
+        "grouped_runs": [RUN],
+        "pg_id": 1,
+        "best_psm_id": 1,
+        "is_decoy": False,
+    }
+    _write(old_dataset / "old.site.parquet", [site])
+    out = tmp_path / "new"
+    migrate_dataset(old_dataset, out)
+
+    pg_id = pq.read_table(out / "old.pg.parquet").column("pg_id")[0].as_py()
+    psm_id = pq.read_table(out / "old.psm.parquet").column("psm_id")[0].as_py()
+    row = pq.read_table(out / "old.site.parquet").to_pylist()[0]
+    assert 1 not in (pg_id, psm_id)
+    assert (row["pg_id"], row["best_psm_id"]) == (pg_id, psm_id)
+
+
 def test_a_provided_psm_id_is_kept(old_dataset, tmp_path):
     feature = pq.read_table(old_dataset / "old.feature.parquet").to_pylist()[0]
     psm = {key: feature[key] for key in ("sequence", "peptidoform", "charge", "is_decoy", "run_file_name", "scan")}

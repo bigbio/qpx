@@ -17,6 +17,7 @@ from qpx.core.engine import create_connection
 from qpx.core.struct_lists import file_layouts, restore_table
 from qpx.dataset import Dataset
 from qpx.transforms.mantissa import MANTISSA_BITS_FOOTER_KEY
+from qpx.transforms.relayout import ID_REFERENCES, ORDINAL_IDS
 from qpx.version import QPX_SPEC_VERSION
 
 logger = logging.getLogger(__name__)
@@ -24,6 +25,8 @@ logger = logging.getLogger(__name__)
 _BATCH_ROWS = 50_000
 # Derived again from the rewritten rows, and computed links that are not stored any more.
 _DROPPED_ID_COLUMNS = ("feature_id", "psm_id", "pg_id", "psm_ids", "pg_ids")
+# The columns that hold another view's ids and follow them; the feature's own links are dropped.
+_ID_REFERENCES = {view: columns for view, columns in ID_REFERENCES.items() if view != "feature"}
 # The feature composite each producer declares (docs/spec/identity.md), by footer `creator`.
 _PRODUCER_FEATURE_COMPOSITES = {
     "diann": ("peptidoform", "charge", "run_file_name"),
@@ -143,15 +146,6 @@ _ROW_MIGRATIONS = {
 }
 
 
-def _feature_id_map(source: Path, target: Path) -> dict[int, int]:
-    """Old id to new id, by row position: the writer keeps the order of its rows."""
-    if "feature_id" not in pq.read_schema(source).names:
-        return {}
-    old = pq.read_table(source, columns=["feature_id"]).column(0).to_pylist()
-    new = pq.read_table(target, columns=["feature_id"]).column(0).to_pylist()
-    return dict(zip(old, new))
-
-
 def _writer_options(view: str, footer: dict[bytes, bytes]) -> dict:
     creator = footer.get(b"creator", b"qpx").decode()
     options = {"creator": creator}
@@ -176,29 +170,45 @@ def _migrate_ontology(source: Path, target: Path) -> int:
     return len(entries)
 
 
-def _migrate_view(view: str, source: Path, target: Path, feature_ids: dict[int, int]) -> int:
+def _follow_ids(pairs: list[tuple[dict, dict]], references: dict[str, dict[int, int]], keep_psm_ids: bool) -> None:
+    """Give each migrated row the new ids its references hold; a provided psm_id stays."""
+    for record, row in pairs:
+        if keep_psm_ids:
+            row["psm_id"] = record["psm_id"]
+        for column, new_ids in references.items():
+            if row.get(column) is not None:
+                row[column] = new_ids.get(row[column])
+
+
+def _migrate_view(view: str, source: Path, target: Path, ids: dict[str, dict[int, int]], *, track: bool) -> int:
+    """Migrate the rows of *source* to *target*, following the views already in *ids*.
+
+    With *track*, the view's old ids are added to *ids* with their new ones, matched
+    by row position: the writer keeps the order of its rows.
+    """
     if view == "ontology":
         return _migrate_ontology(source, target)
     writer_class, _ = Dataset.writer_for(view)
     migrate_row = _ROW_MIGRATIONS.get(view, lambda record: [record])
     footer = _footer(source)
     keep_ids = view == "psm" and footer.get(b"identity_source") == b"provided"
+    references = {column: ids.get(referenced, {}) for column, referenced in _ID_REFERENCES.get(view, {}).items()}
+    old_ids = []
     rows = 0
     with writer_class(target, **_writer_options(view, footer)) as writer:
         for records in _batches(source):
-            migrated = [row for record in records for row in migrate_row(record)]
-            if keep_ids:
-                for row, record in zip(migrated, records):
-                    row["psm_id"] = record["psm_id"]
-            if view == "psm":
-                for row in migrated:
-                    if row.get("feature_id") is not None:
-                        row["feature_id"] = feature_ids.get(row["feature_id"])
-            writer.write_batch(_keep_schema_fields(writer, migrated))
-            rows += len(migrated)
+            pairs = [(record, row) for record in records for row in migrate_row(record)]
+            _follow_ids(pairs, references, keep_ids)
+            if track:
+                old_ids.extend(record.get(ORDINAL_IDS[view]) for record, _ in pairs)
+            writer.write_batch(_keep_schema_fields(writer, [row for _, row in pairs]))
+            rows += len(pairs)
         # The values stay rounded, so the footer keeps saying so.
         if MANTISSA_BITS_FOOTER_KEY in footer:
             writer.add_footer_metadata({MANTISSA_BITS_FOOTER_KEY: footer[MANTISSA_BITS_FOOTER_KEY]})
+    if track:
+        new_ids = pq.read_table(target, columns=[ORDINAL_IDS[view]]).column(0).to_pylist()
+        ids.setdefault(view, {}).update((old, new) for old, new in zip(old_ids, new_ids) if old is not None)
     return rows
 
 
@@ -227,27 +237,29 @@ def migrate_dataset(source: Path, output: Path) -> dict[str, int]:
     """Write *source* under the current specification to the new folder *output*.
 
     Returns the rows written per view. Views keep their file names. Ids are derived
-    again, `psm.feature_id` follows the features, and labels and peptidoforms take
-    their canonical spelling. A fixed modification the old file left out cannot be
-    recovered: re-convert from the source files to get one.
+    again, the columns that hold them, such as `psm.feature_id` and `site.pg_id`,
+    follow them, and labels and peptidoforms take their canonical spelling. A fixed
+    modification the old file left out cannot be recovered: re-convert from the
+    source files to get one.
     """
     source, output = Path(source), Path(output)
     output.mkdir(parents=True, exist_ok=False)
     names = Dataset.structure_names()
     first, last = ("feature", "psm"), ("ontology",)
     order = [*first, *[name for name in names if name not in (*first, *last)], *last]
+    files = {view: sorted(source.glob(f"*{Dataset.writer_for(view)[1]}")) for view in order}
+    # Only the ids some view of this dataset refers to are kept, old to new.
+    tracked = {referenced for view in order if files[view] for referenced in _ID_REFERENCES.get(view, {}).values()}
     written: dict[str, int] = {}
-    feature_ids: dict[int, int] = {}
+    ids: dict[str, dict[int, int]] = {}
     migrated_files = set()
     source_version = "unknown"
     for view in order:
-        for path in sorted(source.glob(f"*{Dataset.writer_for(view)[1]}")):
+        for path in files[view]:
             source_version = _footer(path).get(b"qpx_version", source_version.encode()).decode()
             target = output / path.name
-            written[view] = written.get(view, 0) + _migrate_view(view, path, target, feature_ids)
+            written[view] = written.get(view, 0) + _migrate_view(view, path, target, ids, track=view in tracked)
             migrated_files.add(path)
-            if view == "feature":
-                feature_ids.update(_feature_id_map(path, target))
     for path in sorted(source.iterdir()):
         if path in migrated_files or not path.is_file():
             continue
