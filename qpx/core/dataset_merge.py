@@ -396,7 +396,8 @@ class _Merge:
                 raise ValueError(
                     "The datasets overlap: "
                     + "; ".join(collisions)
-                    + ". Merging them would count those rows twice. Pass on_collision='namespace' to keep both, each under "
+                    + ". Merging them as they are would count those rows twice, or give two rows one id: ids numbered "
+                    "by relayout start at 1 in every dataset. Pass on_collision='namespace' to keep both, each under "
                     "its source's name, or on_collision='dedupe-identical' if they are copies of the same data."
                 )
         self._output_dir.mkdir(parents=True, exist_ok=True)

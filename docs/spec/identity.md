@@ -18,7 +18,7 @@ So do not join across datasets on an id or on a natural key (`peptidoform`, `cha
 | `identity_composite` | The columns the ids are hashed from, in hashing order |
 | `primary_key` | The id column |
 | `identity_hash_version` | Version of the bytes and the hash below; currently `1` |
-| `identity_source` | `derived`: the writer hashed every id from the composite. `provided`: every id came with its row, from a producer or an earlier file. `mixed`: some of each. Absent before specification 1.3 |
+| `identity_source` | `derived`: the writer hashed every id from the composite. `provided`: every id came with its row, from a producer or an earlier file, or was numbered by `qpxc transform relayout`. `mixed`: some of each. Absent before specification 1.3 |
 
 `qpxc validate --check-identity` re-derives the ids of a `derived` file and reports those that differ. Files of one view that declare different composites or hash versions get a `mixed_identity` warning, because equal rows do not have equal ids.
 
@@ -38,6 +38,8 @@ So do not join across datasets on an id or on a natural key (`peptidoform`, `cha
 OpenMS `-out_qpx` files declare their own composite in the footer, and `qpxc convert openms` re-derives ids with that composite. The two OpenMS routes declare different feature composites, so their `feature_id` values differ for the same data.
 
 `qpxc convert mzidentml` supplies its `psm_id` values (`identity_source` `provided`): the hash of `[run_file_name, spectrum_identification_item_ids]`, because a spectrum can hold several hits of one peptidoform. Its footer still names the schema default, which does not reproduce them. On a cross-linked PSM the validator reads `crosslinked_peptidoform` in place of `peptidoform`, which names only the alpha peptide.
+
+`qpxc transform relayout` numbers the ids of a sorted psm, feature or pg view 1, 2, 3, … in its new row order and rewrites the columns of other views that hold them. Its files state `identity_source` `provided` and keep a composite that no longer reproduces their ids. The ids of two such files collide, so `merge()` needs `on_collision='namespace'` for them.
 
 ## JSON and URLs
 

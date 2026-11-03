@@ -313,7 +313,7 @@ qpxc transform relayout --dataset ./qpx_output --in-place \\
     --view psm --sort-by run_file_name,scan --compression-level 15
 ```
 
-Values, ids and the schema do not change. If the dataset records integrity, its checksums are refreshed for the rewritten files.
+Values and the schema do not change; the ids of a sorted feature, pg or psm view are numbered 1, 2, 3, … in the new row order, and the columns that hold them follow ([Physical Layout](../spec/serialization.md#physical-layout)). If the dataset records integrity, its checksums are refreshed for the rewritten files.
 
 ## quantify
 

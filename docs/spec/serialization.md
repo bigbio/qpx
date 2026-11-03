@@ -60,7 +60,7 @@ The physical layout is not normative: any row order and row-group size is a vali
 
 QPX writers use row groups of at most 131,072 rows (fewer when rows are large, at most about 256 MB uncompressed per group), a page index, and for each column the encoding its first row group measures smallest: a dictionary, `PLAIN`, `BYTE_STREAM_SPLIT` (floats) or `DELTA_BINARY_PACKED` (integers); a string keeps its dictionary unless `PLAIN` is more than 20% smaller. No fixed choice per column suits every file: TMT reporter intensities are smallest byte-stream-split, and PEP is smallest as a dictionary in DIA-NN files but byte-stream-split in OpenMS ones. Published 1.1 files rewritten this way took 2–14% less space (MSV000085836 feature 674.6 to 598.9 MB, pg 65.1 to 55.8 MB; PXD017199 feature 1,596.8 to 1,562.4 MB). On a 783k-row dataset, sorting with these row groups made protein lookups 3–4× faster and read 5–7× fewer remote bytes than unsorted 1 Mi-row groups, for about 3% more bytes on disk.
 
-For a published dataset, `qpxc transform relayout` sorts the views, records the order in `sorting_columns` and in the footer key `qpx.sort_order`, and leaves values and ids unchanged:
+For a published dataset, `qpxc transform relayout` sorts the views and records the order in `sorting_columns` and in the footer key `qpx.sort_order`:
 
 | View | Sorted by | Good for |
 |---|---|---|
@@ -69,13 +69,15 @@ For a published dataset, `qpxc transform relayout` sorts the views, records the 
 | `psm` | `peptidoform`, `charge`, `run_file_name`, `scan` | Looking up a peptide |
 | `mz` | `run_file_name`, `scan` | Reading a run, looking up a scan |
 
-`sorting_columns` cannot name a list column, so for `pg` it records `anchor_protein` only. Rows of one peptide sitting together also compress better: on MSV000085836 (TMT, 6.2 million features) relayout took feature from 674.6 to 430.7 MB and psm from 390.7 to 245.4 MB in 36 s. pg stays at the 55.8 MB of its file order, which keeps a group's runs together; sorted by `anchor_protein` and `label` alone it measured 62.2 MB.
+`sorting_columns` cannot name a list column, so for `pg` it records `anchor_protein` only. relayout also numbers the ids of feature, pg and psm 1, 2, 3, … in their new row order, ties broken by the old id, and rewrites every column that holds them: `pg_ids` and `psm_ids` of feature, `feature_id` of psm and fragment, and `pg_id` and `best_psm_id` of site and proteoform. A reference to a row the view lacks keeps its value. The footer then states `identity_source` `provided`, since the ids no longer derive from the composite (see [Row Identity](identity.md)). Like any id they mean something only within their file, so merging two relayouted datasets needs `on_collision='namespace'`. Other values do not change.
+
+Rows of one peptide sitting together compress better, and a hashed id is eight random bytes per row that no encoding shrinks, while ordinals delta-encode to almost nothing. On MSV000085836 (TMT, 6.2 million features) sorting took feature from 674.6 to 430.7 MB and psm from 390.7 to 245.4 MB, and numbering the ids took them on to 381.1 and 150.7 MB and pg from 55.8 to 17.0 MB, in 38 s. With hashed ids, pg sorted by its default keys stays at the 55.8 MB of its file order, which keeps a group's runs together; sorted by `anchor_protein` and `label` alone it measured 62.2 MB.
 
 Choose by the reads you expect, because one order serves one kind of query well. On that sorted feature view, one protein's rows took 0.06 s to read instead of 2.12 s, and one run's 2.23 s instead of 0.22 s (DuckDB, 24 threads, warm cache). Sorting by protein costs per-run reads their pruning; Hive partitioning by run is fastest per run, and measured 57% more bytes and 3.5× slower for proteins. Partition by a batch of runs rather than one file per run, and only for a dataset mostly read run by run.
 
 ### Size of the long pg format
 
-`pg` is long: one row per label, each with its own `pg_id`, so a TMT file is larger than the nested form it replaced (a factor of 2.34 on a TMT dataset). A value costs 14–21 bytes in a realistic single-cell matrix. Sorting by `anchor_protein` (`qpxc transform relayout`) took 34% off the same TMT file. Only the primary quantity is a row; `additional_intensities` cannot be pivoted the same way.
+`pg` is long: one row per label, each with its own `pg_id`, so a TMT file is larger than the nested form it replaced (a factor of 2.34 on a TMT dataset, nearly all of it the hashed ids: without them the long form is 5% smaller). A value costs 14–21 bytes in a realistic single-cell matrix. Sorting by `anchor_protein` took 34% off the same TMT file, and `qpxc transform relayout`, which also numbers the ids, took MSV000085836 pg from 55.8 to 17.0 MB. Only the primary quantity is a row; `additional_intensities` cannot be pivoted the same way.
 
 ### Reader compatibility
 
