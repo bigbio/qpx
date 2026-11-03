@@ -16,6 +16,7 @@ from qpx.converters.ptm import normalize_peptidoform
 from qpx.core.engine import create_connection
 from qpx.core.struct_lists import file_layouts, restore_table
 from qpx.dataset import Dataset
+from qpx.transforms.mantissa import MANTISSA_BITS_FOOTER_KEY
 from qpx.version import QPX_SPEC_VERSION
 
 logger = logging.getLogger(__name__)
@@ -180,9 +181,10 @@ def _migrate_view(view: str, source: Path, target: Path, feature_ids: dict[int, 
         return _migrate_ontology(source, target)
     writer_class, _ = Dataset.writer_for(view)
     migrate_row = _ROW_MIGRATIONS.get(view, lambda record: [record])
-    keep_ids = view == "psm" and _footer(source).get(b"identity_source") == b"provided"
+    footer = _footer(source)
+    keep_ids = view == "psm" and footer.get(b"identity_source") == b"provided"
     rows = 0
-    with writer_class(target, **_writer_options(view, _footer(source))) as writer:
+    with writer_class(target, **_writer_options(view, footer)) as writer:
         for records in _batches(source):
             migrated = [row for record in records for row in migrate_row(record)]
             if keep_ids:
@@ -194,6 +196,9 @@ def _migrate_view(view: str, source: Path, target: Path, feature_ids: dict[int, 
                         row["feature_id"] = feature_ids.get(row["feature_id"])
             writer.write_batch(_keep_schema_fields(writer, migrated))
             rows += len(migrated)
+        # The values stay rounded, so the footer keeps saying so.
+        if MANTISSA_BITS_FOOTER_KEY in footer:
+            writer.add_footer_metadata({MANTISSA_BITS_FOOTER_KEY: footer[MANTISSA_BITS_FOOTER_KEY]})
     return rows
 
 

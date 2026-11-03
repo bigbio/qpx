@@ -106,12 +106,18 @@ def test_a_dataset_with_struct_lists_validates(diann):
     ids=["gene-map", "migrate"],
 )
 def test_rewriting_a_view_reads_its_struct_lists_back(diann, tmp_path, command):
-    """Transforms that read the files themselves write the lists, as they do for the unsorted dataset."""
+    """Transforms that read the files themselves write the lists, as they do for the unsorted dataset.
+
+    The values stay rounded, and the footer still says how.
+    """
     for name in ("source", "sorted"):
         _invoke(*command, diann / name, "--output-folder", tmp_path / name)
 
     assert pa.types.is_list(pq.read_schema(tmp_path / "sorted" / "d.feature.parquet").field("additional_scores").type)
-    assert _rows(tmp_path / "sorted", "feature") == _rows(tmp_path / "source", "feature", rounded_like=diann / "sorted")
+    assert _rows(tmp_path / "sorted", "feature") == _rows(tmp_path / "source", "feature", rounded_like=tmp_path / "sorted")
+    for view in ("feature", "pg"):
+        rounded = pq.read_metadata(diann / "sorted" / f"d.{view}.parquet").metadata[b"qpx.mantissa_bits"]
+        assert pq.read_metadata(tmp_path / "sorted" / f"d.{view}.parquet").metadata[b"qpx.mantissa_bits"] == rounded
 
 
 def _psms(folder, scores):

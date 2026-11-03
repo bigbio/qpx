@@ -365,6 +365,8 @@ class GeneMappingTransform:
         in memory. As in :meth:`annotate_dataframe`, existing names stay where the
         FASTA resolves none.
         """
+        from qpx.transforms.mantissa import MANTISSA_BITS_FOOTER_KEY
+
         gene_map = self.gene_map
         source_composite = structure.file_metadata.get("identity_composite")
         identity_composite = tuple(source_composite.split(",")) if source_composite else None
@@ -379,6 +381,10 @@ class GeneMappingTransform:
             if not n_rows:
                 # An empty view still gets its (empty) file.
                 writer.write_table(writer.align_table_to_schema(pq.read_schema(structure.file_paths[0]).empty_table()))
+            # The values stay rounded, so the footer keeps saying so.
+            rounded = structure.file_metadata.get(MANTISSA_BITS_FOOTER_KEY.decode())
+            if rounded:
+                writer.add_footer_metadata({MANTISSA_BITS_FOOTER_KEY: rounded.encode()})
         self._record_mapped_share(n_mapped, n_rows)
 
     def annotate_dataset_features(

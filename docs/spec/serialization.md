@@ -95,7 +95,7 @@ relayout rounds the measured values of the views it sorts to the precision of th
 {"intensities.intensity": 12, "mass_error_ppm": 12, "rt": 16}
 ```
 
-Rounding took the sorted MSV000085836 feature view from 381.1 to 294.6 MB, psm from 150.7 to 142.8 MB and pg to 11.7 MB, and PXD071205 feature from 311.2 to 263.1 MB, without slowing relayout. The dataset's h5mu, which holds feature and pg values, is built again. gene-map and migrate keep the rounded values but not the footer key.
+Rounding took the sorted MSV000085836 feature view from 381.1 to 294.6 MB, psm from 150.7 to 142.8 MB and pg to 11.7 MB, and PXD071205 feature from 311.2 to 263.1 MB, without slowing relayout. The dataset's h5mu, which holds feature and pg values, is built again. gene-map and migrate keep the rounded values and the footer key.
 
 ### Size of the long pg format
 
