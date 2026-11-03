@@ -10,7 +10,6 @@ import click
 from qpx.cli.resources import convert_resource_options
 
 from .options import (
-    _compression_option,
     _dataset_metadata_options,
     _max_cpus_option,
     _max_memory_option,
@@ -51,7 +50,6 @@ from .postprocess import _finish_conversion
 @_max_cpus_option
 @convert_resource_options
 @_project_accession_option
-@_compression_option
 @_verbose_option
 @_dataset_metadata_options
 def convert_proteome_discoverer_cmd(**kwargs):
@@ -79,9 +77,7 @@ def convert_proteome_discoverer_cmd(**kwargs):
 
     from qpx.converters.proteome_discoverer import ProteomeDiscovererConverter
 
-    converter = ProteomeDiscovererConverter(
-        output_folder, max_memory=kwargs["max_memory"], max_cpus=kwargs["max_cpus"], compression=kwargs["compression"]
-    )
+    converter = ProteomeDiscovererConverter(output_folder, max_memory=kwargs["max_memory"], max_cpus=kwargs["max_cpus"])
     converter.convert(
         kwargs["psm_file"],
         kwargs["proteins_file"],

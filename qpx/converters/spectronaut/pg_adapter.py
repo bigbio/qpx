@@ -62,7 +62,7 @@ class SpectronautPgAdapter(SpectronautBaseAdapter):
 
         runs = self._get_unique_runs()
 
-        with PgWriter(output_path, creator=creator, compression=self._compression) as writer:
+        with PgWriter(output_path, creator=creator) as writer:
             for i in range(0, len(runs), file_num):
                 batch_runs = runs[i : i + file_num]
                 self.logger.info("Processing PG runs %d-%d of %d", i + 1, min(i + file_num, len(runs)), len(runs))

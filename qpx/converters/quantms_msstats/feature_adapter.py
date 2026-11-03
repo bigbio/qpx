@@ -487,7 +487,6 @@ class QuantmsMsstatsFeatureAdapter(BaseConverter):
         with FeatureWriter(
             output_path,
             creator=creator,
-            compression=self._compression,
             batch_size=chunksize,
             identity_composite=FEATURE_IDENTITY_COMPOSITE,
         ) as writer:

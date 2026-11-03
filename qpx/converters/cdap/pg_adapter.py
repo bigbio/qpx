@@ -63,7 +63,7 @@ class CdapPgAdapter(CdapBaseAdapter):
         )
         sql = self._build_aggregation_sql()
         self.logger.info("Transforming CDAP protein groups ...")
-        with PgWriter(output_path, creator=creator, compression=self._compression) as writer:
+        with PgWriter(output_path, creator=creator) as writer:
             self._stream_transform_write(sql, writer, chunksize)
 
         self.logger.info("CDAP PG conversion complete -> %s", output_path)

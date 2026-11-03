@@ -10,7 +10,6 @@ import click
 from qpx.cli.resources import convert_resource_options
 
 from .options import (
-    _compression_option,
     _dataset_metadata_options,
     _max_cpus_option,
     _max_memory_option,
@@ -88,7 +87,6 @@ def _maxquant_structures(structures, msms_file, evidence_file, protein_groups_fi
     is_flag=True,
 )
 @_project_accession_option
-@_compression_option
 @_verbose_option
 @_dataset_metadata_options
 def convert_maxquant_cmd(**kwargs):
@@ -125,7 +123,6 @@ def convert_maxquant_cmd(**kwargs):
     max_memory = kwargs["max_memory"]
     spectral_data = kwargs["spectral_data"]
     project_accession = kwargs["project_accession"]
-    compression = kwargs["compression"]
     verbose = kwargs["verbose"]
     metadata = kwargs["metadata"]
 
@@ -138,7 +135,7 @@ def convert_maxquant_cmd(**kwargs):
 
     from qpx.converters.maxquant import MaxQuantConverter
 
-    converter = MaxQuantConverter(max_memory=max_memory, max_cpus=max_cpus, compression=compression)
+    converter = MaxQuantConverter(max_memory=max_memory, max_cpus=max_cpus)
     converter.convert(
         msms_file=msms_file,
         evidence_file=evidence_file,

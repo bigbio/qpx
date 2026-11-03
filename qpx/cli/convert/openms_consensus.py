@@ -10,7 +10,6 @@ import click
 from qpx.cli.resources import convert_resource_options
 
 from .options import (
-    _compression_option,
     _dataset_metadata_options,
     _fasta_option,
     _mudata_option,
@@ -86,7 +85,6 @@ def _consensusxml_list(ctx, param, value) -> tuple[Path, ...]:
         "identification either way."
     ),
 )
-@_compression_option
 @convert_resource_options
 @_fasta_option
 @_mudata_option
@@ -109,7 +107,6 @@ def convert_openms_consensus_cmd(**kwargs):
     verbose = kwargs["verbose"]
     project_accession = kwargs["project_accession"]
     include_unassigned_psms = kwargs["include_unassigned_psms"]
-    compression = kwargs["compression"]
     fasta = kwargs["fasta"]
     mudata = kwargs["mudata"]
     metadata = kwargs["metadata"]
@@ -129,7 +126,6 @@ def convert_openms_consensus_cmd(**kwargs):
             structures=structs,
             streaming=streaming,
             project_accession=project_accession,
-            compression=compression,
         )
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc

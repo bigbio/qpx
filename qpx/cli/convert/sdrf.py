@@ -7,7 +7,7 @@ from pathlib import Path
 
 import click
 
-from .options import _compression_option, _output_folder_option, _sdrf_file_option, _verbose_option
+from .options import _output_folder_option, _sdrf_file_option, _verbose_option
 from .postprocess import _preserve_sdrf
 
 
@@ -19,13 +19,11 @@ from .postprocess import _preserve_sdrf
     help="Prefix for output file names",
     default="sdrf",
 )
-@_compression_option
 @_verbose_option
 def convert_sdrf_cmd(
     sdrf_file: Path,
     output_folder: Path,
     output_prefix: str,
-    compression: str,
     verbose: bool,
 ):
     """Convert SDRF metadata to QPX sample.parquet and run.parquet.
@@ -46,7 +44,7 @@ def convert_sdrf_cmd(
 
     from qpx.converters.sdrf import SdrfConverter
 
-    with SdrfConverter(compression=compression) as converter:
+    with SdrfConverter() as converter:
         converter.convert(
             sdrf_path=str(sdrf_file),
             sample_output=str(output_folder / f"{output_prefix}.sample.parquet"),

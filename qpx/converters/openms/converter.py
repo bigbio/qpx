@@ -202,18 +202,16 @@ class _RewriteOptions:
 
     channel_labels: dict[int, str]
     is_lfq: bool | None
-    compression: str
     fraction_group_lookup: dict[str, str]
     run_normalizer: RunNormalizer
 
 
-def _core_writer_kwargs(parquet, view: str, compression: str) -> dict:
+def _core_writer_kwargs(parquet, view: str) -> dict:
     """Preserve source writer, scan-format and identity metadata during upgrade."""
     metadata = parquet.schema_arrow.metadata or {}
     writer_kwargs = {
         "creator": metadata.get(b"creator", b"OpenMS").decode(),
         "software_provider": metadata.get(b"software_provider", b"OpenMS").decode(),
-        "compression": compression,
     }
     if view == FEATURE:
         writer_kwargs["override_provided_ids"] = False
@@ -264,7 +262,7 @@ def _rewrite_core_file(view: str, src_path: Path, dst: Path, options: _RewriteOp
     """Upgrade one OpenMS core file while streaming by Parquet row group."""
     parquet = pq.ParquetFile(src_path)
     writer_class = _VIEW_WRITERS[view]
-    writer_kwargs = _core_writer_kwargs(parquet, view, options.compression)
+    writer_kwargs = _core_writer_kwargs(parquet, view)
     channel_labels = options.channel_labels
     is_lfq = options.is_lfq
     fraction_group_lookup = options.fraction_group_lookup
@@ -363,7 +361,6 @@ class OpenMSConverter(BaseOrchestrator):
         qpx_dir: str | Path,
         sdrf_path: str | Path | None = None,
         consensusxml_path: str | Path | None = None,
-        compression: str = "zstd",
     ):
         """Initialize the OpenMS QPX converter.
 
@@ -381,14 +378,11 @@ class OpenMSConverter(BaseOrchestrator):
             peptide identifications are present, each PSM's run is recovered
             from exact spectrum evidence. Missing or ambiguous matches fail
             conversion before existing core outputs are replaced.
-        compression : str
-            Parquet compression codec (default ``zstd``).
 
         """
         self.qpx_dir = Path(qpx_dir)
         self.sdrf_path = str(sdrf_path) if sdrf_path else None
         self.consensusxml_path = str(consensusxml_path) if consensusxml_path else None
-        self._compression = compression
 
     def convert(
         self,
@@ -468,7 +462,6 @@ class OpenMSConverter(BaseOrchestrator):
         options = _RewriteOptions(
             channel_labels,
             is_lfq,
-            self._compression,
             fraction_group_lookup,
             build_run_normalizer(self.sdrf_path, self.consensusxml_path, maplist, PSM in discovered),
         )
@@ -515,7 +508,7 @@ class OpenMSConverter(BaseOrchestrator):
         if not self.sdrf_path:
             logger.warning("No SDRF path provided — skipping sample/run conversion")
             return []
-        with SdrfConverter(compression=self._compression) as sdrf_conv:
+        with SdrfConverter() as sdrf_conv:
             sdrf_conv.convert(
                 sdrf_path=self.sdrf_path,
                 sample_output=str(output_folder / f"{output_prefix}.sample.parquet"),

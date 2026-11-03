@@ -64,7 +64,7 @@ class MzIdentMLPsmAdapter(BaseConverter):
         total = 0
         with_links = 0
         formats: set = set()
-        with PsmWriter(output_path, creator=creator, compression=self._compression) as writer:
+        with PsmWriter(output_path, creator=creator) as writer:
             for records in chain([first], batches):
                 self._track_scores(records)
                 formats |= scan_schemes(records)

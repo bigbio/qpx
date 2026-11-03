@@ -10,7 +10,6 @@ import click
 from qpx.cli.resources import convert_resource_options
 
 from .options import (
-    _compression_option,
     _dataset_metadata_options,
     _max_cpus_option,
     _max_memory_option,
@@ -48,7 +47,6 @@ from .postprocess import _finish_conversion
     help="SDRF defining which runs form one quantification unit. Default: runs that differ only in a _fNN suffix.",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
 )
-@_compression_option
 @_max_memory_option
 @_max_cpus_option
 @convert_resource_options
@@ -80,7 +78,6 @@ def convert_cdap_cmd(**kwargs):
     output_prefix = kwargs["output_prefix"]
     structures = kwargs["structures"]
     project_accession = kwargs["project_accession"]
-    compression = kwargs["compression"]
     max_memory = kwargs["max_memory"]
     max_cpus = kwargs["max_cpus"]
     verbose = kwargs["verbose"]
@@ -100,7 +97,6 @@ def convert_cdap_cmd(**kwargs):
     converter = CdapConverter(
         max_memory=max_memory,
         max_cpus=max_cpus,
-        compression=compression,
     )
     converter.convert(
         psm_dir=psm_dir,

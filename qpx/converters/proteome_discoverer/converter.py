@@ -22,10 +22,9 @@ _TOOL = "proteome_discoverer"
 class ProteomeDiscovererConverter(BaseOrchestrator):
     """Orchestrate the conversion of Proteome Discoverer ``PSMs.txt`` and ``Proteins.txt``."""
 
-    def __init__(self, output_directory, max_memory=None, max_cpus=None, compression: str = "zstd"):
+    def __init__(self, output_directory, max_memory=None, max_cpus=None):
         self._output_dir = Path(output_directory)
-        self._adapter_options = {"duckdb_memory": max_memory, "duckdb_threads": max_cpus, "compression": compression}
-        self._compression = compression
+        self._adapter_options = {"duckdb_memory": max_memory, "duckdb_threads": max_cpus}
         self._resolved_mappings_by_view: dict[str, dict] = {}
 
     def convert(self, psm_file, proteins_file=None, *, input_files=None, sdrf_file=None, output_prefix=None, **options):

@@ -9,7 +9,7 @@ import click
 
 from qpx.converters.openms import OpenMSConverter
 
-from .options import _compression_option, _openms_project_accession_option, _verbose_option
+from .options import _openms_project_accession_option, _verbose_option
 from .postprocess import _maybe_enrich_pride, _preserve_sdrf, _record_conversion_options
 
 
@@ -54,7 +54,6 @@ from .postprocess import _maybe_enrich_pride, _preserve_sdrf, _record_conversion
     is_flag=True,
     default=False,
 )
-@_compression_option
 @_verbose_option
 def convert_openms_cmd(**kwargs):
     """[DEPRECATED] Enrich OpenMS ProteomicsLFQ -out_qpx output into a full QPX dataset.
@@ -95,7 +94,6 @@ def convert_openms_cmd(**kwargs):
     output_prefix = kwargs["output_prefix"]
     project_accession = kwargs["project_accession"]
     enrich_pride = kwargs["enrich_pride"]
-    compression = kwargs["compression"]
     verbose = kwargs["verbose"]
 
     if verbose:
@@ -105,7 +103,6 @@ def convert_openms_cmd(**kwargs):
         qpx_dir=qpx_dir,
         sdrf_path=sdrf_file,
         consensusxml_path=kwargs.get("consensusxml_path"),
-        compression=compression,
     )
     try:
         converter.convert(

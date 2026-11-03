@@ -30,9 +30,6 @@ logger = logging.getLogger(__name__)
 class MzIdentMLConverter(BaseOrchestrator):
     """Convert mzIdentML (+ optional MGF) to a complete QPX dataset."""
 
-    def __init__(self, compression: str = "zstd"):
-        self._compression = compression
-
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -123,7 +120,7 @@ class MzIdentMLConverter(BaseOrchestrator):
         pepforms: dict[str, dict] = {}
         formats: set = set()
         total = 0
-        with PsmWriter(psm_path, creator="mzidentml", compression=self._compression) as writer:
+        with PsmWriter(psm_path, creator="mzidentml") as writer:
             for records in batches:
                 if mgf_index is not None:
                     self._attach_spectra(records, mgf_index, runs)
@@ -142,14 +139,14 @@ class MzIdentMLConverter(BaseOrchestrator):
         """Write the protein-group and peptide-map views."""
         # 5. Write pg (protein groups) parquet
         pg_path = output_folder / f"{output_prefix}.pg.parquet"
-        with MzIdentMLPgAdapter(compression=self._compression) as pg_adapter:
+        with MzIdentMLPgAdapter() as pg_adapter:
             pg_adapter.convert(mzid_path=mzid_path, output_path=pg_path, creator="mzidentml", document=document)
 
         # 6. Write pepmap parquet
         pepmap_path = output_folder / f"{output_prefix}.pepmap.parquet"
         pepmap_records = self._build_pepmap(pepforms, parsed["peptide_evidence"], parsed["peptides"], parsed["db_sequences"])
         if pepmap_records:
-            with PepMapWriter(pepmap_path, creator="mzidentml", compression=self._compression) as writer:
+            with PepMapWriter(pepmap_path, creator="mzidentml") as writer:
                 writer.write_batch(pepmap_records)
             logger.info("Wrote %d pepmap entries to %s", len(pepmap_records), pepmap_path)
 

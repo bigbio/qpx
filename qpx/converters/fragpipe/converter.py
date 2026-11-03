@@ -23,11 +23,10 @@ _BATCH_SIZE = 100_000
 class FragPipeConverter(BaseOrchestrator):
     """Orchestrate full FragPipe conversion to QPX format."""
 
-    def __init__(self, output_directory=None, max_memory=None, max_cpus=None, compression: str = "zstd"):
+    def __init__(self, output_directory=None, max_memory=None, max_cpus=None):
         self._output_dir = Path(output_directory) if output_directory else None
         self._memory = max_memory
         self._cpus = max_cpus
-        self._compression = compression
         self._resolved_mappings_by_view: dict[str, dict] = {}
         self._channels: dict[str, str] = {}
         self._tmt_report: dict[str, dict[str, float]] = {}
@@ -122,7 +121,7 @@ class FragPipeConverter(BaseOrchestrator):
 
     def _convert_psms(self, psm_file, output_path, ontology_entries):
         """Write PSMs and collect their ontology and source mappings."""
-        with FragPipePsmAdapter(duckdb_memory=self._memory, duckdb_threads=self._cpus, compression=self._compression) as adapter:
+        with FragPipePsmAdapter(duckdb_memory=self._memory, duckdb_threads=self._cpus) as adapter:
             adapter.convert(
                 psm_path=str(psm_file),
                 output_path=str(output_path),
@@ -142,9 +141,7 @@ class FragPipeConverter(BaseOrchestrator):
         experiment_to_runs, experiment_annotation_file = mapping
         from qpx.converters.fragpipe.feature_adapter import FragPipeFeatureAdapter
 
-        with FragPipeFeatureAdapter(
-            duckdb_memory=self._memory, duckdb_threads=self._cpus, compression=self._compression
-        ) as adapter:
+        with FragPipeFeatureAdapter(duckdb_memory=self._memory, duckdb_threads=self._cpus) as adapter:
             if pg_file:
                 adapter.load_protein_groups(str(pg_file))
             adapter.load_channels(self._channels)
@@ -166,7 +163,7 @@ class FragPipeConverter(BaseOrchestrator):
     def _convert_pg(self, pg_file, sdrf_file, output_path, mapping, ontology_entries):
         """Write protein groups using the supplied experiment mapping."""
         experiment_to_runs, experiment_annotation_file = mapping
-        with FragPipePgAdapter(duckdb_memory=self._memory, duckdb_threads=self._cpus, compression=self._compression) as adapter:
+        with FragPipePgAdapter(duckdb_memory=self._memory, duckdb_threads=self._cpus) as adapter:
             adapter.load_channels(self._channels, self._tmt_report)
             adapter.convert(
                 protein_path=str(pg_file),

@@ -10,7 +10,6 @@ import click
 from qpx.cli.resources import convert_resource_options
 
 from .options import (
-    _compression_option,
     _dataset_metadata_options,
     _max_cpus_option,
     _max_memory_option,
@@ -70,7 +69,6 @@ from .postprocess import _finish_conversion
 @_max_cpus_option
 @convert_resource_options
 @_project_accession_option
-@_compression_option
 @_verbose_option
 @_dataset_metadata_options
 def convert_fragpipe_cmd(**kwargs):
@@ -116,7 +114,6 @@ def convert_fragpipe_cmd(**kwargs):
     max_memory = kwargs["max_memory"]
     max_cpus = kwargs["max_cpus"]
     project_accession = kwargs["project_accession"]
-    compression = kwargs["compression"]
     verbose = kwargs["verbose"]
     metadata = kwargs["metadata"]
 
@@ -130,9 +127,7 @@ def convert_fragpipe_cmd(**kwargs):
 
     from qpx.converters.fragpipe import FragPipeConverter
 
-    converter = FragPipeConverter(
-        output_directory=output_folder, max_memory=max_memory, max_cpus=max_cpus, compression=compression
-    )
+    converter = FragPipeConverter(output_directory=output_folder, max_memory=max_memory, max_cpus=max_cpus)
     if kwargs["annotation_file"]:
         converter.load_plex(kwargs["annotation_file"], kwargs["tmt_report"])
     converter.convert(

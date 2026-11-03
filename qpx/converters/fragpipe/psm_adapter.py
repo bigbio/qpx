@@ -103,7 +103,7 @@ class FragPipePsmAdapter(BaseConverter):
         # Step 3: Stream and transform
         self.logger.info("Transforming FragPipe PSMs ...")
 
-        with PsmWriter(output_path, creator=creator, compression=self._compression) as writer:
+        with PsmWriter(output_path, creator=creator) as writer:
             for batch in self._query_batched("SELECT * FROM fragpipe_psms", chunksize):
                 df = batch.to_pandas()
                 records = self._transform_batch(df)

@@ -84,7 +84,6 @@ class CdapFeatureAdapter(CdapBaseAdapter):
         with FeatureWriter(
             output_path,
             creator=creator,
-            compression=self._compression,
             identity_composite=_FEATURE_IDENTITY_COMPOSITE,
         ) as writer:
             self._stream_transform_write(agg_sql, writer, chunksize)

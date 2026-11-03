@@ -86,7 +86,7 @@ class ProteomeDiscovererPgAdapter(BaseConverter):
                 f"No raw runs for Proteome Discoverer file group(s) {', '.join(unknown)}; pass the InputFiles export"
             )
         masters = proteins[proteins["Master"] == "IsMasterProtein"].to_dict("records")
-        with PgWriter(output_path, creator="proteome_discoverer", compression=self._compression) as writer:
+        with PgWriter(output_path, creator="proteome_discoverer") as writer:
             records = self._transform_rows_with_skip(
                 masters, lambda row: self._records(row, primary, additional), "Proteome Discoverer PG"
             )

@@ -51,7 +51,6 @@ class _OutputConfig:
     folder: Path
     prefix: str
     creator: str
-    compression: str
 
 
 @dataclass(frozen=True)
@@ -174,9 +173,9 @@ def _warn_channel_mismatch(cm, sdrf_path) -> None:
             _log.warning("consensusXML/SDRF channel mismatch: %s", msg)
 
 
-def _write_view(writer_cls, path, records, *, creator, compression, identity_composite=None, scan_format=None):
+def _write_view(writer_cls, path, records, *, creator, identity_composite=None, scan_format=None):
     """Write records via a view writer; empty input does not create a file."""
-    kwargs = {"creator": creator, "compression": compression, "scan_format": scan_format}
+    kwargs = {"creator": creator, "scan_format": scan_format}
     if identity_composite is not None:
         kwargs["identity_composite"] = identity_composite
     with writer_cls(str(path), **kwargs) as w:
@@ -221,7 +220,6 @@ def _write_pg(pg, config, written) -> None:
                 output.folder / f"{output.prefix}.pg.parquet",
                 records,
                 creator=output.creator,
-                compression=output.compression,
             )
 
 
@@ -287,7 +285,6 @@ def _open_stream_writers(stack, config) -> tuple:
                 str(output.folder / f"{output.prefix}.feature.parquet"),
                 creator=output.creator,
                 identity_composite=_FEATURE_IDENTITY_COMPOSITE,
-                compression=output.compression,
                 batch_size=_STREAM_BATCH,
             )
         )
@@ -297,7 +294,6 @@ def _open_stream_writers(stack, config) -> tuple:
                 str(output.folder / f"{output.prefix}.psm.parquet"),
                 creator=output.creator,
                 identity_composite=_PSM_IDENTITY_COMPOSITE,
-                compression=output.compression,
                 batch_size=_STREAM_BATCH,
             )
         )
@@ -392,7 +388,6 @@ def _write_memory_records(feat_recs, psm_recs, scan_formats, config) -> dict:
             output.folder / f"{output.prefix}.feature.parquet",
             feat_recs,
             creator=output.creator,
-            compression=output.compression,
             identity_composite=_FEATURE_IDENTITY_COMPOSITE,
         )
     if "psm" in config.structures and psm_recs:
@@ -401,7 +396,6 @@ def _write_memory_records(feat_recs, psm_recs, scan_formats, config) -> dict:
             output.folder / f"{output.prefix}.psm.parquet",
             psm_recs,
             creator=output.creator,
-            compression=output.compression,
             identity_composite=_PSM_IDENTITY_COMPOSITE,
             scan_format=uniform_scan_format(scan_formats),
         )

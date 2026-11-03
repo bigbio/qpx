@@ -10,7 +10,6 @@ import click
 from qpx.cli.resources import convert_resource_options
 
 from .options import (
-    _compression_option,
     _dataset_metadata_options,
     _output_folder_option,
     _output_prefix_option,
@@ -44,7 +43,6 @@ from .postprocess import _finish_conversion
     type=int,
 )
 @convert_resource_options
-@_compression_option
 @_verbose_option
 @_dataset_metadata_options
 def convert_quantms_msstats_cmd(**kwargs):
@@ -68,7 +66,6 @@ def convert_quantms_msstats_cmd(**kwargs):
     project_accession = kwargs["project_accession"]
     max_memory = kwargs["max_memory"]
     max_cpus = kwargs["max_cpus"]
-    compression = kwargs["compression"]
     verbose = kwargs["verbose"]
     metadata = kwargs["metadata"]
 
@@ -80,7 +77,6 @@ def convert_quantms_msstats_cmd(**kwargs):
     converter = QuantmsMsstatsConverter(
         max_memory=max_memory,
         max_cpus=max_cpus,
-        compression=compression,
     )
     prefix = converter.convert(
         msstats_file=msstats_file,

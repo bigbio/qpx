@@ -132,8 +132,7 @@ class DiannMzAdapter:
     ``*_ms_info.parquet`` (``rt`` and the ``precursor_*`` columns).
     """
 
-    def __init__(self, compression: str = "zstd", batch_size: int = 100_000):
-        self._compression = compression
+    def __init__(self, batch_size: int = 100_000):
         self._batch_size = batch_size
 
     def convert(
@@ -161,7 +160,7 @@ class DiannMzAdapter:
 
         pending: list[dict] = []
         written = 0
-        writer = MzWriter(output_path, compression=self._compression, batch_size=self._batch_size)
+        writer = MzWriter(output_path, batch_size=self._batch_size)
         writer.add_footer_metadata(
             {b"spectrum_content": b"selected_ms_levels" if scans_by_run is None else b"identified_spectra"}
         )

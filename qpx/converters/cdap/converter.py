@@ -39,11 +39,9 @@ class CdapConverter(BaseOrchestrator):  # pylint: disable=too-few-public-methods
         self,
         max_memory: str | None = None,
         max_cpus: int | None = None,
-        compression: str = "zstd",
     ):
         self._max_memory = max_memory
         self._max_cpus = max_cpus
-        self._compression = compression
         self._resolved_mappings_by_view: dict[str, dict] = {}
 
     # ------------------------------------------------------------------
@@ -110,7 +108,6 @@ class CdapConverter(BaseOrchestrator):  # pylint: disable=too-few-public-methods
                 with CdapPsmAdapter(
                     duckdb_memory=self._max_memory,
                     duckdb_threads=self._max_cpus,
-                    compression=self._compression,
                     conn=shared_conn,
                 ) as adapter:
                     adapter.convert(psm_dir=str(psm_dir), output_path=str(psm_path), chunksize=_BATCH_SIZE)
@@ -122,7 +119,6 @@ class CdapConverter(BaseOrchestrator):  # pylint: disable=too-few-public-methods
                 with CdapFeatureAdapter(
                     duckdb_memory=self._max_memory,
                     duckdb_threads=self._max_cpus,
-                    compression=self._compression,
                     conn=shared_conn,
                 ) as adapter:
                     adapter.convert(psm_dir=str(psm_dir), output_path=str(feature_path), chunksize=_BATCH_SIZE)
@@ -147,7 +143,6 @@ class CdapConverter(BaseOrchestrator):  # pylint: disable=too-few-public-methods
         with CdapPgAdapter(
             duckdb_memory=self._max_memory,
             duckdb_threads=self._max_cpus,
-            compression=self._compression,
         ) as adapter:
             adapter.convert(feature_path=str(feature_path), output_path=str(pg_path), chunksize=_BATCH_SIZE, run_units=run_units)
             ontology_entries.extend(score_ontology_entries(adapter.get_discovered_scores(), view=PG))

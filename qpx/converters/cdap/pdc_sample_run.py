@@ -129,7 +129,6 @@ def _write_sample_run(
     run_path: Path,
     sample_records: list[dict],
     run_records: list[dict],
-    compression: str,
 ) -> None:
     """Write the sample/run parquet via temp files + atomic rename.
 
@@ -145,10 +144,9 @@ def _write_sample_run(
             sample_tmp,
             creator="pdc",
             extra_columns=_SAMPLE_EXTRA_COLUMNS,
-            compression=compression,
         ) as writer:
             writer.write_batch(sample_records)
-        with RunWriter(run_tmp, creator="pdc", compression=compression) as writer:
+        with RunWriter(run_tmp, creator="pdc") as writer:
             writer.write_batch(run_records)
         if sample_tmp.exists():
             sample_tmp.replace(sample_path)
@@ -220,7 +218,6 @@ def build_sample_run_from_pdc(
     output_folder: str | Path,
     prefix: str,
     *,
-    compression: str = "zstd",
     threads: int = DEFAULT_METADATA_THREADS,
     run_to_plex: Optional[dict[str, dict]] = None,
 ) -> Optional[dict[str, Path]]:
@@ -264,7 +261,7 @@ def build_sample_run_from_pdc(
 
     sample_path = output_folder / f"{prefix}.sample.parquet"
     run_path = output_folder / f"{prefix}.run.parquet"
-    _write_sample_run(sample_path, run_path, list(sample_records.values()), run_records, compression)
+    _write_sample_run(sample_path, run_path, list(sample_records.values()), run_records)
 
     logger.info(
         "Wrote %d samples and %d runs from PDC metadata for %s",

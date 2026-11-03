@@ -28,14 +28,12 @@ class SpectronautConverter(BaseOrchestrator):
         sdrf_path=None,
         max_memory=None,
         max_cpus=None,
-        compression: str = "zstd",
     ):
         """Initialize converter with report path and DuckDB settings."""
         self.report_path = str(report_path)
         self.sdrf_path = str(sdrf_path) if sdrf_path else None
         self._memory = max_memory
         self._threads = max_cpus
-        self._compression = compression
         self._ontology_entries: list[dict] = []
         self._resolved_mappings_by_view: dict[str, dict] = {}
 
@@ -62,7 +60,6 @@ class SpectronautConverter(BaseOrchestrator):
         with SpectronautFeatureAdapter(
             duckdb_memory=self._memory,
             duckdb_threads=self._threads,
-            compression=self._compression,
         ) as adapter:
             adapter.convert(
                 spectronaut_report=self.report_path,
@@ -88,7 +85,6 @@ class SpectronautConverter(BaseOrchestrator):
         with SpectronautPgAdapter(
             duckdb_memory=self._memory,
             duckdb_threads=self._threads,
-            compression=self._compression,
         ) as adapter:
             adapter.convert(
                 spectronaut_report=self.report_path,

@@ -95,7 +95,7 @@ class CdapPsmAdapter(CdapBaseAdapter):
 
         # Step 4: stream batches and transform.
         self.logger.info("Transforming CDAP PSMs ...")
-        with PsmWriter(output_path, creator=creator, compression=self._compression) as writer:
+        with PsmWriter(output_path, creator=creator) as writer:
             self._stream_transform_write(sql, writer, chunksize)
 
         self.logger.info("CDAP PSM conversion complete -> %s", output_path)

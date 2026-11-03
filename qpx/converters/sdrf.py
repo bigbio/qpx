@@ -423,7 +423,6 @@ class SdrfConverter(BaseConverter):
             output_path,
             creator=creator,
             extra_columns=extra_column_names,
-            compression=self._compression,
         ) as writer:
             writer.write_batch(records)
 
@@ -476,7 +475,7 @@ class SdrfConverter(BaseConverter):
             }
             records.append(rec)
 
-        with RunWriter(output_path, creator=creator, compression=self._compression) as writer:
+        with RunWriter(output_path, creator=creator) as writer:
             writer.write_batch(records)
 
         self.logger.info(f"Wrote {len(records)} runs to {output_path}")

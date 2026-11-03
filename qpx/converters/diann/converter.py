@@ -45,14 +45,12 @@ class DiaNNConverter(BaseOrchestrator):
         sdrf_path=None,
         max_memory=None,
         max_cpus=None,
-        compression: str = "zstd",
         diann_log: str | None = None,
     ):
         self.report_path = str(report_path)
         self.sdrf_path = str(sdrf_path) if sdrf_path else None
         self._memory = max_memory
         self._threads = max_cpus
-        self._compression = compression
         self._diann_log = diann_log
         self._ontology_entries: list[dict] = []
         self._resolved_mappings_by_view: dict[str, dict] = {}
@@ -72,7 +70,6 @@ class DiaNNConverter(BaseOrchestrator):
         with DiannFeatureAdapter(
             duckdb_memory=self._memory,
             duckdb_threads=self._threads,
-            compression=self._compression,
         ) as adapter:
             adapter.convert(
                 diann_report=self.report_path,
@@ -104,7 +101,6 @@ class DiaNNConverter(BaseOrchestrator):
         with DiannPgAdapter(
             duckdb_memory=self._memory,
             duckdb_threads=self._threads,
-            compression=self._compression,
         ) as adapter:
             adapter.convert(
                 diann_report=self.report_path,
@@ -150,7 +146,7 @@ class DiaNNConverter(BaseOrchestrator):
             )
             if matched_scans is None:
                 return None
-        adapter = DiannMzAdapter(compression=self._compression)
+        adapter = DiannMzAdapter()
         written = adapter.convert(
             mzml_statistics_folder=str(mzml_statistics_folder),
             output_path=str(output_folder / f"{prefix}.mz.parquet"),

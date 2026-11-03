@@ -91,13 +91,11 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         duckdb_memory: str | None = None,
         duckdb_threads: int | None = None,
         conn: duckdb.DuckDBPyConnection | None = None,
-        compression: str = "zstd",
     ):
         super().__init__(
             duckdb_memory=duckdb_memory,
             duckdb_threads=duckdb_threads,
             conn=conn,
-            compression=compression,
         )
         self._warned_tmt_channels: set[str] = set()
         # Canonical labels the SDRF assigns a sample, per run file stem.
@@ -183,7 +181,6 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         with FeatureWriter(
             output_path,
             creator=creator,
-            compression=self._compression,
             identity_composite=_FEATURE_IDENTITY_COMPOSITE,
         ) as writer:
             for batch in self._query_batched(evidence_query, chunksize):

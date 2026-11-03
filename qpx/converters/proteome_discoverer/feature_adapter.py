@@ -40,7 +40,7 @@ class ProteomeDiscovererFeatureAdapter(PdPsmTable):
         if not self._channels and ms1 is None:
             self.logger.warning("This PSM export has no abundance columns, so no feature view is written")
             return False
-        with FeatureWriter(output_path, creator="proteome_discoverer", compression=self._compression) as writer:
+        with FeatureWriter(output_path, creator="proteome_discoverer") as writer:
             for batch in self._query_batched(self._query(ms1), chunksize):
                 records = self._transform_rows_with_skip(batch.to_pylist(), self._record, "Proteome Discoverer feature")
                 if records:

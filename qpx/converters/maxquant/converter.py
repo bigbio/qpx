@@ -31,10 +31,9 @@ def _views_with_input(msms_file, evidence_file, protein_groups_file) -> list[str
 class MaxQuantConverter(BaseOrchestrator):
     """Orchestrate full MaxQuant conversion to QPX format."""
 
-    def __init__(self, max_memory=None, max_cpus=None, compression: str = "zstd"):
+    def __init__(self, max_memory=None, max_cpus=None):
         self._memory = max_memory
         self._cpus = max_cpus
-        self._compression = compression
         self._resolved_mappings_by_view: dict[str, dict] = {}
 
     def convert(
@@ -143,7 +142,6 @@ class MaxQuantConverter(BaseOrchestrator):
         with MaxQuantPsmAdapter(
             duckdb_memory=self._memory,
             duckdb_threads=self._cpus,
-            compression=self._compression,
         ) as adapter:
             adapter.convert(
                 msms_path=str(msms_file),
@@ -161,7 +159,6 @@ class MaxQuantConverter(BaseOrchestrator):
         with MaxQuantFeatureAdapter(
             duckdb_memory=self._memory,
             duckdb_threads=self._cpus,
-            compression=self._compression,
         ) as adapter:
             adapter.convert(
                 evidence_path=str(evidence_file),
@@ -181,7 +178,6 @@ class MaxQuantConverter(BaseOrchestrator):
         with MaxQuantPgAdapter(
             duckdb_memory=self._memory,
             duckdb_threads=self._cpus,
-            compression=self._compression,
         ) as adapter:
             adapter.convert(
                 protein_groups_path=str(protein_groups_file),
@@ -198,7 +194,7 @@ class MaxQuantConverter(BaseOrchestrator):
         """Write the site view of the ``Sites.txt`` tables."""
         with (
             MaxQuantPgAdapter(duckdb_memory=self._memory, duckdb_threads=self._cpus) as adapter,
-            SiteWriter(output_path, compression=self._compression) as writer,
+            SiteWriter(output_path) as writer,
         ):
             adapter.write_sites(sites_files, evidence_file, sdrf_file, writer)
 

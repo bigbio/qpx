@@ -165,7 +165,6 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
         with FeatureWriter(
             output_path,
             creator=creator,
-            compression=self._compression,
             identity_composite=_FEATURE_IDENTITY_COMPOSITE,
         ) as writer:
             for table in self._feature_batches(run_names, batch_rows, sql_template, mods_lookup, target_schema, mzml_info_folder):
@@ -179,9 +178,7 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
         if sql is None:
             self.logger.warning("The report has no Fragment.Quant.Raw column: no fragment view")
             return False
-        rows = write_fragment_view(
-            self._conn, sql, output_path, _FEATURE_IDENTITY_COMPOSITE, creator="diann", compression=self._compression
-        )
+        rows = write_fragment_view(self._conn, sql, output_path, _FEATURE_IDENTITY_COMPOSITE, creator="diann")
         self.logger.info("Wrote %d fragment rows to %s", rows, output_path)
         return True
 
@@ -205,7 +202,7 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
             }
             for peptidoform, sequence, accessions in rows
         ]
-        with PepMapWriter(output_path, creator=creator, compression=self._compression) as writer:
+        with PepMapWriter(output_path, creator=creator) as writer:
             writer.write_batch(records)
         self.logger.info("Wrote %d pepmap entries to %s", len(records), output_path)
         return True

@@ -30,11 +30,9 @@ class QuantmsMsstatsConverter(BaseOrchestrator):
         self,
         max_memory: str | None = None,
         max_cpus: int | None = None,
-        compression: str = "zstd",
     ):
         self._max_memory = max_memory
         self._max_cpus = max_cpus
-        self._compression = compression
 
     def convert(
         self,
@@ -59,7 +57,6 @@ class QuantmsMsstatsConverter(BaseOrchestrator):
         with SdrfConverter(
             duckdb_memory=self._max_memory,
             duckdb_threads=self._max_cpus,
-            compression=self._compression,
         ) as sdrf_converter:
             sdrf_converter.convert(
                 sdrf_path=str(sdrf_file),
@@ -93,7 +90,6 @@ class QuantmsMsstatsConverter(BaseOrchestrator):
         with QuantmsMsstatsFeatureAdapter(
             duckdb_memory=self._max_memory,
             duckdb_threads=self._max_cpus,
-            compression=self._compression,
         ) as adapter:
             adapter.convert(
                 msstats_path=str(msstats_file),

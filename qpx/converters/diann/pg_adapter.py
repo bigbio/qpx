@@ -342,7 +342,7 @@ class DiannPgAdapter(DiaNNBaseAdapter):
         runs = self._get_unique_runs()
 
         quantified = 0
-        with PgWriter(output_path, creator=creator, compression=self._compression) as writer:
+        with PgWriter(output_path, creator=creator) as writer:
             done = 0
             for batch_runs in self._run_batches(validate_identifier(self._resolved_pg["run_file_name"]), runs, batch_rows):
                 self.logger.info(f"Processing PG runs {done + 1}-{done + len(batch_runs)} of {len(runs)}")

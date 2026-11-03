@@ -178,7 +178,6 @@ class FragPipeFeatureAdapter(BaseConverter):
         with FeatureWriter(
             output_path,
             creator=creator,
-            compression=self._compression,
             identity_composite=_FEATURE_IDENTITY_COMPOSITE,
         ) as writer:
             for batch in self._query_batched("SELECT * FROM fragpipe_features", max(1, chunksize // len(experiments))):

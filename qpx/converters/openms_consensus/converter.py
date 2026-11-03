@@ -85,7 +85,6 @@ def _write_sdrf_metadata(
     output_prefix: str,
     sdrf_path: str,
     requested: set[str],
-    compression: str = "zstd",
 ) -> tuple[dict[str, Path], list[dict]]:
     """Write the requested SDRF-backed run/sample structures.
 
@@ -103,7 +102,7 @@ def _write_sdrf_metadata(
         "sample": output_folder / f"{output_prefix}.sample.parquet",
         "run": output_folder / f"{output_prefix}.run.parquet",
     }
-    with SdrfConverter(compression=compression) as sdrf_converter:
+    with SdrfConverter() as sdrf_converter:
         sdrf_converter.convert(
             sdrf_path=sdrf_path,
             sample_output=str(paths["sample"]) if "sample" in metadata else None,
@@ -138,7 +137,6 @@ class OpenMSConsensusConverter(BaseOrchestrator):  # pylint: disable=too-few-pub
         creator: str = "openms-consensus",
         streaming: Optional[bool] = None,
         project_accession: Optional[str] = None,
-        compression: str = "zstd",
         include_unassigned_psms: bool = True,
     ) -> dict[str, Path]:
         """Write the requested QPX views and return ``{structure: parquet path}``.
@@ -182,10 +180,7 @@ class OpenMSConsensusConverter(BaseOrchestrator):  # pylint: disable=too-few-pub
         the faster in-memory pyopenms load. ``True``/``False`` forces the choice.
 
         ``project_accession`` (e.g. ``PXD001819``) is stamped into dataset.parquet.
-
-        ``compression`` is the Parquet codec for every written view (default zstd).
         """
-        self._compression = compression
         _validate_structures(structures, sdrf_path)
         consensusxml_paths = _as_paths(consensusxml_path)
         requested = set(structures)
@@ -194,9 +189,7 @@ class OpenMSConsensusConverter(BaseOrchestrator):  # pylint: disable=too-few-pub
         out.mkdir(parents=True, exist_ok=True)
         written: dict[str, Path] = {}
 
-        config = _ConversionConfig(
-            _OutputConfig(out, output_prefix, creator, compression), structures, sdrf_path, include_unassigned_psms
-        )
+        config = _ConversionConfig(_OutputConfig(out, output_prefix, creator), structures, sdrf_path, include_unassigned_psms)
 
         if {"feature", "psm", "pg"}.intersection(structures):
             use_stream = streaming if streaming is not None else any(_should_stream(p) for p in consensusxml_paths)
@@ -215,7 +208,7 @@ class OpenMSConsensusConverter(BaseOrchestrator):  # pylint: disable=too-few-pub
                 (out / f"{output_prefix}.{view}.parquet").unlink(missing_ok=True)
                 _log.warning("No exportable %s records; skipping %s Parquet output.", view.upper(), view.upper())
 
-        sdrf_paths, run_ontology = _write_sdrf_metadata(out, output_prefix, sdrf_path, requested, compression)
+        sdrf_paths, run_ontology = _write_sdrf_metadata(out, output_prefix, sdrf_path, requested)
         written.update(sdrf_paths)
 
         # Metadata tables (ontology / provenance / dataset) — written when the

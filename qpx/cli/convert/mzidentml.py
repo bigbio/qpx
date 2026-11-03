@@ -9,7 +9,7 @@ import click
 
 from qpx.cli.resources import convert_resource_options
 
-from .options import _compression_option, _dataset_metadata_options, _output_folder_option, _verbose_option
+from .options import _dataset_metadata_options, _output_folder_option, _verbose_option
 from .postprocess import _finish_conversion
 
 
@@ -47,7 +47,6 @@ from .postprocess import _finish_conversion
     "--project-accession",
     help="PRIDE / ProteomeXchange accession (e.g. PXD054720)",
 )
-@_compression_option
 @convert_resource_options
 @_verbose_option
 @_dataset_metadata_options
@@ -94,7 +93,6 @@ def convert_mzidentml_cmd(**kwargs):
     mgf_path = kwargs["mgf_path"]
     include_spectra = kwargs["include_spectra"]
     project_accession = kwargs["project_accession"]
-    compression = kwargs["compression"]
     verbose = kwargs["verbose"]
     metadata = kwargs["metadata"]
 
@@ -103,7 +101,7 @@ def convert_mzidentml_cmd(**kwargs):
 
     from qpx.converters.mzidentml.converter import MzIdentMLConverter
 
-    converter = MzIdentMLConverter(compression=compression)
+    converter = MzIdentMLConverter()
     converter.convert(
         mzid_path=mzid_path,
         output_folder=output_folder,

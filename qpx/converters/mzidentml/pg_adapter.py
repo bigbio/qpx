@@ -60,7 +60,7 @@ class MzIdentMLPgAdapter(BaseConverter):
             logger.warning("No protein group records produced from %s", mzid_path)
             return
 
-        with PgWriter(output_path, creator=creator, compression=self._compression) as writer:
+        with PgWriter(output_path, creator=creator) as writer:
             writer.write_batch(records)
 
         logger.info("Wrote %d protein groups to %s", len(records), output_path)

@@ -61,10 +61,8 @@ class BaseConverter(ABC):
         duckdb_memory: str | None = None,
         duckdb_threads: int | None = None,
         conn: duckdb.DuckDBPyConnection | None = None,
-        compression: str = "zstd",
     ):
         self.logger = logging.getLogger(f"{self.__class__.__module__}.{self.__class__.__name__}")
-        self._compression = compression
         if conn is not None:
             self._conn = conn
             self._owns_conn = False
@@ -136,7 +134,7 @@ class BaseConverter(ABC):
             }
             for peptidoform, (sequence, accessions) in pepmap.items()
         ]
-        with PepMapWriter(output_path, creator=creator, compression=self._compression) as writer:
+        with PepMapWriter(output_path, creator=creator) as writer:
             writer.write_batch(records)
         self.logger.info("Wrote %d pepmap entries to %s", len(records), output_path)
         return True

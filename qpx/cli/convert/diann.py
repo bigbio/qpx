@@ -10,7 +10,6 @@ import click
 from qpx.cli.resources import convert_resource_options
 
 from .options import (
-    _compression_option,
     _dataset_metadata_options,
     _fasta_option,
     _max_cpus_option,
@@ -102,7 +101,6 @@ def _write_diann_views(converter, options: dict, prefix: str) -> None:
 @_max_cpus_option
 @convert_resource_options
 @_project_accession_option
-@_compression_option
 @click.option(
     "--diann-log",
     help="DIA-NN summary log file (version auto-detected from first line)",
@@ -143,7 +141,6 @@ def convert_diann_cmd(**kwargs):
     max_memory = kwargs["max_memory"]
     max_cpus = kwargs["max_cpus"]
     project_accession = kwargs["project_accession"]
-    compression = kwargs["compression"]
     diann_log = kwargs["diann_log"]
     fasta = kwargs["fasta"]
     mudata = kwargs["mudata"]
@@ -163,7 +160,6 @@ def convert_diann_cmd(**kwargs):
         sdrf_path=sdrf_file,
         max_memory=max_memory,
         max_cpus=max_cpus,
-        compression=compression,
         diann_log=str(diann_log) if diann_log else None,
     )
     _write_diann_views(converter, kwargs, prefix)

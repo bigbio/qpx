@@ -25,7 +25,6 @@ _UNRECORDED_OPTIONS = frozenset(
         "max_memory",
         "max_cpus",
         "temp_dir",
-        "compression",
         "project_accession",
         "software_name",
         "software_version",
