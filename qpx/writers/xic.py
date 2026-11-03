@@ -5,4 +5,6 @@ from qpx.writers.base import BaseWriter
 
 
 class XicWriter(BaseWriter):
+    """Write validated xic.parquet files."""
+
     _schema_class = XicSchema

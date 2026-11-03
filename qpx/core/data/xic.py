@@ -8,7 +8,7 @@ from qpx.core.data.loader import load_schema
 from qpx.core.query import _escape_sql_string
 from qpx.core.sql import sql_build
 
-XicSchema = load_schema("xic")
+XicSchema = load_schema("xic")  # pylint: disable=invalid-name
 
 
 class Xic(BaseStructure):
