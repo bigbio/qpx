@@ -50,12 +50,6 @@ from qpx.cli.resources import convert_resource_options
 @click.option("--max-memory", help="Memory limit for the CDAP conversion")
 @convert_resource_options
 @click.option(
-    "--download-threads",
-    default=24,
-    show_default=True,
-    help="Parallel HTTP Range threads per file for downloads",
-)
-@click.option(
     "--skip-download",
     is_flag=True,
     default=False,
@@ -99,7 +93,6 @@ def pdc2qpx_cmd(**kwargs):
     ms_levels = kwargs["ms_levels"]
     max_cpus = kwargs["max_cpus"]
     max_memory = kwargs["max_memory"]
-    download_threads = kwargs["download_threads"]
     skip_download = kwargs["skip_download"]
     stop_on_error = kwargs["stop_on_error"]
     verbose = kwargs["verbose"]
@@ -119,7 +112,6 @@ def pdc2qpx_cmd(**kwargs):
         "ms_levels": levels,
         "max_cpus": max_cpus,
         "max_memory": max_memory,
-        "download_threads": download_threads,
         "skip_download": skip_download,
     }
 

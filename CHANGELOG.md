@@ -85,6 +85,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`convert openms-consensus --pg-top`**, and the `pg_top` argument of `OpenMSConsensusConverter.convert` — the unique-peptide sum always covers every unique peptide of the group, the former default. The option bounded only this stopgap sum, the pg intensity of inputs without an OpenMS protein abundance, and its top-N sum did not reproduce OpenMS' aggregation.
 - **`--compression` of the `convert` commands**, and the `compression` argument of the converter classes — converters always write zstd, the former default. On the PXD042233 feature view (11.0 million rows) zstd wrote 198.5 MB in 5.5 s, snappy 225.6 MB in 4.9 s, gzip 197.7 MB in 15.0 s and no compression 257.9 MB in 4.5 s, and each read back in 0.4 s. Workflows that pass `--compression` must drop it before upgrading.
+- **`pdc2qpx --download-threads`**, and the `download_threads` argument of `run_pdc2qpx` and `run_pdc2qpx_batch` — downloads use 24 parallel range requests per file, the former default, and the PDC metadata lookups their own default of 24 threads.
 
 ### Fixed
 

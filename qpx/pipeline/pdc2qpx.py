@@ -19,8 +19,11 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+# Parallel HTTP Range requests per downloaded file.
+_DOWNLOAD_THREADS = 24
 
-def _download(study: str, file_type: str, download_dir: Path, download_threads: int) -> None:
+
+def _download(study: str, file_type: str, download_dir: Path) -> None:
     """Download one PDC file type into ``download_dir/<study>/`` via pridepy."""
     try:
         from pridepy.pdc.downloader import download_pdc_files
@@ -34,7 +37,7 @@ def _download(study: str, file_type: str, download_dir: Path, download_threads: 
         output_folder=str(download_dir),
         skip_if_downloaded_already=True,
         checksum_check=True,
-        download_threads=download_threads,
+        download_threads=_DOWNLOAD_THREADS,
         retry=True,
     )
 
@@ -66,25 +69,23 @@ def _assert_cdap_psm(study_dir: Path) -> None:
         )
 
 
-def _fetch_run_to_plex(study: str, download_threads: int) -> Optional[dict[str, dict]]:
+def _fetch_run_to_plex(study: str) -> Optional[dict[str, dict]]:
     """The study's run -> plex map; a failure only logs a warning, and fraction names group the runs instead."""
     try:
         from qpx.pdc.metadata import map_runs_to_plex
 
-        return map_runs_to_plex(study, threads=download_threads)
+        return map_runs_to_plex(study)
     except (OSError, RuntimeError, ValueError, KeyError, TypeError) as exc:
         logger.warning("PDC run->plex map unavailable for %s: %s", study, exc)
         return None
 
 
-def _add_pdc_metadata(
-    study: str, output_folder: Path, download_threads: int, outputs: dict[str, Path], run_to_plex: Optional[dict[str, dict]]
-) -> None:
+def _add_pdc_metadata(study: str, output_folder: Path, outputs: dict[str, Path], run_to_plex: Optional[dict[str, dict]]) -> None:
     """Build the sample/run views from PDC metadata into ``outputs``; a failure only logs a warning."""
     try:
         from qpx.converters.cdap.pdc_sample_run import build_sample_run_from_pdc
 
-        built = build_sample_run_from_pdc(study, output_folder, prefix=study, threads=download_threads, run_to_plex=run_to_plex)
+        built = build_sample_run_from_pdc(study, output_folder, prefix=study, run_to_plex=run_to_plex)
         if built:
             outputs.update(built)
     except (OSError, RuntimeError, ValueError, KeyError, TypeError) as exc:
@@ -105,7 +106,6 @@ def run_pdc2qpx(
     ms_levels: Optional[list[int]] = None,
     max_cpus: int | None = None,
     max_memory: str | None = None,
-    download_threads: int = 24,
     skip_download: bool = False,
 ) -> dict[str, Path]:
     """Download a PDC study and convert it to a QPX dataset.
@@ -125,7 +125,6 @@ def run_pdc2qpx(
             LFQ reanalysis needs MS1 as well as MS2.
         max_cpus: Threads for the CDAP conversion.
         max_memory: Memory limit for the CDAP conversion (e.g. ``"16GB"``).
-        download_threads: Parallel HTTP Range threads per file for downloads.
         skip_download: Skip downloading and use files already present under
             ``download_dir/<study>/`` (useful for re-runs and tests).
 
@@ -143,13 +142,13 @@ def run_pdc2qpx(
 
     # 1. Base QPX from CDAP .psm files.
     if not skip_download:
-        _download(study, "psm", download_dir, download_threads)
+        _download(study, "psm", download_dir)
     _assert_cdap_psm(study_dir)
 
     from qpx.converters.cdap import CdapConverter
     from qpx.converters.cdap.pdc_sample_run import run_units_from_plexes
 
-    run_to_plex = _fetch_run_to_plex(study, download_threads) if include_metadata else None
+    run_to_plex = _fetch_run_to_plex(study) if include_metadata else None
     logger.info("Converting CDAP .psm -> QPX base views (%s)", study)
     converter = CdapConverter(max_memory=max_memory, max_cpus=max_cpus)
     converter.convert(
@@ -163,12 +162,12 @@ def run_pdc2qpx(
 
     # 2. Optional sample/run views from PDC metadata (channel -> sample mapping).
     if include_metadata:
-        _add_pdc_metadata(study, output_folder, download_threads, outputs, run_to_plex)
+        _add_pdc_metadata(study, output_folder, outputs, run_to_plex)
 
     # 3. Optional full-spectra mz.parquet from mzML files.
     if include_spectra:
         if not skip_download:
-            _download(study, "mzml", download_dir, download_threads)
+            _download(study, "mzml", download_dir)
         if not any(p.name.lower().endswith((".mzml", ".mzml.gz")) for p in study_dir.iterdir()):
             raise FileNotFoundError(f"--include-spectra set but no mzML files found in {study_dir}")
 
@@ -221,7 +220,6 @@ def run_pdc2qpx_batch(
     ms_levels: Optional[list[int]] = None,
     max_cpus: int | None = None,
     max_memory: str | None = None,
-    download_threads: int = 24,
     skip_download: bool = False,
     continue_on_error: bool = True,
 ) -> dict[str, dict]:
@@ -246,7 +244,6 @@ def run_pdc2qpx_batch(
                 ms_levels=ms_levels,
                 max_cpus=max_cpus,
                 max_memory=max_memory,
-                download_threads=download_threads,
                 skip_download=skip_download,
             )
             results[study] = {"status": "ok", "outputs": outputs, "error": None}
