@@ -10,6 +10,7 @@ import pyarrow as pa
 import pytest
 
 from qpx.core.ontology import PublicOntology
+from qpx.transforms.mantissa import MANTISSA_BITS
 from qpx.writers import (
     DatasetWriter,
     FeatureWriter,
@@ -70,6 +71,20 @@ def assert_pg_table_wellformed(table):
     for lbl in table.column("label").to_pylist():
         if lbl is not None:
             assert isinstance(lbl, str) and lbl
+
+
+def without_rounded_cv_values(rows, view):
+    """*rows* (``to_pylist``) with the ``cv_params`` values that relayout rounds set to None.
+
+    In the list form a cv value is a string, which ``round_table`` leaves alone, while
+    relayout rounds it as a struct field of the type it reads back from.
+    """
+    names = {path.split(".", 1)[1] for path in MANTISSA_BITS[view] if path.startswith("cv_params.")}
+    for row in rows:
+        for entry in row.get("cv_params") or []:
+            if entry["cv_name"] in names:
+                entry["cv_value"] = None
+    return rows
 
 
 def write_lfq_consensusxml(path, maps, trailing=""):

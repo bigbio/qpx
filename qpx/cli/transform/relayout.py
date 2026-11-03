@@ -11,7 +11,7 @@ import click
 
 from qpx.cli.resources import duckdb_resource_options
 
-from .dataset import _copy_dataset_files, _gene_map_dataset_prefix, _stage_dataset_integrity
+from .dataset import _copy_dataset_files, _gene_map_dataset_prefix, _refresh_dataset_mudata, _stage_dataset_integrity
 
 
 def _sort_keys(view: str, sort_by: Optional[str]) -> tuple[str, ...]:
@@ -96,8 +96,12 @@ def transform_relayout_cmd(**options):
     in its new row order (footer identity_source=provided), and the columns of
     other views that hold them are rewritten. A name-value list whose rows all
     list the same names in the same order becomes a struct with one field per
-    name (footer qpx.struct_lists), which QPX reads back as the list. Values do
-    not change. Run it last: gene-map and migrate rewrite a view with lists and
+    name (footer qpx.struct_lists), which QPX reads back as the list. Measured
+    values of a sorted view are rounded to what their measurement supports:
+    intensities and mass errors keep 12 mantissa bits, retention times and ion
+    mobility 16 (footer qpx.mantissa_bits); scores, q-values, PEP and m/z keep
+    every bit. The dataset's h5mu, if any, is rebuilt when feature or pg is
+    sorted. Run it last: gene-map and migrate rewrite a view with lists and
     without the recorded sort order.
 
     \b
@@ -127,4 +131,7 @@ def transform_relayout_cmd(**options):
         row_group_size=options["row_group_size"] or ROW_GROUP_ROWS,
         compression_level=options["compression_level"],
     )
+    # The h5mu holds feature and pg values, which sorting rounded.
+    if "feature" in sort_keys or "pg" in sort_keys:
+        _refresh_dataset_mudata(out_dir, prefix)
     click.echo(f"Relayout complete. Output: {out_dir}")

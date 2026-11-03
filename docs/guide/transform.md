@@ -313,7 +313,7 @@ qpxc transform relayout --dataset ./qpx_output --in-place \\
     --view psm --sort-by run_file_name,scan --compression-level 15
 ```
 
-The ids of a sorted feature, pg or psm view are numbered 1, 2, 3, … in the new row order, and the columns that hold them follow. A name-value list of one layout becomes a struct, which QPX reads back as the list; see [Physical Layout](../spec/serialization.md#physical-layout). Values do not change. If the dataset records integrity, its checksums are refreshed for the rewritten files.
+The ids of a sorted feature, pg or psm view are numbered 1, 2, 3, … in the new row order, and the columns that hold them follow. A name-value list of one layout becomes a struct, which QPX reads back as the list, and measured values are rounded to the precision of the measurement; see [Physical Layout](../spec/serialization.md#physical-layout). If the dataset records integrity, its checksums are refreshed for the rewritten files, and its h5mu is built again when feature or pg is sorted.
 
 ## quantify
 

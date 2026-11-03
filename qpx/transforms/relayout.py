@@ -14,6 +14,7 @@ import pyarrow.parquet as pq
 from qpx.core.engine import create_connection
 from qpx.core.sql import sql_build, validate_identifier
 from qpx.core.struct_lists import STRUCT_LISTS_FOOTER_KEY, footer_value, struct_lists
+from qpx.transforms.mantissa import MANTISSA_BITS, MANTISSA_BITS_FOOTER_KEY, mantissa_footer, round_table, rounding_plan
 from qpx.transforms.protein_properties import _stamped_schema
 from qpx.writers.base import _cast_column
 from qpx.writers.encoding import ROW_GROUP_ROWS, SampledParquetWriter, row_group_rows
@@ -123,12 +124,12 @@ def _footer_schema(source: Path) -> tuple[pa.Schema, str]:
 
 @dataclass(frozen=True)
 class _Rewrite:
-    """How a view is written again: its row order, footer keys and ids.
+    """How a view is written again: its row order, footer keys, ids and rounding.
 
     *sorting* lists the flat keys of *order_by* that ``sorting_columns`` can state.
     *remaps* gives the id maps of the reference columns, and *renumber* names the
     primary key to number 1, 2, 3, ... in the new order and the file that receives
-    each old id with its new one.
+    each old id with its new one. *mantissa_bits* gives the bits measured values keep.
     """
 
     order_by: str
@@ -136,9 +137,10 @@ class _Rewrite:
     footer: dict[bytes, bytes]
     remaps: dict[str, Path]
     renumber: tuple[str, Path] | None
+    mantissa_bits: dict[str, int]
 
 
-def _sorted(source: Path, sort_by: tuple[str, ...], *, remaps, renumber) -> _Rewrite:
+def _sorted(source: Path, sort_by: tuple[str, ...], *, remaps, renumber, mantissa_bits) -> _Rewrite:
     """*source* sorted by *sort_by*, ties broken by the old id when its ids are renumbered.
 
     Parquet's ``sorting_columns`` cannot name a list column, so it states the keys
@@ -158,7 +160,7 @@ def _sorted(source: Path, sort_by: tuple[str, ...], *, remaps, renumber) -> _Rew
     if renumber:
         footer[b"identity_source"] = b"provided"
     order_by = ", ".join(f"v.{validate_identifier(column)}" for column in keys)
-    return _Rewrite(order_by, flat, footer, remaps, renumber)
+    return _Rewrite(order_by, flat, footer, remaps, renumber, mantissa_bits)
 
 
 def _kept_order(source: Path, remaps: dict[str, Path]) -> _Rewrite:
@@ -166,14 +168,15 @@ def _kept_order(source: Path, remaps: dict[str, Path]) -> _Rewrite:
     metadata = pq.read_metadata(source)
     sorting = metadata.row_group(0).sorting_columns if metadata.num_row_groups else ()
     keys = list(pq.SortingColumn.to_ordering(metadata.schema.to_arrow_schema(), sorting)[0]) if sorting else []
-    return _Rewrite("v.file_row_number", keys, {}, remaps, renumber=None)
+    return _Rewrite("v.file_row_number", keys, {}, remaps, renumber=None, mantissa_bits={})
 
 
-def _written_schema(con, source: Path, rewrite: _Rewrite) -> tuple[pa.Schema, str, list[str]]:
-    """The schema and compression *source* is written with, and the select items of its struct lists.
+def _written_schema(con, source: Path, rewrite: _Rewrite) -> tuple[pa.Schema, str, list[str], dict[str, int]]:
+    """The schema and compression *source* is written with, the select items of its struct lists and its rounding.
 
     Name-value lists with one layout in every row become structs
-    (:mod:`qpx.core.struct_lists`).
+    (:mod:`qpx.core.struct_lists`), and measured values are rounded
+    (:mod:`qpx.transforms.mantissa`).
     """
     schema, compression = _footer_schema(source)
     footer = dict(rewrite.footer)
@@ -182,7 +185,10 @@ def _written_schema(con, source: Path, rewrite: _Rewrite) -> tuple[pa.Schema, st
         schema = schema.set(schema.get_field_index(struct_list.column), pa.field(struct_list.column, struct_list.arrow_type))
     if found:
         footer[STRUCT_LISTS_FOOTER_KEY] = footer_value(found, schema.metadata.get(STRUCT_LISTS_FOOTER_KEY))
-    return schema.with_metadata({**schema.metadata, **footer}), compression, [item.select for item in found]
+    plan = rounding_plan(rewrite.mantissa_bits, schema)
+    if plan:
+        footer[MANTISSA_BITS_FOOTER_KEY] = mantissa_footer(plan)
+    return schema.with_metadata({**schema.metadata, **footer}), compression, [item.select for item in found], plan
 
 
 def _write_view(
@@ -194,7 +200,7 @@ def _write_view(
     than memory.
     """
     with create_connection() as con:
-        schema, compression, items = _written_schema(con, source, rewrite)
+        schema, compression, items, plan = _written_schema(con, source, rewrite)
     sql = _select_sql(source, schema, rewrite.remaps, rewrite.order_by, items)
     # Struct lists change the leaf columns that sorting_columns counts.
     sorting_columns = pq.SortingColumn.from_ordering(schema, rewrite.sorting)
@@ -214,7 +220,7 @@ def _write_view(
                 ids.write_table(pa.Table.from_arrays([columns[id_index], new], schema=id_schema))
                 columns[id_index] = new
                 next_id += batch.num_rows
-            table = pa.Table.from_arrays(columns, schema=schema)
+            table = round_table(pa.Table.from_arrays(columns, schema=schema), plan)
             writer.write_table(table, row_group_size=min(row_group_size, row_group_rows(table)))
 
 
@@ -231,7 +237,9 @@ def relayout_dataset(
 
     The ids of a sorted feature, pg or psm view are renumbered in its new row
     order, and every column that holds them, in a sorted view or not, is
-    rewritten. Returns what was done to each staged ``{prefix}.{view}.parquet``.
+    rewritten. The measured values of a sorted view keep the mantissa bits of
+    :data:`~qpx.transforms.mantissa.MANTISSA_BITS`. Returns what was done to each
+    staged ``{prefix}.{view}.parquet``.
     """
     done: dict[str, str] = {}
     with TemporaryDirectory(prefix=".relayout_ids-", dir=staging.parent) as temporary, create_connection() as con:
@@ -257,7 +265,9 @@ def relayout_dataset(
                 raise ValueError(f"{dataset} has no {name}")
             remaps = pending(view, source)
             renumber = (ORDINAL_IDS[view], Path(temporary) / f"{view}.parquet") if view in ORDINAL_IDS else None
-            rewrite = _sorted(source, sort_keys[view], remaps=remaps, renumber=renumber)
+            rewrite = _sorted(
+                source, sort_keys[view], remaps=remaps, renumber=renumber, mantissa_bits=MANTISSA_BITS.get(view, {})
+            )
             _write_view(source, staging / name, rewrite, row_group_size=row_group_size, compression_level=compression_level)
             remapped[view] = set(remaps)
             if renumber:

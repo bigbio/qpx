@@ -69,7 +69,7 @@ For a published dataset, `qpxc transform relayout` sorts the views and records t
 | `psm` | `peptidoform`, `charge`, `run_file_name`, `scan` | Looking up a peptide |
 | `mz` | `run_file_name`, `scan` | Reading a run, looking up a scan |
 
-`sorting_columns` cannot name a list column, so for `pg` it records `anchor_protein` only. relayout also numbers the ids of feature, pg and psm 1, 2, 3, … in their new row order, ties broken by the old id, and rewrites every column that holds them: `pg_ids` and `psm_ids` of feature, `feature_id` of psm and fragment, and `pg_id` and `best_psm_id` of site and proteoform. A reference to a row the view lacks keeps its value. The footer then states `identity_source` `provided`, since the ids no longer derive from the composite (see [Row Identity](identity.md)). Like any id they mean something only within their file, so merging two relayouted datasets needs `on_collision='namespace'`. Other values do not change.
+`sorting_columns` cannot name a list column, so for `pg` it records `anchor_protein` only. relayout also numbers the ids of feature, pg and psm 1, 2, 3, … in their new row order, ties broken by the old id, and rewrites every column that holds them: `pg_ids` and `psm_ids` of feature, `feature_id` of psm and fragment, and `pg_id` and `best_psm_id` of site and proteoform. A reference to a row the view lacks keeps its value. The footer then states `identity_source` `provided`, since the ids no longer derive from the composite (see [Row Identity](identity.md)). Like any id they mean something only within their file, so merging two relayouted datasets needs `on_collision='namespace'`. Other values do not change, apart from the [rounded measurements](#rounded-measurements).
 
 Rows of one peptide sitting together compress better, and a hashed id is eight random bytes per row that no encoding shrinks, while ordinals delta-encode to almost nothing. On MSV000085836 (TMT, 6.2 million features) sorting took feature from 674.6 to 430.7 MB and psm from 390.7 to 245.4 MB, and numbering the ids took them on to 381.1 and 150.7 MB and pg from 55.8 to 17.0 MB, in 38 s. With hashed ids, pg sorted by its default keys stays at the 55.8 MB of its file order, which keeps a group's runs together; sorted by `anchor_protein` and `label` alone it measured 62.2 MB.
 
@@ -86,6 +86,16 @@ Unlike the rest of the layout, this changes the type a reader sees, so it is par
 ```
 
 QPX reads such a column back as its list (`Dataset`, `qpxc validate`, MuData, `merge()`, gene-map, migrate), so the API does not change. DuckDB, Polars or PyArrow opening the file see the struct and read a value by its name; a reader that expects the list must turn the struct back first. A column keeps its list when its layout varies, such as a feature `additional_intensities` without `ms1_area` on some rows, or when two names differ only in case, which DuckDB reads as two other names. On PXD071205 (DIA-NN, 6.8 million features) struct lists took the sorted feature view from 406.1 to 311.2 MB, and relayout from 32 to 17 s and from 9.0 to 5.0 GB of memory, as DuckDB sorts structs more cheaply than lists. Run relayout last: gene-map and migrate rewrite a view with its lists and without the recorded sort order.
+
+### Rounded measurements
+
+relayout rounds the measured values of the views it sorts to the precision of the measurement, as the bits below it are noise that no encoding compresses. Intensities and mass errors keep 12 mantissa bits, a relative error of at most 2^-13 (1.2 × 10^-4); retention times, ion mobility and CCS keep 16, at most 2^-17, and so do the iRT and ion mobility terms of `cv_params` once it is a struct. Values are rounded to nearest with ties to even, as numcodecs' `BitRound` does, so without bias, and stay ordinary floats. On MSV000085836 the log2 ratio between repeated PSMs of one precursor varies by 0.22 (MAD), 3,000 times the error 12 bits add to it (RMS 7.1 × 10^-5). Scores, q-values, PEP, m/z and every other value keep all their bits, so the rows that pass a threshold do not change, and so does a column of the view's identity composite, whose values name its rows (`rt` and `consensus_rt` of MSV000085836 feature). The footer key `qpx.mantissa_bits` gives the bits of each rounded column as JSON, a path naming the column and its struct fields:
+
+```json
+{"intensities.intensity": 12, "mass_error_ppm": 12, "rt": 16}
+```
+
+Rounding took the sorted MSV000085836 feature view from 381.1 to 294.6 MB, psm from 150.7 to 142.8 MB and pg to 11.7 MB, and PXD071205 feature from 311.2 to 263.1 MB, without slowing relayout. The dataset's h5mu, which holds feature and pg values, is built again. gene-map and migrate keep the rounded values but not the footer key.
 
 ### Size of the long pg format
 

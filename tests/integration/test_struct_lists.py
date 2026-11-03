@@ -1,5 +1,6 @@
 """relayout stores the name-value lists of one layout as structs, and QPX reads them back as lists."""
 
+import json
 from pathlib import Path
 
 import pyarrow as pa
@@ -9,8 +10,9 @@ from click.testing import CliRunner
 
 from qpx.cli.main import qpx_main
 from qpx.dataset import Dataset
+from qpx.transforms.mantissa import round_table
 from qpx.writers.psm import PsmWriter
-from tests.conftest import make_psm_record
+from tests.conftest import make_psm_record, without_rounded_cv_values
 
 EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
 DIANN = EXAMPLES / "diann" / "small"
@@ -22,12 +24,18 @@ def _invoke(*arguments):
     return result.output
 
 
-def _rows(folder, view, prefix="d"):
-    """The rows of *view* read through the Dataset API, without the ids relayout renumbers, in a fixed order."""
+def _rows(folder, view, prefix="d", rounded_like=None):
+    """The rows of *view* read through the Dataset API, without the ids relayout renumbers, in a fixed order.
+
+    *rounded_like* names a relayouted folder whose rounding of measured values the rows take.
+    """
     with Dataset(str(folder), file_prefix=prefix) as dataset:
         table = getattr(dataset, view).to_arrow()
+    if rounded_like:
+        footer = pq.read_metadata(rounded_like / f"{prefix}.{view}.parquet").metadata
+        table = round_table(table, json.loads(footer[b"qpx.mantissa_bits"]))
     columns = [name for name in table.schema.names if name not in ("feature_id", "pg_id", "psm_id", "pg_ids", "psm_ids")]
-    return sorted(map(repr, table.select(columns).to_pylist()))
+    return sorted(map(repr, without_rounded_cv_values(table.select(columns).to_pylist(), view)))
 
 
 @pytest.fixture(scope="module")
@@ -58,7 +66,31 @@ def test_relayout_stores_the_lists_of_one_layout_as_structs(diann):
 
 @pytest.mark.parametrize("view", ["feature", "pg"])
 def test_struct_lists_read_back_as_the_lists(diann, view):
-    assert _rows(diann / "sorted", view) == _rows(diann / "source", view)
+    assert _rows(diann / "sorted", view) == _rows(diann / "source", view, rounded_like=diann / "sorted")
+
+
+def _cv_irt(folder):
+    """The cv iRT of each feature, by peptidoform, charge and run."""
+    with Dataset(str(folder), file_prefix="d") as dataset:
+        rows = dataset.feature.to_arrow().select(["peptidoform", "charge", "run_file_name", "cv_params"]).to_pylist()
+    return {
+        (row["peptidoform"], row["charge"], row["run_file_name"]): float(entry["cv_value"])
+        for row in rows
+        for entry in row["cv_params"] or []
+        if entry["cv_name"] == "irt"
+    }
+
+
+def test_the_cv_irt_is_rounded_as_a_retention_time(diann):
+    """Once cv_params is a struct, its iRT is a float, which keeps 16 mantissa bits."""
+    footer = pq.read_metadata(diann / "sorted" / "d.feature.parquet").metadata
+    assert json.loads(footer[b"qpx.mantissa_bits"])["cv_params.irt"] == 16
+
+    source, rounded = _cv_irt(diann / "source"), _cv_irt(diann / "sorted")
+
+    assert rounded.keys() == source.keys()
+    assert any(rounded[key] != value for key, value in source.items())
+    assert all(abs(rounded[key] - value) <= 2.0**-16 * abs(value) for key, value in source.items())
 
 
 def test_a_dataset_with_struct_lists_validates(diann):
@@ -79,7 +111,7 @@ def test_rewriting_a_view_reads_its_struct_lists_back(diann, tmp_path, command):
         _invoke(*command, diann / name, "--output-folder", tmp_path / name)
 
     assert pa.types.is_list(pq.read_schema(tmp_path / "sorted" / "d.feature.parquet").field("additional_scores").type)
-    assert _rows(tmp_path / "sorted", "feature") == _rows(tmp_path / "source", "feature")
+    assert _rows(tmp_path / "sorted", "feature") == _rows(tmp_path / "source", "feature", rounded_like=diann / "sorted")
 
 
 def _psms(folder, scores):
@@ -117,4 +149,4 @@ def test_only_a_layout_that_one_struct_can_hold_becomes_a_struct(tmp_path, score
 
     stored = pq.read_schema(tmp_path / "sorted" / "ds.psm.parquet").field("additional_scores").type
     assert ([field.type for field in stored] if pa.types.is_struct(stored) else None) == fields
-    assert _rows(tmp_path / "sorted", "psm", "ds") == _rows(tmp_path / "ds", "psm", "ds")
+    assert _rows(tmp_path / "sorted", "psm", "ds") == _rows(tmp_path / "ds", "psm", "ds", rounded_like=tmp_path / "sorted")
