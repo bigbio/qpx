@@ -75,6 +75,7 @@ _CANDIDATE_SUM_TOLERANCE = 0.01
 # ``source`` are open: producers name their own evidence classes and sources.
 _VOCABULARIES = {
     "proteoform": {"kind": ("canonical", "isoform", "variant", "chain"), "evidence": ("specific", "shared")},
+    "xic": {"transition_type": ("ms1", "fragment")},
 }
 
 
@@ -163,6 +164,30 @@ def _vocabulary_count(values: pa.Array | pa.ChunkedArray, allowed: tuple[str, ..
         return 0
     outside = pc.invert(pc.is_in(values, value_set=pa.array(allowed)))
     return pc.sum(pc.cast(pc.and_(outside, pc.is_valid(values)), pa.int64())).as_py() or 0
+
+
+def _chromatogram_length_counts(table: pa.Table | pa.RecordBatch) -> int:
+    """XIC rows whose parallel ``rt`` and ``intensity`` arrays differ in length.
+
+    The two arrays are positionally aligned, so a mismatch means the trace cannot
+    be plotted or integrated. Null lists are reported by the non-nullable check.
+    """
+    names = set(table.schema.names)
+    if not {"rt", "intensity"} <= names:
+        return 0
+    rt = table.column("rt")
+    intensity = table.column("intensity")
+    if not (pa.types.is_list(rt.type) and pa.types.is_list(intensity.type)):
+        return 0
+    mismatch = pc.not_equal(pc.list_value_length(rt), pc.list_value_length(intensity))
+    return pc.sum(pc.cast(pc.fill_null(mismatch, False), pa.int64())).as_py() or 0
+
+
+def _chromatogram_length_issues(count: int, structure: str, severity: str) -> list[ValidationIssue]:
+    if not count:
+        return []
+    message = f"{count} row(s) have rt and intensity arrays of different length"
+    return [_issue(structure, "chromatogram_length_mismatch", severity, "rt", message)]
 
 
 def _vocabulary_issues(counts: dict[str, int], structure: str, severity: str) -> list[ValidationIssue]:

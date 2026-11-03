@@ -19,6 +19,8 @@ from qpx.core.data.validation import (
     ValidationResult,
     _anchor_membership_issues,
     _anchor_without_membership,
+    _chromatogram_length_counts,
+    _chromatogram_length_issues,
     _evidence_fraction_counts,
     _evidence_fraction_issues,
     _issue,
@@ -333,7 +335,7 @@ class _RowCounts:
         self.out_of_range = dict.fromkeys((name for name in _UNIT_INTERVAL_COLUMNS.get(structure, ()) if name in names), 0)
         self.vocabulary = dict.fromkeys((name for name in _VOCABULARIES.get(structure, {}) if name in names), 0)
         # Counts of the checks that are not kept per column.
-        self.totals = {"anchor": 0, "fractions": (0, 0, 0), "candidates": (0, 0), "edits": (0, 0), "scan": 0}
+        self.totals = {"anchor": 0, "fractions": (0, 0, 0), "candidates": (0, 0), "edits": (0, 0), "scan": 0, "chromatogram": 0}
 
     def add(self, batch: pa.Table | pa.RecordBatch, scan_format: str | None) -> None:
         """Add one batch's counts."""
@@ -347,6 +349,7 @@ class _RowCounts:
             totals["fractions"] = tuple(a + b for a, b in zip(totals["fractions"], _evidence_fraction_counts(batch)))
         totals["candidates"] = tuple(a + b for a, b in zip(totals["candidates"], _modification_candidate_counts(batch)))
         totals["edits"] = tuple(a + b for a, b in zip(totals["edits"], _sequence_edit_counts(batch, self.structure)))
+        totals["chromatogram"] += _chromatogram_length_counts(batch) if self.structure == "xic" else 0
         for name in self.vocabulary:
             self.vocabulary[name] += _vocabulary_count(batch.column(name), _VOCABULARIES[self.structure][name])
         if scan_format is not None:
@@ -375,6 +378,7 @@ class _RowCounts:
             *_vocabulary_issues(self.vocabulary, self.structure, severity),
             *_modification_candidate_issues(self.totals["candidates"], self.structure, severity),
             *_sequence_edit_issues(self.totals["edits"], self.structure, severity),
+            *_chromatogram_length_issues(self.totals["chromatogram"], self.structure, severity),
         ]
 
 

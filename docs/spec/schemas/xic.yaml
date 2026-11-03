@@ -1,0 +1,99 @@
+name: xic
+file_type: xic_file
+primary_key: [xic_id]
+doc: "Extracted-ion chromatograms (XIC) for DIA and targeted acquisitions — one row per traced precursor or fragment ion per run"
+
+fields:
+  # Identity
+  xic_id:
+    type: string
+    required: true
+    doc: "Opaque identifier of one chromatogram trace. Producer-supplied (e.g. <run_file_name>|<precursor_id>|<transition>) and unique within the file; the primary key of this view."
+  run_file_name:
+    type: string
+    required: true
+    doc: "Raw data file containing the trace (without extension); links to run_file_name in the run, feature, psm, and mz views."
+  label:
+    type: string
+    required: true
+    doc: "Channel label. Use 'LFQ' for label-free DIA, or the reporter/plex channel name (e.g. 'TMT126') for multiplexed traces. Matches feature.intensities[].label."
+  feature_id:
+    type: int64
+    optional: true
+    nullable: true
+    doc: "Optional link to the feature.feature_id this trace supports. Null when the producer does not assign a feature or the trace was not used to quantify one."
+
+  # Precursor identity
+  precursor_id:
+    type: string
+    required: true
+    doc: "The producer's precursor identifier (DIA-NN pr: modified sequence plus charge, e.g. 'PEPTM(UniMod:35)IDEK2'). Preserved as reported so a trace can be traced back to the source file."
+  peptidoform:
+    type: string
+    required: true
+    doc: "Precursor peptidoform in ProForma notation; links to feature.peptidoform and psm.peptidoform."
+  charge:
+    type: int16
+    required: true
+    doc: "Precursor charge state."
+
+  # Traced ion
+  transition:
+    type: string
+    required: true
+    doc: "Raw transition label as reported by the producer: 'ms1' for the precursor trace, or a fragment label such as 'y7^1' or 'b4^2'."
+  transition_type:
+    type: string
+    required: true
+    doc: "Kind of trace: 'ms1' for the precursor (MS1) trace, 'fragment' for a fragment-ion (MS2) trace."
+  fragment_type:
+    type: string
+    optional: true
+    nullable: true
+    doc: "Fragment-ion series (e.g. 'b', 'y'). Null for an ms1 trace or a fragment the producer did not annotate."
+  fragment_number:
+    type: int16
+    optional: true
+    nullable: true
+    doc: "Fragment-ion ordinal measured from its terminus (y7 -> 7). Null when the transition carries no fragment annotation."
+  fragment_charge:
+    type: int16
+    optional: true
+    nullable: true
+    doc: "Charge of the traced fragment ion (y7^1 -> 1). Null when the producer does not report it."
+  neutral_loss:
+    type: string
+    optional: true
+    nullable: true
+    doc: "Neutral-loss annotation of the traced ion (e.g. '-H2O'). Null when the trace has no neutral loss."
+  product_mz:
+    type: float32
+    optional: true
+    nullable: true
+    doc: "m/z of the traced fragment ion. Null when the producer does not report it or for an ms1 trace."
+  library_intensity:
+    type: float32
+    optional: true
+    nullable: true
+    doc: "Library or predicted relative intensity of this fragment, when available; useful as an ML feature or for transition prioritisation."
+
+  # Measurement
+  rt:
+    type: "list<float32>"
+    required: true
+    doc: "Retention times of the trace in seconds, in acquisition order (normally ascending). MUST have the same length as intensity."
+  intensity:
+    type: "list<float32>"
+    required: true
+    doc: "Raw intensity at each retention time. MUST have the same length as rt; element i corresponds to rt[i]."
+  is_decoy:
+    type: bool
+    optional: true
+    nullable: true
+    doc: "Decoy flag for the precursor when the producer reports one; null when the trace is not classified."
+
+  # Metadata
+  cv_params:
+    type: "list<cv_param>"
+    optional: true
+    doc: "Controlled-vocabulary parameters for trace-level metadata (e.g. extraction window width or smoothing method)."

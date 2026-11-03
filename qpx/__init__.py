@@ -22,6 +22,7 @@ from qpx.core.data.sample import Sample
 # --- Validation ---
 from qpx.core.data.schema import ValidationIssue, ValidationResult
 from qpx.core.data.site import Site
+from qpx.core.data.xic import Xic
 from qpx.dataset import Dataset
 from qpx.writers.dataset import DatasetWriter
 
@@ -37,6 +38,7 @@ from qpx.writers.psm import PsmWriter
 from qpx.writers.run import RunWriter
 from qpx.writers.sample import SampleWriter
 from qpx.writers.site import SiteWriter
+from qpx.writers.xic import XicWriter
 
 __all__ = [
     "views",
@@ -51,6 +53,7 @@ __all__ = [
     "Run",
     "Sample",
     "Site",
+    "Xic",
     "ValidationIssue",
     "ValidationResult",
     "Dataset",
@@ -66,6 +69,7 @@ __all__ = [
     "RunWriter",
     "SampleWriter",
     "SiteWriter",
+    "XicWriter",
     "open_dataset",
     "read_feature",
     "read_psm",
@@ -76,6 +80,7 @@ __all__ = [
     "read_pepmap",
     "read_site",
     "read_proteoform",
+    "read_xic",
 ]
 
 # --- Reading (data structures) ---
@@ -129,3 +134,8 @@ def read_site(path: str, **kwargs):
 def read_proteoform(path: str, **kwargs):
     """Open a single proteoform.parquet file."""
     return Proteoform.from_file(path, **kwargs)
+
+
+def read_xic(path: str, **kwargs):
+    """Open a single xic.parquet file."""
+    return Xic.from_file(path, **kwargs)

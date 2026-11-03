@@ -1,7 +1,7 @@
 # Tool Field Mappings
 
 !!! info "Reference for converter developers"
-    This page is a reference for converter developers. For schema definitions, see the individual view pages: [PSM](psm.md), [Feature](feature.md), [Protein Group](pg.md).
+    This page is a reference for converter developers. For schema definitions, see the individual view pages: [PSM](psm.md), [Feature](feature.md), [Protein Group](pg.md), [XIC](xic.md).
 
 This page documents how fields from different proteomics search engines and tools map to the corresponding QPX fields. Each section covers a specific QPX view and lists the source column name in each supported tool.
 
@@ -57,6 +57,30 @@ The Feature view captures quantified peptide features with intensity data. Featu
 DIA-NN `Q.Value` is precursor-level and is stored in `additional_scores` as `precursor_qvalue`; it is not mapped to the peptide-level `peptide_qvalue` field.
 
 MaxQuant `unique` follows the group the feature takes. With proteinGroups.txt, it is true when the peptide is in a single group (`Protein group IDs` names one id) and that group has one protein; a shared peptide carries its razor group and is false. Without proteinGroups.txt, or for a row whose `Protein group IDs` do not resolve, the group falls back to `Leading proteins`, which lists one leader per group, so the group's size is unknown: `unique` is then true when the peptide is in a single group of any size. In ontology.parquet the feature `pg_accessions` and `anchor_protein` name the column they were read from: `Protein IDs` and `Majority protein IDs` (proteinGroups.txt) when `Protein group IDs` resolve, otherwise `Leading proteins` and `Leading razor protein`.
+
+## XIC Field Mappings
+
+The XIC view stores extracted-ion chromatograms as one row per traced ion. DIA-NN writes a `*.xic.parquet` per run (enabled with `--xic`).
+
+| QPX Field | DIA-NN | Notes |
+| --- | --- | --- |
+| `run_file_name` | `<run>.xic.parquet` | Strip the `.xic.parquet` suffix |
+| `precursor_id` | `pr` | Preserve the modified sequence plus charge verbatim |
+| `peptidoform` | `pr` | Strip the trailing charge; convert `(UniMod:N)` to ProForma `[UNIMOD:N]` |
+| `charge` | `pr` | Trailing charge of the precursor identifier |
+| `transition` | `feature` | `ms1` or a fragment label such as `y7^1` |
+| `transition_type` | `feature` | `ms1` → `ms1`; `b`/`y` labels → `fragment` |
+| `fragment_type` | `feature` | Ion series parsed from `y7^1` → `y` |
+| `fragment_number` | `feature` | Parsed from `y7^1` → `7` |
+| `fragment_charge` | `feature` | Parsed from `y7^1` → `1` |
+| `neutral_loss` | `feature` | Suffix after the fragment charge, e.g. `-H2O` |
+| `rt` | `rt` | Multiply by 60 (DIA-NN reports minutes) |
+| `intensity` | `value` | Raw intensity |
+| `label` | — | Set to `LFQ` for label-free DIA-NN output |
+| `xic_id` | — | `<run_file_name>|<pr>|<feature>` |
+| `is_decoy` | — | Optional, from the DIA-NN report/feature row |
+
+DIA-NN also emits rows with `feature = index`, `rt = 0`, and `value = 0`; these are precursor chunk indexes, not measurements, and must be excluded.
 
 ## Protein Group Field Mappings
 

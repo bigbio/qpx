@@ -109,6 +109,7 @@ The `convert` command group provides converters for multiple proteomics software
 - [openms](#openms) - Enrich native OpenMS `-out_qpx` output into a full QPX dataset
 - [openms-consensus](#openms-consensus) - Convert an OpenMS consensusXML (+ SDRF) to QPX (interim; pg intensity = unnormalized unique-peptide sum)
 - [diann](#diann) - Convert DIA-NN report to QPX format
+- [diann-xic](#diann-xic) - Merge DIA-NN XIC exports into one QPX xic view
 - [spectronaut](#spectronaut) - Convert Spectronaut report to QPX format
 - [maxquant](#maxquant) - Convert MaxQuant output to QPX format
 - [fragpipe](#fragpipe) - Convert FragPipe output to QPX format
@@ -181,6 +182,18 @@ qpxc convert diann \
     --verbose
 ```
 
+#### XIC Traces from DIA-NN `--xic` Export {#diann-example-xic}
+
+Merge the per-run `*.xic.parquet` files written by DIA-NN's `--xic` option into the dataset's single `xic` view:
+
+```bash
+qpxc convert diann \
+    --report-path tests/examples/diann/full/diann_report.tsv.gz \
+    --sdrf-file tests/examples/diann/full/PXD036609.sdrf.tsv \
+    --xic-folder ./diann_xic \
+    --output-folder ./output
+```
+
 ### Output Files {#diann-output}
 
 Output files generated:
@@ -188,6 +201,7 @@ Output files generated:
 - **Feature**: `{output-prefix}-{uuid}.feature.parquet` (always produced)
 - **Protein Group**: `{output-prefix}-{uuid}.pg.parquet` (produced when `--pg-matrix-path` is provided)
 - **Mass spectra**: `{output-prefix}.mz.parquet` (produced when `--mzml-info-folder` contains `*_ms2_info.parquet`; feature-matched MS2 spectra only)
+- **XIC**: `{output-prefix}.xic.parquet` (produced when `--xic-folder` contains DIA-NN `*.xic.parquet` exports)
 - **MuData**: `{output-prefix}.h5mu` (written by default; `--no-mudata` skips it)
 
 ### Common Issues {#diann-issues}
@@ -211,6 +225,47 @@ Output files generated:
 - Use verbose mode during initial testing to diagnose issues
 - Ensure SDRF file correctly matches sample names in DIA-NN report
 - For protein groups, ensure both report and pg_matrix files are from the same DIA-NN run
+
+---
+
+## diann-xic
+
+Merge DIA-NN per-run XIC exports into one dataset-level QPX `xic.parquet`.
+
+### Description {#diann-xic-description}
+
+```python exec="1" html="1" session="doc_utils"
+from qpx.cli.convert import convert_diann_xic_cmd
+
+print(generate_description(convert_diann_xic_cmd))
+```
+
+### Parameters {#diann-xic-parameters}
+
+```python exec="1" html="1" session="doc_utils"
+from qpx.cli.convert import convert_diann_xic_cmd
+
+print(generate_params_table(convert_diann_xic_cmd))
+```
+
+### Usage Example {#diann-xic-example}
+
+```bash
+qpxc convert diann-xic \
+    --xic-folder ./diann_xic \
+    --output-folder ./output \
+    --output-prefix PXD014414
+```
+
+`--xic-folder` must contain the `*.xic.parquet` files written by DIA-NN's
+`--xic` option. All runs are merged into `PXD014414.xic.parquet`; `run_file_name`
+distinguishes them. Use `qpxc convert diann --xic-folder ...` instead when you
+are also converting the DIA-NN report and want the XIC view in the same output
+folder.
+
+### Output Files {#diann-xic-output}
+
+- **XIC**: `{output-prefix}.xic.parquet`
 
 ---
 

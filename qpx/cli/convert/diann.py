@@ -51,6 +51,22 @@ def _write_diann_views(converter, options: dict, prefix: str) -> None:
         output_prefix=output_prefix,
         feature_parquet=output_folder / f"{prefix}.feature.parquet",
     )
+    xic_folder = options.get("xic_folder")
+    if xic_folder:
+        from qpx.converters.diann.xic_adapter import convert_diann_xic
+
+        xic_files = sorted(Path(xic_folder).glob("*.xic.parquet"))
+        if not xic_files:
+            logging.getLogger(__name__).warning(
+                "No *.xic.parquet files found in %s; the xic view was not written", xic_folder
+            )
+        else:
+            traces = convert_diann_xic(
+                xic_files,
+                output_folder / f"{prefix}.xic.parquet",
+                compression=options["compression"],
+            )
+            click.echo(f"XIC view: {traces} traces across {len(xic_files)} runs")
     converter.convert_sdrf(output_folder=output_folder, prefix=prefix)
     converter.write_ontology(output_folder, prefix=prefix)
     converter.write_provenance(output_folder, prefix=prefix)
@@ -92,6 +108,14 @@ def _write_diann_views(converter, options: dict, prefix: str) -> None:
     help="DIA-NN protein quantities matrix file (enables PG conversion)",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
 )
+@click.option(
+    "--xic-folder",
+    help=(
+        "Optional folder containing DIA-NN *.xic.parquet exports (one per run). "
+        "When given, merges them into a single {PREFIX}.xic.parquet view."
+    ),
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+)
 @_max_memory_option
 @_max_cpus_option
 @_project_accession_option
@@ -127,6 +151,13 @@ def convert_diann_cmd(**kwargs):
             --sdrf-file data.sdrf.tsv \\
             --mzml-info-folder ./mzml_info \\
             --pg-matrix-path report.pg_matrix.tsv \\
+            --output-folder ./qpx_output
+
+        # Feature + XIC traces (DIA-NN --xic exports)
+        qpxc convert diann \\
+            --report-path report.tsv \\
+            --sdrf-file data.sdrf.tsv \\
+            --xic-folder ./diann_xic \\
             --output-folder ./qpx_output
     """
     report_path = kwargs["report_path"]
@@ -164,3 +195,58 @@ def convert_diann_cmd(**kwargs):
     _finish_conversion(output_folder, prefix, project_accession, metadata, fasta=fasta, mudata=mudata)
 
     click.echo(f"DIA-NN conversion complete. Output: {output_folder}")
+
+
+@click.command("diann-xic")
+@click.option(
+    "--xic-folder",
+    help="Folder containing DIA-NN *.xic.parquet exports (one per run)",
+    required=True,
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+)
+@click.option(
+    "--label",
+    default="LFQ",
+    show_default=True,
+    help="Channel label written for every trace",
+)
+@_output_folder_option
+@_output_prefix_option
+@_compression_option
+@_verbose_option
+def convert_diann_xic_cmd(xic_folder, label, output_folder, output_prefix, compression, verbose):
+    """Merge DIA-NN XIC exports into one QPX xic view.
+
+    DIA-NN writes one ``*.xic.parquet`` per run when ``--xic`` is enabled.
+    This command merges them into a single dataset-level
+    ``{PREFIX}.xic.parquet``, with ``run_file_name`` distinguishing the runs.
+
+    \b
+    Example:
+        qpxc convert diann-xic \\
+            --xic-folder ./diann_xic \\
+            --output-folder ./qpx_output \\
+            --output-prefix PXD014414
+    """
+    if verbose:
+        logging.getLogger().setLevel(logging.DEBUG)
+
+    xic_files = sorted(Path(xic_folder).glob("*.xic.parquet"))
+    if not xic_files:
+        raise click.ClickException(f"No *.xic.parquet files found in {xic_folder}")
+
+    output_folder.mkdir(parents=True, exist_ok=True)
+    prefix = output_prefix or "diann"
+
+    from qpx.converters.diann.xic_adapter import convert_diann_xic
+
+    traces = convert_diann_xic(
+        xic_files,
+        output_folder / f"{prefix}.xic.parquet",
+        label=label,
+        compression=compression,
+    )
+    click.echo(
+        f"XIC conversion complete: {traces} traces from {len(xic_files)} run(s). "
+        f"Output: {output_folder / f'{prefix}.xic.parquet'}"
+    )
