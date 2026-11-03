@@ -105,7 +105,7 @@ graph LR
 | `ms1` | `ms1` | null | null | null | null | 0 |
 | `y7^1` | `fragment` | `y` | 7 | 1 | null | 0 |
 | `b4^2` | `fragment` | `b` | 4 | 2 | null | 0 |
-| `y9^1-H2O` | `fragment` | `y` | 9 | 1 | `-H2O` | 0 |
+| `y9-H2O^1` | `fragment` | `y` | 9 | 1 | `-H2O` | 0 |
 
 ## DIA-NN mapping
 
@@ -116,7 +116,7 @@ DIA-NN writes one `*.xic.parquet` per run with the columns `pr`, `feature`, `inf
 | file name `<run>.xic.parquet` | `run_file_name` | strip the `.xic.parquet` suffix |
 | `pr` | `precursor_id` | copy verbatim |
 | `pr` | `peptidoform` + `charge` | strip the trailing charge; convert `(UniMod:N)` to ProForma `[UNIMOD:N]` |
-| `feature` | `transition` | copy; `ms1` is reserved for the precursor trace |
+| `feature` | `transition` | copy; `ms1` reserved for the precursor trace; reorder charge/loss to mzPAF (`y9^1-H2O` → `y9-H2O^1`) |
 | `feature` | `transition_type`, fragment fields | `ms1` → `ms1`; `y7^1` / `b4^2` → `fragment` plus parsed fields |
 | — | `isotope` | `0` (DIA-NN extracts monoisotopic targets) |
 | `info` | — | `0` on signal rows; values `1..N` occur only on `feature = index` rows (see below) |

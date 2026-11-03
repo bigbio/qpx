@@ -40,9 +40,15 @@ def _parse_precursor(precursor_id: str) -> tuple[str, int]:
 
 
 def _parse_transition(label: str) -> dict:
-    """Split a DIA-NN ``feature`` value into QPX transition fields."""
+    """Split a DIA-NN ``feature`` value into QPX transition fields.
+
+    DIA-NN writes the charge before a neutral loss (``y9^1-H2O``) while mzPAF
+    writes the loss before the charge (``y9-H2O^1``); fragment labels are
+    normalised to the mzPAF order.
+    """
     if label == "ms1":
         return {
+            "transition": "ms1",
             "transition_type": "ms1",
             "fragment_type": None,
             "fragment_number": None,
@@ -52,6 +58,7 @@ def _parse_transition(label: str) -> dict:
     match = _FRAGMENT.match(label)
     if match is None:
         return {
+            "transition": label,
             "transition_type": "fragment",
             "fragment_type": None,
             "fragment_number": None,
@@ -59,7 +66,9 @@ def _parse_transition(label: str) -> dict:
             "neutral_loss": None,
         }
     fragment_type, fragment_number, fragment_charge, neutral_loss = match.groups()
+    transition = f"{fragment_type}{fragment_number}{neutral_loss or ''}^{fragment_charge}"
     return {
+        "transition": transition,
         "transition_type": "fragment",
         "fragment_type": fragment_type,
         "fragment_number": int(fragment_number),
@@ -173,7 +182,7 @@ def convert_diann_xic(
                     peptidoform, charge = precursor
                     rows.append(
                         {
-                            "xic_id": f"{run}|{precursor_id}|{transition}",
+                            "xic_id": f"{run}|{precursor_id}|{annotation['transition']}",
                             "run_file_name": run,
                             "label": label,
                             "feature_ids": None,
@@ -182,7 +191,6 @@ def convert_diann_xic(
                             "precursor_id": precursor_id,
                             "peptidoform": peptidoform,
                             "charge": charge,
-                            "transition": transition,
                             **annotation,
                             "isotope": 0,
                             "target_mz": None,

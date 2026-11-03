@@ -27,6 +27,7 @@ def _write_xic(path: Path, values: tuple[float, ...] = (10.0, 5.0, 9.0, 7.0)):
         {"pr": "PEPTIDEK2", "feature": "ms1", "info": 0, "rt": 1.0, "value": values[0]},
         {"pr": "PEPTIDEK2", "feature": "y7^1", "info": 0, "rt": 1.0, "value": values[1]},
         {"pr": "PEPTIDEK2", "feature": "y7^1", "info": 0, "rt": 1.1, "value": values[2]},
+        {"pr": "PEPTIDEK2", "feature": "y9^1-H2O", "info": 0, "rt": 1.2, "value": values[3]},
         {"pr": "PEPTM(UniMod:35)IDEK3", "feature": "b4^2", "info": 0, "rt": 2.0, "value": values[3]},
         # DIA-NN internal chunk index: not a measurement.
         {"pr": "PEPTIDEK2", "feature": "index", "info": 0, "rt": 0.0, "value": 0.0},
@@ -42,7 +43,7 @@ def test_convert_diann_xic_merges_runs_and_annotates_transitions(tmp_path):
 
     output = tmp_path / "dataset.xic.parquet"
     traces = convert_diann_xic([first, second], output)
-    assert traces == 6
+    assert traces == 8
 
     table = pq.read_table(output)
     assert XicSchema.validate_full(table, strict=True).issues == []
@@ -81,6 +82,11 @@ def test_convert_diann_xic_merges_runs_and_annotates_transitions(tmp_path):
     assert modified["fragment_number"] == 4
     assert modified["fragment_charge"] == 2
 
+    loss = by_id["run1|PEPTIDEK2|y9-H2O^1"]
+    assert loss["transition"] == "y9-H2O^1"
+    assert loss["neutral_loss"] == "-H2O"
+    assert loss["fragment_charge"] == 1
+
 
 def test_convert_diann_xic_rejects_missing_columns(tmp_path):
     path = tmp_path / "broken.xic.parquet"
@@ -101,5 +107,5 @@ def test_diann_xic_cli(tmp_path):
         ["--xic-folder", str(xic_folder), "--output-folder", str(output), "--output-prefix", "PXD000001"],
     )
     assert result.exit_code == 0, result.output
-    assert "3 traces" in result.output
+    assert "4 traces" in result.output
     assert (output / "PXD000001.xic.parquet").exists()

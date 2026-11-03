@@ -256,14 +256,16 @@ qpxc convert diann-xic \
     --output-folder ./output \
     --output-prefix PXD014414 \
     --xic-selection targets \
-    --xic-window apex
+    --xic-window apex \
+    --xic-extraction-window-seconds 10 \
+    --xic-qvalue-threshold 0.01
 ```
 
 `--xic-folder` must contain the `*.xic.parquet` files written by DIA-NN's
 `--xic` option. All runs are merged into `PXD014414.xic.parquet`; `run_file_name`
 distinguishes them. The file footer records `xic_selection`, `xic_window`,
-`xic_smoothed`, `xic_zero_points` and `xic_rt_unit`; use
-`--xic-extraction-window-seconds` to record the DIA-NN `--xic` window. Use
+`xic_extraction_window_seconds`, `xic_qvalue_threshold`, `xic_smoothed`,
+`xic_zero_points`, `xic_rt_unit` and `transition_format`. Use
 `qpxc convert diann --xic-folder ...` instead when you are also converting the
 DIA-NN report and want the XIC view in the same output folder.
 
