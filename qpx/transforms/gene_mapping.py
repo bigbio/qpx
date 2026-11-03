@@ -181,14 +181,18 @@ def _resolve_gene_names(
 
 
 def _view_batches(file_paths):
-    """Tables of bounded size read from a view's Parquet files, in order."""
+    """Tables of bounded size read from a view's Parquet files, in order, with struct lists read back as lists."""
+    from qpx.core.engine import create_connection
+    from qpx.core.struct_lists import file_layouts, restore_table
     from qpx.transforms.protein_properties import _rewrite_batch_rows
 
-    for path in file_paths:
-        parquet = pq.ParquetFile(path)
-        for group in range(parquet.num_row_groups):
-            for batch in parquet.iter_batches(batch_size=_rewrite_batch_rows(parquet, group), row_groups=[group]):
-                yield pa.Table.from_batches([batch])
+    with create_connection() as con:
+        for path in file_paths:
+            parquet = pq.ParquetFile(path)
+            layouts = file_layouts(parquet.metadata.metadata)
+            for group in range(parquet.num_row_groups):
+                for batch in parquet.iter_batches(batch_size=_rewrite_batch_rows(parquet, group), row_groups=[group]):
+                    yield restore_table(con, pa.Table.from_batches([batch]), layouts)
 
 
 def _annotate_table(table: pa.Table, gene_map: dict[str, set[str]], names_type: pa.DataType) -> tuple[pa.Table, int]:

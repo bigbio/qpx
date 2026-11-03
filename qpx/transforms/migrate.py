@@ -7,11 +7,14 @@ import shutil
 import uuid
 from pathlib import Path
 
+import pyarrow as pa
 import pyarrow.parquet as pq
 
 from qpx.converters.channel_labels import normalize_label
 from qpx.converters.ontology_util import dedupe_ontology_entries, reconcile_ontology_entries
 from qpx.converters.ptm import normalize_peptidoform
+from qpx.core.engine import create_connection
+from qpx.core.struct_lists import file_layouts, restore_table
 from qpx.dataset import Dataset
 from qpx.version import QPX_SPEC_VERSION
 
@@ -48,10 +51,13 @@ def _footer(path: Path) -> dict[bytes, bytes]:
 
 
 def _batches(path: Path):
+    """The records of *path*, with its struct lists read back as lists."""
     source = pq.ParquetFile(path)
+    layouts = file_layouts(source.metadata.metadata)
     try:
-        for batch in source.iter_batches(_BATCH_ROWS):
-            yield batch.to_pylist()
+        with create_connection() as con:
+            for batch in source.iter_batches(_BATCH_ROWS):
+                yield restore_table(con, pa.Table.from_batches([batch]), layouts).to_pylist()
     finally:
         source.close()
 

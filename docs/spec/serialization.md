@@ -75,13 +75,25 @@ Rows of one peptide sitting together compress better, and a hashed id is eight r
 
 Choose by the reads you expect, because one order serves one kind of query well. On that sorted feature view, one protein's rows took 0.06 s to read instead of 2.12 s, and one run's 2.23 s instead of 0.22 s (DuckDB, 24 threads, warm cache). Sorting by protein costs per-run reads their pruning; Hive partitioning by run is fastest per run, and measured 57% more bytes and 3.5× slower for proteins. Partition by a batch of runs rather than one file per run, and only for a dataset mostly read run by run.
 
+### Struct lists
+
+Unlike the rest of the layout, this changes the type a reader sees, so it is part of the specification from 1.3. relayout writes a name-value list, `additional_scores`, `cv_params` or `additional_intensities`, whose rows all list the same names in the same order as a struct with one field per name: `additional_scores.diann_cscore`, `additional_intensities.LFQ.maxlfq`. The values of one name then share a column and its encoding, where the scores of a DIA-NN feature interleaved in one column compress poorly. A null list is a null struct. A value is stored as `float` when every one of its values reads back unchanged, else as `double`; a `cv_value` string becomes a number only when it reads back as the same string, so a `proteotypic` of `"1"` stays a string. The footer key `qpx.struct_lists` gives each such column's names in order as JSON, with the `higher_better` of each score:
+
+```json
+{"additional_scores": [{"name": "diann_cscore", "higher_better": true}],
+ "cv_params": [{"name": "irt"}],
+ "additional_intensities": [{"name": "LFQ", "names": ["maxlfq", "ms1_area"]}]}
+```
+
+QPX reads such a column back as its list (`Dataset`, `qpxc validate`, MuData, `merge()`, gene-map, migrate), so the API does not change. DuckDB, Polars or PyArrow opening the file see the struct and read a value by its name; a reader that expects the list must turn the struct back first. A column keeps its list when its layout varies, such as a feature `additional_intensities` without `ms1_area` on some rows, or when two names differ only in case, which DuckDB reads as two other names. On PXD071205 (DIA-NN, 6.8 million features) struct lists took the sorted feature view from 406.1 to 311.2 MB, and relayout from 32 to 17 s and from 9.0 to 5.0 GB of memory, as DuckDB sorts structs more cheaply than lists. Run relayout last: gene-map and migrate rewrite a view with its lists and without the recorded sort order.
+
 ### Size of the long pg format
 
 `pg` is long: one row per label, each with its own `pg_id`, so a TMT file is larger than the nested form it replaced (a factor of 2.34 on a TMT dataset, nearly all of it the hashed ids: without them the long form is 5% smaller). A value costs 14–21 bytes in a realistic single-cell matrix. Sorting by `anchor_protein` took 34% off the same TMT file, and `qpxc transform relayout`, which also numbers the ids, took MSV000085836 pg from 55.8 to 17.0 MB. Only the primary quantity is a row; `additional_intensities` cannot be pivoted the same way.
 
 ### Reader compatibility
 
-Writers choose each column's encoding from its data (see [Physical Layout](#physical-layout)), so any float column may be `BYTE_STREAM_SPLIT` and any integer column `DELTA_BINARY_PACKED`; the others are `RLE_DICTIONARY` or `PLAIN`. Quantities and scores sit in nested `list<struct>` columns.
+Writers choose each column's encoding from its data (see [Physical Layout](#physical-layout)), so any float column may be `BYTE_STREAM_SPLIT` and any integer column `DELTA_BINARY_PACKED`; the others are `RLE_DICTIONARY` or `PLAIN`. Quantities and scores sit in nested `list<struct>` columns, or in structs after relayout ([Struct lists](#struct-lists)).
 
 | Reader | QPX files | Checked with |
 |---|---|---|

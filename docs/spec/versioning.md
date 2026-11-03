@@ -90,6 +90,11 @@ This version defines all core serialized views (PSM, Feature, PG, MZ), the deriv
       equals the id OpenMS writes for the same row. The hash is specified with
       test vectors, and footers state `identity_hash_version` and `identity_source`
       ([Row Identity](identity.md)). `dataset.analysis_id` is new.
+    - **Struct lists.** A file may store `additional_scores`, `cv_params` or
+      `additional_intensities` as a struct with one field per name when all its
+      rows list the same names in the same order; the footer key
+      `qpx.struct_lists` declares it ([Struct lists](serialization.md#struct-lists)).
+      A reader that does not turn it back into the list sees the struct.
 - **1.2** (backward-compatible): adds the [site](site.md) and
   [proteoform](proteoform.md) views, the optional `modification_candidates` column
   of the PSM and Feature views ([Modifications](modifications.md)) and the optional

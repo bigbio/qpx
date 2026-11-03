@@ -13,6 +13,7 @@ import pyarrow.parquet as pq
 
 from qpx.core.engine import create_connection
 from qpx.core.sql import sql_build, validate_identifier
+from qpx.core.struct_lists import STRUCT_LISTS_FOOTER_KEY, footer_value, struct_lists
 from qpx.transforms.protein_properties import _stamped_schema
 from qpx.writers.base import _cast_column
 from qpx.writers.encoding import ROW_GROUP_ROWS, SampledParquetWriter, row_group_rows
@@ -76,12 +77,13 @@ _LIST_REMAP_JOIN = (
 )
 
 
-def _select_sql(source: Path, schema: pa.Schema, remaps: dict[str, Path], order_by: str) -> str:
+def _select_sql(source: Path, schema: pa.Schema, remaps: dict[str, Path], order_by: str, items: list[str]) -> str:
     """The rows of *source* in *order_by*, each column of *remaps* holding the new ids its map gives.
 
-    A reference that its map does not name keeps its value.
+    A reference that its map does not name keeps its value. *items* replace
+    further columns.
     """
-    joins, replace = [], []
+    joins, replace = [], list(items)
     for index, (column, id_map) in enumerate(sorted(remaps.items())):
         name, alias = validate_identifier(column), f"m{index}"
         if pa.types.is_list(schema.field(column).type):
@@ -167,6 +169,22 @@ def _kept_order(source: Path, remaps: dict[str, Path]) -> _Rewrite:
     return _Rewrite("v.file_row_number", keys, {}, remaps, renumber=None)
 
 
+def _written_schema(con, source: Path, rewrite: _Rewrite) -> tuple[pa.Schema, str, list[str]]:
+    """The schema and compression *source* is written with, and the select items of its struct lists.
+
+    Name-value lists with one layout in every row become structs
+    (:mod:`qpx.core.struct_lists`).
+    """
+    schema, compression = _footer_schema(source)
+    footer = dict(rewrite.footer)
+    found = struct_lists(con, _quoted(source), schema)
+    for struct_list in found:
+        schema = schema.set(schema.get_field_index(struct_list.column), pa.field(struct_list.column, struct_list.arrow_type))
+    if found:
+        footer[STRUCT_LISTS_FOOTER_KEY] = footer_value(found, schema.metadata.get(STRUCT_LISTS_FOOTER_KEY))
+    return schema.with_metadata({**schema.metadata, **footer}), compression, [item.select for item in found]
+
+
 def _write_view(
     source: Path, destination: Path, rewrite: _Rewrite, *, row_group_size: int, compression_level: int | None
 ) -> None:
@@ -175,9 +193,10 @@ def _write_view(
     Rows stream from a DuckDB sort that spills to disk, so the view may be larger
     than memory.
     """
-    schema, compression = _footer_schema(source)
-    schema = schema.with_metadata({**schema.metadata, **rewrite.footer})
-    sql = _select_sql(source, schema, rewrite.remaps, rewrite.order_by)
+    with create_connection() as con:
+        schema, compression, items = _written_schema(con, source, rewrite)
+    sql = _select_sql(source, schema, rewrite.remaps, rewrite.order_by, items)
+    # Struct lists change the leaf columns that sorting_columns counts.
     sorting_columns = pq.SortingColumn.from_ordering(schema, rewrite.sorting)
     renumber = rewrite.renumber
     id_index = schema.get_field_index(renumber[0]) if renumber else -1

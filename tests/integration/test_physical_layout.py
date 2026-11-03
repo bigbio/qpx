@@ -109,16 +109,17 @@ def test_relayout_sorts_rows_renumbers_ids_and_refreshes_integrity(tmp_path):
     )
     assert result.exit_code == 0, result.output
 
-    before = pq.read_table(source / "sn.feature.parquet")
     after_file = pq.ParquetFile(target / "sn.feature.parquet")
     after = after_file.read()
     anchors = after.column("anchor_protein").to_pylist()
     assert anchors == sorted(anchors)
     assert after.column("feature_id").to_pylist() == list(range(1, after.num_rows + 1))
     assert after.schema.metadata[b"identity_source"] == b"provided"
+    with Dataset(str(source), file_prefix="sn") as unsorted, Dataset(str(target), file_prefix="sn") as relayouted:
+        before, read = unsorted.feature.to_arrow(), relayouted.feature.to_arrow()
     values = [name for name in before.schema.names if name != "feature_id"]
-    assert sorted(map(repr, after.select(values).to_pylist())) == sorted(map(repr, before.select(values).to_pylist()))
-    assert after.schema.equals(before.schema)
+    assert sorted(map(repr, read.select(values).to_pylist())) == sorted(map(repr, before.select(values).to_pylist()))
+    assert read.schema.equals(before.schema)
     assert after.schema.metadata[b"qpx.sort_order"] == b"anchor_protein,peptidoform,charge,run_file_name"
     assert after_file.metadata.row_group(0).num_rows == 50
     sorting = after_file.metadata.row_group(0).sorting_columns

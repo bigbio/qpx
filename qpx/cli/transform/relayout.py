@@ -94,7 +94,11 @@ def transform_relayout_cmd(**options):
     charge, run and scan, which suits protein and peptide lookups; mz is sorted
     by run then scan. A sorted feature, pg or psm view gets the ids 1, 2, 3, ...
     in its new row order (footer identity_source=provided), and the columns of
-    other views that hold them are rewritten. Values do not change.
+    other views that hold them are rewritten. A name-value list whose rows all
+    list the same names in the same order becomes a struct with one field per
+    name (footer qpx.struct_lists), which QPX reads back as the list. Values do
+    not change. Run it last: gene-map and migrate rewrite a view with lists and
+    without the recorded sort order.
 
     \b
     Example:
