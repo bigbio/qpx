@@ -54,12 +54,12 @@ def test_write_options_take_the_encoding_each_column_measures_smallest():
         }
     )
 
-    options = parquet_write_options(sample.schema, "zstd", 3, sample=sample)
+    options = parquet_write_options(sample.schema, "zstd", sample=sample)
 
     # Ordinals delta-encode, hashes stay plain, continuous floats split, few distinct strings keep a dictionary.
     assert options["column_encoding"] == {"feature_id": "DELTA_BINARY_PACKED", "rt": "BYTE_STREAM_SPLIT"}
     assert options["use_dictionary"] == ["label"]
-    assert options["compression_level"] == 3
+    assert options["compression_level"] == 9
     assert options["write_page_index"] is True
 
 

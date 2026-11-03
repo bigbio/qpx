@@ -39,7 +39,6 @@ def _relayout_into(
     sort_keys: dict[str, tuple[str, ...]],
     *,
     row_group_size: int,
-    compression_level: int | None,
 ) -> None:
     """Write the views of *sort_keys* sorted to a staging folder in *out_dir*, then move them and the integrity record in."""
     from qpx.dataset import Dataset
@@ -48,9 +47,7 @@ def _relayout_into(
     with TemporaryDirectory(prefix=".relayout_tmp-", dir=out_dir) as temporary:
         staging = Path(temporary)
         try:
-            done = relayout_dataset(
-                dataset, prefix, staging, sort_keys, row_group_size=row_group_size, compression_level=compression_level
-            )
+            done = relayout_dataset(dataset, prefix, staging, sort_keys, row_group_size=row_group_size)
         except ValueError as exc:
             raise click.ClickException(str(exc)) from exc
         for name, what in done.items():
@@ -86,7 +83,6 @@ def _relayout_into(
     type=click.IntRange(min=1),
     help="Rows per row group, fewer when a group would exceed about 256 MB (default: 131072)",
 )
-@click.option("--compression-level", default=None, type=int, help="Codec level (default: 9 for zstd and gzip)")
 @duckdb_resource_options
 @click.option("--verbose", help="Enable verbose logging", is_flag=True)
 def transform_relayout_cmd(**options):
@@ -134,7 +130,6 @@ def transform_relayout_cmd(**options):
         out_dir,
         sort_keys,
         row_group_size=options["row_group_size"] or ROW_GROUP_ROWS,
-        compression_level=options["compression_level"],
     )
     # The h5mu holds feature and pg values, which sorting rounded.
     if "feature" in sort_keys or "pg" in sort_keys:

@@ -101,17 +101,15 @@ def row_group_rows(data: pa.Table | pa.RecordBatch, rows: int | None = None) -> 
     return max(1, min(rows or ROW_GROUP_ROWS, ROW_GROUP_BYTES // bytes_per_row))
 
 
-def parquet_write_options(
-    schema: pa.Schema, compression: str, compression_level: int | None = None, sample: pa.Table | None = None
-) -> dict:
-    """Build QPX ParquetWriter options for *schema* and *compression*; the level overrides the codec's default.
+def parquet_write_options(schema: pa.Schema, compression: str, sample: pa.Table | None = None) -> dict:
+    """Build QPX ParquetWriter options for *schema* and *compression*.
 
     *sample* holds the first rows to be written, with *schema*: each leaf takes the
     encoding that measures smallest on its first row group. Without rows, every leaf
     keeps pyarrow's default, a dictionary.
     """
     options: dict = {"compression": compression, "version": "2.6", "write_page_index": True}
-    level = _COMPRESSION_LEVELS.get(str(compression).lower()) if compression_level is None else compression_level
+    level = _COMPRESSION_LEVELS.get(str(compression).lower())
     if level is not None:
         options["compression_level"] = level
     if sample is None or not sample.num_rows:
@@ -128,16 +126,15 @@ def parquet_write_options(
 class SampledParquetWriter:
     """A ``pq.ParquetWriter`` opened at the first table written, encoded as :func:`parquet_write_options` picks for it."""
 
-    def __init__(self, where, schema: pa.Schema, compression: str, compression_level: int | None = None, **writer_options):
+    def __init__(self, where, schema: pa.Schema, compression: str, **writer_options):
         self._where = str(where)
         self._schema = schema
         self._compression = compression
-        self._compression_level = compression_level
         self._writer_options = writer_options
         self._writer: pq.ParquetWriter | None = None
 
     def _open(self, sample: pa.Table | None) -> pq.ParquetWriter:
-        options = parquet_write_options(self._schema, self._compression, self._compression_level, sample)
+        options = parquet_write_options(self._schema, self._compression, sample)
         return pq.ParquetWriter(self._where, self._schema, **self._writer_options, **options)
 
     def write_table(self, table: pa.Table, row_group_size: int | None = None) -> None:

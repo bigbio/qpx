@@ -191,9 +191,7 @@ def _written_schema(con, source: Path, rewrite: _Rewrite) -> tuple[pa.Schema, st
     return schema.with_metadata({**schema.metadata, **footer}), compression, [item.select for item in found], plan
 
 
-def _write_view(
-    source: Path, destination: Path, rewrite: _Rewrite, *, row_group_size: int, compression_level: int | None
-) -> None:
+def _write_view(source: Path, destination: Path, rewrite: _Rewrite, *, row_group_size: int) -> None:
     """Write the rows of *source* to *destination* as *rewrite* says.
 
     Rows stream from a DuckDB sort that spills to disk, so the view may be larger
@@ -209,7 +207,7 @@ def _write_view(
     id_schema = pa.schema([("old", pa.int64()), ("new", pa.int64())])
     with (
         create_connection() as con,
-        SampledParquetWriter(destination, schema, compression, compression_level, sorting_columns=sorting_columns) as writer,
+        SampledParquetWriter(destination, schema, compression, sorting_columns=sorting_columns) as writer,
         pq.ParquetWriter(str(renumber[1]), id_schema) if renumber else nullcontext() as ids,
     ):
         next_id = 1
@@ -231,7 +229,6 @@ def relayout_dataset(
     sort_keys: dict[str, tuple[str, ...]],
     *,
     row_group_size: int = ROW_GROUP_ROWS,
-    compression_level: int | None = None,
 ) -> dict[str, str]:
     """Write the views of *sort_keys* to *staging* sorted, with ordinal ids, and the references to those ids.
 
@@ -268,7 +265,7 @@ def relayout_dataset(
             rewrite = _sorted(
                 source, sort_keys[view], remaps=remaps, renumber=renumber, mantissa_bits=MANTISSA_BITS.get(view, {})
             )
-            _write_view(source, staging / name, rewrite, row_group_size=row_group_size, compression_level=compression_level)
+            _write_view(source, staging / name, rewrite, row_group_size=row_group_size)
             remapped[view] = set(remaps)
             if renumber:
                 id_maps[view] = renumber[1]
@@ -281,9 +278,7 @@ def relayout_dataset(
             if not source.is_file() or not (remaps := pending(view, source)):
                 continue
             rewrite = _kept_order(source, remaps)
-            _write_view(
-                source, Path(temporary) / name, rewrite, row_group_size=row_group_size, compression_level=compression_level
-            )
+            _write_view(source, Path(temporary) / name, rewrite, row_group_size=row_group_size)
             (Path(temporary) / name).replace(staging / name)
             done[name] = done.get(name, "kept its order") + f"; {', '.join(sorted(remaps))} renumbered"
     return done
