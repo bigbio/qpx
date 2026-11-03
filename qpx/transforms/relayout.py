@@ -221,7 +221,7 @@ def _write_view(
                 columns[id_index] = new
                 next_id += batch.num_rows
             table = round_table(pa.Table.from_arrays(columns, schema=schema), plan)
-            writer.write_table(table, row_group_size=min(row_group_size, row_group_rows(table)))
+            writer.write_table(table, row_group_size=row_group_rows(table, row_group_size))
 
 
 def relayout_dataset(

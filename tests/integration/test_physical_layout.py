@@ -10,6 +10,7 @@ from click.testing import CliRunner
 from qpx.cli.main import qpx_main
 from qpx.dataset import Dataset
 from qpx.transforms.mantissa import round_table
+from qpx.writers import encoding
 from qpx.writers.encoding import ROW_GROUP_BYTES, ROW_GROUP_ROWS, SampledParquetWriter, parquet_write_options, row_group_rows
 from qpx.writers.feature import FeatureWriter
 from qpx.writers.ontology import OntologyWriter
@@ -140,6 +141,22 @@ def test_relayout_sorts_rows_renumbers_ids_and_refreshes_integrity(tmp_path):
     assert [pg_file.schema.column(column.column_index).path for column in pg_sorting] == ["anchor_protein"]
     with Dataset(str(target), file_prefix="sn") as dataset:
         assert not any(dataset.verify_integrity().values())
+
+
+def test_relayout_row_groups_may_exceed_the_writers_default(tmp_path, monkeypatch):
+    """--row-group-size is honoured above the default rows per group, made small here."""
+    monkeypatch.setattr(encoding, "ROW_GROUP_ROWS", 20)
+    source = _convert(tmp_path)
+    target = tmp_path / "sorted"
+
+    result = CliRunner().invoke(
+        qpx_main,
+        ["transform", "relayout", "--dataset", str(source), "--output-folder", str(target), "--row-group-size", "50"],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+
+    assert pq.ParquetFile(target / "sn.feature.parquet").metadata.row_group(0).num_rows == 50
 
 
 def test_relayout_refuses_a_column_it_cannot_sort_by(tmp_path):

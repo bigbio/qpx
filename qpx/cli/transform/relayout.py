@@ -80,7 +80,12 @@ def _relayout_into(
 )
 @click.option("--view", "views", multiple=True, help="View to sort; repeatable (default: every one of feature, pg, psm, mz)")
 @click.option("--sort-by", default=None, help="Comma-separated sort columns; needs exactly one --view")
-@click.option("--row-group-size", default=None, type=click.IntRange(min=1), help="Rows per row group (default: 131072)")
+@click.option(
+    "--row-group-size",
+    default=None,
+    type=click.IntRange(min=1),
+    help="Rows per row group, fewer when a group would exceed about 256 MB (default: 131072)",
+)
 @click.option("--compression-level", default=None, type=int, help="Codec level (default: 9 for zstd and gzip)")
 @duckdb_resource_options
 @click.option("--verbose", help="Enable verbose logging", is_flag=True)

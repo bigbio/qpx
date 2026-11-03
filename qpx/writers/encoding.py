@@ -95,10 +95,10 @@ def _smallest_encodings(schema: pa.Schema, sample: pa.Table, options: dict) -> d
     return picked
 
 
-def row_group_rows(data: pa.Table | pa.RecordBatch) -> int:
-    """Rows per row group for *data*: ``ROW_GROUP_ROWS``, fewer when rows are large."""
+def row_group_rows(data: pa.Table | pa.RecordBatch, rows: int | None = None) -> int:
+    """Rows per row group for *data*: *rows*, by default ``ROW_GROUP_ROWS``, fewer when rows are large."""
     bytes_per_row = max(1, data.nbytes // max(1, data.num_rows))
-    return max(1, min(ROW_GROUP_ROWS, ROW_GROUP_BYTES // bytes_per_row))
+    return max(1, min(rows or ROW_GROUP_ROWS, ROW_GROUP_BYTES // bytes_per_row))
 
 
 def parquet_write_options(
