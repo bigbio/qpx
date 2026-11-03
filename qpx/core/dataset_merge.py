@@ -37,6 +37,7 @@ _RUN_VIEWS = {
 }
 # Namespacing: every id and every name that links rows of one source to each other.
 _NAMESPACED_IDS = ("feature_id", "psm_id", "pg_id", "site_id", "proteoform_id", "best_psm_id", "fragment_id")
+_NAMESPACED_ID_LISTS = ("psm_ids", "pg_ids")
 _NAMESPACED_NAMES = ("run_file_name", "id_run_file_name", "quantification_unit_id", "run_accession", "sample_accession", "id")
 _ONTOLOGY_FIRST = ("ontology_name", "ontology_accession", "ontology_source", "ontology_version", "description")
 
@@ -152,6 +153,8 @@ class _Merge:
             quoted = _quoted(column)
             if column in _NAMESPACED_IDS:
                 parts.append(f"xor({quoted}, {constant}::BIGINT) AS {quoted}")
+            elif column in _NAMESPACED_ID_LISTS:
+                parts.append(f"list_transform({quoted}, lambda value: xor(value, {constant}::BIGINT)) AS {quoted}")
             elif column in _NAMESPACED_NAMES:
                 parts.append(f"{prefix} || {quoted} AS {quoted}")
             elif column == "grouped_runs":

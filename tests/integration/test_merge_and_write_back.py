@@ -77,6 +77,32 @@ class TestMergeCollisions:
             assert len(matrix) == 2 * first.pg.count()
             assert merged.dataset_meta.count() == 1
 
+    def test_namespace_rewrites_the_id_lists(self, dataset_dir, tmp_path):
+        """feature.pg_ids follows the pg ids into each source's namespace."""
+        sources = []
+        for name, accession in (("one", "PXD000001"), ("two", "PXD000002")):
+            target = _copy(dataset_dir, tmp_path, name, accession)
+            pg_id = pq.read_table(next(target.glob("*.pg.parquet")), columns=["pg_id"]).column("pg_id")[0].as_py()
+            path = next(target.glob("*.feature.parquet"))
+            table = pq.read_table(path)
+            pg_ids = pa.array([[pg_id]] * table.num_rows, type=pa.list_(pa.int64()))
+            index = table.schema.get_field_index("pg_ids")
+            pq.write_table(table.set_column(index, table.schema.field(index), pg_ids), path)
+            sources.append(qpx.open_dataset(str(target)))
+        collection = qpx.DatasetCollection(sources)
+        collection.merge(tmp_path / "merged", on_collision="namespace")
+        collection.close()
+        for source in sources:
+            source.close()
+
+        with qpx.open_dataset(str(tmp_path / "merged")) as merged:
+            pg_rows = merged.pg.to_arrow().select(["pg_id", "grouped_runs"]).to_pylist()
+            pg_source = {row["pg_id"]: row["grouped_runs"][0].split(":")[0] for row in pg_rows}
+            features = merged.feature.to_arrow().select(["run_file_name", "pg_ids"]).to_pylist()
+        assert {row["run_file_name"].split(":")[0] for row in features} == {"PXD000001", "PXD000002"}
+        for row in features:
+            assert [pg_source.get(pg_id) for pg_id in row["pg_ids"]] == [row["run_file_name"].split(":")[0]]
+
     def test_dedupe_identical_drops_copies(self, two_copies, tmp_path):
         first, _, collection = two_copies
         output = tmp_path / "merged"
