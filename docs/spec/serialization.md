@@ -58,7 +58,7 @@ QPX leverages the following Parquet capabilities:
 
 The physical layout is not normative: any row order and row-group size is a valid QPX file. It does decide what a selective read costs.
 
-QPX writers use row groups of at most 131,072 rows (fewer when rows are large, at most about 256 MB uncompressed per group), a page index, byte-stream-split on continuous float leaves, and no dictionary on hashed primary keys. On a 783k-row dataset, sorting with these row groups made protein lookups 3–4× faster and read 5–7× fewer remote bytes than unsorted 1 Mi-row groups, for about 3% more bytes on disk.
+QPX writers use row groups of at most 131,072 rows (fewer when rows are large, at most about 256 MB uncompressed per group), a page index, and for each column the encoding its first row group measures smallest: a dictionary, `PLAIN`, `BYTE_STREAM_SPLIT` (floats) or `DELTA_BINARY_PACKED` (integers); a string keeps its dictionary unless `PLAIN` is more than 20% smaller. No fixed choice per column suits every file: TMT reporter intensities are smallest byte-stream-split, and PEP is smallest as a dictionary in DIA-NN files but byte-stream-split in OpenMS ones. Published 1.1 files rewritten this way took 2–14% less space (MSV000085836 feature 674.6 to 598.9 MB, pg 65.1 to 55.8 MB; PXD017199 feature 1,596.8 to 1,562.4 MB). On a 783k-row dataset, sorting with these row groups made protein lookups 3–4× faster and read 5–7× fewer remote bytes than unsorted 1 Mi-row groups, for about 3% more bytes on disk.
 
 For a published dataset, `qpxc transform relayout` sorts the views, records the order in `sorting_columns` and in the footer key `qpx.sort_order`, and leaves values and ids unchanged:
 
@@ -76,7 +76,7 @@ Choose by the reads you expect, because one order serves one kind of query well.
 
 ### Reader compatibility
 
-Writers use `BYTE_STREAM_SPLIT` on the retention-time and m/z columns and on the peak arrays of `mz` (`rt`, `rt_start`, `rt_stop`, `predicted_rt`, `calculated_mz`, `observed_mz`, `mz`, `intensity`), `RLE_DICTIONARY` on strings, and `PLAIN`/`RLE` elsewhere. Quantities and scores sit in nested `list<struct>` columns.
+Writers choose each column's encoding from its data (see [Physical Layout](#physical-layout)), so any float column may be `BYTE_STREAM_SPLIT` and any integer column `DELTA_BINARY_PACKED`; the others are `RLE_DICTIONARY` or `PLAIN`. Quantities and scores sit in nested `list<struct>` columns.
 
 | Reader | QPX files | Checked with |
 |---|---|---|
@@ -84,7 +84,7 @@ Writers use `BYTE_STREAM_SPLIT` on the retention-time and m/z columns and on the
 | DuckDB | Reads everything | 1.5, 2.0 |
 | Polars | Reads everything, nested columns included | 1.41 |
 | Apache Spark, R `arrow` | Support the encoding; nested columns not confirmed here | Not tested here |
-| fastparquet | **Fails** on those columns: `NotImplementedError: Encoding 9`. Even without that encoding it returns `None` for every `list<struct>` value, silently; strings and scalars read | 2026.3 |
+| fastparquet | **Fails** on `BYTE_STREAM_SPLIT` columns: `NotImplementedError: Encoding 9` (it reads `DELTA_BINARY_PACKED`). Even without that encoding it returns `None` for every `list<struct>` value, silently; strings and scalars read | 2026.3 |
 
 To read with fastparquet, rewrite through PyArrow without the encoding, and expect nested columns to be lost.
 

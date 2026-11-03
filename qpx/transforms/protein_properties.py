@@ -342,17 +342,17 @@ def _rewrite_view(source: Path, destination: Path, fill_batch, footer: dict[byte
     read into one array ("Nested data conversions not implemented for chunked
     array outputs").
     """
-    from qpx.writers.base import parquet_write_options
+    from qpx.writers.encoding import SampledParquetWriter
 
     parquet = pq.ParquetFile(source)
     schema, compression = _stamped_schema(parquet.schema_arrow)
     # Keys added after the first batch, such as identity_source, are in the file's footer only.
     added = {key: value for key, value in (parquet.metadata.metadata or {}).items() if key != b"ARROW:schema"}
     schema = schema.with_metadata({**added, **schema.metadata, **(footer or {})})
-    # The same encoding every QPX writer uses (byte-stream-split on rt/mz leaves,
-    # per-column dictionaries, zstd level, format 2.6). A bare compression= kept
-    # the footer identity but silently re-encoded the file with pyarrow defaults.
-    with pq.ParquetWriter(str(destination), schema, **parquet_write_options(schema, compression)) as writer:
+    # The same encoding every QPX writer uses (per-column encodings measured on the
+    # first rows, zstd level, format 2.6). A bare compression= kept the footer
+    # identity but silently re-encoded the file with pyarrow defaults.
+    with SampledParquetWriter(destination, schema, compression) as writer:
         for group in range(parquet.num_row_groups):
             batch_size = _rewrite_batch_rows(parquet, group)
             for batch in parquet.iter_batches(batch_size=batch_size, row_groups=[group]):

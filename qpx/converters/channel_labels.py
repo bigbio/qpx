@@ -33,7 +33,7 @@ from sdrf_pipelines.converters.channel_map import normalize_label as _normalize_
 from sdrf_pipelines.converters.openms.utils import infer_itraqplex, infer_tmtplex
 
 from qpx.core.files import run_file_stem
-from qpx.writers.base import parquet_write_options
+from qpx.writers.encoding import SampledParquetWriter
 
 logger = logging.getLogger(__name__)
 
@@ -673,9 +673,9 @@ def relabel_intensities_parquet(
       stamp OpenMS's ``fraction_group`` onto pg/feature rows).
 
     Streams by row group so memory stays bounded on large tables. Non-target
-    columns pass through untouched. QPX compression and selective
-    BYTE_STREAM_SPLIT encoding are retained; *compression* overrides the source
-    codec when supplied. Returns the number of rows annotated with a cv_param.
+    columns pass through untouched. The output is written like every QPX view,
+    with per-column encodings measured on its first rows; *compression* overrides
+    the source codec when supplied. Returns the number of rows annotated with a cv_param.
     """
     do_cv_param = cv_param_resolver is not None and run_column is not None and cv_param_name is not None
 
@@ -686,11 +686,7 @@ def relabel_intensities_parquet(
     if compression is not None or b"compression_format" in source_metadata:
         source_metadata[b"compression_format"] = output_compression.encode()
     output_schema = parquet.schema_arrow.with_metadata(source_metadata or None)
-    writer = pq.ParquetWriter(
-        dst_path,
-        output_schema,
-        **parquet_write_options(output_schema, output_compression),
-    )
+    writer = SampledParquetWriter(dst_path, output_schema, output_compression)
     annotated = 0
     try:
         for group in range(parquet.num_row_groups):

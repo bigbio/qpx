@@ -5,6 +5,7 @@ consensusXML and ``-out_qpx`` paths. Labels come from the shared sdrf-pipelines
 channel_map and are plex-aware.
 """
 
+import random
 import sys
 
 import pyarrow as pa
@@ -226,8 +227,9 @@ def test_relabel_preserves_qpx_compression_and_float_encoding(tmp_path):
     """Relabeling must not silently rewrite ZSTD/BYTE_STREAM_SPLIT as Snappy."""
     src = tmp_path / "feature_in.parquet"
     dst = tmp_path / "feature_out.parquet"
+    rng = random.Random(0)
     with FeatureWriter(src, compression="zstd") as writer:
-        writer.write_batch([make_feature_record()])
+        writer.write_batch([{**make_feature_record(), "rt": rng.uniform(0, 7200)} for _ in range(5000)])
 
     relabel_intensities_parquet(
         str(src),
@@ -247,13 +249,10 @@ def test_relabel_preserves_qpx_compression_and_float_encoding(tmp_path):
         )
 
     # ZSTD compression is preserved (not silently downgraded to Snappy).
-    intensity_column = _col("intensities.list.element.intensity")
-    assert intensity_column.compression == "ZSTD"
-    # Selective BYTE_STREAM_SPLIT is preserved through relabeling: rt (a BSS
-    # leaf) keeps it; the intensity leaves were deliberately dropped from BSS
-    # (they regress TMT reporter columns), so intensity no longer carries it.
+    assert _col("intensities.list.element.intensity").compression == "ZSTD"
+    # The rewrite measures encodings like every QPX writer: continuous retention
+    # times are smallest byte-stream-split, where pyarrow would use a dictionary.
     assert "BYTE_STREAM_SPLIT" in _col("rt").encodings
-    assert "BYTE_STREAM_SPLIT" not in intensity_column.encodings
 
 
 def test_run_label_is_canonical_join_key(tmp_path):

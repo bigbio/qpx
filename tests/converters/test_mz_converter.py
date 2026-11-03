@@ -6,6 +6,7 @@ pyopenms so the tests are self-contained and fast.
 """
 
 import gzip
+import random
 import shutil
 
 import pyarrow as pa
@@ -16,13 +17,20 @@ pytest.importorskip("pyopenms")
 
 
 def _make_mini_mzml(
-    path, specs, native_id="controllerType=0 controllerNumber=1 scan={scan}", injection_time=None, ion_mobility=None, tic=None
+    path,
+    specs,
+    native_id="controllerType=0 controllerNumber=1 scan={scan}",
+    injection_time=None,
+    ion_mobility=None,
+    tic=None,
+    peaks=([100.0, 200.0, 300.0], [10.0, 20.0, 30.0]),
 ):
     """Write a minimal mzML at *path*.
 
     *specs* is a list of ``(ms_level, scan, rt_seconds)`` tuples. MS2+ spectra
-    get a precursor. Native IDs default to the Thermo ``scan=N`` form so
-    scan-number extraction can be exercised.
+    get a precursor and every spectrum the ``(mz, intensity)`` *peaks*. Native
+    IDs default to the Thermo ``scan=N`` form so scan-number extraction can be
+    exercised.
     """
     import pyopenms as oms
 
@@ -39,7 +47,7 @@ def _make_mini_mzml(
             precursor.setMZ(500.0 + scan)
             precursor.setCharge(2)
             spectrum.setPrecursors([precursor])
-        spectrum.set_peaks(([100.0, 200.0, 300.0], [10.0, 20.0, 30.0]))
+        spectrum.set_peaks(peaks)
         exp.addSpectrum(spectrum)
     oms.MzMLFile().store(str(path), exp)
     if injection_time is not None:
@@ -175,12 +183,15 @@ def test_inverse_ion_mobility_comes_from_the_selected_ion(tmp_path):
 
 
 def test_peak_arrays_use_byte_stream_split(tmp_path):
-    """Spectrum m/z and intensity leaves are written with BYTE_STREAM_SPLIT."""
+    """Continuous spectrum m/z and intensity leaves measure smallest, and are written, with BYTE_STREAM_SPLIT."""
     from qpx.transforms.spectra_mapping import SpectraMappingTransform
 
     d = tmp_path / "mzml"
     d.mkdir()
-    _make_mini_mzml(d / "run_f.mzML", [(1, 1, 60.0), (2, 2, 60.5)])
+    rng = random.Random(0)
+    mz = sorted(rng.uniform(100, 2000) for _ in range(2000))
+    intensity = [rng.lognormvariate(10, 2) for _ in range(2000)]
+    _make_mini_mzml(d / "run_f.mzML", [(1, 1, 60.0), (2, 2, 60.5)], peaks=(mz, intensity))
     out = tmp_path / "out.mz.parquet"
     SpectraMappingTransform(mzml_directory=d).write_mz_parquet_from_dir(out)
 

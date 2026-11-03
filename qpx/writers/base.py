@@ -417,7 +417,7 @@ class BaseWriter:
         if result.errors:
             raise ValueError("Schema validation failed:\n" + "\n".join(issue.message for issue in result.errors))
         self._log_validation_warnings(result.warnings)
-        self._ensure_writer()
+        self._ensure_writer(table)
         self._writer.write_table(table, row_group_size=row_group_rows(table))
 
     def write_dataframe(self, df: "pd.DataFrame"):
@@ -603,38 +603,36 @@ class BaseWriter:
             # writes use, so a row's id is identical no matter how it was written.
             self._write_identity_table(self._build_table(records, self._relaxed_id_schema()))
             return
-        batch = self._build_table(records, self.arrow_schema).combine_chunks().to_batches()[0]
+        table = self._build_table(records, self.arrow_schema).combine_chunks()
+        batch = table.to_batches()[0]
         self._check_required_non_null(batch)
-        self._ensure_writer()
+        self._ensure_writer(table)
         self._writer.write_batch(batch, row_group_size=row_group_rows(batch))
 
     def _write_identity_table(self, table: pa.Table) -> None:
         """Derive the ids of a table built on the nullable-id schema, check it and write it."""
         table = self._fill_identity_table(table)
         self._check_required_non_null(table)
-        self._ensure_writer()
+        self._ensure_writer(table)
         self._writer.write_table(table, row_group_size=row_group_rows(table))
 
-    def _ensure_writer(self):
+    def _ensure_writer(self, sample: pa.Table):
+        """Open the staging file at the first write, encoded as *sample*, the first rows, measures smallest."""
         if self._writer is None:
             self._staging_path.parent.mkdir(parents=True, exist_ok=True)
             self._writer = pq.ParquetWriter(
                 str(self._staging_path),
                 schema=self.arrow_schema,
-                **self._parquet_write_options(),
+                **self._parquet_write_options(sample),
             )
 
-    def _parquet_write_options(self) -> dict:
-        """Build ParquetWriter kwargs: codec level + selective BYTE_STREAM_SPLIT.
+    def _parquet_write_options(self, sample: pa.Table) -> dict:
+        """Build ParquetWriter kwargs: codec level and, per leaf, the encoding smallest on *sample*.
 
-        BYTE_STREAM_SPLIT is applied only to the high-entropy float leaves
-        present in this writer's schema; dictionary encoding is kept on every
-        other column (pyarrow forbids dictionary + explicit encoding on the same
-        column). All changes are encoding-only and lossless — the schema and
-        values are untouched, so existing readers (pyarrow, DuckDB) read the
-        output unchanged.
+        Encoding-only and lossless: the schema and values are untouched, so
+        readers read the output unchanged.
         """
-        return parquet_write_options(self.arrow_schema, self._compression)
+        return parquet_write_options(self.arrow_schema, self._compression, sample=sample)
 
     def identified_table(self, table: pa.Table) -> pa.Table:
         """*table* with its id column filled as this writer would write it."""
@@ -687,8 +685,8 @@ class BaseWriter:
 
         Encoding parity with the single-file writers: the same
         :func:`parquet_write_options` path is used, so partitioned output gets
-        the tuned ZSTD level, selective BYTE_STREAM_SPLIT and dictionary
-        encoding, Parquet v2.6, plus a sane row-group size (so compression is
+        the tuned ZSTD level, per-column encodings measured on the table's first
+        rows, Parquet v2.6, plus a sane row-group size (so compression is
         not defeated by ~80-row groups). The qpx footer KV metadata is stamped
         onto every file so partitioned datasets keep ``qpx_version`` /
         ``file_type`` / ``uuid`` like single files do.

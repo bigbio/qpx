@@ -33,7 +33,7 @@ from qpx.converters.openms_consensus.psm_adapter import (
     uniform_scan_format,
 )
 from qpx.converters.openms_consensus.record_linking import _cf_feature_psm_records, _PsmKeys, _RecordContext
-from qpx.writers.base import parquet_write_options
+from qpx.writers.encoding import SampledParquetWriter
 from qpx.writers.feature import FeatureWriter
 from qpx.writers.pg import PgWriter
 from qpx.writers.psm import PsmWriter
@@ -112,7 +112,7 @@ def _rewrite_parquet_rows(
     source = pq.ParquetFile(str(path))
     try:
         schema = source.schema_arrow
-        with pq.ParquetWriter(str(tmp), schema=schema, **parquet_write_options(schema, compression)) as writer:
+        with SampledParquetWriter(tmp, schema, compression) as writer:
             offset = 0
             for index in range(source.num_row_groups):
                 table = source.read_row_group(index)

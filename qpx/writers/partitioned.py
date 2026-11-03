@@ -155,7 +155,7 @@ def write_partitioned_table(
     part_schema = pa.schema([table.schema.field(c) for c in cols])
     partitioning = ds.partitioning(part_schema, flavor="hive")
 
-    opts = parquet_write_options(table.schema, compression)
+    opts = parquet_write_options(table.schema, compression, sample=table)
     file_options = ds.ParquetFileFormat().make_write_options(**opts)
     ds.write_dataset(
         table,

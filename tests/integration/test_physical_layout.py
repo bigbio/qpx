@@ -1,12 +1,14 @@
 """Written files have row groups, a page index and encodings for selective reads, and relayout sorts them."""
 
+import random
+
 import pyarrow as pa
 import pyarrow.parquet as pq
 from click.testing import CliRunner
 
 from qpx.cli.main import qpx_main
 from qpx.dataset import Dataset
-from qpx.writers.encoding import ROW_GROUP_BYTES, ROW_GROUP_ROWS, parquet_write_options, row_group_rows
+from qpx.writers.encoding import ROW_GROUP_BYTES, ROW_GROUP_ROWS, SampledParquetWriter, parquet_write_options, row_group_rows
 from qpx.writers.ontology import OntologyWriter
 
 REPORT = "tests/examples/spectronaut/small/spectronaut_report.tsv"
@@ -32,17 +34,45 @@ def test_row_groups_are_capped_by_rows_and_bytes():
     assert row_group_rows(large) * 10 * 1024 * 1024 <= ROW_GROUP_BYTES
 
 
-def test_write_options_split_peak_mz_and_skip_dictionaries_on_ids():
-    schema = pa.schema(
-        [("feature_id", pa.int64()), ("mz_array", pa.list_(pa.float64())), ("intensity_array", pa.list_(pa.float32()))]
+def test_write_options_take_the_encoding_each_column_measures_smallest():
+    """Each column gets the encoding that writes its sampled values smallest."""
+    rng = random.Random(0)
+    rows = 20_000
+    sample = pa.table(
+        {
+            "feature_id": pa.array(range(rows), pa.int64()),
+            "pg_id": pa.array([rng.getrandbits(63) for _ in range(rows)], pa.int64()),
+            "rt": pa.array([rng.uniform(0, 7200) for _ in range(rows)], pa.float64()),
+            "label": pa.array([rng.choice(["TMT126", "TMT127N", "TMT127C"]) for _ in range(rows)]),
+        }
     )
 
-    options = parquet_write_options(schema, "zstd", 3)
+    options = parquet_write_options(sample.schema, "zstd", 3, sample=sample)
 
-    assert options["column_encoding"] == {"mz_array.list.element": "BYTE_STREAM_SPLIT"}
-    assert options["use_dictionary"] == ["intensity_array.list.element"]
+    # Ordinals delta-encode, hashes stay plain, continuous floats split, few distinct strings keep a dictionary.
+    assert options["column_encoding"] == {"feature_id": "DELTA_BINARY_PACKED", "rt": "BYTE_STREAM_SPLIT"}
+    assert options["use_dictionary"] == ["label"]
     assert options["compression_level"] == 3
     assert options["write_page_index"] is True
+
+
+def test_write_options_without_rows_keep_the_default_dictionaries():
+    """Without sampled rows the pyarrow default encodings stay."""
+    options = parquet_write_options(pa.schema([("rt", pa.float64())]), "zstd")
+
+    assert "use_dictionary" not in options
+    assert "column_encoding" not in options
+
+
+def test_sampled_writer_without_tables_writes_an_empty_file(tmp_path):
+    """A writer closed before any table still leaves a valid empty file."""
+    schema = pa.schema([("rt", pa.float64())])
+
+    with SampledParquetWriter(tmp_path / "empty.parquet", schema, "zstd"):
+        pass
+
+    assert pq.read_table(tmp_path / "empty.parquet").schema.equals(schema)
+    assert pq.read_metadata(tmp_path / "empty.parquet").num_rows == 0
 
 
 def test_writers_produce_a_page_index(tmp_path):

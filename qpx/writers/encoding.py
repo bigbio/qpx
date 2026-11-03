@@ -3,58 +3,11 @@
 from __future__ import annotations
 
 import pyarrow as pa
-
-# High-entropy float leaves that compress poorly under the default
-# dictionary/PLAIN encoding (≈1.1x with ZSTD on continuous values). Parquet's
-# BYTE_STREAM_SPLIT encoding reorders the bytes of IEEE floats so that ZSTD can
-# exploit the per-byte regularity, measuring 15-28% smaller per column on real
-# data. Paths use pyarrow's dotted leaf convention (``col``, ``a.list.element``,
-# nested struct fields joined by ``.``). Only leaves present in a given schema
-# are touched, so this list can name columns from any QPX view.
-#
-# NOTE: this is deliberately NOT applied to low-cardinality / dictionary-friendly
-# float columns (e.g. ``additional_scores.score_value``,
-# ``posterior_error_probability``), where BYTE_STREAM_SPLIT measured *larger*
-# than the default dictionary encoding. Those keep their default encoding.
-#
-# PEP was a candidate for float32 + BYTE_STREAM_SPLIT (audit projected ~52%),
-# but empirical validation over the real qpx corpus found genuine PEP values as
-# small as ~1e-300..1e-318 (DIA/quantms feature+psm files): these underflow to
-# zero in float32 and would corrupt any downstream -log10(PEP)/q-value use. The
-# float32 narrowing was therefore held (PEP stays float64), so it is not split.
-#
-# The intensity leaves (``intensities.list.element.intensity`` and the nested
-# ``additional_intensities…intensity_value``) are intentionally NOT split.
-# BYTE_STREAM_SPLIT helps continuous LFQ intensities (~-20%) but slightly *hurts*
-# TMT reporter-ion columns (+4-7%), which dominate TMT feature files (~64% of
-# the file). Rather than probe the data at write time, we simply omit them here:
-# they fall back to dictionary encoding, which is safe everywhere (never worse
-# than PLAIN) and avoids the TMT regression. RT/mz leaves (a proven win) stay.
-#
-# The mz view's peak arrays are split as well: on Thermo DIA, timsTOF DDA-PASEF and
-# diaPASEF spectra, m/z measured ~36% smaller than dictionary encoding; intensity
-# 10% smaller (Thermo, DDA-PASEF) or 2% larger (diaPASEF), ~25% smaller files overall.
-# ``mz_array`` is the PSM view's peak m/z (PXD054720 PSM file 16.6% smaller); its
-# ``intensity_array`` measured no gain and stays dictionary encoded.
-_BYTE_STREAM_SPLIT_LEAVES: tuple[str, ...] = (
-    "predicted_rt",
-    "rt",
-    "rt_start",
-    "rt_stop",
-    "calculated_mz",
-    "observed_mz",
-    "mz.list.element",
-    "mz_array.list.element",
-    "intensity.list.element",
-)
+import pyarrow.parquet as pq
 
 # ZSTD level 9 (vs the pyarrow default of 3) buys a few extra percent at modest
 # write-cost; only codecs that accept a level get one.
 _COMPRESSION_LEVELS: dict[str, int] = {"zstd": 9, "gzip": 9}
-
-# Hashed int64 primary keys never repeat, so a dictionary only adds 1.1-1.8 bytes
-# per row before the writer falls back to PLAIN.
-_UNIQUE_ID_LEAVES = frozenset({"feature_id", "psm_id", "pg_id", "site_id", "proteoform_id"})
 
 # Row groups stay small enough for selective reads: 128k rows with a page index made
 # protein lookups 3-4x faster and 5-7x cheaper remotely than 1 Mi-row groups (783k rows).
@@ -62,26 +15,84 @@ _UNIQUE_ID_LEAVES = frozenset({"feature_id", "psm_id", "pg_id", "site_id", "prot
 ROW_GROUP_ROWS = 128 * 1024
 ROW_GROUP_BYTES = 256 * 1024 * 1024
 
+# The smallest encoding depends on the data, not only on the column: TMT reporter
+# intensities of MSV000085836 took 253 MB as a dictionary, 225 MB plain and 200 MB
+# byte-stream-split, and PEP is smallest as a dictionary in DIA-NN files but
+# byte-stream-split in OpenMS ones. Each leaf therefore takes the encoding its first
+# rows measure smallest. A dictionary is rebuilt in every row group, so it loses on
+# high-entropy values once row groups are small.
+_DICTIONARY = "dictionary"
+_PLAIN = "PLAIN"
+_FLOAT_ENCODINGS = (_DICTIONARY, _PLAIN, "BYTE_STREAM_SPLIT")
+_INTEGER_ENCODINGS = (_DICTIONARY, _PLAIN, "DELTA_BINARY_PACKED")
+_OTHER_ENCODINGS = (_DICTIONARY, _PLAIN)
+# Strings keep the dictionary readers group and filter on unless PLAIN is more than 20% smaller.
+_STRING_PLAIN_RATIO = 0.8
 
-def _schema_leaf_paths(schema: pa.Schema) -> list[str]:
-    """Return every leaf column path in pyarrow's dotted convention."""
 
-    def _walk(field: pa.Field, prefix: str) -> list[str]:
-        dtype = field.type
+def _leaf_types(schema: pa.Schema) -> dict[str, pa.DataType]:
+    """Every leaf column path, in pyarrow's dotted convention (``a.list.element``), with its type."""
+
+    def _walk(dtype: pa.DataType, path: str) -> dict[str, pa.DataType]:
         if pa.types.is_struct(dtype):
-            out: list[str] = []
-            for i in range(dtype.num_fields):
-                child = dtype.field(i)
-                out.extend(_walk(child, f"{prefix}.{child.name}"))
-            return out
+            leaves: dict[str, pa.DataType] = {}
+            for index in range(dtype.num_fields):
+                child = dtype.field(index)
+                leaves.update(_walk(child.type, f"{path}.{child.name}"))
+            return leaves
+        if pa.types.is_map(dtype):
+            return {**_walk(dtype.key_type, f"{path}.key_value.key"), **_walk(dtype.item_type, f"{path}.key_value.value")}
         if pa.types.is_list(dtype) or pa.types.is_large_list(dtype):
-            return _walk(dtype.value_field, f"{prefix}.list.element")
-        return [prefix]
+            return _walk(dtype.value_type, f"{path}.list.element")
+        return {path: dtype}
 
-    leaves: list[str] = []
-    for top in schema:
-        leaves.extend(_walk(top, top.name))
+    leaves: dict[str, pa.DataType] = {}
+    for field in schema:
+        leaves.update(_walk(field.type, field.name))
     return leaves
+
+
+def _candidates(dtype: pa.DataType) -> tuple[str, ...]:
+    """The encodings tried for a leaf of type *dtype*."""
+    if pa.types.is_float32(dtype) or pa.types.is_float64(dtype):
+        return _FLOAT_ENCODINGS
+    if pa.types.is_int32(dtype) or pa.types.is_int64(dtype):
+        return _INTEGER_ENCODINGS
+    return _OTHER_ENCODINGS
+
+
+def _leaf_sizes(sample: pa.Table, encoding: str, leaves: list[str], options: dict) -> dict[str, int]:
+    """Compressed bytes of each of *leaves* when *sample* is written as one row group with *encoding* on them."""
+    trial = {**options, "write_page_index": False, "use_dictionary": encoding == _DICTIONARY}
+    if encoding not in (_DICTIONARY, _PLAIN):
+        trial["column_encoding"] = dict.fromkeys(leaves, encoding)
+        # Only the top-level columns holding such a leaf need writing.
+        sample = sample.select(sorted({leaf.split(".", 1)[0] for leaf in leaves}, key=sample.schema.get_field_index))
+    sink = pa.BufferOutputStream()
+    pq.write_table(sample, sink, row_group_size=sample.num_rows, **trial)
+    row_group = pq.read_metadata(pa.BufferReader(sink.getvalue())).row_group(0)
+    written = {
+        row_group.column(i).path_in_schema: row_group.column(i).total_compressed_size for i in range(row_group.num_columns)
+    }
+    return {leaf: written[leaf] for leaf in leaves}
+
+
+def _smallest_encodings(schema: pa.Schema, sample: pa.Table, options: dict) -> dict[str, str]:
+    """The encoding of each leaf of *schema* that measures smallest on *sample*."""
+    types = _leaf_types(schema)
+    tried: dict[str, list[str]] = {}
+    for leaf, dtype in types.items():
+        for encoding in _candidates(dtype):
+            tried.setdefault(encoding, []).append(leaf)
+    sizes = {encoding: _leaf_sizes(sample, encoding, leaves, options) for encoding, leaves in tried.items()}
+    picked: dict[str, str] = {}
+    for leaf, dtype in types.items():
+        measured = {encoding: sizes[encoding][leaf] for encoding in _candidates(dtype)}
+        best = min(measured, key=measured.__getitem__)
+        if best == _PLAIN and pa.types.is_string(dtype) and measured[_PLAIN] > _STRING_PLAIN_RATIO * measured[_DICTIONARY]:
+            best = _DICTIONARY
+        picked[leaf] = best
+    return picked
 
 
 def row_group_rows(data: pa.Table | pa.RecordBatch) -> int:
@@ -90,20 +101,59 @@ def row_group_rows(data: pa.Table | pa.RecordBatch) -> int:
     return max(1, min(ROW_GROUP_ROWS, ROW_GROUP_BYTES // bytes_per_row))
 
 
-def parquet_write_options(schema: pa.Schema, compression: str, compression_level: int | None = None) -> dict:
-    """Build QPX ParquetWriter options for *schema* and *compression*; the level overrides the codec's default."""
-    options: dict = {"compression": compression, "write_page_index": True}
+def parquet_write_options(
+    schema: pa.Schema, compression: str, compression_level: int | None = None, sample: pa.Table | None = None
+) -> dict:
+    """Build QPX ParquetWriter options for *schema* and *compression*; the level overrides the codec's default.
+
+    *sample* holds the first rows to be written, with *schema*: each leaf takes the
+    encoding that measures smallest on its first row group. Without rows, every leaf
+    keeps pyarrow's default, a dictionary.
+    """
+    options: dict = {"compression": compression, "version": "2.6", "write_page_index": True}
     level = _COMPRESSION_LEVELS.get(str(compression).lower()) if compression_level is None else compression_level
     if level is not None:
         options["compression_level"] = level
+    if sample is None or not sample.num_rows:
+        return options
 
-    leaves = _schema_leaf_paths(schema)
-    bss = {leaf: "BYTE_STREAM_SPLIT" for leaf in _BYTE_STREAM_SPLIT_LEAVES if leaf in leaves}
-    # Always stamp the explicit v2.6 format and dictionary-encode non-BSS leaves so
-    # every artifact (feature/psm and pg alike) uses the same encoding, rather than
-    # falling back to pyarrow defaults when no byte-stream-split leaf is present.
-    options["version"] = "2.6"
-    options["use_dictionary"] = [leaf for leaf in leaves if leaf not in bss and leaf not in _UNIQUE_ID_LEAVES]
-    if bss:
-        options["column_encoding"] = bss
+    picked = _smallest_encodings(schema, sample.slice(0, row_group_rows(sample)), options)
+    options["use_dictionary"] = [leaf for leaf, encoding in picked.items() if encoding == _DICTIONARY]
+    explicit = {leaf: encoding for leaf, encoding in picked.items() if encoding not in (_DICTIONARY, _PLAIN)}
+    if explicit:
+        options["column_encoding"] = explicit
     return options
+
+
+class SampledParquetWriter:
+    """A ``pq.ParquetWriter`` opened at the first table written, encoded as :func:`parquet_write_options` picks for it."""
+
+    def __init__(self, where, schema: pa.Schema, compression: str, compression_level: int | None = None, **writer_options):
+        self._where = str(where)
+        self._schema = schema
+        self._compression = compression
+        self._compression_level = compression_level
+        self._writer_options = writer_options
+        self._writer: pq.ParquetWriter | None = None
+
+    def _open(self, sample: pa.Table | None) -> pq.ParquetWriter:
+        options = parquet_write_options(self._schema, self._compression, self._compression_level, sample)
+        return pq.ParquetWriter(self._where, self._schema, **self._writer_options, **options)
+
+    def write_table(self, table: pa.Table, row_group_size: int | None = None) -> None:
+        """Write *table*, opening the file with the encodings *table* measures smallest when it is the first."""
+        if self._writer is None:
+            self._writer = self._open(table)
+        self._writer.write_table(table, row_group_size=row_group_size)
+
+    def close(self) -> None:
+        """Close the file, writing an empty one with the schema when no table was written."""
+        if self._writer is None:
+            self._writer = self._open(None)
+        self._writer.close()
+
+    def __enter__(self) -> SampledParquetWriter:
+        return self
+
+    def __exit__(self, *exc_info) -> None:
+        self.close()

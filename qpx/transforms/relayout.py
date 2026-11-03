@@ -11,7 +11,7 @@ from qpx.core.engine import create_connection
 from qpx.core.sql import validate_identifier
 from qpx.transforms.protein_properties import _stamped_schema
 from qpx.writers.base import _cast_column
-from qpx.writers.encoding import ROW_GROUP_ROWS, parquet_write_options, row_group_rows
+from qpx.writers.encoding import ROW_GROUP_ROWS, SampledParquetWriter, row_group_rows
 
 # Protein lookups read feature and pg, and run-by-run processing reads psm and mz.
 DEFAULT_SORT_KEYS = {
@@ -43,9 +43,11 @@ def relayout_view(
     schema = schema.with_metadata({**schema.metadata, SORT_ORDER_FOOTER_KEY: ",".join(sort_by).encode()})
     sorting = pq.SortingColumn.from_ordering(schema, [(column, "ascending") for column in sort_by])
     order_by = ", ".join(validate_identifier(column) for column in sort_by)
-    options = parquet_write_options(schema, compression, compression_level)
     quoted_source = "'" + str(source).replace("'", "''") + "'"
-    with create_connection() as con, pq.ParquetWriter(str(destination), schema, sorting_columns=sorting, **options) as writer:
+    with (
+        create_connection() as con,
+        SampledParquetWriter(destination, schema, compression, compression_level, sorting_columns=sorting) as writer,
+    ):
         rows = con.sql(f"SELECT * FROM read_parquet({quoted_source}) ORDER BY {order_by}")  # nosec B608
         for batch in rows.to_arrow_reader(row_group_size):
             columns = [_cast_column(pa.chunked_array([batch.column(field.name)]), field.type) for field in schema]
