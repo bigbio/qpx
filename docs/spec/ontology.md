@@ -318,7 +318,7 @@ Fields defined by QPX without standardized ontology terms.
 | `parent_ion_fraction` | Score | Fraction of target peak intensity in the isolation window |
 | `glycan_score` | Score | Score of the glycan composition assignment (higher is better) |
 | `glycan_qvalue` | Score | Q-value of the glycan composition assignment (lower is better) |
-| `precursor_quantification_score` | Score | QuantUMS-derived quantification confidence: 1.0 / (1.0 + SD) |
+| `precursor_quantification_score` | Score | QuantUMS-derived quantification confidence: 1.0 / (1.0 + SD). In the `cv_params` of DIA-NN files from QPX 1.2 and earlier; now written only as the score `diann_quantity_quality` |
 
 ---
 

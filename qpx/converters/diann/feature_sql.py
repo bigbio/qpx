@@ -405,7 +405,7 @@ def _build_batch_sql(
     # --- Nested columns built by helpers ---
     parts.append(_build_additional_intensities_sql(r, has_column, label_expr))
     parts.append(_build_additional_scores_sql(has_column))
-    parts.append(_build_cv_params_sql(r, has_column))
+    parts.append(_build_cv_params_sql(has_column))
 
     # --- Helper columns (for Python post-processing, dropped later) ---
     mod_col = r["modified_sequence"]
@@ -607,18 +607,12 @@ def _build_additional_scores_sql(_has) -> str:
     return f"CASE WHEN {sc} THEN LIST_FILTER([{sl}], lambda x: x IS NOT NULL) ELSE NULL END AS additional_scores"
 
 
-def _build_cv_params_sql(r: dict, _has) -> str:
-    """Build SQL for the cv_params nested column."""
+def _build_cv_params_sql(_has) -> str:
+    """Build SQL for the cv_params nested column.
+
+    ``Quantity.Quality`` is the score ``diann_quantity_quality``, so it is not repeated here.
+    """
     entries, checks = [], []
-    pqs_col = r.get("precursor_quantification_score")
-    if pqs_col and _has(pqs_col):
-        chk = f'(r."{pqs_col}" IS NOT NULL)'
-        checks.append(chk)
-        entries.append(
-            f"CASE WHEN {chk} THEN STRUCT_PACK("
-            f"cv_name := 'precursor_quantification_score', "
-            f'cv_value := CAST(r."{pqs_col}" AS VARCHAR)) END'
-        )
     for diann_col, cv_name in _CV_MAPPINGS:
         if _has(diann_col):
             chk = f'(r."{diann_col}" IS NOT NULL AND CAST(r."{diann_col}" AS VARCHAR) != \'\')'

@@ -241,6 +241,13 @@ class TestDiaNNFeatureConversion:
         cv_names = {entry["cv_name"] for row in feature_table.column("cv_params").to_pylist() for entry in row or []}
         assert cv_names.isdisjoint({"iim", "predicted_im", "predicted_iim"})
 
+    def test_quantity_quality_is_written_once_as_a_score(self, feature_table):
+        """Quantity.Quality is the score diann_quantity_quality, not also a cv_params string."""
+        scores = {entry["score_name"] for row in feature_table.column("additional_scores").to_pylist() for entry in row or []}
+        cv_names = {entry["cv_name"] for row in feature_table.column("cv_params").to_pylist() for entry in row or []}
+        assert "diann_quantity_quality" in scores
+        assert "precursor_quantification_score" not in cv_names
+
     def test_mass_error_ppm_is_null_without_a_measured_mz(self, feature_table):
         """Null only when there is nothing to measure (bigbio/qpx#298).
 
