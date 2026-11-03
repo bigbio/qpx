@@ -57,9 +57,7 @@ def _write_diann_views(converter, options: dict, prefix: str) -> None:
 
         xic_files = sorted(Path(xic_folder).glob("*.xic.parquet"))
         if not xic_files:
-            logging.getLogger(__name__).warning(
-                "No *.xic.parquet files found in %s; the xic view was not written", xic_folder
-            )
+            logging.getLogger(__name__).warning("No *.xic.parquet files found in %s; the xic view was not written", xic_folder)
         else:
             traces = convert_diann_xic(
                 xic_files,
