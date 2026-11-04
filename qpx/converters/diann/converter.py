@@ -13,7 +13,7 @@ from qpx.converters.diann.pg_adapter import DiannPgAdapter
 from qpx.converters.mappings import get_field_mappings, get_tool_meta
 from qpx.converters.orchestrator import BaseOrchestrator
 from qpx.converters.sdrf import convert_sdrf_views
-from qpx.core.constants import FEATURE, MZ, ONTOLOGY, PG, RUN, SAMPLE
+from qpx.core.constants import FEATURE, MZ, ONTOLOGY, PG, RUN, SAMPLE, XIC
 from qpx.core.scores import field_ontology_entries, score_ontology_entries
 
 logger = logging.getLogger(__name__)
@@ -140,6 +140,20 @@ class DiaNNConverter(BaseOrchestrator):
             self._written_views.append(MZ)
         logger.info("DIA-NN mz conversion complete")
         return written
+
+    def convert_xic(self, xic_paths, output_folder=".", output_prefix=None, **kwargs):
+        """Convert DIA-NN XIC exports and record the written view for provenance."""
+        from qpx.converters.diann.xic_adapter import convert_diann_xic
+
+        prefix = output_prefix or "diann"
+        traces = convert_diann_xic(
+            xic_paths,
+            Path(output_folder) / f"{prefix}.xic.parquet",
+            compression=self._compression,
+            **kwargs,
+        )
+        self._written_views.append(XIC)
+        return traces
 
     def _extract_matched_scans_from_feature(self, feature_parquet) -> set[tuple[str, int]] | None:
         """Return the ``(run_file_name, scan)`` pairs from a generated feature view.

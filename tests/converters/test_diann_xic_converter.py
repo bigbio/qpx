@@ -7,7 +7,7 @@ import pyarrow.parquet as pq
 import pytest
 from click.testing import CliRunner
 
-from qpx.cli.convert.diann import convert_diann_xic_cmd
+from qpx.cli.convert.diann import convert_diann_cmd, convert_diann_xic_cmd
 from qpx.converters.diann.xic_adapter import convert_diann_xic
 from qpx.core.data import XicSchema
 
@@ -109,3 +109,36 @@ def test_diann_xic_cli(tmp_path):
     assert result.exit_code == 0, result.output
     assert "4 traces" in result.output
     assert (output / "PXD000001.xic.parquet").exists()
+
+
+@pytest.mark.parametrize("has_xic", [False, True])
+def test_diann_cli_provenance_records_only_written_xic(tmp_path, has_xic):
+    """The conversion step lists xic only when the CLI writes that view."""
+    examples = Path(__file__).resolve().parents[1] / "examples" / "diann" / "small"
+    xic_folder = tmp_path / "xic"
+    xic_folder.mkdir()
+    if has_xic:
+        _write_xic(xic_folder / "run1.xic.parquet")
+
+    output = tmp_path / "out"
+    result = CliRunner().invoke(
+        convert_diann_cmd,
+        [
+            "--report-path",
+            str(examples / "diann_report.tsv"),
+            "--sdrf-file",
+            str(examples / "PXD019909-DIA.sdrf.tsv"),
+            "--xic-folder",
+            str(xic_folder),
+            "--output-folder",
+            str(output),
+            "--output-prefix",
+            "t",
+            "--no-mudata",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert (output / "t.xic.parquet").exists() is has_xic
+    steps = pq.read_table(output / "t.provenance.parquet").to_pylist()
+    conversion = next(step for step in steps if step["step_name"] == "diann_to_qpx")
+    assert ("xic" in conversion["output_views"]) is has_xic

@@ -53,16 +53,14 @@ def _write_diann_views(converter, options: dict, prefix: str) -> None:
     )
     xic_folder = options.get("xic_folder")
     if xic_folder:
-        from qpx.converters.diann.xic_adapter import convert_diann_xic
-
         xic_files = sorted(Path(xic_folder).glob("*.xic.parquet"))
         if not xic_files:
             logging.getLogger(__name__).warning("No *.xic.parquet files found in %s; the xic view was not written", xic_folder)
         else:
-            traces = convert_diann_xic(
+            traces = converter.convert_xic(
                 xic_files,
-                output_folder / f"{prefix}.xic.parquet",
-                compression=options["compression"],
+                output_folder=output_folder,
+                output_prefix=prefix,
                 selection=options.get("xic_selection", "targets"),
                 window=options.get("xic_window", "apex"),
                 extraction_window_seconds=options.get("xic_extraction_window_seconds"),
