@@ -29,9 +29,13 @@ _FULL_RE = re.compile(
     r"(?P<name>.+)$"
 )
 
+# Target-decoy header form: DECOY_sp|P12345|NAME -> DECOY_P12345 (kept apart from _FULL_RE, which
+# to_full and parse_fasta_headers also use).
+_DECOY_FULL_RE = re.compile(r"^DECOY_(?:sp|tr)\|(?P<accession>[^|]+)\|.+$")
+
 _SCALAR_ACCESSION_COLUMNS = ("anchor_protein", "protein_accession", "accession", "family")
 _LIST_ACCESSION_COLUMNS = ("pg_accessions", "protein_accessions")
-ACCESSION_VIEWS = ("feature", "pg", "psm", "site", "proteoform")
+ACCESSION_VIEWS = ("feature", "pg", "psm", "pepmap", "site", "proteoform")
 
 
 def to_bare(accession: str) -> str:
@@ -40,10 +44,14 @@ def to_bare(accession: str) -> str:
     sp|P04114|APOB_HUMAN           → P04114
     CONTAM_sp|CONTAM_P02768|...    → CONTAM_P02768
     tr|A0A123|A0A123_HUMAN         → A0A123
+    DECOY_sp|P04114|APOB_HUMAN     → DECOY_P04114
     P04114                         → P04114  (no-op)
     """
     if accession is None:
         return accession
+    decoy = _DECOY_FULL_RE.match(accession)
+    if decoy:
+        return "DECOY_" + decoy.group("accession")
     m = _FULL_RE.match(accession)
     if m:
         return m.group("accession")
@@ -169,7 +177,8 @@ def normalize_dataset_accessions(dataset_dir: Path, prefix: str) -> int:
 
 
 def _scan_accessions(parquet: pq.ParquetFile) -> tuple[dict[str, int], set[str]]:
-    """Count the first scalar accession column and collect every distinct accession."""
+    """Count the first scalar accession column (else the first list column's members) and collect
+    every distinct accession."""
     names = parquet.schema_arrow.names
     scalar_columns = [name for name in _SCALAR_ACCESSION_COLUMNS if name in names]
     list_columns = [name for name in _LIST_ACCESSION_COLUMNS if name in names]
@@ -187,8 +196,13 @@ def _scan_accessions(parquet: pq.ParquetFile) -> tuple[dict[str, int], set[str]]
                         accession_counts[entry["values"]] = accession_counts.get(entry["values"], 0) + entry["counts"]
         for name in list_columns:
             members = _member_accessions(batch.column(name))
-            if members is not None:
-                accessions.update(pc.call_function("unique", [members]).to_pylist())
+            if members is None:
+                continue
+            if not scalar_columns and name == list_columns[0]:
+                for entry in pc.call_function("value_counts", [members]).to_pylist():
+                    if entry["values"] is not None:
+                        accession_counts[entry["values"]] = accession_counts.get(entry["values"], 0) + entry["counts"]
+            accessions.update(pc.call_function("unique", [members]).to_pylist())
     accessions.discard(None)
     return accession_counts, accessions
 

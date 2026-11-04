@@ -5,7 +5,7 @@ from __future__ import annotations
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from qpx.transforms.accession_normalizer import normalize_dataset_accessions, normalize_parquet
+from qpx.transforms.accession_normalizer import normalize_dataset_accessions, normalize_parquet, to_bare
 
 _MEMBER = pa.struct([pa.field("accession", pa.string(), nullable=False), pa.field("start", pa.int32())])
 
@@ -79,3 +79,25 @@ def test_dataset_normalization_covers_psm_lists_and_partitioned_views(tmp_path):
     assert pg.column("pg_accessions").to_pylist() == [["CONTAM_P05787", "Q15149"]]
     assert pg.column("pg_names").to_pylist() == [["CONTAM_K2C8_HUMAN", "PLEC_HUMAN"]]
     assert pq.read_table(part).column("protein_accessions").to_pylist() == [["Q15149", "A0A0"], None]
+
+
+def test_decoy_header_keeps_its_prefix_on_the_bare_accession():
+    assert to_bare("DECOY_sp|P04114|APOB_HUMAN") == "DECOY_P04114"
+    assert to_bare("DECOY_tr|A0A0|X_HUMAN") == "DECOY_A0A0"
+    assert to_bare("DECOY_P04114") == "DECOY_P04114"
+
+
+def test_psm_list_rewrites_are_counted(tmp_path):
+    psm = tmp_path / "x.psm.parquet"
+    pq.write_table(pa.table({"protein_accessions": [["sp|P1|A_HUMAN", "P2"], ["sp|P1|A_HUMAN"]]}), psm)
+    result = normalize_parquet(psm, psm)
+    assert result["accessions_changed"] == 2 and result["distinct_changed"] == 1
+
+
+def test_pepmap_members_are_normalized_with_the_other_views(tmp_path):
+    pq.write_table(
+        pa.table({"pg_accessions": pa.array([[{"accession": "sp|P1|A_HUMAN", "start": 3}]], pa.list_(_MEMBER))}),
+        tmp_path / "x.pepmap.parquet",
+    )
+    assert normalize_dataset_accessions(tmp_path, "x") == 1
+    assert pq.read_table(tmp_path / "x.pepmap.parquet").column("pg_accessions").to_pylist() == [[{"accession": "P1", "start": 3}]]
