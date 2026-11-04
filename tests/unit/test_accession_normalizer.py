@@ -132,3 +132,61 @@ def test_only_uniprot_headers_are_stripped():
     for kept in ("gnl|mydb|PROT1", "ref|NP_000537.3|", "sp|MYPROT1|CUSTOM", "tr|contig_12|orf3", "DECOY_sp|abc|x"):
         assert to_bare(kept) == kept
     assert to_bare("sp|P04637-2|P53_HUMAN") == "P04637-2"
+
+
+def test_cli_rebuilds_the_mudata_view_from_the_normalized_views(tmp_path):
+    """normalize-accessions leaves no stale h5mu: its protein axis carries the bare accessions."""
+    import mudata as mu
+    from click.testing import CliRunner
+
+    from qpx.cli.main import qpx_main
+    from qpx.mudata import write_dataset_mudata
+    from qpx.writers import FeatureWriter, PgWriter, RunWriter
+    from tests.conftest import make_feature_record, make_pg_record, make_run_record
+
+    full = "sp|P04114|APOB_HUMAN"
+    intensities = [{"label": "TMT126", "intensity": 100.0}]
+    feature = make_feature_record(anchor_protein=full, intensities=intensities)
+    feature["pg_accessions"] = [{"accession": full, "start": None, "end": None}]
+    with FeatureWriter(tmp_path / "openms.feature.parquet") as writer:
+        writer.write_batch([feature])
+    with PgWriter(tmp_path / "openms.pg.parquet") as writer:
+        writer.write_batch([make_pg_record(anchor_protein=full, pg_accessions=[full], intensities=intensities)])
+    run = make_run_record()
+    run["samples"] = [{"sample_accession": "S1", "label": "TMT126", "biological_replicate": 1, "technical_replicate": 1}]
+    with RunWriter(tmp_path / "openms.run.parquet") as writer:
+        writer.write_batch([run])
+    assert write_dataset_mudata(tmp_path, "openms") is not None
+    assert list(mu.read_h5mu(str(tmp_path / "openms.h5mu")).mod["proteins"].var_names) == [full]
+
+    result = CliRunner().invoke(qpx_main, ["transform", "normalize-accessions", "--dataset", str(tmp_path), "--in-place"])
+
+    assert result.exit_code == 0, result.output
+    assert list(mu.read_h5mu(str(tmp_path / "openms.h5mu")).mod["proteins"].var_names) == ["P04114"]
+
+
+def test_cli_refreshes_an_existing_integrity_record(tmp_path):
+    """Recorded checksums are recomputed for the rewritten views, so the record still verifies."""
+    import hashlib
+
+    from click.testing import CliRunner
+
+    from qpx.cli.convert.postprocess import _maybe_compute_integrity
+    from qpx.cli.main import qpx_main
+    from qpx.dataset import Dataset
+    from qpx.writers import DatasetWriter, PgWriter
+    from tests.conftest import make_dataset_record, make_pg_record
+
+    full = "sp|P04114|APOB_HUMAN"
+    with PgWriter(tmp_path / "t.pg.parquet") as writer:
+        writer.write_batch([make_pg_record(anchor_protein=full, pg_accessions=[full])])
+    with DatasetWriter(tmp_path / "t.dataset.parquet") as writer:
+        writer.write_batch([make_dataset_record()])
+    _maybe_compute_integrity(tmp_path, "t", True)
+
+    result = CliRunner().invoke(qpx_main, ["transform", "normalize-accessions", "--dataset", str(tmp_path), "--in-place"])
+
+    assert result.exit_code == 0, result.output
+    with Dataset(str(tmp_path), file_prefix="t") as ds:
+        record = ds.dataset_meta.to_df().iloc[0].to_dict()
+    assert dict(record["file_checksums"])["t.pg.parquet"] == hashlib.sha256((tmp_path / "t.pg.parquet").read_bytes()).hexdigest()
