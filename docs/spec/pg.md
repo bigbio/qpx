@@ -30,7 +30,7 @@ retained even when its intensity is null. Fields marked with
 
 | Field | Description | Type | Required |
 |-------|-------------|------|----------|
-| `pg_accessions` | Protein accessions of all proteins within this group, as bare accessions (`P04217`, isoform `P04217-2`, contaminant `CONTAM_P05787`), never the FASTA header form `sp\|P04217\|A1BG_HUMAN` | `array[string]` | Yes |
+| `pg_accessions` | Protein accessions of all proteins within this group, as bare accessions (`P04217`, isoform `P04217-2`, contaminant `CONTAM_P05787`), never the UniProt FASTA header form `sp\|P04217\|A1BG_HUMAN`; identifiers from other databases are kept as written | `array[string]` | Yes |
 | `pg_names` | UniProt entry names of the proteins in the group, aligned with `pg_accessions` (`A1BG_HUMAN`) | `array[string]` | No |
 | `gg_accessions` | Gene group accessions as a string array | `array[string]` | No |
 | `gg_names` | Gene names corresponding to the proteins in the group | `array[string]` | No |

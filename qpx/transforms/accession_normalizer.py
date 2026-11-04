@@ -33,13 +33,23 @@ _FULL_RE = re.compile(
 # to_full and parse_fasta_headers also use).
 _DECOY_FULL_RE = re.compile(r"^DECOY_(?:sp|tr)\|(?P<accession>[^|]+)\|.+$")
 
+# A UniProtKB accession (optionally an isoform); to_bare only strips headers whose accession matches.
+_UNIPROT_ACCESSION_RE = re.compile(
+    r"^(?:CONTAM_|ENTRAP_)?(?:[OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9](?:[A-Z][A-Z0-9]{2}[0-9]){1,2})(?:-\d+)?$"
+)
+
 _SCALAR_ACCESSION_COLUMNS = ("anchor_protein", "protein_accession", "accession", "family")
-_LIST_ACCESSION_COLUMNS = ("pg_accessions", "protein_accessions")
+# List column -> the struct field holding the protein (a list<string> column uses its values).
+# sequence_edits[].accession is a variant id, not a protein, so it is left alone.
+_LIST_ACCESSION_COLUMNS = {"pg_accessions": "accession", "protein_accessions": "accession", "sequence_edits": "protein_accession"}
 ACCESSION_VIEWS = ("feature", "pg", "psm", "pepmap", "site", "proteoform")
 
 
 def to_bare(accession: str) -> str:
-    """Convert full UniProt accession to bare form.
+    """Convert a full UniProt identifier to its bare accession.
+
+    Only ``sp|``/``tr|`` headers whose accession is a UniProtKB accession are stripped; any other
+    identifier, including other ``|``-separated database formats, is returned unchanged.
 
     sp|P04114|APOB_HUMAN           → P04114
     CONTAM_sp|CONTAM_P02768|...    → CONTAM_P02768
@@ -50,10 +60,10 @@ def to_bare(accession: str) -> str:
     if accession is None:
         return accession
     decoy = _DECOY_FULL_RE.match(accession)
-    if decoy:
+    if decoy and _UNIPROT_ACCESSION_RE.match(decoy.group("accession")):
         return "DECOY_" + decoy.group("accession")
     m = _FULL_RE.match(accession)
-    if m:
+    if m and _UNIPROT_ACCESSION_RE.match(m.group("accession")):
         return m.group("accession")
     return accession
 
@@ -195,7 +205,7 @@ def _scan_accessions(parquet: pq.ParquetFile) -> tuple[dict[str, int], set[str]]
                     if name == scalar_columns[0]:
                         accession_counts[entry["values"]] = accession_counts.get(entry["values"], 0) + entry["counts"]
         for name in list_columns:
-            members = _member_accessions(batch.column(name))
+            members = _member_accessions(batch.column(name), _LIST_ACCESSION_COLUMNS[name])
             if members is None:
                 continue
             if not scalar_columns and name == list_columns[0]:
@@ -207,12 +217,12 @@ def _scan_accessions(parquet: pq.ParquetFile) -> tuple[dict[str, int], set[str]]
     return accession_counts, accessions
 
 
-def _member_accessions(column: pa.Array) -> pa.Array | None:
+def _member_accessions(column: pa.Array, field: str) -> pa.Array | None:
     """The accession strings inside an accession list column, or None for another layout."""
     if _is_list_of_strings(column.type):
         return column.values
-    if _is_list_of_structs_with_accession(column.type):
-        return column.values.field("accession")
+    if _is_list_of_structs_with(column.type, field):
+        return column.values.field(field)
     return None
 
 
@@ -225,26 +235,25 @@ def _normalize_table(table: pa.Table, changes: dict[str, str]) -> pa.Table:
             table = table.set_column(
                 index, table.schema.field(index), pa.chunked_array([_mapped(c, changes) for c in column.chunks], column.type)
             )
-    for name in _LIST_ACCESSION_COLUMNS:
+    for name, field in _LIST_ACCESSION_COLUMNS.items():
         if name not in table.schema.names:
             continue
         index = table.schema.get_field_index(name)
         column = table.column(index)
-        if _is_list_of_strings(column.type) or _is_list_of_structs_with_accession(column.type):
-            chunks = [_normalize_members(chunk, changes) for chunk in column.chunks]
+        if _is_list_of_strings(column.type) or _is_list_of_structs_with(column.type, field):
+            chunks = [_normalize_members(chunk, changes, field) for chunk in column.chunks]
             table = table.set_column(index, table.schema.field(index), pa.chunked_array(chunks, column.type))
     return table
 
 
-def _normalize_members(chunk: pa.Array, changes: dict[str, str]) -> pa.Array:
+def _normalize_members(chunk: pa.Array, changes: dict[str, str], field: str) -> pa.Array:
     """Rebuild one accession list chunk with its member accessions mapped."""
     values = chunk.values
     if _is_list_of_strings(chunk.type):
         mapped = _mapped(values, changes)
     else:
         children = [
-            _mapped(values.field(i), changes) if field.name == "accession" else values.field(i)
-            for i, field in enumerate(values.type)
+            _mapped(values.field(i), changes) if child.name == field else values.field(i) for i, child in enumerate(values.type)
         ]
         mapped = pa.StructArray.from_arrays(children, fields=list(values.type), mask=values.is_null())
     return type(chunk).from_arrays(chunk.offsets, mapped, type=chunk.type, mask=chunk.is_null())
@@ -264,11 +273,11 @@ def _is_list_of_strings(arrow_type: pa.DataType) -> bool:
     return pa.types.is_string(arrow_type.value_type) or pa.types.is_large_string(arrow_type.value_type)
 
 
-def _is_list_of_structs_with_accession(arrow_type: pa.DataType) -> bool:
-    """Check if type is list<struct{accession: string, ...}>."""
+def _is_list_of_structs_with(arrow_type: pa.DataType, field: str) -> bool:
+    """Check if type is list<struct{<field>: string, ...}>."""
     if not (pa.types.is_list(arrow_type) or pa.types.is_large_list(arrow_type)):
         return False
     vt = arrow_type.value_type
     if not pa.types.is_struct(vt):
         return False
-    return any(f.name == "accession" for f in vt)
+    return any(f.name == field for f in vt)
