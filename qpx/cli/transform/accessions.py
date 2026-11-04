@@ -31,6 +31,23 @@ def _copy_unchanged_accession_files(dataset: Path, out_dir: Path, target_files: 
             shutil.copy2(f, out_dir / f.name)
 
 
+def _refresh_derived_files(out_dir: Path) -> None:
+    """Rebuild the MuData view and the integrity record, when the dataset has them, from the rewritten views."""
+    from qpx.cli.convert.postprocess import _maybe_compute_integrity
+    from qpx.dataset import Dataset
+    from qpx.transforms.utils import discover_qpx_file_prefix
+
+    from .dataset import _refresh_dataset_mudata
+
+    prefix = discover_qpx_file_prefix(out_dir)
+    _refresh_dataset_mudata(out_dir, prefix)
+    with Dataset(str(out_dir), file_prefix=prefix) as ds:
+        meta = ds.dataset_meta.to_df() if ds.dataset_meta is not None else None
+    record = meta.iloc[0].to_dict() if meta is not None and not meta.empty else {}
+    if any(isinstance(record.get(field), dict) for field in ("file_checksums", "file_row_counts", "file_sizes_bytes")):
+        _maybe_compute_integrity(out_dir, prefix, True)
+
+
 @click.command("normalize-accessions")
 @click.option(
     "--dataset",
@@ -126,6 +143,7 @@ def transform_normalize_accessions_cmd(
 
     target_files = _accession_target_files(dataset)
     total_changed = 0
+    files_changed = 0
 
     # Copy non-target files to output dir (once, outside the loop)
     if not in_place and out_dir != dataset:
@@ -142,7 +160,11 @@ def transform_normalize_accessions_cmd(
             fasta_lookup=fasta_lookup,
         )
         total_changed += result["accessions_changed"]
+        files_changed += bool(result["distinct_changed"])
         click.echo(f"  {fname}: {result['rows']:,} rows, {result['accessions_changed']:,} accessions normalized")
+
+    if files_changed:
+        _refresh_derived_files(out_dir)
 
     label = "stripped to bare" if direction == "forward" else "restored to full"
     click.echo(f"\nDone — {total_changed:,} accessions {label} in {out_dir}")
