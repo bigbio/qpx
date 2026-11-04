@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Every converter writes bare protein accessions** — `convert openms-consensus` (the quantms path) wrote the FASTA header form `sp|Q15149|PLEC_HUMAN` in `anchor_protein`, `pg_accessions` and the PSM `protein_accessions`, while `convert diann` wrote `Q15149`, so the same protein had two identifiers across datasets. Conversion now ends by storing each protein as its bare accession (isoform suffix kept; contaminants as `CONTAM_P05787`) in the feature, pg, psm, site and proteoform views, flat or partitioned; the entry name stays in `pg_names`. `qpxc transform normalize-accessions` now also covers the PSM view, so datasets converted by an earlier qpx can be brought to the same form. The spec states the bare form for `pg_accessions` and `anchor_protein`, and that `pg_names` holds UniProt entry names.
+
 ## [1.2.0] - 2026-10-30
 
 ### Added

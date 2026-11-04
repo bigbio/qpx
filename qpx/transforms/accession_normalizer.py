@@ -30,6 +30,8 @@ _FULL_RE = re.compile(
 )
 
 _SCALAR_ACCESSION_COLUMNS = ("anchor_protein", "protein_accession", "accession", "family")
+_LIST_ACCESSION_COLUMNS = ("pg_accessions", "protein_accessions")
+ACCESSION_VIEWS = ("feature", "pg", "psm", "site", "proteoform")
 
 
 def to_bare(accession: str) -> str:
@@ -104,13 +106,13 @@ def normalize_parquet(
     Parquet encoding.
 
     Args:
-        parquet_path: Input feature, pg, site or proteoform Parquet file.
+        parquet_path: Input feature, pg, psm, site or proteoform Parquet file.
         output_path: Where to write the normalized file.
         direction: "forward" (full → bare) or "reverse" (bare → full).
         fasta_lookup: Required for reverse. {bare_accession: full_header}.
 
     Returns:
-        Dict with stats: {"rows", "accessions_changed", "file"}.
+        Dict with stats: {"rows", "accessions_changed", "distinct_changed", "file"}.
     """
     from qpx.transforms.protein_properties import _rewrite_view
 
@@ -144,14 +146,34 @@ def normalize_parquet(
         total_rows,
         n_changed,
     )
-    return {"rows": total_rows, "accessions_changed": n_changed, "file": str(output_path)}
+    return {"rows": total_rows, "accessions_changed": n_changed, "distinct_changed": len(changes), "file": str(output_path)}
+
+
+def accession_view_files(dataset_dir: Path, prefix: str) -> list[Path]:
+    """The accession-bearing view files: each flat ``<prefix>.<view>.parquet``, else every part of a
+    partitioned ``<view>/`` directory."""
+    dataset_dir = Path(dataset_dir)
+    files: list[Path] = []
+    for view in ACCESSION_VIEWS:
+        flat = dataset_dir / f"{prefix}.{view}.parquet"
+        if flat.is_file():
+            files.append(flat)
+        elif (dataset_dir / view).is_dir():
+            files.extend(sorted((dataset_dir / view).rglob("*.parquet")))
+    return files
+
+
+def normalize_dataset_accessions(dataset_dir: Path, prefix: str) -> int:
+    """Strip every view of a dataset to bare accessions in place; returns the files rewritten."""
+    return sum(bool(normalize_parquet(f, f)["distinct_changed"]) for f in accession_view_files(dataset_dir, prefix))
 
 
 def _scan_accessions(parquet: pq.ParquetFile) -> tuple[dict[str, int], set[str]]:
     """Count the first scalar accession column and collect every distinct accession."""
     names = parquet.schema_arrow.names
     scalar_columns = [name for name in _SCALAR_ACCESSION_COLUMNS if name in names]
-    columns = [name for name in (*_SCALAR_ACCESSION_COLUMNS, "pg_accessions") if name in names]
+    list_columns = [name for name in _LIST_ACCESSION_COLUMNS if name in names]
+    columns = [*scalar_columns, *list_columns]
     accession_counts: dict[str, int] = {}
     accessions: set[str] = set()
     if not columns:
@@ -163,8 +185,8 @@ def _scan_accessions(parquet: pq.ParquetFile) -> tuple[dict[str, int], set[str]]
                     accessions.add(entry["values"])
                     if name == scalar_columns[0]:
                         accession_counts[entry["values"]] = accession_counts.get(entry["values"], 0) + entry["counts"]
-        if "pg_accessions" in columns:
-            members = _member_accessions(batch.column("pg_accessions"))
+        for name in list_columns:
+            members = _member_accessions(batch.column(name))
             if members is not None:
                 accessions.update(pc.call_function("unique", [members]).to_pylist())
     accessions.discard(None)
@@ -172,7 +194,7 @@ def _scan_accessions(parquet: pq.ParquetFile) -> tuple[dict[str, int], set[str]]
 
 
 def _member_accessions(column: pa.Array) -> pa.Array | None:
-    """The accession strings inside a ``pg_accessions`` list, or None for another layout."""
+    """The accession strings inside an accession list column, or None for another layout."""
     if _is_list_of_strings(column.type):
         return column.values
     if _is_list_of_structs_with_accession(column.type):
@@ -181,7 +203,7 @@ def _member_accessions(column: pa.Array) -> pa.Array | None:
 
 
 def _normalize_table(table: pa.Table, changes: dict[str, str]) -> pa.Table:
-    """Apply *changes* to scalar accession columns and the ``pg_accessions`` members of one batch."""
+    """Apply *changes* to scalar accession columns and accession list members of one batch."""
     for name in _SCALAR_ACCESSION_COLUMNS:
         if name in table.schema.names:
             index = table.schema.get_field_index(name)
@@ -189,8 +211,10 @@ def _normalize_table(table: pa.Table, changes: dict[str, str]) -> pa.Table:
             table = table.set_column(
                 index, table.schema.field(index), pa.chunked_array([_mapped(c, changes) for c in column.chunks], column.type)
             )
-    if "pg_accessions" in table.schema.names:
-        index = table.schema.get_field_index("pg_accessions")
+    for name in _LIST_ACCESSION_COLUMNS:
+        if name not in table.schema.names:
+            continue
+        index = table.schema.get_field_index(name)
         column = table.column(index)
         if _is_list_of_strings(column.type) or _is_list_of_structs_with_accession(column.type):
             chunks = [_normalize_members(chunk, changes) for chunk in column.chunks]
@@ -199,7 +223,7 @@ def _normalize_table(table: pa.Table, changes: dict[str, str]) -> pa.Table:
 
 
 def _normalize_members(chunk: pa.Array, changes: dict[str, str]) -> pa.Array:
-    """Rebuild one ``pg_accessions`` list chunk with its member accessions mapped."""
+    """Rebuild one accession list chunk with its member accessions mapped."""
     values = chunk.values
     if _is_list_of_strings(chunk.type):
         mapped = _mapped(values, changes)

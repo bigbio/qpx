@@ -30,12 +30,12 @@ retained even when its intensity is null. Fields marked with
 
 | Field | Description | Type | Required |
 |-------|-------------|------|----------|
-| `pg_accessions` | Protein accessions of all proteins within this group | `array[string]` | Yes |
-| `pg_names` | Descriptive names for the proteins in the group | `array[string]` | No |
+| `pg_accessions` | Protein accessions of all proteins within this group, as bare accessions (`P04217`, isoform `P04217-2`, contaminant `CONTAM_P05787`), never the FASTA header form `sp\|P04217\|A1BG_HUMAN` | `array[string]` | Yes |
+| `pg_names` | UniProt entry names of the proteins in the group, aligned with `pg_accessions` (`A1BG_HUMAN`) | `array[string]` | No |
 | `gg_accessions` | Gene group accessions as a string array | `array[string]` | No |
 | `gg_names` | Gene names corresponding to the proteins in the group | `array[string]` | No |
 | `gg_qvalue` | Gene group q-value (e.g., DIA-NN GG.Q.Value) | `float64`, null | No |
-| `anchor_protein` | Representative protein of the group (leading protein); descriptive and not part of the default identity composite | `string` | Yes |
+| `anchor_protein` | Representative protein of the group (leading protein), as a bare accession; descriptive and not part of the default identity composite | `string` | Yes |
 | `grouped_runs` | The group of raw files aggregated into one quantification unit (fractions aggregated together; single-element for unfractionated/DIA). The sample is resolved downstream via `(any file in grouped_runs, label) -> run.samples[].sample_accession`; part of the default identity composite | `array[string]` | Yes |
 
 ### Protein group semantics

@@ -5,7 +5,7 @@ from __future__ import annotations
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from qpx.transforms.accession_normalizer import normalize_parquet
+from qpx.transforms.accession_normalizer import normalize_dataset_accessions, normalize_parquet
 
 _MEMBER = pa.struct([pa.field("accession", pa.string(), nullable=False), pa.field("start", pa.int32())])
 
@@ -54,3 +54,21 @@ def test_file_without_changes_is_copied(tmp_path):
 
     assert result["accessions_changed"] == 0
     assert (tmp_path / "out.pg.parquet").read_bytes() == source.read_bytes()
+
+
+def test_dataset_normalization_covers_psm_lists_and_partitioned_views(tmp_path):
+    """Every view is stripped in place, PSM protein lists and partitioned parts included."""
+    pq.write_table(pa.table({"anchor_protein": ["sp|CONTAM_P05787|CONTAM_K2C8_HUMAN"],
+                             "pg_accessions": [["sp|CONTAM_P05787|CONTAM_K2C8_HUMAN", "Q15149"]],
+                             "pg_names": [["CONTAM_K2C8_HUMAN", "PLEC_HUMAN"]]}), tmp_path / "openms.pg.parquet")
+    part = tmp_path / "psm" / "run_file_name=a" / "part-0.parquet"
+    part.parent.mkdir(parents=True)
+    pq.write_table(pa.table({"protein_accessions": [["sp|Q15149|PLEC_HUMAN", "tr|A0A0|X_HUMAN"], None]}), part)
+
+    assert normalize_dataset_accessions(tmp_path, "openms") == 2
+
+    pg = pq.read_table(tmp_path / "openms.pg.parquet")
+    assert pg.column("anchor_protein").to_pylist() == ["CONTAM_P05787"]
+    assert pg.column("pg_accessions").to_pylist() == [["CONTAM_P05787", "Q15149"]]
+    assert pg.column("pg_names").to_pylist() == [["CONTAM_K2C8_HUMAN", "PLEC_HUMAN"]]
+    assert pq.read_table(part).column("protein_accessions").to_pylist() == [["Q15149", "A0A0"], None]
