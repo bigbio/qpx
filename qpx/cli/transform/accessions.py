@@ -8,7 +8,8 @@ import click
 
 
 def _accession_target_files(dataset: Path) -> list[str]:
-    """Return the accession-bearing view files for a QPX dataset."""
+    """Return the accession-bearing view files of a QPX dataset, relative to it."""
+    from qpx.transforms.accession_normalizer import accession_view_files
     from qpx.transforms.utils import discover_qpx_file_prefix
 
     try:
@@ -16,15 +17,9 @@ def _accession_target_files(dataset: Path) -> list[str]:
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
 
-    target_files = [
-        name for name in (f"{file_prefix}.feature.parquet", f"{file_prefix}.pg.parquet") if (dataset / name).is_file()
-    ]
-    if not target_files:
+    if not any((dataset / f"{file_prefix}.{view}.parquet").is_file() for view in ("feature", "pg")):
         raise click.ClickException(f"No feature or protein-group Parquet file found in {dataset}")
-    target_files.extend(
-        name for name in (f"{file_prefix}.site.parquet", f"{file_prefix}.proteoform.parquet") if (dataset / name).is_file()
-    )
-    return target_files
+    return [str(path.relative_to(dataset)) for path in accession_view_files(dataset, file_prefix)]
 
 
 def _copy_unchanged_accession_files(dataset: Path, out_dir: Path, target_files: list[str]) -> None:
@@ -84,8 +79,9 @@ def transform_normalize_accessions_cmd(
     Reverse: converts bare accessions back to full UniProt format.
     Requires a FASTA database to look up the full identifiers.
 
-    Normalizes protein accessions in feature.parquet, pg.parquet,
-    site.parquet and proteoform.parquet files.
+    Normalizes protein accessions in the feature, pg, psm, site and proteoform
+    views. Every convert command already writes bare accessions; use this for
+    datasets converted by an earlier qpx, or to restore full identifiers.
 
     \b
     Examples:
@@ -138,6 +134,7 @@ def transform_normalize_accessions_cmd(
     for fname in target_files:
         src = dataset / fname
         dst = out_dir / fname
+        dst.parent.mkdir(parents=True, exist_ok=True)
         result = normalize_parquet(
             parquet_path=src,
             output_path=dst,
