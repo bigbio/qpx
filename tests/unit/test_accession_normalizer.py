@@ -58,9 +58,16 @@ def test_file_without_changes_is_copied(tmp_path):
 
 def test_dataset_normalization_covers_psm_lists_and_partitioned_views(tmp_path):
     """Every view is stripped in place, PSM protein lists and partitioned parts included."""
-    pq.write_table(pa.table({"anchor_protein": ["sp|CONTAM_P05787|CONTAM_K2C8_HUMAN"],
-                             "pg_accessions": [["sp|CONTAM_P05787|CONTAM_K2C8_HUMAN", "Q15149"]],
-                             "pg_names": [["CONTAM_K2C8_HUMAN", "PLEC_HUMAN"]]}), tmp_path / "openms.pg.parquet")
+    pq.write_table(
+        pa.table(
+            {
+                "anchor_protein": ["sp|CONTAM_P05787|CONTAM_K2C8_HUMAN"],
+                "pg_accessions": [["sp|CONTAM_P05787|CONTAM_K2C8_HUMAN", "Q15149"]],
+                "pg_names": [["CONTAM_K2C8_HUMAN", "PLEC_HUMAN"]],
+            }
+        ),
+        tmp_path / "openms.pg.parquet",
+    )
     part = tmp_path / "psm" / "run_file_name=a" / "part-0.parquet"
     part.parent.mkdir(parents=True)
     pq.write_table(pa.table({"protein_accessions": [["sp|Q15149|PLEC_HUMAN", "tr|A0A0|X_HUMAN"], None]}), part)
