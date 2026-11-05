@@ -33,6 +33,7 @@ from qpx.converters.sdrf import SdrfConverter
 from qpx.core.constants import FEATURE, ONTOLOGY, PG, PSM, RUN, SAMPLE
 from qpx.core.data.loader import load_schema
 from qpx.core.scores import score_ontology_entries
+from qpx.transforms.accession_normalizer import normalize_dataset_accessions
 from qpx.writers import FeatureWriter, PgWriter, PsmWriter
 
 logger = logging.getLogger(__name__)
@@ -403,6 +404,7 @@ class OpenMSConverter(BaseOrchestrator):
             software_version=None,
             provenance_records=provenance_records,
         )
+        normalize_dataset_accessions(Path(output_folder), output_prefix)
         self._write_mudata(output_folder, output_prefix)
         logger.info("OpenMS QPX enrichment complete -> %s", output_folder)
 
