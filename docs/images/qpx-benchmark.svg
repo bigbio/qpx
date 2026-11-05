@@ -1,166 +1,105 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" font-family="'Helvetica Neue', Arial, sans-serif">
-  <defs>
-    <filter id="s" x="-1%" y="-1%" width="102%" height="104%">
-      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.06"/>
-    </filter>
-  </defs>
-
-  <!-- White background -->
-  <rect width="1600" height="900" fill="#ffffff"/>
-
-  <!-- Title -->
-  <text x="800" y="52" text-anchor="middle" font-size="34" font-weight="700" fill="#1e293b" letter-spacing="1">mzTab / CSV vs QPX Parquet</text>
-  <text x="800" y="82" text-anchor="middle" font-size="16" fill="#64748b">PXD007683-LFQ  |  11 MS runs  |  538K PSMs  |  500K features</text>
-
-  <!-- ═══════════════════════════════ -->
-  <!-- LEFT SIDE: Bar chart -->
-  <!-- ═══════════════════════════════ -->
-  <rect x="60" y="110" width="900" height="560" rx="12" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.5" filter="url(#s)"/>
-  <text x="510" y="150" text-anchor="middle" font-size="22" font-weight="600" fill="#1e293b">Query Time Comparison</text>
-  <text x="510" y="174" text-anchor="middle" font-size="13" fill="#94a3b8">lower is better (log scale, milliseconds)</text>
-
-  <!-- Legend -->
-  <rect x="700" y="138" width="16" height="16" rx="3" fill="#ef4444"/>
-  <text x="722" y="151" font-size="14" fill="#dc2626" font-weight="500">mzTab / CSV</text>
-  <rect x="835" y="138" width="16" height="16" rx="3" fill="#3b82f6"/>
-  <text x="857" y="151" font-size="14" fill="#2563eb" font-weight="500">QPX Parquet</text>
-
-  <!-- Bars: x=280..920 (max bar width=640, scaled to max value 1922ms) -->
-
-  <!-- OP 1: Count PSMs — 1031ms vs 2ms = 424x -->
-  <text x="270" y="225" text-anchor="end" font-size="16" font-weight="500" fill="#334155">Count PSMs</text>
-  <rect x="280" y="205" width="343" height="28" rx="5" fill="#ef4444" opacity="0.8"/>
-  <text x="633" y="225" font-size="15" font-weight="600" fill="#dc2626">1,031 ms</text>
-  <rect x="280" y="237" width="4" height="28" rx="2" fill="#3b82f6"/>
-  <text x="296" y="257" font-size="15" font-weight="600" fill="#2563eb">2 ms</text>
-  <rect x="370" y="240" width="55" height="22" rx="5" fill="#16a34a"/>
-  <text x="397" y="256" text-anchor="middle" font-size="13" font-weight="700" fill="white">424x</text>
-
-  <!-- OP 2: Unique proteins — 1559ms vs 55ms = 28x -->
-  <text x="270" y="297" text-anchor="end" font-size="16" font-weight="500" fill="#334155">Unique proteins</text>
-  <rect x="280" y="277" width="519" height="28" rx="5" fill="#ef4444" opacity="0.8"/>
-  <text x="809" y="297" font-size="15" font-weight="600" fill="#dc2626">1,559 ms</text>
-  <rect x="280" y="309" width="18" height="28" rx="5" fill="#3b82f6" opacity="0.85"/>
-  <text x="308" y="329" font-size="15" font-weight="600" fill="#2563eb">55 ms</text>
-  <rect x="405" y="312" width="45" height="22" rx="5" fill="#16a34a"/>
-  <text x="427" y="328" text-anchor="middle" font-size="13" font-weight="700" fill="white">28x</text>
-
-  <!-- OP 3: Count features — 956ms vs 3ms = 304x -->
-  <text x="270" y="369" text-anchor="end" font-size="16" font-weight="500" fill="#334155">Count features</text>
-  <rect x="280" y="349" width="318" height="28" rx="5" fill="#ef4444" opacity="0.8"/>
-  <text x="608" y="369" font-size="15" font-weight="600" fill="#dc2626">956 ms</text>
-  <rect x="280" y="381" width="4" height="28" rx="5" fill="#3b82f6"/>
-  <text x="296" y="401" font-size="15" font-weight="600" fill="#2563eb">3 ms</text>
-  <rect x="370" y="384" width="55" height="22" rx="5" fill="#16a34a"/>
-  <text x="397" y="400" text-anchor="middle" font-size="13" font-weight="700" fill="white">304x</text>
-
-  <!-- OP 4: Top 10 proteins — 55ms vs 40ms = 1.4x -->
-  <text x="270" y="441" text-anchor="end" font-size="16" font-weight="500" fill="#334155">Top 10 proteins</text>
-  <rect x="280" y="421" width="18" height="28" rx="5" fill="#ef4444" opacity="0.8"/>
-  <text x="308" y="441" font-size="15" font-weight="600" fill="#dc2626">55 ms</text>
-  <rect x="280" y="453" width="13" height="28" rx="5" fill="#3b82f6" opacity="0.85"/>
-  <text x="303" y="473" font-size="15" font-weight="600" fill="#2563eb">40 ms</text>
-  <rect x="405" y="456" width="45" height="22" rx="5" fill="#d97706"/>
-  <text x="427" y="472" text-anchor="middle" font-size="13" font-weight="700" fill="white">1.4x</text>
-
-  <!-- OP 5: Filter charge=2 — 1593ms vs 7ms = 241x -->
-  <text x="270" y="513" text-anchor="end" font-size="16" font-weight="500" fill="#334155">Filter charge=2</text>
-  <rect x="280" y="493" width="530" height="28" rx="5" fill="#ef4444" opacity="0.8"/>
-  <text x="820" y="513" font-size="15" font-weight="600" fill="#dc2626">1,593 ms</text>
-  <rect x="280" y="525" width="4" height="28" rx="5" fill="#3b82f6"/>
-  <text x="296" y="545" font-size="15" font-weight="600" fill="#2563eb">7 ms</text>
-  <rect x="370" y="528" width="55" height="22" rx="5" fill="#16a34a"/>
-  <text x="397" y="544" text-anchor="middle" font-size="13" font-weight="700" fill="white">241x</text>
-
-  <!-- OP 6: Select 2 columns — 1922ms vs 232ms = 8x -->
-  <text x="270" y="585" text-anchor="end" font-size="16" font-weight="500" fill="#334155">Select 2 columns</text>
-  <rect x="280" y="565" width="640" height="28" rx="5" fill="#ef4444" opacity="0.8"/>
-  <text x="633" y="606" font-size="15" font-weight="600" fill="#dc2626">1,922 ms</text>
-  <rect x="280" y="597" width="77" height="28" rx="5" fill="#3b82f6" opacity="0.85"/>
-  <text x="367" y="617" font-size="15" font-weight="600" fill="#2563eb">232 ms</text>
-  <rect x="450" y="600" width="40" height="22" rx="5" fill="#16a34a"/>
-  <text x="470" y="616" text-anchor="middle" font-size="13" font-weight="700" fill="white">8x</text>
-
-  <!-- Note -->
-  <text x="510" y="655" text-anchor="middle" font-size="13" fill="#94a3b8">mzTab requires full file scan for every query. QPX uses columnar predicate pushdown.</text>
-
-  <!-- ═══════════════════════════════ -->
-  <!-- RIGHT SIDE: Stats cards -->
-  <!-- ═══════════════════════════════ -->
-
-  <!-- Card 1: Storage -->
-  <rect x="1000" y="110" width="560" height="230" rx="12" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.5" filter="url(#s)"/>
-  <text x="1280" y="150" text-anchor="middle" font-size="20" font-weight="600" fill="#1e293b">Storage Comparison</text>
-
-  <!-- LFQ row -->
-  <text x="1030" y="182" font-size="14" font-weight="600" fill="#64748b">DDA-LFQ (11 runs)</text>
-  <rect x="1030" y="192" width="248" height="42" rx="6" fill="#fef2f2" stroke="#fca5a5" stroke-width="1"/>
-  <text x="1154" y="210" text-anchor="middle" font-size="11" fill="#dc2626" font-weight="500">mzTab.gz + CSV.gz</text>
-  <text x="1154" y="226" text-anchor="middle" font-size="16" font-weight="700" fill="#dc2626">48.2 MB</text>
-  <rect x="1290" y="192" width="190" height="42" rx="6" fill="#eff6ff" stroke="#93c5fd" stroke-width="1"/>
-  <text x="1385" y="210" text-anchor="middle" font-size="11" fill="#2563eb" font-weight="500">QPX Parquet</text>
-  <text x="1385" y="226" text-anchor="middle" font-size="16" font-weight="700" fill="#2563eb">36.3 MB</text>
-  <rect x="1490" y="198" width="50" height="30" rx="5" fill="#16a34a"/>
-  <text x="1515" y="218" text-anchor="middle" font-size="14" font-weight="700" fill="white">1.3x</text>
-
-  <!-- TMT row -->
-  <text x="1030" y="256" font-size="14" font-weight="600" fill="#64748b">DDA-TMT (120 runs, 10-plex)</text>
-  <rect x="1030" y="266" width="310" height="42" rx="6" fill="#fef2f2" stroke="#fca5a5" stroke-width="1"/>
-  <text x="1185" y="284" text-anchor="middle" font-size="11" fill="#dc2626" font-weight="500">mzTab.gz + CSV.gz</text>
-  <text x="1185" y="300" text-anchor="middle" font-size="16" font-weight="700" fill="#dc2626">60.8 MB</text>
-  <rect x="1350" y="266" width="130" height="42" rx="6" fill="#eff6ff" stroke="#93c5fd" stroke-width="1"/>
-  <text x="1415" y="284" text-anchor="middle" font-size="11" fill="#2563eb" font-weight="500">QPX Parquet</text>
-  <text x="1415" y="300" text-anchor="middle" font-size="16" font-weight="700" fill="#2563eb">30.1 MB</text>
-  <rect x="1490" y="272" width="50" height="30" rx="5" fill="#16a34a"/>
-  <text x="1515" y="292" text-anchor="middle" font-size="14" font-weight="700" fill="white">2.0x</text>
-
-  <text x="1280" y="328" text-anchor="middle" font-size="12" fill="#94a3b8">TMT benefits more: multiplexed labels compress efficiently in columnar format</text>
-
-  <!-- Card 2: Why QPX is faster -->
-  <rect x="1000" y="350" width="560" height="155" rx="12" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.5" filter="url(#s)"/>
-  <text x="1280" y="384" text-anchor="middle" font-size="20" font-weight="600" fill="#1e293b">Why QPX is Faster</text>
-
-  <circle cx="1040" cy="415" r="8" fill="#2563eb"/>
-  <text x="1060" y="420" font-size="15" fill="#334155">Columnar format: read only needed columns</text>
-
-  <circle cx="1040" cy="445" r="8" fill="#2563eb"/>
-  <text x="1060" y="450" font-size="15" fill="#334155">Predicate pushdown: filter without full scan</text>
-
-  <circle cx="1040" cy="475" r="8" fill="#2563eb"/>
-  <text x="1060" y="480" font-size="15" fill="#334155">Binary format: no text parsing overhead</text>
-
-  <!-- Card 3: mzTab limitations -->
-  <rect x="1000" y="520" width="560" height="155" rx="12" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.5" filter="url(#s)"/>
-  <text x="1280" y="554" text-anchor="middle" font-size="20" font-weight="600" fill="#1e293b">mzTab Limitations</text>
-
-  <circle cx="1040" cy="585" r="8" fill="#dc2626"/>
-  <text x="1060" y="590" font-size="15" fill="#334155">Must decompress + parse entire file for any query</text>
-
-  <circle cx="1040" cy="615" r="8" fill="#dc2626"/>
-  <text x="1060" y="620" font-size="15" fill="#334155">PSM / PRT / PEP sections interleaved in one file</text>
-
-  <circle cx="1040" cy="645" r="8" fill="#dc2626"/>
-  <text x="1060" y="650" font-size="15" fill="#334155">Text-based: no column selection possible</text>
-
-  <!-- Bottom summary -->
-  <rect x="60" y="700" width="1500" height="84" rx="12" fill="#f0fdf4" stroke="#16a34a" stroke-width="2" filter="url(#s)"/>
-
-  <text x="200" y="738" text-anchor="middle" font-size="18" font-weight="700" fill="#16a34a">Up to 424x faster</text>
-  <text x="200" y="762" text-anchor="middle" font-size="13" fill="#64748b">for metadata queries</text>
-
-  <text x="500" y="738" text-anchor="middle" font-size="18" font-weight="700" fill="#16a34a">28-304x faster</text>
-  <text x="500" y="762" text-anchor="middle" font-size="13" fill="#64748b">for analytical queries</text>
-
-  <text x="800" y="738" text-anchor="middle" font-size="18" font-weight="700" fill="#16a34a">1.3x smaller</text>
-  <text x="800" y="762" text-anchor="middle" font-size="13" fill="#64748b">compressed storage</text>
-
-  <text x="1100" y="738" text-anchor="middle" font-size="18" font-weight="700" fill="#16a34a">SQL queryable</text>
-  <text x="1100" y="762" text-anchor="middle" font-size="13" fill="#64748b">via DuckDB engine</text>
-
-  <text x="1400" y="738" text-anchor="middle" font-size="18" font-weight="700" fill="#16a34a">Cross-language</text>
-  <text x="1400" y="762" text-anchor="middle" font-size="13" fill="#64748b">Python, R, Rust, JS</text>
-
-  <!-- Footer -->
-  <text x="800" y="840" text-anchor="middle" font-size="12" fill="#94a3b8">Apple M1 Pro 16GB | DuckDB 1.x | Python 3.13 | gzip-compressed mzTab vs Snappy-compressed Parquet</text>
-  <text x="800" y="862" text-anchor="middle" font-size="12" fill="#94a3b8">QPX: Parquet-based Proteomics Exchange Format  |  github.com/bigbio/quantms.io</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="864" viewBox="0 0 1200 864" role="img" aria-labelledby="t d">
+<title id="t">QPX benchmark on PXD007683</title>
+<desc id="d">Local measurements of three matching LFQ PSM queries, related LFQ and TMT output sizes after relayout, and increases in peak RSS. The time axis is logarithmic, in milliseconds; storage is linear, in MiB. Times and memory are medians of five fresh processes on a warm OS page cache, excluding imports, conversion and relayout. The workflows use different engines; related storage outputs differ in layout and contents, and relayout reduces selected numeric precision. All values and methodology are also stated in the README; full measurement records are embedded in metadata.</desc>
+<style>
+svg { --surface:#fcfcfb;--panel:#f4f3ef;--card:#ffffff;--ink:#0b0b0b;--ink2:#52514e;--muted:#6f6e69;--hair:#e1e0d9;--rule:#c3c2b7;--blue:#2a78d6;--orange:#eb6834 }
+@media (prefers-color-scheme: dark) { svg { --surface:#1a1a19;--panel:#222220;--card:#2a2a28;--ink:#f0efec;--ink2:#c3c2b7;--muted:#a3a29a;--hair:#33332f;--rule:#4a4a45;--blue:#3987e5;--orange:#d95926 } }
+text { font-family: system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: var(--ink); }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "DejaVu Sans Mono", monospace; }
+.t2 { fill: var(--ink2); }
+.mu { fill: var(--muted); }
+.b { font-weight: 600; }
+</style>
+<rect x="0" y="0" width="1200" height="864" rx="12" fill="var(--surface)"/>
+<metadata>{&quot;source_commit&quot;: &quot;bcb4ea4db037b745308198c80939994c52e725ee&quot;, &quot;measurement&quot;: {&quot;measured_at&quot;: &quot;2026-11-05T13:04:28.554677+00:00&quot;, &quot;hardware&quot;: {&quot;cpu&quot;: &quot;Intel(R) Core(TM) Ultra 7 270K Plus&quot;, &quot;logical_cpus&quot;: 24, &quot;memory_gib&quot;: 122.9, &quot;os&quot;: &quot;Linux-7.0.0-38-generic-x86_64-with-glibc2.43&quot;, &quot;python&quot;: &quot;3.13.9&quot;, &quot;duckdb&quot;: &quot;1.5.2&quot;, &quot;pandas&quot;: &quot;2.3.3&quot;, &quot;pyarrow&quot;: &quot;24.0.0&quot;, &quot;load_average&quot;: [2.07763671875, 0.736328125, 0.431640625]}, &quot;threads&quot;: 24, &quot;repeats&quot;: 5, &quot;results&quot;: [{&quot;query&quot;: &quot;count_psms&quot;, &quot;format&quot;: &quot;mztab&quot;, &quot;engine&quot;: &quot;pandas&quot;, &quot;median_seconds&quot;: 2.3608801029622555, &quot;median_incremental_peak_mib&quot;: 1518.42578125, &quot;answer&quot;: 542403, &quot;result_rows&quot;: 1, &quot;runs&quot;: [{&quot;seconds&quot;: 2.341752968262881, &quot;peak_mib&quot;: 1518.1953125, &quot;result_rows&quot;: 1, &quot;answer&quot;: 542403}, {&quot;seconds&quot;: 2.3724857019260526, &quot;peak_mib&quot;: 1518.44921875, &quot;result_rows&quot;: 1, &quot;answer&quot;: 542403}, {&quot;seconds&quot;: 2.3624258819036186, &quot;peak_mib&quot;: 1518.33984375, &quot;result_rows&quot;: 1, &quot;answer&quot;: 542403}, {&quot;seconds&quot;: 2.3608801029622555, &quot;peak_mib&quot;: 1518.48046875, &quot;result_rows&quot;: 1, &quot;answer&quot;: 542403}, {&quot;seconds&quot;: 2.344006481114775, &quot;peak_mib&quot;: 1518.42578125, &quot;result_rows&quot;: 1, &quot;answer&quot;: 542403}]}, {&quot;query&quot;: &quot;count_psms&quot;, &quot;format&quot;: &quot;qpx&quot;, &quot;engine&quot;: &quot;duckdb&quot;, &quot;median_seconds&quot;: 0.001709986012428999, &quot;median_incremental_peak_mib&quot;: 1.69140625, &quot;answer&quot;: 542403, &quot;result_rows&quot;: 1, &quot;runs&quot;: [{&quot;seconds&quot;: 0.001690504141151905, &quot;peak_mib&quot;: 1.82421875, &quot;result_rows&quot;: 1, &quot;answer&quot;: 542403}, {&quot;seconds&quot;: 0.0017177360132336617, &quot;peak_mib&quot;: 1.6640625, &quot;result_rows&quot;: 1, &quot;answer&quot;: 542403}, {&quot;seconds&quot;: 0.001709986012428999, &quot;peak_mib&quot;: 1.69140625, &quot;result_rows&quot;: 1, &quot;answer&quot;: 542403}, {&quot;seconds&quot;: 0.0019706622697412968, &quot;peak_mib&quot;: 1.6328125, &quot;result_rows&quot;: 1, &quot;answer&quot;: 542403}, {&quot;seconds&quot;: 0.0016955910250544548, &quot;peak_mib&quot;: 1.82421875, &quot;result_rows&quot;: 1, &quot;answer&quot;: 542403}]}, {&quot;query&quot;: &quot;filter_charge&quot;, &quot;format&quot;: &quot;mztab&quot;, &quot;engine&quot;: &quot;pandas&quot;, &quot;median_seconds&quot;: 2.3317482131533325, &quot;median_incremental_peak_mib&quot;: 1518.4296875, &quot;answer&quot;: 382341, &quot;result_rows&quot;: 1, &quot;runs&quot;: [{&quot;seconds&quot;: 2.3178806100040674, &quot;peak_mib&quot;: 1518.265625, &quot;result_rows&quot;: 1, &quot;answer&quot;: 382341}, {&quot;seconds&quot;: 2.3493665838614106, &quot;peak_mib&quot;: 1518.5234375, &quot;result_rows&quot;: 1, &quot;answer&quot;: 382341}, {&quot;seconds&quot;: 2.360587273258716, &quot;peak_mib&quot;: 1518.4296875, &quot;result_rows&quot;: 1, &quot;answer&quot;: 382341}, {&quot;seconds&quot;: 2.3317482131533325, &quot;peak_mib&quot;: 1518.46484375, &quot;result_rows&quot;: 1, &quot;answer&quot;: 382341}, {&quot;seconds&quot;: 2.317292797844857, &quot;peak_mib&quot;: 1518.12890625, &quot;result_rows&quot;: 1, &quot;answer&quot;: 382341}]}, {&quot;query&quot;: &quot;filter_charge&quot;, &quot;format&quot;: &quot;qpx&quot;, &quot;engine&quot;: &quot;duckdb&quot;, &quot;median_seconds&quot;: 0.002533065155148506, &quot;median_incremental_peak_mib&quot;: 3.3984375, &quot;answer&quot;: 382341, &quot;result_rows&quot;: 1, &quot;runs&quot;: [{&quot;seconds&quot;: 0.002618584781885147, &quot;peak_mib&quot;: 3.2109375, &quot;result_rows&quot;: 1, &quot;answer&quot;: 382341}, {&quot;seconds&quot;: 0.002642685081809759, &quot;peak_mib&quot;: 3.3984375, &quot;result_rows&quot;: 1, &quot;answer&quot;: 382341}, {&quot;seconds&quot;: 0.002533065155148506, &quot;peak_mib&quot;: 3.66015625, &quot;result_rows&quot;: 1, &quot;answer&quot;: 382341}, {&quot;seconds&quot;: 0.0025269589386880398, &quot;peak_mib&quot;: 3.046875, &quot;result_rows&quot;: 1, &quot;answer&quot;: 382341}, {&quot;seconds&quot;: 0.0024999012239277363, &quot;peak_mib&quot;: 3.8046875, &quot;result_rows&quot;: 1, &quot;answer&quot;: 382341}]}, {&quot;query&quot;: &quot;select_two_columns&quot;, &quot;format&quot;: &quot;mztab&quot;, &quot;engine&quot;: &quot;pandas&quot;, &quot;median_seconds&quot;: 2.320256335195154, &quot;median_incremental_peak_mib&quot;: 1518.24609375, &quot;answer&quot;: null, &quot;result_rows&quot;: 542403, &quot;runs&quot;: [{&quot;seconds&quot;: 2.310231765732169, &quot;peak_mib&quot;: 1518.2421875, &quot;result_rows&quot;: 542403, &quot;answer&quot;: null}, {&quot;seconds&quot;: 2.2990274289622903, &quot;peak_mib&quot;: 1518.11328125, &quot;result_rows&quot;: 542403, &quot;answer&quot;: null}, {&quot;seconds&quot;: 2.320256335195154, &quot;peak_mib&quot;: 1518.24609375, &quot;result_rows&quot;: 542403, &quot;answer&quot;: null}, {&quot;seconds&quot;: 2.3419235511682928, &quot;peak_mib&quot;: 1518.28125, &quot;result_rows&quot;: 542403, &quot;answer&quot;: null}, {&quot;seconds&quot;: 2.3357406612485647, &quot;peak_mib&quot;: 1518.62890625, &quot;result_rows&quot;: 542403, &quot;answer&quot;: null}]}, {&quot;query&quot;: &quot;select_two_columns&quot;, &quot;format&quot;: &quot;qpx&quot;, &quot;engine&quot;: &quot;duckdb&quot;, &quot;median_seconds&quot;: 0.026429301127791405, &quot;median_incremental_peak_mib&quot;: 62.0234375, &quot;answer&quot;: null, &quot;result_rows&quot;: 542403, &quot;runs&quot;: [{&quot;seconds&quot;: 0.025418033823370934, &quot;peak_mib&quot;: 62.0234375, &quot;result_rows&quot;: 542403, &quot;answer&quot;: null}, {&quot;seconds&quot;: 0.025522431824356318, &quot;peak_mib&quot;: 61.94140625, &quot;result_rows&quot;: 542403, &quot;answer&quot;: null}, {&quot;seconds&quot;: 0.026429301127791405, &quot;peak_mib&quot;: 62.13671875, &quot;result_rows&quot;: 542403, &quot;answer&quot;: null}, {&quot;seconds&quot;: 0.027840549126267433, &quot;peak_mib&quot;: 61.9765625, &quot;result_rows&quot;: 542403, &quot;answer&quot;: null}, {&quot;seconds&quot;: 0.026682483963668346, &quot;peak_mib&quot;: 62.1953125, &quot;result_rows&quot;: 542403, &quot;answer&quot;: null}]}], &quot;installed_qpx_distribution_metadata&quot;: &quot;1.1.4+local.22d2eb9&quot;, &quot;distribution_note&quot;: &quot;The editable distribution metadata is stale; identify the conversion code by source_commit in verified_inputs.json.&quot;}, &quot;verified_inputs&quot;: {&quot;recorded_at&quot;: &quot;2026-11-05T13:02:04.020535+00:00&quot;, &quot;source_commit&quot;: &quot;bcb4ea4db037b745308198c80939994c52e725ee&quot;, &quot;matching_sequence_charge&quot;: {&quot;text_rows&quot;: 542403, &quot;bidirectional_except_all_rows&quot;: 0}, &quot;tables&quot;: {&quot;lfq&quot;: {&quot;bench.dataset.parquet&quot;: {&quot;bytes&quot;: 7464, &quot;rows&quot;: 1}, &quot;bench.feature.parquet&quot;: {&quot;bytes&quot;: 19811888, &quot;rows&quot;: 573203}, &quot;bench.ontology.parquet&quot;: {&quot;bytes&quot;: 5820, &quot;rows&quot;: 25}, &quot;bench.pg.parquet&quot;: {&quot;bytes&quot;: 1604456, &quot;rows&quot;: 87266}, &quot;bench.provenance.parquet&quot;: {&quot;bytes&quot;: 8771, &quot;rows&quot;: 5}, &quot;bench.psm.parquet&quot;: {&quot;bytes&quot;: 22546390, &quot;rows&quot;: 542403}}, &quot;lfq_relayout&quot;: {&quot;bench.dataset.parquet&quot;: {&quot;bytes&quot;: 7464, &quot;rows&quot;: 1}, &quot;bench.feature.parquet&quot;: {&quot;bytes&quot;: 12034416, &quot;rows&quot;: 573203}, &quot;bench.ontology.parquet&quot;: {&quot;bytes&quot;: 5820, &quot;rows&quot;: 25}, &quot;bench.pg.parquet&quot;: {&quot;bytes&quot;: 732892, &quot;rows&quot;: 87266}, &quot;bench.provenance.parquet&quot;: {&quot;bytes&quot;: 8771, &quot;rows&quot;: 5}, &quot;bench.psm.parquet&quot;: {&quot;bytes&quot;: 12102409, &quot;rows&quot;: 542403}}, &quot;tmt&quot;: {&quot;bench.dataset.parquet&quot;: {&quot;bytes&quot;: 7334, &quot;rows&quot;: 1}, &quot;bench.feature.parquet&quot;: {&quot;bytes&quot;: 8991885, &quot;rows&quot;: 123872}, &quot;bench.ontology.parquet&quot;: {&quot;bytes&quot;: 6446, &quot;rows&quot;: 18}, &quot;bench.provenance.parquet&quot;: {&quot;bytes&quot;: 8698, &quot;rows&quot;: 2}, &quot;bench.run.parquet&quot;: {&quot;bytes&quot;: 14830, &quot;rows&quot;: 11}, &quot;bench.sample.parquet&quot;: {&quot;bytes&quot;: 7336, &quot;rows&quot;: 11}}, &quot;tmt_relayout&quot;: {&quot;bench.dataset.parquet&quot;: {&quot;bytes&quot;: 7334, &quot;rows&quot;: 1}, &quot;bench.feature.parquet&quot;: {&quot;bytes&quot;: 5383525, &quot;rows&quot;: 123872}, &quot;bench.ontology.parquet&quot;: {&quot;bytes&quot;: 6446, &quot;rows&quot;: 18}, &quot;bench.provenance.parquet&quot;: {&quot;bytes&quot;: 8698, &quot;rows&quot;: 2}, &quot;bench.run.parquet&quot;: {&quot;bytes&quot;: 14830, &quot;rows&quot;: 11}, &quot;bench.sample.parquet&quot;: {&quot;bytes&quot;: 7336, &quot;rows&quot;: 11}}}, &quot;text_bytes&quot;: {&quot;lfq_gzip&quot;: 62487649, &quot;tmt_gzip&quot;: 19051919}, &quot;tmt_feature&quot;: {&quot;rows&quot;: 123872.0, &quot;intensity_entries&quot;: 1362592.0, &quot;runs&quot;: 10.0}, &quot;tmt_labels&quot;: [{&quot;label&quot;: &quot;TMT126&quot;, &quot;entries&quot;: 123872}, {&quot;label&quot;: &quot;TMT127C&quot;, &quot;entries&quot;: 123872}, {&quot;label&quot;: &quot;TMT127N&quot;, &quot;entries&quot;: 123872}, {&quot;label&quot;: &quot;TMT128C&quot;, &quot;entries&quot;: 123872}, {&quot;label&quot;: &quot;TMT128N&quot;, &quot;entries&quot;: 123872}, {&quot;label&quot;: &quot;TMT129C&quot;, &quot;entries&quot;: 123872}, {&quot;label&quot;: &quot;TMT129N&quot;, &quot;entries&quot;: 123872}, {&quot;label&quot;: &quot;TMT130C&quot;, &quot;entries&quot;: 123872}, {&quot;label&quot;: &quot;TMT130N&quot;, &quot;entries&quot;: 123872}, {&quot;label&quot;: &quot;TMT131C&quot;, &quot;entries&quot;: 123872}, {&quot;label&quot;: &quot;TMT131N&quot;, &quot;entries&quot;: 123872}], &quot;tmt_sdrf&quot;: {&quot;source name&quot;: 11, &quot;comment[data file]&quot;: 11, &quot;comment[label]&quot;: 11}}}</metadata>
+<text x="24" y="42" font-size="26" text-anchor="start" class="b">QPX in practice</text>
+<text x="250" y="42" font-size="16" text-anchor="start" class="t2">PXD007683 · local LFQ queries and LFQ / TMT storage</text>
+<text x="24" y="67" font-size="12" text-anchor="start" class="mu">Five fresh processes per query · warm OS page cache · median time and memory · conversion and relayout excluded</text>
+<rect x="24" y="92" width="1152" height="344" rx="10" fill="var(--panel)"/>
+<text x="42" y="122" font-size="17" text-anchor="start" class="b">Matching LFQ PSM queries</text>
+<text x="1158" y="122" font-size="12" text-anchor="end" class="mu">Wall time · milliseconds · logarithmic axis</text>
+<circle cx="48" cy="148" r="4" fill="var(--blue)"/>
+<text x="60" y="152" font-size="12" text-anchor="start" class="t2">QPX + DuckDB</text>
+<circle cx="196" cy="148" r="4" fill="var(--orange)"/>
+<text x="208" y="152" font-size="12" text-anchor="start" class="t2">gzip mzTab + pandas</text>
+<line x1="330.0" y1="175" x2="330.0" y2="394" stroke="var(--hair)" stroke-width="1"/>
+<text x="330.0" y="419" font-size="12" text-anchor="middle" class="mu">1</text>
+<line x1="526.0" y1="175" x2="526.0" y2="394" stroke="var(--hair)" stroke-width="1"/>
+<text x="526.0" y="419" font-size="12" text-anchor="middle" class="mu">10</text>
+<line x1="722.0" y1="175" x2="722.0" y2="394" stroke="var(--hair)" stroke-width="1"/>
+<text x="722.0" y="419" font-size="12" text-anchor="middle" class="mu">100</text>
+<line x1="918.0" y1="175" x2="918.0" y2="394" stroke="var(--hair)" stroke-width="1"/>
+<text x="918.0" y="419" font-size="12" text-anchor="middle" class="mu">1,000</text>
+<line x1="1114.0" y1="175" x2="1114.0" y2="394" stroke="var(--hair)" stroke-width="1"/>
+<text x="1114.0" y="419" font-size="12" text-anchor="middle" class="mu">10,000</text>
+<line x1="330" y1="394" x2="1114" y2="394" stroke="var(--rule)" stroke-width="1"/>
+<text x="42" y="201" font-size="14" text-anchor="start" class="b">Count all PSMs</text>
+<text x="42" y="220" font-size="11" text-anchor="start" class="mu">542,403 in both outputs</text>
+<line x1="375.6665413497567" y1="197" x2="991.1224906800365" y2="197" stroke="var(--rule)" stroke-width="2"/>
+<circle cx="375.6665413497567" cy="197" r="6" fill="var(--blue)"/>
+<text x="386.6665413497567" y="186" font-size="12" text-anchor="start" class="b">1.71 ms · QPX</text>
+<circle cx="991.1224906800365" cy="197" r="6" fill="var(--orange)"/>
+<text x="1002.1224906800365" y="186" font-size="12" text-anchor="start" class="b">2,361 ms · text</text>
+<text x="42" y="279" font-size="14" text-anchor="start" class="b">Count charge = 2</text>
+<text x="42" y="298" font-size="11" text-anchor="start" class="mu">382,341 in both outputs</text>
+<line x1="409.1146867160726" y1="275" x2="990.0656039154683" y2="275" stroke="var(--rule)" stroke-width="2"/>
+<circle cx="409.1146867160726" cy="275" r="6" fill="var(--blue)"/>
+<text x="420.1146867160726" y="264" font-size="12" text-anchor="start" class="b">2.53 ms · QPX</text>
+<circle cx="990.0656039154683" cy="275" r="6" fill="var(--orange)"/>
+<text x="1001.0656039154683" y="264" font-size="12" text-anchor="start" class="b">2,332 ms · text</text>
+<text x="42" y="357" font-size="14" text-anchor="start" class="b">Read sequence + charge</text>
+<text x="42" y="376" font-size="11" text-anchor="start" class="mu">542,403 rows · identical multisets</text>
+<line x1="608.7287931228918" y1="353" x2="989.6450495588659" y2="353" stroke="var(--rule)" stroke-width="2"/>
+<circle cx="608.7287931228918" cy="353" r="6" fill="var(--blue)"/>
+<text x="619.7287931228918" y="342" font-size="12" text-anchor="start" class="b">26.43 ms · QPX</text>
+<circle cx="989.6450495588659" cy="353" r="6" fill="var(--orange)"/>
+<text x="1000.6450495588659" y="342" font-size="12" text-anchor="start" class="b">2,320 ms · text</text>
+<rect x="24" y="456" width="568" height="274" rx="10" fill="var(--panel)"/>
+<text x="42" y="486" font-size="17" text-anchor="start" class="b">Related output sizes</text>
+<text x="42" y="508" font-size="12" text-anchor="start" class="mu">QPX after relayout · MiB · linear axis</text>
+<line x1="222.0" y1="528" x2="222.0" y2="690" stroke="var(--hair)" stroke-width="1"/>
+<text x="222.0" y="712" font-size="11" text-anchor="middle" class="mu">0</text>
+<line x1="317.625" y1="528" x2="317.625" y2="690" stroke="var(--hair)" stroke-width="1"/>
+<text x="317.625" y="712" font-size="11" text-anchor="middle" class="mu">20</text>
+<line x1="413.25" y1="528" x2="413.25" y2="690" stroke="var(--hair)" stroke-width="1"/>
+<text x="413.25" y="712" font-size="11" text-anchor="middle" class="mu">40</text>
+<line x1="508.875" y1="528" x2="508.875" y2="690" stroke="var(--hair)" stroke-width="1"/>
+<text x="508.875" y="712" font-size="11" text-anchor="middle" class="mu">60</text>
+<text x="42" y="546" font-size="12" text-anchor="start" class="t2">LFQ gzip text</text>
+<rect x="222" y="531" width="284.92839029431343" height="19" rx="3" fill="var(--orange)"/>
+<text x="514.9283902943134" y="546" font-size="12" text-anchor="start" class="b">59.59</text>
+<text x="42" y="580" font-size="12" text-anchor="start" class="t2">LFQ QPX · six views</text>
+<rect x="222" y="565" width="113.50038993358612" height="19" rx="3" fill="var(--blue)"/>
+<text x="343.5003899335861" y="580" font-size="12" text-anchor="start" class="b">23.74</text>
+<text x="42" y="632" font-size="12" text-anchor="start" class="t2">TMT gzip MSstats</text>
+<rect x="222" y="617" width="86.87208911776543" height="19" rx="3" fill="var(--orange)"/>
+<text x="316.8720891177654" y="632" font-size="12" text-anchor="start" class="b">18.17</text>
+<text x="42" y="666" font-size="12" text-anchor="start" class="t2">TMT QPX · feature only</text>
+<rect x="222" y="651" width="24.547556787729263" height="19" rx="3" fill="var(--blue)"/>
+<text x="254.54755678772926" y="666" font-size="12" text-anchor="start" class="b">5.13</text>
+<line x1="42" y1="605" x2="574" y2="605" stroke="var(--hair)" stroke-width="1"/>
+<line x1="222" y1="690" x2="528" y2="690" stroke="var(--rule)" stroke-width="1"/>
+<rect x="608" y="456" width="568" height="274" rx="10" fill="var(--panel)"/>
+<text x="626" y="486" font-size="17" text-anchor="start" class="b">Query memory</text>
+<text x="626" y="508" font-size="12" text-anchor="start" class="mu">Increase in peak RSS above the imported process · MiB</text>
+<text x="1003" y="542" font-size="12" text-anchor="end" class="b">gzip + pandas</text>
+<text x="1158" y="542" font-size="12" text-anchor="end" class="b">QPX + DuckDB</text>
+<line x1="626" y1="554" x2="1158" y2="554" stroke="var(--hair)" stroke-width="1"/>
+<text x="626" y="577" font-size="12" text-anchor="start" class="t2">Count all PSMs</text>
+<text x="1003" y="577" font-size="14" text-anchor="end" class="mono b">1,518.4</text>
+<text x="1158" y="577" font-size="14" text-anchor="end" class="mono b">1.7</text>
+<line x1="626" y1="595" x2="1158" y2="595" stroke="var(--hair)" stroke-width="1"/>
+<text x="626" y="618" font-size="12" text-anchor="start" class="t2">Count charge = 2</text>
+<text x="1003" y="618" font-size="14" text-anchor="end" class="mono b">1,518.4</text>
+<text x="1158" y="618" font-size="14" text-anchor="end" class="mono b">3.4</text>
+<line x1="626" y1="636" x2="1158" y2="636" stroke="var(--hair)" stroke-width="1"/>
+<text x="626" y="659" font-size="12" text-anchor="start" class="t2">Read sequence + charge</text>
+<text x="1003" y="659" font-size="14" text-anchor="end" class="mono b">1,518.2</text>
+<text x="1158" y="659" font-size="14" text-anchor="end" class="mono b">62.0</text>
+<text x="626" y="708" font-size="11" text-anchor="start" class="mu">Memory excludes the import baseline; it is not total process RSS.</text>
+<text x="24" y="761" font-size="11.5" text-anchor="start" class="t2">Queries compare reading workflows and engines: pandas parses the full gzip mzTab PSM section; DuckDB reads the requested Parquet data.</text>
+<text x="24" y="781" font-size="11.5" text-anchor="start" class="t2">Unfiltered Parquet counts use footer metadata. The sequence/charge multisets match exactly by bidirectional EXCEPT ALL.</text>
+<text x="24" y="801" font-size="11.5" text-anchor="start" class="t2">Storage scope: LFQ mzTab + MSstats versus six QPX views; TMT MSstats versus feature only. Contents and row layouts differ.</text>
+<text x="24" y="821" font-size="11.5" text-anchor="start" class="t2">relayout sorts records, remaps IDs and reduces selected numeric precision. These sizes are not a lossless compression ratio.</text>
+<text x="24" y="841" font-size="11.5" text-anchor="start" class="t2">Intel Core Ultra 7 270K Plus · 24 logical CPUs / DuckDB threads · 122.9 GiB RAM · Python 3.13.9 · DuckDB 1.5.2 · pandas 2.3.3 · PyArrow 24</text>
 </svg>

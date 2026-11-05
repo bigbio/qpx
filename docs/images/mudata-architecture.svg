@@ -1,233 +1,305 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 1080" font-family="'Helvetica Neue', Arial, sans-serif">
-  <defs>
-    <filter id="s" x="-2%" y="-2%" width="104%" height="108%">
-      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-opacity="0.08"/>
-    </filter>
-    <marker id="arr" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-      <polygon points="0 0, 8 3, 0 6" fill="#94a3b8"/>
-    </marker>
-  </defs>
-
-  <rect width="1400" height="1080" fill="#ffffff"/>
-
-  <!-- Title -->
-  <text x="700" y="50" text-anchor="middle" font-size="34" font-weight="700" fill="#1e293b" letter-spacing="2">QPX MuData Structure</text>
-  <text x="700" y="80" text-anchor="middle" font-size="16" fill="#64748b" letter-spacing="2">Multi-modal proteomics container (scverse ecosystem)</text>
-
-  <!-- ═══════════════════════════════════════════════════ -->
-  <!-- OUTER MuData container -->
-  <!-- ═══════════════════════════════════════════════════ -->
-  <rect x="40" y="100" width="1320" height="940" rx="16" fill="#fdf4ff" stroke="#d8b4fe" stroke-width="2.5" filter="url(#s)"/>
-  <text x="700" y="136" text-anchor="middle" font-size="22" font-weight="700" fill="#7e22ce">MuData  (PXD000000)</text>
-
-  <!-- ═══════════════════════════════════════════════════ -->
-  <!-- mod["precursors"] — top left -->
-  <!-- ═══════════════════════════════════════════════════ -->
-  <rect x="70" y="160" width="610" height="310" rx="12" fill="#eff6ff" stroke="#93c5fd" stroke-width="2" filter="url(#s)"/>
-  <text x="375" y="192" text-anchor="middle" font-size="18" font-weight="700" fill="#1e40af">mod["precursors"]</text>
-  <text x="375" y="212" text-anchor="middle" font-size="12" fill="#3b82f6">AnnData  —  from feature.parquet via DuckDB</text>
-
-  <!-- obs axis label (rows) -->
-  <text x="88" y="245" font-size="11" font-weight="700" fill="#dc2626" letter-spacing="1">obs (rows)</text>
-  <text x="88" y="260" font-size="12" fill="#64748b">= MS runs</text>
-
-  <!-- var axis label (columns) -->
-  <text x="230" y="245" font-size="11" font-weight="700" fill="#059669" letter-spacing="1">var (columns)</text>
-  <text x="230" y="260" font-size="12" fill="#64748b">= precursor IDs (peptidoform|charge)</text>
-
-  <!-- Matrix X -->
-  <rect x="88" y="272" width="574" height="120" rx="8" fill="#dbeafe" stroke="#93c5fd" stroke-width="1"/>
-  <text x="375" y="300" text-anchor="middle" font-size="16" font-weight="700" fill="#1e40af">X  (sparse CSR, float32)</text>
-  <text x="375" y="322" text-anchor="middle" font-size="13" fill="#3b82f6">Intensity matrix for selected label (LFQ / TMT / ...)</text>
-
-  <!-- Row labels -->
-  <text x="100" y="350" font-size="11" fill="#64748b">run_001</text>
-  <text x="100" y="366" font-size="11" fill="#64748b">run_002</text>
-  <text x="100" y="382" font-size="11" fill="#94a3b8">...</text>
-
-  <!-- Col labels -->
-  <text x="240" y="350" font-size="11" fill="#64748b">PEPTK|2</text>
-  <text x="320" y="350" font-size="11" fill="#64748b">SEQNC|3</text>
-  <text x="400" y="350" font-size="11" fill="#94a3b8">...</text>
-
-  <!-- obs metadata -->
-  <rect x="88" y="398" width="280" height="68" rx="6" fill="#fef2f2" stroke="#fca5a5" stroke-width="1"/>
-  <text x="100" y="416" font-size="12" font-weight="600" fill="#dc2626">obs metadata (per run)</text>
-  <text x="100" y="432" font-size="11" fill="#64748b">run_accession, sample_accession,</text>
-  <text x="100" y="446" font-size="11" fill="#64748b">label, biological_replicate,</text>
-  <text x="100" y="460" font-size="11" fill="#64748b">technical_replicate, fraction, instrument</text>
-
-  <!-- var metadata -->
-  <rect x="390" y="398" width="272" height="68" rx="6" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="1"/>
-  <text x="402" y="416" font-size="12" font-weight="600" fill="#059669">var metadata (per precursor)</text>
-  <text x="402" y="436" font-size="11" fill="#64748b">precursor_id index</text>
-  <text x="402" y="450" font-size="11" fill="#64748b">(peptidoform|charge)</text>
-
-  <!-- ═══════════════════════════════════════════════════ -->
-  <!-- mod["proteins"] — top right -->
-  <!-- ═══════════════════════════════════════════════════ -->
-  <rect x="720" y="160" width="610" height="310" rx="12" fill="#eff6ff" stroke="#93c5fd" stroke-width="2" filter="url(#s)"/>
-  <text x="1025" y="192" text-anchor="middle" font-size="18" font-weight="700" fill="#1e40af">mod["proteins"]</text>
-  <text x="1025" y="212" text-anchor="middle" font-size="12" fill="#3b82f6">AnnData  —  from pg.parquet via DuckDB</text>
-
-  <!-- obs axis label -->
-  <text x="738" y="245" font-size="11" font-weight="700" fill="#dc2626" letter-spacing="1">obs (rows)</text>
-  <text x="738" y="260" font-size="12" fill="#64748b">= MS runs</text>
-
-  <!-- var axis label -->
-  <text x="880" y="245" font-size="11" font-weight="700" fill="#059669" letter-spacing="1">var (columns)</text>
-  <text x="880" y="260" font-size="12" fill="#64748b">= anchor proteins (UniProt accession)</text>
-
-  <!-- Matrix X -->
-  <rect x="738" y="272" width="574" height="120" rx="8" fill="#dbeafe" stroke="#93c5fd" stroke-width="1"/>
-  <text x="1025" y="300" text-anchor="middle" font-size="16" font-weight="700" fill="#1e40af">X  (sparse CSR, float32)</text>
-  <text x="1025" y="322" text-anchor="middle" font-size="13" fill="#3b82f6">Protein group intensity for selected label</text>
-
-  <!-- Row labels -->
-  <text x="750" y="350" font-size="11" fill="#64748b">run_001</text>
-  <text x="750" y="366" font-size="11" fill="#64748b">run_002</text>
-  <text x="750" y="382" font-size="11" fill="#94a3b8">...</text>
-
-  <!-- Col labels -->
-  <text x="880" y="350" font-size="11" fill="#64748b">P12345</text>
-  <text x="950" y="350" font-size="11" fill="#64748b">Q67890</text>
-  <text x="1020" y="350" font-size="11" fill="#94a3b8">...</text>
-
-  <!-- obs metadata -->
-  <rect x="738" y="398" width="280" height="68" rx="6" fill="#fef2f2" stroke="#fca5a5" stroke-width="1"/>
-  <text x="750" y="416" font-size="12" font-weight="600" fill="#dc2626">obs metadata (per run)</text>
-  <text x="750" y="432" font-size="11" fill="#64748b">run_accession, sample_accession,</text>
-  <text x="750" y="446" font-size="11" fill="#64748b">label, biological_replicate,</text>
-  <text x="750" y="460" font-size="11" fill="#64748b">technical_replicate, fraction, instrument</text>
-
-  <!-- var metadata -->
-  <rect x="1040" y="398" width="272" height="68" rx="6" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="1"/>
-  <text x="1052" y="416" font-size="12" font-weight="600" fill="#059669">var metadata (per protein)</text>
-  <text x="1052" y="436" font-size="11" fill="#64748b">anchor_protein index,</text>
-  <text x="1052" y="450" font-size="11" fill="#64748b">gene_name</text>
-
-  <!-- ═══════════════════════════════════════════════════ -->
-  <!-- mod["expression"] — bottom left -->
-  <!-- ═══════════════════════════════════════════════════ -->
-  <rect x="70" y="495" width="610" height="340" rx="12" fill="#f0fdf4" stroke="#86efac" stroke-width="2" filter="url(#s)"/>
-  <text x="375" y="527" text-anchor="middle" font-size="18" font-weight="700" fill="#16a34a">mod["expression"]</text>
-  <text x="375" y="547" text-anchor="middle" font-size="12" fill="#16a34a">AnnData  —  from .pe.h5ad / .pe.zarr  (optional)</text>
-
-  <!-- obs axis label -->
-  <text x="88" y="578" font-size="11" font-weight="700" fill="#dc2626" letter-spacing="1">obs (rows)</text>
-  <text x="88" y="593" font-size="12" fill="#64748b">= SAMPLES (sample_accession)</text>
-
-  <!-- var axis label -->
-  <text x="300" y="578" font-size="11" font-weight="700" fill="#059669" letter-spacing="1">var (columns)</text>
-  <text x="300" y="593" font-size="12" fill="#64748b">= proteins (UniProt accession)</text>
-
-  <!-- Matrix X -->
-  <rect x="88" y="605" width="574" height="80" rx="8" fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
-  <text x="375" y="632" text-anchor="middle" font-size="16" font-weight="700" fill="#16a34a">X  (primary quantification)</text>
-  <text x="375" y="652" text-anchor="middle" font-size="13" fill="#16a34a">ibaq_log, maxlfq, tmt_intensity, ...</text>
-
-  <!-- Row labels -->
-  <text x="100" y="673" font-size="11" fill="#64748b">sample_001</text>
-  <text x="100" y="687" font-size="11" fill="#64748b">sample_002</text>
-
-  <!-- Col labels -->
-  <text x="300" y="673" font-size="11" fill="#64748b">P12345</text>
-  <text x="370" y="673" font-size="11" fill="#64748b">Q67890</text>
-  <text x="440" y="673" font-size="11" fill="#94a3b8">...</text>
-
-  <!-- Layers -->
-  <rect x="88" y="698" width="574" height="58" rx="6" fill="#fef9c3" stroke="#fde047" stroke-width="1"/>
-  <text x="100" y="718" font-size="12" font-weight="600" fill="#a16207">layers (alternative quantifications)</text>
-  <text x="100" y="735" font-size="11" fill="#64748b">ibaq_raw, ibaq_ppb, copies_per_cell, concentration_nm, ...</text>
-
-  <!-- obs metadata -->
-  <rect x="88" y="766" width="260" height="55" rx="6" fill="#fef2f2" stroke="#fca5a5" stroke-width="1"/>
-  <text x="100" y="786" font-size="12" font-weight="600" fill="#dc2626">obs metadata (per sample)</text>
-  <text x="100" y="802" font-size="11" fill="#64748b">organism, tissue, disease, cell_type</text>
-
-  <!-- var metadata -->
-  <rect x="370" y="766" width="292" height="55" rx="6" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="1"/>
-  <text x="382" y="786" font-size="12" font-weight="600" fill="#059669">var metadata (per protein)</text>
-  <text x="382" y="802" font-size="11" fill="#64748b">protein accession index</text>
-
-  <!-- ═══════════════════════════════════════════════════ -->
-  <!-- mod["differential"] — bottom right -->
-  <!-- ═══════════════════════════════════════════════════ -->
-  <rect x="720" y="495" width="610" height="340" rx="12" fill="#fff7ed" stroke="#fdba74" stroke-width="2" filter="url(#s)"/>
-  <text x="1025" y="527" text-anchor="middle" font-size="18" font-weight="700" fill="#c2410c">mod["differential"]</text>
-  <text x="1025" y="547" text-anchor="middle" font-size="12" fill="#c2410c">AnnData  —  from .de.h5ad / .de.zarr  (optional)</text>
-
-  <!-- obs axis label -->
-  <text x="738" y="578" font-size="11" font-weight="700" fill="#dc2626" letter-spacing="1">obs (rows)</text>
-  <text x="738" y="593" font-size="12" fill="#64748b">= CONTRASTS (e.g. cancer_vs_normal)</text>
-
-  <!-- var axis label -->
-  <text x="960" y="578" font-size="11" font-weight="700" fill="#059669" letter-spacing="1">var (columns)</text>
-  <text x="960" y="593" font-size="12" fill="#64748b">= proteins (UniProt accession)</text>
-
-  <!-- Matrix X -->
-  <rect x="738" y="605" width="574" height="80" rx="8" fill="#ffedd5" stroke="#fdba74" stroke-width="1"/>
-  <text x="1025" y="632" text-anchor="middle" font-size="16" font-weight="700" fill="#c2410c">X  =  log2FC</text>
-  <text x="1025" y="652" text-anchor="middle" font-size="13" fill="#c2410c">log2 fold change (contrasts x proteins)</text>
-
-  <!-- Row labels -->
-  <text x="750" y="673" font-size="11" fill="#64748b">cancer_vs_normal</text>
-  <text x="750" y="687" font-size="11" fill="#64748b">treated_vs_ctrl</text>
-
-  <!-- Col labels -->
-  <text x="960" y="673" font-size="11" fill="#64748b">P12345</text>
-  <text x="1030" y="673" font-size="11" fill="#64748b">Q67890</text>
-  <text x="1100" y="673" font-size="11" fill="#94a3b8">...</text>
-
-  <!-- Layers -->
-  <rect x="738" y="698" width="574" height="58" rx="6" fill="#fef9c3" stroke="#fde047" stroke-width="1"/>
-  <text x="750" y="718" font-size="12" font-weight="600" fill="#a16207">layers (statistical results)</text>
-  <text x="750" y="735" font-size="11" fill="#64748b">pvals_adj, scores, pvals, se</text>
-
-  <!-- obs metadata -->
-  <rect x="738" y="766" width="290" height="55" rx="6" fill="#fef2f2" stroke="#fca5a5" stroke-width="1"/>
-  <text x="750" y="786" font-size="12" font-weight="600" fill="#dc2626">obs (per contrast)</text>
-  <text x="750" y="802" font-size="11" fill="#64748b">contrast identifier index only</text>
-
-  <!-- var metadata -->
-  <rect x="1050" y="766" width="262" height="55" rx="6" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="1"/>
-  <text x="1062" y="786" font-size="12" font-weight="600" fill="#059669">var metadata (per protein)</text>
-  <text x="1062" y="802" font-size="11" fill="#64748b">protein accession index</text>
-
-  <!-- ═══════════════════════════════════════════════════ -->
-  <!-- CROSS-MODALITY: varp["feature_mapping"] + uns -->
-  <!-- ═══════════════════════════════════════════════════ -->
-  <rect x="70" y="860" width="780" height="80" rx="10" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="1.5" filter="url(#s)"/>
-  <text x="88" y="888" font-size="16" font-weight="700" fill="#7c3aed">varp["feature_mapping"]</text>
-  <text x="88" y="908" font-size="13" fill="#64748b">Symmetric boolean sparse CSR matrix over all var IDs (precursor IDs + protein IDs)</text>
-  <text x="88" y="926" font-size="13" fill="#64748b">Non-zero entry [i, j] = precursor i maps to protein j (and vice versa)</text>
-
-  <rect x="880" y="860" width="450" height="80" rx="10" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="1.5" filter="url(#s)"/>
-  <text x="898" y="888" font-size="16" font-weight="700" fill="#7c3aed">uns (from dataset.parquet)</text>
-  <text x="898" y="908" font-size="13" fill="#64748b">project_accession, project_title, project_description,</text>
-  <text x="898" y="926" font-size="13" fill="#64748b">pubmed_id, software_name, software_version, creation_date</text>
-
-  <!-- ═══════════════════════════════════════════════════ -->
-  <!-- LEGEND at bottom -->
-  <!-- ═══════════════════════════════════════════════════ -->
-  <rect x="70" y="960" width="1260" height="65" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="4"/>
-  <text x="88" y="985" font-size="13" font-weight="600" fill="#64748b" letter-spacing="1">AXES SUMMARY</text>
-
-  <!-- Legend items -->
-  <rect x="250" y="972" width="14" height="14" rx="2" fill="#dc2626"/>
-  <text x="272" y="984" font-size="13" fill="#1e293b" font-weight="600">obs (rows):</text>
-  <text x="366" y="984" font-size="13" fill="#64748b">runs (precursors, proteins) | samples (expression) | contrasts (differential)</text>
-
-  <rect x="250" y="998" width="14" height="14" rx="2" fill="#059669"/>
-  <text x="272" y="1010" font-size="13" fill="#1e293b" font-weight="600">var (cols):</text>
-  <text x="362" y="1010" font-size="13" fill="#64748b">precursor IDs (precursors) | proteins (proteins, expression, differential)</text>
-
-  <rect x="880" y="972" width="14" height="14" rx="2" fill="#2563eb"/>
-  <text x="902" y="984" font-size="13" fill="#1e293b" font-weight="600">X:</text>
-  <text x="920" y="984" font-size="13" fill="#64748b">primary data matrix (intensity / expression / log2FC)</text>
-
-  <rect x="880" y="998" width="14" height="14" rx="2" fill="#a16207"/>
-  <text x="902" y="1010" font-size="13" fill="#1e293b" font-weight="600">layers:</text>
-  <text x="960" y="1010" font-size="13" fill="#64748b">alternative quantifications or statistical results</text>
-
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="830" viewBox="0 0 1200 830" role="img" aria-labelledby="t d">
+<title id="t">QPX MuData structure</title>
+<desc id="d">build_mudata gathers precursor and protein-group intensity matrices, and optional absolute and differential expression, into one MuData container with a precursor to protein-group map and dataset metadata. Grids are schematic. Null intensities are omitted from sparse matrices, whose implicit cells read as zero. Label-free data keep one observation per run or unit unless all_intensity_labels=True.</desc>
+<style>
+svg { --surface:#fcfcfb;--panel:#f4f3ef;--card:#ffffff;--ink:#0b0b0b;--ink2:#52514e;--muted:#6f6e69;--hair:#e1e0d9;--rule:#c3c2b7;--blue:#2a78d6;--magenta:#e87ba4 }
+@media (prefers-color-scheme: dark) { svg { --surface:#1a1a19;--panel:#222220;--card:#2a2a28;--ink:#f0efec;--ink2:#c3c2b7;--muted:#a3a29a;--hair:#33332f;--rule:#4a4a45;--blue:#3987e5;--magenta:#d55181 } }
+text { font-family: system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: var(--ink); }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "DejaVu Sans Mono", monospace; }
+.t2 { fill: var(--ink2); }
+.mu { fill: var(--muted); }
+.b { font-weight: 600; }
+</style>
+<rect x="0" y="0" width="1200" height="830" rx="12" fill="var(--surface)"/>
+<text x="24" y="42" font-size="26" text-anchor="start" class="b">QPX MuData</text>
+<text x="218" y="42" font-size="16" text-anchor="start" class="t2">Quantification matrices for mudata, muon and scanpy</text>
+<text x="24" y="67" font-size="12" text-anchor="start" class="mu">build_mudata(ds) includes the available modalities. Colored grids are schematic, not measured data.</text>
+<rect x="24.0" y="92" width="568.0" height="254" rx="10" fill="var(--panel)"/>
+<rect x="24.0" y="106" width="4" height="226" rx="2" fill="var(--blue)"/>
+<text x="42.0" y="120" font-size="16" text-anchor="start" class="mono b">mod[&quot;precursors&quot;]</text>
+<text x="42.0" y="140" font-size="11" text-anchor="start" class="mono mu">from feature.parquet</text>
+<line x1="42.0" y1="152" x2="576.0" y2="152" stroke="var(--hair)" stroke-width="1"/>
+<text x="134.0" y="182" font-size="11" text-anchor="middle" class="mu">var →</text>
+<text x="52.0" y="244.0" font-size="11" class="mu" text-anchor="middle" transform="rotate(-90 52.0 244.0)">obs →</text>
+<rect x="62.0" y="190" width="15" height="15" rx="3" fill="var(--blue)" fill-opacity="0.9"/>
+<rect x="80.0" y="190" width="15" height="15" rx="3" fill="var(--blue)" fill-opacity="0.9"/>
+<rect x="98.5" y="190.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="116.5" y="190.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="134.5" y="190.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="152.5" y="190.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="170.5" y="190.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="188.5" y="190.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="62.0" y="208" width="15" height="15" rx="3" fill="var(--blue)" fill-opacity="0.9"/>
+<rect x="80.5" y="208.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="98.5" y="208.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="116.5" y="208.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="134.5" y="208.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="152.0" y="208" width="15" height="15" rx="3" fill="var(--blue)" fill-opacity="0.9"/>
+<rect x="170.0" y="208" width="15" height="15" rx="3" fill="var(--blue)" fill-opacity="0.9"/>
+<rect x="188.5" y="208.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="62.0" y="226" width="15" height="15" rx="3" fill="var(--blue)" fill-opacity="0.35"/>
+<rect x="80.0" y="226" width="15" height="15" rx="3" fill="var(--blue)" fill-opacity="0.9"/>
+<rect x="98.0" y="226" width="15" height="15" rx="3" fill="var(--blue)" fill-opacity="0.35"/>
+<rect x="116.5" y="226.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="134.0" y="226" width="15" height="15" rx="3" fill="var(--blue)" fill-opacity="0.9"/>
+<rect x="152.5" y="226.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="170.5" y="226.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="188.5" y="226.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="62.5" y="244.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="80.5" y="244.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="98.5" y="244.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="116.5" y="244.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="134.5" y="244.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="152.5" y="244.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="170.0" y="244" width="15" height="15" rx="3" fill="var(--blue)" fill-opacity="0.35"/>
+<rect x="188.5" y="244.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="62.0" y="262" width="15" height="15" rx="3" fill="var(--blue)" fill-opacity="0.9"/>
+<rect x="80.5" y="262.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="98.5" y="262.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="116.5" y="262.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="134.5" y="262.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="152.5" y="262.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="170.5" y="262.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="188.5" y="262.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="62.5" y="280.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="80.5" y="280.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="98.5" y="280.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="116.5" y="280.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="134.5" y="280.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="152.5" y="280.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="170.5" y="280.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="188.0" y="280" width="15" height="15" rx="3" fill="var(--blue)" fill-opacity="0.6"/>
+<text x="232.0" y="177" font-size="12" text-anchor="start" class="mono b">obs</text>
+<text x="290.0" y="177" font-size="12" text-anchor="start" class="t2">runs (run_file_name); run|label for TMT,</text>
+<text x="290.0" y="194" font-size="12" text-anchor="start" class="t2">iTRAQ and plexDIA, with each run&#x27;s sample</text>
+<text x="232.0" y="226" font-size="12" text-anchor="start" class="mono b">var</text>
+<text x="290.0" y="226" font-size="12" text-anchor="start" class="t2">precursors, peptidoform|charge</text>
+<text x="232.0" y="258" font-size="12" text-anchor="start" class="mono b">X</text>
+<text x="290.0" y="258" font-size="12" text-anchor="start" class="t2">sparse primary intensity</text>
+<text x="232.0" y="290" font-size="12" text-anchor="start" class="mono b">layers</text>
+<text x="290.0" y="290" font-size="12" text-anchor="start" class="t2">additional intensities by name;</text>
+<text x="290.0" y="307" font-size="12" text-anchor="start" class="t2">imputed_mask when present</text>
+<rect x="608.0" y="92" width="568.0" height="254" rx="10" fill="var(--panel)"/>
+<rect x="608.0" y="106" width="4" height="226" rx="2" fill="var(--blue)"/>
+<text x="626.0" y="120" font-size="16" text-anchor="start" class="mono b">mod[&quot;proteins&quot;]</text>
+<text x="626.0" y="140" font-size="11" text-anchor="start" class="mono mu">from pg.parquet</text>
+<line x1="626.0" y1="152" x2="1160.0" y2="152" stroke="var(--hair)" stroke-width="1"/>
+<text x="718.0" y="182" font-size="11" text-anchor="middle" class="mu">var →</text>
+<text x="636.0" y="244.0" font-size="11" class="mu" text-anchor="middle" transform="rotate(-90 636.0 244.0)">obs →</text>
+<rect x="646.0" y="190" width="15" height="15" rx="3" fill="var(--blue)" fill-opacity="0.35"/>
+<rect x="664.5" y="190.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="682.5" y="190.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="700.0" y="190" width="15" height="15" rx="3" fill="var(--blue)" fill-opacity="0.35"/>
+<rect x="718.0" y="190" width="15" height="15" rx="3" fill="var(--blue)" fill-opacity="0.6"/>
+<rect x="736.5" y="190.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="754.5" y="190.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="772.0" y="190" width="15" height="15" rx="3" fill="var(--blue)" fill-opacity="0.9"/>
+<rect x="646.0" y="208" width="15" height="15" rx="3" fill="var(--blue)" fill-opacity="0.35"/>
+<rect x="664.5" y="208.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="682.0" y="208" width="15" height="15" rx="3" fill="var(--blue)" fill-opacity="0.35"/>
+<rect x="700.5" y="208.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="718.5" y="208.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="736.5" y="208.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="754.0" y="208" width="15" height="15" rx="3" fill="var(--blue)" fill-opacity="0.6"/>
+<rect x="772.0" y="208" width="15" height="15" rx="3" fill="var(--blue)" fill-opacity="0.9"/>
+<rect x="646.5" y="226.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="664.5" y="226.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="682.0" y="226" width="15" height="15" rx="3" fill="var(--blue)" fill-opacity="0.9"/>
+<rect x="700.0" y="226" width="15" height="15" rx="3" fill="var(--blue)" fill-opacity="0.6"/>
+<rect x="718.5" y="226.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="736.0" y="226" width="15" height="15" rx="3" fill="var(--blue)" fill-opacity="0.6"/>
+<rect x="754.0" y="226" width="15" height="15" rx="3" fill="var(--blue)" fill-opacity="0.9"/>
+<rect x="772.5" y="226.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="646.0" y="244" width="15" height="15" rx="3" fill="var(--blue)" fill-opacity="0.6"/>
+<rect x="664.5" y="244.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="682.5" y="244.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="700.5" y="244.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="718.5" y="244.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="736.0" y="244" width="15" height="15" rx="3" fill="var(--blue)" fill-opacity="0.9"/>
+<rect x="754.0" y="244" width="15" height="15" rx="3" fill="var(--blue)" fill-opacity="0.6"/>
+<rect x="772.0" y="244" width="15" height="15" rx="3" fill="var(--blue)" fill-opacity="0.6"/>
+<rect x="646.0" y="262" width="15" height="15" rx="3" fill="var(--blue)" fill-opacity="0.35"/>
+<rect x="664.0" y="262" width="15" height="15" rx="3" fill="var(--blue)" fill-opacity="0.6"/>
+<rect x="682.5" y="262.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="700.0" y="262" width="15" height="15" rx="3" fill="var(--blue)" fill-opacity="0.9"/>
+<rect x="718.5" y="262.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="736.5" y="262.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="754.0" y="262" width="15" height="15" rx="3" fill="var(--blue)" fill-opacity="0.9"/>
+<rect x="772.0" y="262" width="15" height="15" rx="3" fill="var(--blue)" fill-opacity="0.6"/>
+<rect x="646.5" y="280.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="664.5" y="280.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="682.0" y="280" width="15" height="15" rx="3" fill="var(--blue)" fill-opacity="0.35"/>
+<rect x="700.0" y="280" width="15" height="15" rx="3" fill="var(--blue)" fill-opacity="0.9"/>
+<rect x="718.5" y="280.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="736.5" y="280.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="754.0" y="280" width="15" height="15" rx="3" fill="var(--blue)" fill-opacity="0.6"/>
+<rect x="772.0" y="280" width="15" height="15" rx="3" fill="var(--blue)" fill-opacity="0.35"/>
+<text x="816.0" y="177" font-size="12" text-anchor="start" class="mono b">obs</text>
+<text x="874.0" y="177" font-size="12" text-anchor="start" class="t2">quantification units (grouped_runs):</text>
+<text x="874.0" y="194" font-size="12" text-anchor="start" class="t2">F1;F2;F3, or F1;F2;F3|TMT126 per channel</text>
+<text x="816.0" y="226" font-size="12" text-anchor="start" class="mono b">var</text>
+<text x="874.0" y="226" font-size="12" text-anchor="start" class="t2">sorted pg_accessions joined by ;,</text>
+<text x="874.0" y="243" font-size="12" text-anchor="start" class="t2">with anchor_protein and gene_name</text>
+<text x="816.0" y="275" font-size="12" text-anchor="start" class="mono b">X</text>
+<text x="874.0" y="275" font-size="12" text-anchor="start" class="t2">protein-group intensity, sparse</text>
+<text x="816.0" y="307" font-size="12" text-anchor="start" class="mono b">layers</text>
+<text x="874.0" y="307" font-size="12" text-anchor="start" class="t2">maxlfq, ibaq, … by intensity_name;</text>
+<text x="874.0" y="324" font-size="12" text-anchor="start" class="t2">imputed_mask when present</text>
+<rect x="24.0" y="362" width="568.0" height="254" rx="10" fill="var(--panel)"/>
+<rect x="24.0" y="376" width="4" height="226" rx="2" fill="var(--magenta)"/>
+<text x="42.0" y="390" font-size="16" text-anchor="start" class="mono b">mod[&quot;expression&quot;]</text>
+<text x="42.0" y="410" font-size="11" text-anchor="start" class="mono mu">optional, from {prefix}.ae.h5ad</text>
+<line x1="42.0" y1="422" x2="576.0" y2="422" stroke="var(--hair)" stroke-width="1"/>
+<text x="134.0" y="452" font-size="11" text-anchor="middle" class="mu">var →</text>
+<text x="52.0" y="514.0" font-size="11" class="mu" text-anchor="middle" transform="rotate(-90 52.0 514.0)">obs →</text>
+<rect x="62.0" y="460" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.9"/>
+<rect x="80.0" y="460" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.9"/>
+<rect x="98.5" y="460.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="116.0" y="460" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.9"/>
+<rect x="134.0" y="460" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.6"/>
+<rect x="152.0" y="460" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.35"/>
+<rect x="170.0" y="460" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.35"/>
+<rect x="188.0" y="460" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.6"/>
+<rect x="62.0" y="478" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.6"/>
+<rect x="80.0" y="478" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.9"/>
+<rect x="98.0" y="478" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.9"/>
+<rect x="116.0" y="478" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.6"/>
+<rect x="134.0" y="478" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.6"/>
+<rect x="152.0" y="478" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.35"/>
+<rect x="170.0" y="478" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.9"/>
+<rect x="188.0" y="478" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.35"/>
+<rect x="62.0" y="496" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.35"/>
+<rect x="80.0" y="496" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.35"/>
+<rect x="98.5" y="496.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="116.0" y="496" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.35"/>
+<rect x="134.0" y="496" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.35"/>
+<rect x="152.0" y="496" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.9"/>
+<rect x="170.0" y="496" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.35"/>
+<rect x="188.5" y="496.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="62.0" y="514" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.6"/>
+<rect x="80.0" y="514" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.6"/>
+<rect x="98.0" y="514" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.35"/>
+<rect x="116.0" y="514" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.6"/>
+<rect x="134.0" y="514" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.9"/>
+<rect x="152.0" y="514" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.9"/>
+<rect x="170.0" y="514" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.6"/>
+<rect x="188.0" y="514" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.6"/>
+<rect x="62.0" y="532" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.6"/>
+<rect x="80.0" y="532" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.35"/>
+<rect x="98.0" y="532" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.9"/>
+<rect x="116.0" y="532" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.6"/>
+<rect x="134.5" y="532.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="152.0" y="532" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.9"/>
+<rect x="170.0" y="532" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.6"/>
+<rect x="188.0" y="532" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.6"/>
+<rect x="62.0" y="550" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.9"/>
+<rect x="80.0" y="550" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.6"/>
+<rect x="98.0" y="550" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.35"/>
+<rect x="116.0" y="550" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.35"/>
+<rect x="134.0" y="550" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.35"/>
+<rect x="152.5" y="550.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="170.5" y="550.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="188.0" y="550" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.6"/>
+<text x="232.0" y="447" font-size="12" text-anchor="start" class="mono b">obs</text>
+<text x="290.0" y="447" font-size="12" text-anchor="start" class="t2">samples (sample_accession)</text>
+<text x="232.0" y="479" font-size="12" text-anchor="start" class="mono b">var</text>
+<text x="290.0" y="479" font-size="12" text-anchor="start" class="t2">proteins</text>
+<text x="232.0" y="511" font-size="12" text-anchor="start" class="mono b">X</text>
+<text x="290.0" y="511" font-size="12" text-anchor="start" class="t2">absolute expression, e.g. log2 iBAQ</text>
+<text x="232.0" y="543" font-size="12" text-anchor="start" class="mono b">layers</text>
+<text x="290.0" y="543" font-size="12" text-anchor="start" class="t2">alternative quantifications</text>
+<rect x="608.0" y="362" width="568.0" height="254" rx="10" fill="var(--panel)"/>
+<rect x="608.0" y="376" width="4" height="226" rx="2" fill="var(--magenta)"/>
+<text x="626.0" y="390" font-size="16" text-anchor="start" class="mono b">mod[&quot;differential&quot;]</text>
+<text x="626.0" y="410" font-size="11" text-anchor="start" class="mono mu">optional, from {prefix}.de.h5ad</text>
+<line x1="626.0" y1="422" x2="1160.0" y2="422" stroke="var(--hair)" stroke-width="1"/>
+<text x="718.0" y="452" font-size="11" text-anchor="middle" class="mu">var →</text>
+<text x="636.0" y="514.0" font-size="11" class="mu" text-anchor="middle" transform="rotate(-90 636.0 514.0)">obs →</text>
+<rect x="646.0" y="460" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.35"/>
+<rect x="664.0" y="460" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.6"/>
+<rect x="682.0" y="460" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.35"/>
+<rect x="700.0" y="460" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.6"/>
+<rect x="718.5" y="460.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="736.0" y="460" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.6"/>
+<rect x="754.0" y="460" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.6"/>
+<rect x="772.0" y="460" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.35"/>
+<rect x="646.0" y="478" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.6"/>
+<rect x="664.5" y="478.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="682.0" y="478" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.35"/>
+<rect x="700.0" y="478" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.9"/>
+<rect x="718.0" y="478" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.9"/>
+<rect x="736.0" y="478" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.9"/>
+<rect x="754.0" y="478" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.6"/>
+<rect x="772.0" y="478" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.35"/>
+<rect x="646.0" y="496" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.6"/>
+<rect x="664.0" y="496" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.6"/>
+<rect x="682.0" y="496" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.35"/>
+<rect x="700.0" y="496" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.6"/>
+<rect x="718.0" y="496" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.35"/>
+<rect x="736.0" y="496" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.35"/>
+<rect x="754.0" y="496" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.6"/>
+<rect x="772.0" y="496" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.35"/>
+<rect x="646.0" y="514" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.9"/>
+<rect x="664.5" y="514.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="682.0" y="514" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.9"/>
+<rect x="700.5" y="514.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="718.0" y="514" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.6"/>
+<rect x="736.0" y="514" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.6"/>
+<rect x="754.0" y="514" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.9"/>
+<rect x="772.0" y="514" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.9"/>
+<rect x="646.0" y="532" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.9"/>
+<rect x="664.0" y="532" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.9"/>
+<rect x="682.0" y="532" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.6"/>
+<rect x="700.0" y="532" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.6"/>
+<rect x="718.0" y="532" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.35"/>
+<rect x="736.0" y="532" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.9"/>
+<rect x="754.0" y="532" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.35"/>
+<rect x="772.0" y="532" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.35"/>
+<rect x="646.0" y="550" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.9"/>
+<rect x="664.5" y="550.5" width="14" height="14" rx="3" fill="none" stroke="var(--rule)" stroke-width="1"/>
+<rect x="682.0" y="550" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.6"/>
+<rect x="700.0" y="550" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.9"/>
+<rect x="718.0" y="550" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.35"/>
+<rect x="736.0" y="550" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.6"/>
+<rect x="754.0" y="550" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.6"/>
+<rect x="772.0" y="550" width="15" height="15" rx="3" fill="var(--magenta)" fill-opacity="0.6"/>
+<text x="816.0" y="447" font-size="12" text-anchor="start" class="mono b">obs</text>
+<text x="874.0" y="447" font-size="12" text-anchor="start" class="t2">contrasts</text>
+<text x="816.0" y="479" font-size="12" text-anchor="start" class="mono b">var</text>
+<text x="874.0" y="479" font-size="12" text-anchor="start" class="t2">proteins</text>
+<text x="816.0" y="511" font-size="12" text-anchor="start" class="mono b">X</text>
+<text x="874.0" y="511" font-size="12" text-anchor="start" class="t2">log2 fold change</text>
+<text x="816.0" y="543" font-size="12" text-anchor="start" class="mono b">layers</text>
+<text x="874.0" y="543" font-size="12" text-anchor="start" class="t2">pvals, pvals_adj, scores, se</text>
+<rect x="24" y="632" width="568.0" height="128" rx="10" fill="var(--panel)"/>
+<text x="42" y="662" font-size="15" text-anchor="start" class="mono b">varp[&quot;feature_mapping&quot;]</text>
+<text x="42" y="686" font-size="12" text-anchor="start" class="t2">Precursor ↔ protein-group links from</text>
+<text x="42" y="703" font-size="12" text-anchor="start" class="t2">feature.pg_accessions, on the joint var axis.</text>
+<line x1="402.0" y1="658" x2="542.0" y2="668" stroke="var(--rule)" stroke-width="1.2"/>
+<line x1="402.0" y1="672" x2="542.0" y2="668" stroke="var(--rule)" stroke-width="1.2"/>
+<line x1="402.0" y1="686" x2="542.0" y2="696" stroke="var(--rule)" stroke-width="1.2"/>
+<line x1="402.0" y1="700" x2="542.0" y2="696" stroke="var(--rule)" stroke-width="1.2"/>
+<line x1="402.0" y1="700" x2="542.0" y2="724" stroke="var(--rule)" stroke-width="1.2"/>
+<line x1="402.0" y1="714" x2="542.0" y2="724" stroke="var(--rule)" stroke-width="1.2"/>
+<line x1="402.0" y1="728" x2="542.0" y2="724" stroke="var(--rule)" stroke-width="1.2"/>
+<circle cx="402.0" cy="658" r="4" fill="var(--blue)"/>
+<circle cx="402.0" cy="672" r="4" fill="var(--blue)"/>
+<circle cx="402.0" cy="686" r="4" fill="var(--blue)"/>
+<circle cx="402.0" cy="700" r="4" fill="var(--blue)"/>
+<circle cx="402.0" cy="714" r="4" fill="var(--blue)"/>
+<circle cx="402.0" cy="728" r="4" fill="var(--blue)"/>
+<rect x="537.0" y="663" width="10" height="10" rx="2" fill="var(--blue)"/>
+<rect x="537.0" y="691" width="10" height="10" rx="2" fill="var(--blue)"/>
+<rect x="537.0" y="719" width="10" height="10" rx="2" fill="var(--blue)"/>
+<text x="402.0" y="756" font-size="11" text-anchor="middle" class="mu">precursors</text>
+<text x="542.0" y="756" font-size="11" text-anchor="middle" class="mu">protein groups</text>
+<rect x="608.0" y="632" width="568.0" height="128" rx="10" fill="var(--panel)"/>
+<text x="626.0" y="662" font-size="15" text-anchor="start" class="mono b">uns</text>
+<text x="626.0" y="688" font-size="12" text-anchor="start" class="mono b">mdata.uns</text>
+<text x="726.0" y="688" font-size="12" text-anchor="start" class="t2">dataset metadata, qpx_version, writer_version,</text>
+<text x="726.0" y="707" font-size="12" text-anchor="start" class="t2">qpx_include_decoys, qpx_failed_modalities</text>
+<text x="626.0" y="726" font-size="12" text-anchor="start" class="mono b">mod[…].uns</text>
+<text x="726.0" y="726" font-size="12" text-anchor="start" class="t2">qpx_duplicates: aggregation and repeated-cell counts</text>
+<text x="24" y="790" font-size="12" text-anchor="start" class="t2">Null intensities are omitted from the sparse matrices; implicit cells read as zero. Decoys are left out unless include_decoys=True.</text>
+<text x="24" y="809" font-size="12" text-anchor="start" class="t2">Repeated cells are summed by default, or averaged with duplicates=&quot;mean&quot;. Multiplexed data expand to one observation per channel.</text>
 </svg>

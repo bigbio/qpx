@@ -1,231 +1,187 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" font-family="'Helvetica Neue', Arial, sans-serif">
-  <defs>
-    <filter id="s" x="-2%" y="-2%" width="104%" height="108%">
-      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-opacity="0.08"/>
-    </filter>
-    <marker id="arr" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-      <polygon points="0 0, 8 3, 0 6" fill="#94a3b8"/>
-    </marker>
-  </defs>
-
-  <!-- White background -->
-  <rect width="1600" height="1000" fill="#ffffff"/>
-
-  <!-- Title -->
-  <text x="800" y="58" text-anchor="middle" font-size="38" font-weight="700" fill="#1e293b" letter-spacing="2">QPX</text>
-  <text x="800" y="90" text-anchor="middle" font-size="17" fill="#64748b" letter-spacing="3">PARQUET-BASED PROTEOMICS EXCHANGE FORMAT</text>
-
-  <!-- ═══════════════════════════════════════════════════ -->
-  <!-- ROW 1: INPUT SOURCES -->
-  <!-- ═══════════════════════════════════════════════════ -->
-  <text x="80" y="142" font-size="13" font-weight="600" fill="#94a3b8" letter-spacing="2">INPUT FORMATS</text>
-
-  <rect x="80" y="158" width="195" height="72" rx="10" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.5" filter="url(#s)"/>
-  <text x="177" y="191" text-anchor="middle" font-size="17" font-weight="700" fill="#2563eb">OpenMS</text>
-  <text x="177" y="212" text-anchor="middle" font-size="12" fill="#64748b">consensusXML / QPX</text>
-
-  <rect x="295" y="158" width="195" height="72" rx="10" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.5" filter="url(#s)"/>
-  <text x="392" y="191" text-anchor="middle" font-size="17" font-weight="700" fill="#2563eb">DIA-NN</text>
-  <text x="392" y="212" text-anchor="middle" font-size="12" fill="#64748b">report.parquet / .tsv</text>
-
-  <rect x="510" y="158" width="195" height="72" rx="10" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.5" filter="url(#s)"/>
-  <text x="607" y="191" text-anchor="middle" font-size="17" font-weight="700" fill="#2563eb">MaxQuant</text>
-  <text x="607" y="212" text-anchor="middle" font-size="12" fill="#64748b">evidence + msms.txt</text>
-
-  <rect x="725" y="158" width="195" height="72" rx="10" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.5" filter="url(#s)"/>
-  <text x="822" y="191" text-anchor="middle" font-size="17" font-weight="700" fill="#2563eb">FragPipe</text>
-  <text x="822" y="212" text-anchor="middle" font-size="12" fill="#64748b">psm.tsv + combined</text>
-
-  <rect x="940" y="158" width="195" height="72" rx="10" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.5" filter="url(#s)"/>
-  <text x="1037" y="191" text-anchor="middle" font-size="17" font-weight="700" fill="#2563eb">mzIdentML</text>
-  <text x="1037" y="212" text-anchor="middle" font-size="12" fill="#64748b">.mzid + .mgf</text>
-
-  <rect x="1155" y="158" width="195" height="72" rx="10" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="1.5" filter="url(#s)"/>
-  <text x="1252" y="191" text-anchor="middle" font-size="17" font-weight="700" fill="#16a34a">SDRF</text>
-  <text x="1252" y="212" text-anchor="middle" font-size="12" fill="#64748b">sample metadata</text>
-
-  <!-- Supported labels -->
-  <rect x="1370" y="158" width="150" height="72" rx="10" fill="#f8fafc" stroke="#e2e8f0" stroke-dasharray="4"/>
-  <text x="1445" y="185" text-anchor="middle" font-size="12" fill="#94a3b8">LFQ / TMT</text>
-  <text x="1445" y="201" text-anchor="middle" font-size="12" fill="#94a3b8">iTRAQ / SILAC</text>
-  <text x="1445" y="217" text-anchor="middle" font-size="12" fill="#94a3b8">DIA / DDA</text>
-
-  <!-- Arrows down -->
-  <line x1="400" y1="230" x2="400" y2="278" stroke="#94a3b8" stroke-width="2" marker-end="url(#arr)"/>
-  <line x1="800" y1="230" x2="800" y2="278" stroke="#94a3b8" stroke-width="2" marker-end="url(#arr)"/>
-
-  <!-- ═══════════════════════════════════════════════════ -->
-  <!-- ROW 2: CONVERTER ENGINE -->
-  <!-- ═══════════════════════════════════════════════════ -->
-  <rect x="80" y="285" width="1440" height="58" rx="10" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.5" filter="url(#s)"/>
-  <text x="800" y="320" text-anchor="middle" font-size="20" font-weight="600" fill="#1e293b">Converter Engine</text>
-  <text x="1350" y="320" text-anchor="middle" font-size="14" fill="#94a3b8">DuckDB SQL transforms</text>
-  <text x="200" y="320" text-anchor="middle" font-size="14" fill="#94a3b8">schema-validated writers</text>
-
-  <!-- Arrow down -->
-  <line x1="800" y1="343" x2="800" y2="388" stroke="#94a3b8" stroke-width="2" marker-end="url(#arr)"/>
-
-  <!-- ═══════════════════════════════════════════════════ -->
-  <!-- ROW 3: QPX DATASET (main box) -->
-  <!-- ═══════════════════════════════════════════════════ -->
-  <rect x="80" y="395" width="1440" height="235" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="2" filter="url(#s)"/>
-
-  <text x="800" y="430" text-anchor="middle" font-size="24" font-weight="700" fill="#1e40af" letter-spacing="1">QPX DATASET</text>
-  <text x="800" y="454" text-anchor="middle" font-size="14" fill="#3b82f6">Apache Parquet + Apache Arrow + DuckDB Engine</text>
-
-  <!-- Identification & Quantification files -->
-  <text x="120" y="485" font-size="12" font-weight="600" fill="#3b82f6" letter-spacing="1">IDENTIFICATION &amp; QUANTIFICATION</text>
-
-  <rect x="120" y="496" width="175" height="56" rx="8" fill="#2563eb" filter="url(#s)"/>
-  <text x="207" y="521" text-anchor="middle" font-size="16" font-weight="600" fill="white">feature</text>
-  <text x="207" y="540" text-anchor="middle" font-size="12" fill="#bfdbfe">peptides / precursors</text>
-
-  <rect x="310" y="496" width="175" height="56" rx="8" fill="#2563eb" filter="url(#s)"/>
-  <text x="397" y="521" text-anchor="middle" font-size="16" font-weight="600" fill="white">pg</text>
-  <text x="397" y="540" text-anchor="middle" font-size="12" fill="#bfdbfe">protein groups</text>
-
-  <rect x="500" y="496" width="175" height="56" rx="8" fill="#2563eb" filter="url(#s)"/>
-  <text x="587" y="521" text-anchor="middle" font-size="16" font-weight="600" fill="white">psm</text>
-  <text x="587" y="540" text-anchor="middle" font-size="12" fill="#bfdbfe">identifications</text>
-
-  <!-- Metadata files -->
-  <text x="730" y="485" font-size="12" font-weight="600" fill="#16a34a" letter-spacing="1">METADATA</text>
-
-  <rect x="730" y="496" width="140" height="56" rx="8" fill="#16a34a" filter="url(#s)"/>
-  <text x="800" y="521" text-anchor="middle" font-size="16" font-weight="600" fill="white">sample</text>
-  <text x="800" y="540" text-anchor="middle" font-size="12" fill="#bbf7d0">from SDRF</text>
-
-  <rect x="885" y="496" width="140" height="56" rx="8" fill="#16a34a" filter="url(#s)"/>
-  <text x="955" y="521" text-anchor="middle" font-size="16" font-weight="600" fill="white">run</text>
-  <text x="955" y="540" text-anchor="middle" font-size="12" fill="#bbf7d0">MS run info</text>
-
-  <!-- Provenance & Ontology -->
-  <text x="1080" y="485" font-size="12" font-weight="600" fill="#7c3aed" letter-spacing="1">PROVENANCE</text>
-
-  <rect x="1080" y="496" width="140" height="56" rx="8" fill="#7c3aed" filter="url(#s)"/>
-  <text x="1150" y="521" text-anchor="middle" font-size="16" font-weight="600" fill="white">ontology</text>
-  <text x="1150" y="540" text-anchor="middle" font-size="12" fill="#e9d5ff">CV terms</text>
-
-  <rect x="1235" y="496" width="140" height="56" rx="8" fill="#7c3aed" filter="url(#s)"/>
-  <text x="1305" y="521" text-anchor="middle" font-size="16" font-weight="600" fill="white">provenance</text>
-  <text x="1305" y="540" text-anchor="middle" font-size="12" fill="#e9d5ff">pipeline steps</text>
-
-  <rect x="1390" y="496" width="110" height="56" rx="8" fill="#7c3aed" filter="url(#s)"/>
-  <text x="1445" y="521" text-anchor="middle" font-size="16" font-weight="600" fill="white">dataset</text>
-  <text x="1445" y="540" text-anchor="middle" font-size="12" fill="#e9d5ff">project info</text>
-
-  <!-- Extended structures row -->
-  <text x="120" y="576" font-size="12" font-weight="600" fill="#d97706" letter-spacing="1">EXTENDED</text>
-
-  <rect x="120" y="586" width="155" height="30" rx="6" fill="#d97706" filter="url(#s)"/>
-  <text x="197" y="606" text-anchor="middle" font-size="13" font-weight="600" fill="white">mz.parquet</text>
-
-  <rect x="290" y="586" width="155" height="30" rx="6" fill="#d97706" filter="url(#s)"/>
-  <text x="367" y="606" text-anchor="middle" font-size="13" font-weight="600" fill="white">pepmap.parquet</text>
-
-  <rect x="460" y="586" width="185" height="30" rx="6" fill="#d97706" filter="url(#s)"/>
-  <text x="552" y="606" text-anchor="middle" font-size="13" font-weight="600" fill="white">*.de.h5ad</text>
-
-  <rect x="660" y="586" width="155" height="30" rx="6" fill="#d97706" filter="url(#s)"/>
-  <text x="737" y="606" text-anchor="middle" font-size="13" font-weight="600" fill="white">*.pe.h5ad</text>
-
-  <text x="850" y="606" font-size="12" fill="#94a3b8">MuData for DE &amp; protein expression</text>
-
-  <!-- ═══════════════════════════════════════════════════ -->
-  <!-- ROW 4: TRANSFORMS + VIEWS (side by side) -->
-  <!-- ═══════════════════════════════════════════════════ -->
-  <line x1="400" y1="630" x2="400" y2="665" stroke="#94a3b8" stroke-width="2" marker-end="url(#arr)"/>
-  <line x1="1100" y1="630" x2="1100" y2="665" stroke="#94a3b8" stroke-width="2" marker-end="url(#arr)"/>
-
-  <!-- Transforms -->
-  <rect x="80" y="672" width="660" height="82" rx="10" fill="#fef2f2" stroke="#fca5a5" stroke-width="1.5" filter="url(#s)"/>
-  <text x="100" y="698" font-size="14" font-weight="700" fill="#dc2626" letter-spacing="1">TRANSFORMS</text>
-
-  <rect x="100" y="710" width="140" height="30" rx="6" fill="#dc2626"/>
-  <text x="170" y="730" text-anchor="middle" font-size="12" font-weight="600" fill="white">Accession Norm</text>
-
-  <rect x="250" y="710" width="140" height="30" rx="6" fill="#dc2626"/>
-  <text x="320" y="730" text-anchor="middle" font-size="12" font-weight="600" fill="white">SDRF Updater</text>
-
-  <rect x="400" y="710" width="140" height="30" rx="6" fill="#dc2626"/>
-  <text x="470" y="730" text-anchor="middle" font-size="12" font-weight="600" fill="white">Gene Mapping</text>
-
-  <rect x="550" y="710" width="170" height="30" rx="6" fill="#dc2626"/>
-  <text x="635" y="730" text-anchor="middle" font-size="12" font-weight="600" fill="white">Spectra Mapping</text>
-
-  <!-- Views -->
-  <rect x="780" y="672" width="740" height="82" rx="10" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5" filter="url(#s)"/>
-  <text x="800" y="698" font-size="14" font-weight="700" fill="#16a34a" letter-spacing="1">VIEWS &amp; ANALYSIS</text>
-
-  <rect x="800" y="710" width="110" height="30" rx="6" fill="#16a34a"/>
-  <text x="855" y="730" text-anchor="middle" font-size="12" font-weight="600" fill="white">Protein</text>
-
-  <rect x="920" y="710" width="110" height="30" rx="6" fill="#16a34a"/>
-  <text x="975" y="730" text-anchor="middle" font-size="12" font-weight="600" fill="white">Peptide</text>
-
-  <rect x="1040" y="710" width="110" height="30" rx="6" fill="#16a34a"/>
-  <text x="1095" y="730" text-anchor="middle" font-size="12" font-weight="600" fill="white">QC</text>
-
-  <rect x="1160" y="710" width="110" height="30" rx="6" fill="#16a34a"/>
-  <text x="1215" y="730" text-anchor="middle" font-size="12" font-weight="600" fill="white">Sample</text>
-
-  <rect x="1280" y="710" width="110" height="30" rx="6" fill="#16a34a"/>
-  <text x="1335" y="730" text-anchor="middle" font-size="12" font-weight="600" fill="white">Abs. Expr.</text>
-
-  <rect x="1400" y="710" width="100" height="30" rx="6" fill="#16a34a"/>
-  <text x="1450" y="730" text-anchor="middle" font-size="12" font-weight="600" fill="white">Plotting</text>
-
-  <!-- ═══════════════════════════════════════════════════ -->
-  <!-- ROW 5: CLI + API + OUTPUTS -->
-  <!-- ═══════════════════════════════════════════════════ -->
-  <line x1="800" y1="754" x2="800" y2="784" stroke="#94a3b8" stroke-width="2" marker-end="url(#arr)"/>
-
-  <!-- CLI bar -->
-  <rect x="80" y="790" width="660" height="52" rx="10" fill="#fffbeb" stroke="#fcd34d" stroke-width="1.5" filter="url(#s)"/>
-  <text x="100" y="822" font-size="14" font-weight="700" fill="#d97706" letter-spacing="1">CLI</text>
-
-  <text x="195" y="822" font-size="15" font-weight="500" fill="#1e293b">qpx convert</text>
-  <text x="340" y="822" font-size="15" font-weight="500" fill="#1e293b">qpx query</text>
-  <text x="470" y="822" font-size="15" font-weight="500" fill="#1e293b">qpx transform</text>
-  <text x="620" y="822" font-size="15" font-weight="500" fill="#1e293b">qpx info</text>
-
-  <!-- Output integrations -->
-  <rect x="780" y="790" width="740" height="52" rx="10" fill="#ecfeff" stroke="#67e8f9" stroke-width="1.5" filter="url(#s)"/>
-  <text x="800" y="822" font-size="14" font-weight="700" fill="#0891b2" letter-spacing="1">INTEGRATIONS</text>
-
-  <text x="920" y="822" font-size="14" font-weight="500" fill="#1e293b">Python / Pandas</text>
-  <text x="1050" y="822" font-size="14" font-weight="500" fill="#1e293b">MuData / AnnData</text>
-  <text x="1190" y="822" font-size="14" font-weight="500" fill="#1e293b">Scanpy / Muon</text>
-  <text x="1310" y="822" font-size="14" font-weight="500" fill="#1e293b">R / Arrow</text>
-  <text x="1420" y="822" font-size="14" font-weight="500" fill="#1e293b">DuckDB SQL</text>
-
-  <!-- ═══════════════════════════════════════════════════ -->
-  <!-- ROW 6: MuData EXPORT -->
-  <!-- ═══════════════════════════════════════════════════ -->
-  <line x1="800" y1="842" x2="800" y2="870" stroke="#94a3b8" stroke-width="2" marker-end="url(#arr)"/>
-
-  <rect x="80" y="878" width="1440" height="100" rx="14" fill="#fdf4ff" stroke="#e879f9" stroke-width="2" filter="url(#s)"/>
-  <text x="800" y="908" text-anchor="middle" font-size="20" font-weight="700" fill="#7e22ce" letter-spacing="1">MuData EXPORT</text>
-  <text x="800" y="928" text-anchor="middle" font-size="13" fill="#a855f7">ds.to_mudata()  →  multi-modal scverse container  →  .h5mu / .zarr.mu</text>
-
-  <rect x="120" y="940" width="160" height="26" rx="5" fill="#a855f7"/>
-  <text x="200" y="958" text-anchor="middle" font-size="12" font-weight="600" fill="white">mod["precursors"]</text>
-
-  <rect x="300" y="940" width="150" height="26" rx="5" fill="#a855f7"/>
-  <text x="375" y="958" text-anchor="middle" font-size="12" font-weight="600" fill="white">mod["proteins"]</text>
-
-  <rect x="470" y="940" width="170" height="26" rx="5" fill="#a855f7"/>
-  <text x="555" y="958" text-anchor="middle" font-size="12" font-weight="600" fill="white">mod["expression"]</text>
-
-  <rect x="660" y="940" width="170" height="26" rx="5" fill="#a855f7"/>
-  <text x="745" y="958" text-anchor="middle" font-size="12" font-weight="600" fill="white">mod["differential"]</text>
-
-  <rect x="850" y="940" width="185" height="26" rx="5" fill="#7e22ce"/>
-  <text x="942" y="958" text-anchor="middle" font-size="12" font-weight="600" fill="white">varp["feature_mapping"]</text>
-
-  <rect x="1055" y="940" width="110" height="26" rx="5" fill="#7e22ce"/>
-  <text x="1110" y="958" text-anchor="middle" font-size="12" font-weight="600" fill="white">uns metadata</text>
-
-  <text x="1230" y="958" font-size="12" fill="#94a3b8">scverse / scanpy / muon</text>
-
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="870" viewBox="0 0 1200 870" role="img" aria-labelledby="t d">
+<title id="t">QPX architecture</title>
+<desc id="d">Tool outputs are converted with qpxc convert into a QPX dataset of Parquet views (identification and quantification, spectra and evidence, proteins and modifications, metadata), plus optional HDF5 analysis matrices. Datasets are used from SQL, Python, scverse or any Parquet reader and maintained with qpxc transform or qpxc migrate. Available views depend on the input tool.</desc>
+<style>
+svg { --surface:#fcfcfb;--panel:#f4f3ef;--card:#ffffff;--ink:#0b0b0b;--ink2:#52514e;--muted:#6f6e69;--hair:#e1e0d9;--rule:#c3c2b7;--blue:#2a78d6;--orange:#eb6834;--aqua:#1baf7a;--violet:#6250d6;--magenta:#e87ba4 }
+@media (prefers-color-scheme: dark) { svg { --surface:#1a1a19;--panel:#222220;--card:#2a2a28;--ink:#f0efec;--ink2:#c3c2b7;--muted:#a3a29a;--hair:#33332f;--rule:#4a4a45;--blue:#3987e5;--orange:#d95926;--aqua:#199e70;--violet:#9085e9;--magenta:#d55181 } }
+text { font-family: system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: var(--ink); }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "DejaVu Sans Mono", monospace; }
+.t2 { fill: var(--ink2); }
+.mu { fill: var(--muted); }
+.b { font-weight: 600; }
+</style>
+<rect x="0" y="0" width="1200" height="870" rx="12" fill="var(--surface)"/>
+<text x="24" y="42" font-size="26" text-anchor="start" class="b">QPX</text>
+<text x="90" y="42" font-size="16" text-anchor="start" class="t2">Tool outputs, linked Parquet views and analysis matrices</text>
+<text x="24" y="67" font-size="12" text-anchor="start" class="mu">Available views depend on the input tool. Parquet stores the records; MuData gathers quantification matrices.</text>
+<rect x="24" y="92" width="264" height="592" rx="10" fill="var(--panel)"/>
+<text x="40" y="122" font-size="16" text-anchor="start" class="b">Inputs</text>
+<text x="40" y="142" font-size="12" text-anchor="start" class="mono mu">qpxc convert &lt;tool&gt;</text>
+<text x="40" y="181.0" font-size="13" text-anchor="start" class="b">OpenMS / quantms</text>
+<text x="40" y="198.0" font-size="11" text-anchor="start" class="mono t2">native QPX · XML · MSstats</text>
+<line x1="40" y1="213.2" x2="272" y2="213.2" stroke="var(--hair)" stroke-width="1"/>
+<text x="40" y="232.2" font-size="13" text-anchor="start" class="b">DIA-NN</text>
+<text x="40" y="249.2" font-size="11" text-anchor="start" class="mono t2">report.parquet / .tsv · pg_matrix</text>
+<line x1="40" y1="264.4" x2="272" y2="264.4" stroke="var(--hair)" stroke-width="1"/>
+<text x="40" y="283.4" font-size="13" text-anchor="start" class="b">MaxQuant</text>
+<text x="40" y="300.4" font-size="11" text-anchor="start" class="mono t2">evidence · msms · proteinGroups</text>
+<line x1="40" y1="315.6" x2="272" y2="315.6" stroke="var(--hair)" stroke-width="1"/>
+<text x="40" y="334.6" font-size="13" text-anchor="start" class="b">Spectronaut</text>
+<text x="40" y="351.6" font-size="11" text-anchor="start" class="mono t2">report</text>
+<line x1="40" y1="366.8" x2="272" y2="366.8" stroke="var(--hair)" stroke-width="1"/>
+<text x="40" y="385.8" font-size="13" text-anchor="start" class="b">FragPipe</text>
+<text x="40" y="402.8" font-size="11" text-anchor="start" class="mono t2">psm · ion · protein tables</text>
+<line x1="40" y1="418.0" x2="272" y2="418.0" stroke="var(--hair)" stroke-width="1"/>
+<text x="40" y="437.0" font-size="13" text-anchor="start" class="b">Proteome Discoverer</text>
+<text x="40" y="454.0" font-size="11" text-anchor="start" class="mono t2">PSMs · Proteins exports</text>
+<line x1="40" y1="469.20000000000005" x2="272" y2="469.20000000000005" stroke="var(--hair)" stroke-width="1"/>
+<text x="40" y="488.20000000000005" font-size="13" text-anchor="start" class="b">mzIdentML</text>
+<text x="40" y="505.20000000000005" font-size="11" text-anchor="start" class="mono t2">.mzid · optional .mgf spectra</text>
+<line x1="40" y1="520.4000000000001" x2="272" y2="520.4000000000001" stroke="var(--hair)" stroke-width="1"/>
+<text x="40" y="539.4000000000001" font-size="13" text-anchor="start" class="b">CPTAC CDAP</text>
+<text x="40" y="556.4000000000001" font-size="11" text-anchor="start" class="mono t2">.psm · pdc2qpx fetches PDC</text>
+<line x1="40" y1="571.6" x2="272" y2="571.6" stroke="var(--hair)" stroke-width="1"/>
+<text x="40" y="590.6" font-size="13" text-anchor="start" class="b">mzML</text>
+<text x="40" y="607.6" font-size="11" text-anchor="start" class="mono t2">spectra for the mz view</text>
+<line x1="40" y1="622.8" x2="272" y2="622.8" stroke="var(--hair)" stroke-width="1"/>
+<text x="40" y="641.8" font-size="13" text-anchor="start" class="b">SDRF</text>
+<text x="40" y="658.8" font-size="11" text-anchor="start" class="mono t2">sample and run metadata</text>
+<rect x="336" y="92" width="536" height="592" rx="10" fill="var(--panel)"/>
+<text x="352" y="122" font-size="16" text-anchor="start" class="b">QPX dataset</text>
+<text x="352" y="142" font-size="12" text-anchor="start" class="mono mu">{prefix}.{view}.parquet + optional analysis matrices</text>
+<rect x="350" y="158" width="508" height="84" rx="8" fill="var(--card)" stroke="var(--hair)" stroke-width="1"/>
+<rect x="350" y="168" width="4" height="64" rx="2" fill="var(--blue)"/>
+<text x="366" y="179" font-size="12" text-anchor="start" class="b t2">Identification &amp; quantification</text>
+<rect x="362.0" y="188" width="154.66666666666666" height="44" rx="6" fill="var(--panel)"/>
+<circle cx="374.0" cy="203" r="4" fill="var(--blue)"/>
+<text x="384.0" y="207" font-size="13" text-anchor="start" class="mono b">psm</text>
+<text x="374.0" y="224" font-size="11" text-anchor="start" class="t2">spectrum matches</text>
+<rect x="526.6666666666666" y="188" width="154.66666666666666" height="44" rx="6" fill="var(--panel)"/>
+<circle cx="538.6666666666666" cy="203" r="4" fill="var(--blue)"/>
+<text x="548.6666666666666" y="207" font-size="13" text-anchor="start" class="mono b">feature</text>
+<text x="538.6666666666666" y="224" font-size="11" text-anchor="start" class="t2">precursors per run</text>
+<rect x="691.3333333333333" y="188" width="154.66666666666666" height="44" rx="6" fill="var(--panel)"/>
+<circle cx="703.3333333333333" cy="203" r="4" fill="var(--blue)"/>
+<text x="713.3333333333333" y="207" font-size="13" text-anchor="start" class="mono b">pg</text>
+<text x="703.3333333333333" y="224" font-size="11" text-anchor="start" class="t2">protein groups</text>
+<rect x="350" y="252" width="508" height="84" rx="8" fill="var(--card)" stroke="var(--hair)" stroke-width="1"/>
+<rect x="350" y="262" width="4" height="64" rx="2" fill="var(--orange)"/>
+<text x="366" y="273" font-size="12" text-anchor="start" class="b t2">Spectra &amp; evidence</text>
+<rect x="362.0" y="282" width="154.66666666666666" height="44" rx="6" fill="var(--panel)"/>
+<circle cx="374.0" cy="297" r="4" fill="var(--orange)"/>
+<text x="384.0" y="301" font-size="13" text-anchor="start" class="mono b">mz</text>
+<text x="374.0" y="318" font-size="11" text-anchor="start" class="t2">MS1 / MS2 spectra</text>
+<rect x="526.6666666666666" y="282" width="154.66666666666666" height="44" rx="6" fill="var(--panel)"/>
+<circle cx="538.6666666666666" cy="297" r="4" fill="var(--orange)"/>
+<text x="548.6666666666666" y="301" font-size="13" text-anchor="start" class="mono b">fragment</text>
+<text x="538.6666666666666" y="318" font-size="11" text-anchor="start" class="t2">DIA fragment ions</text>
+<rect x="691.3333333333333" y="282" width="154.66666666666666" height="44" rx="6" fill="var(--panel)"/>
+<circle cx="703.3333333333333" cy="297" r="4" fill="var(--orange)"/>
+<text x="713.3333333333333" y="301" font-size="13" text-anchor="start" class="mono b">pepmap</text>
+<text x="703.3333333333333" y="318" font-size="11" text-anchor="start" class="t2">peptide → protein</text>
+<rect x="350" y="346" width="508" height="84" rx="8" fill="var(--card)" stroke="var(--hair)" stroke-width="1"/>
+<rect x="350" y="356" width="4" height="64" rx="2" fill="var(--aqua)"/>
+<text x="366" y="367" font-size="12" text-anchor="start" class="b t2">Proteins &amp; modifications</text>
+<rect x="362.0" y="376" width="154.66666666666666" height="44" rx="6" fill="var(--panel)"/>
+<circle cx="374.0" cy="391" r="4" fill="var(--aqua)"/>
+<text x="384.0" y="395" font-size="13" text-anchor="start" class="mono b">protein</text>
+<text x="374.0" y="412" font-size="11" text-anchor="start" class="t2">names, sequences</text>
+<rect x="526.6666666666666" y="376" width="154.66666666666666" height="44" rx="6" fill="var(--panel)"/>
+<circle cx="538.6666666666666" cy="391" r="4" fill="var(--aqua)"/>
+<text x="548.6666666666666" y="395" font-size="13" text-anchor="start" class="mono b">site</text>
+<text x="538.6666666666666" y="412" font-size="11" text-anchor="start" class="t2">modification sites</text>
+<rect x="691.3333333333333" y="376" width="154.66666666666666" height="44" rx="6" fill="var(--panel)"/>
+<circle cx="703.3333333333333" cy="391" r="4" fill="var(--aqua)"/>
+<text x="713.3333333333333" y="395" font-size="13" text-anchor="start" class="mono b">proteoform</text>
+<text x="703.3333333333333" y="412" font-size="11" text-anchor="start" class="t2">isoforms, variants</text>
+<rect x="350" y="440" width="508" height="136" rx="8" fill="var(--card)" stroke="var(--hair)" stroke-width="1"/>
+<rect x="350" y="450" width="4" height="116" rx="2" fill="var(--violet)"/>
+<text x="366" y="461" font-size="12" text-anchor="start" class="b t2">Metadata</text>
+<rect x="362.0" y="470" width="154.66666666666666" height="44" rx="6" fill="var(--panel)"/>
+<circle cx="374.0" cy="485" r="4" fill="var(--violet)"/>
+<text x="384.0" y="489" font-size="13" text-anchor="start" class="mono b">sample</text>
+<text x="374.0" y="506" font-size="11" text-anchor="start" class="t2">sample annotations</text>
+<rect x="526.6666666666666" y="470" width="154.66666666666666" height="44" rx="6" fill="var(--panel)"/>
+<circle cx="538.6666666666666" cy="485" r="4" fill="var(--violet)"/>
+<text x="548.6666666666666" y="489" font-size="13" text-anchor="start" class="mono b">run</text>
+<text x="538.6666666666666" y="506" font-size="11" text-anchor="start" class="t2">runs and channels</text>
+<rect x="691.3333333333333" y="470" width="154.66666666666666" height="44" rx="6" fill="var(--panel)"/>
+<circle cx="703.3333333333333" cy="485" r="4" fill="var(--violet)"/>
+<text x="713.3333333333333" y="489" font-size="13" text-anchor="start" class="mono b">dataset</text>
+<text x="703.3333333333333" y="506" font-size="11" text-anchor="start" class="t2">project</text>
+<rect x="362.0" y="522" width="154.66666666666666" height="44" rx="6" fill="var(--panel)"/>
+<circle cx="374.0" cy="537" r="4" fill="var(--violet)"/>
+<text x="384.0" y="541" font-size="13" text-anchor="start" class="mono b">ontology</text>
+<text x="374.0" y="558" font-size="11" text-anchor="start" class="t2">CV terms</text>
+<rect x="526.6666666666666" y="522" width="154.66666666666666" height="44" rx="6" fill="var(--panel)"/>
+<circle cx="538.6666666666666" cy="537" r="4" fill="var(--violet)"/>
+<text x="548.6666666666666" y="541" font-size="13" text-anchor="start" class="mono b">provenance</text>
+<text x="538.6666666666666" y="558" font-size="11" text-anchor="start" class="t2">inputs and tools</text>
+<rect x="350" y="586" width="508" height="84" rx="8" fill="var(--card)" stroke="var(--hair)" stroke-width="1"/>
+<rect x="350" y="596" width="4" height="64" rx="2" fill="var(--magenta)"/>
+<text x="366" y="607" font-size="12" text-anchor="start" class="b t2">Analysis matrices · optional HDF5</text>
+<rect x="362.0" y="616" width="154.66666666666666" height="44" rx="6" fill="var(--panel)"/>
+<circle cx="374.0" cy="631" r="4" fill="var(--magenta)"/>
+<text x="384.0" y="635" font-size="13" text-anchor="start" class="mono b">.h5mu</text>
+<text x="374.0" y="652" font-size="11" text-anchor="start" class="t2">MuData container</text>
+<rect x="526.6666666666666" y="616" width="154.66666666666666" height="44" rx="6" fill="var(--panel)"/>
+<circle cx="538.6666666666666" cy="631" r="4" fill="var(--magenta)"/>
+<text x="548.6666666666666" y="635" font-size="13" text-anchor="start" class="mono b">.ae.h5ad</text>
+<text x="538.6666666666666" y="652" font-size="11" text-anchor="start" class="t2">absolute expression</text>
+<rect x="691.3333333333333" y="616" width="154.66666666666666" height="44" rx="6" fill="var(--panel)"/>
+<circle cx="703.3333333333333" cy="631" r="4" fill="var(--magenta)"/>
+<text x="713.3333333333333" y="635" font-size="13" text-anchor="start" class="mono b">.de.h5ad</text>
+<text x="703.3333333333333" y="652" font-size="11" text-anchor="start" class="t2">differential</text>
+<rect x="920" y="92" width="256" height="592" rx="10" fill="var(--panel)"/>
+<text x="936" y="122" font-size="16" text-anchor="start" class="b">Use</text>
+<text x="936" y="142" font-size="12" text-anchor="start" class="mu">Python, SQL or any Parquet reader</text>
+<rect x="934" y="158" width="228" height="91.0" rx="8" fill="var(--card)" stroke="var(--hair)" stroke-width="1"/>
+<text x="948" y="180" font-size="13" text-anchor="start" class="b">SQL</text>
+<text x="948" y="199" font-size="11.5" text-anchor="start" class="t2">DuckDB over every view</text>
+<text x="948" y="216" font-size="11" text-anchor="start" class="mono t2">qpxc query sql · filter · head</text>
+<rect x="934" y="259.0" width="228" height="108.0" rx="8" fill="var(--card)" stroke="var(--hair)" stroke-width="1"/>
+<text x="948" y="281.0" font-size="13" text-anchor="start" class="b">Python API</text>
+<text x="948" y="300.0" font-size="11.5" text-anchor="start" class="t2">Dataset, DatasetCollection</text>
+<text x="948" y="317.0" font-size="11.5" text-anchor="start" class="t2">ProteinView, PeptideView, QC …</text>
+<text x="948" y="334.0" font-size="11.5" text-anchor="start" class="t2">local folders or S3</text>
+<rect x="934" y="377.0" width="228" height="91.0" rx="8" fill="var(--card)" stroke="var(--hair)" stroke-width="1"/>
+<text x="948" y="399.0" font-size="13" text-anchor="start" class="b">scverse</text>
+<text x="948" y="418.0" font-size="11" text-anchor="start" class="mono t2">build_mudata(ds) → .h5mu</text>
+<text x="948" y="435.0" font-size="11.5" text-anchor="start" class="t2">mudata, muon, scanpy</text>
+<rect x="934" y="478.0" width="228" height="91.0" rx="8" fill="var(--card)" stroke="var(--hair)" stroke-width="1"/>
+<text x="948" y="500.0" font-size="13" text-anchor="start" class="b">Any Parquet reader</text>
+<text x="948" y="519.0" font-size="11.5" text-anchor="start" class="t2">pyarrow, pandas, Polars</text>
+<text x="948" y="536.0" font-size="11.5" text-anchor="start" class="t2">R arrow, Spark</text>
+<rect x="934" y="579.0" width="228" height="91.0" rx="8" fill="var(--card)" stroke="var(--hair)" stroke-width="1"/>
+<text x="948" y="601.0" font-size="13" text-anchor="start" class="b">Inspect &amp; validate</text>
+<text x="948" y="620.0" font-size="11" text-anchor="start" class="mono t2">qpxc info · qpxc validate</text>
+<text x="948" y="637.0" font-size="11" text-anchor="start" class="mono t2">qpxc ontology search</text>
+<line x1="296" y1="388.0" x2="326" y2="388.0" stroke="var(--rule)" stroke-width="2"/>
+<polygon points="332,388.0 324,383.2 324,392.8" fill="var(--rule)"/>
+<line x1="880" y1="388.0" x2="910" y2="388.0" stroke="var(--rule)" stroke-width="2"/>
+<polygon points="916,388.0 908,383.2 908,392.8" fill="var(--rule)"/>
+<line x1="590.0" y1="690" x2="590.0" y2="714" stroke="var(--rule)" stroke-width="2"/>
+<polygon points="590.0,721 585.2,713 594.8,713" fill="var(--rule)"/>
+<line x1="618.0" y1="718" x2="618.0" y2="696" stroke="var(--rule)" stroke-width="2"/>
+<polygon points="618.0,688 613.2,696 622.8,696" fill="var(--rule)"/>
+<rect x="24" y="724" width="1152" height="122" rx="10" fill="var(--panel)"/>
+<text x="40" y="754" font-size="16" text-anchor="start" class="b">Transform and maintain</text>
+<text x="272" y="754" font-size="12" text-anchor="start" class="mono mu">qpxc transform &lt;command&gt; · qpxc migrate</text>
+<rect x="40" y="770" width="87.2" height="30" rx="15" fill="var(--card)" stroke="var(--hair)" stroke-width="1"/>
+<text x="83.6" y="789" font-size="12" text-anchor="middle" class="mono">gene-map</text>
+<rect x="137.2" y="770" width="176.0" height="30" rx="15" fill="var(--card)" stroke="var(--hair)" stroke-width="1"/>
+<text x="225.2" y="789" font-size="12" text-anchor="middle" class="mono">normalize-accessions</text>
+<rect x="323.2" y="770" width="161.20000000000002" height="30" rx="15" fill="var(--card)" stroke="var(--hair)" stroke-width="1"/>
+<text x="403.8" y="789" font-size="12" text-anchor="middle" class="mono">protein-properties</text>
+<rect x="494.4" y="770" width="87.2" height="30" rx="15" fill="var(--card)" stroke="var(--hair)" stroke-width="1"/>
+<text x="538.0" y="789" font-size="12" text-anchor="middle" class="mono">quantify</text>
+<rect x="591.6" y="770" width="57.6" height="30" rx="15" fill="var(--card)" stroke="var(--hair)" stroke-width="1"/>
+<text x="620.4" y="789" font-size="12" text-anchor="middle" class="mono">site</text>
+<rect x="659.2" y="770" width="139.0" height="30" rx="15" fill="var(--card)" stroke="var(--hair)" stroke-width="1"/>
+<text x="728.7" y="789" font-size="12" text-anchor="middle" class="mono">update-metadata</text>
+<rect x="808.2" y="770" width="87.2" height="30" rx="15" fill="var(--card)" stroke="var(--hair)" stroke-width="1"/>
+<text x="851.8000000000001" y="789" font-size="12" text-anchor="middle" class="mono">relayout</text>
+<line x1="909.4000000000001" y1="770" x2="909.4000000000001" y2="800" stroke="var(--rule)" stroke-width="1"/>
+<text x="925.4000000000001" y="789" font-size="12" text-anchor="start" class="mono">qpxc migrate</text>
+<text x="40" y="826" font-size="11.5" text-anchor="start" class="t2">Views are read and rewritten, in place or to a new folder. relayout sorts rows, numbers ids and rounds measured values for publishing; migrate upgrades a dataset to the current specification.</text>
 </svg>
