@@ -120,8 +120,10 @@ _GROUPED_RUN_SAMPLE_MAPPING_SQL = sql_build(
 
 
 # Each distinct (run, label) of the feature intensities, with the number of
-# intensities that carry it, resolved once against the run's channels. Runs that
-# are not in the run view are left to the run_file_name check.
+# intensities that carry it, resolved once against the run's channels. A pair
+# must match exactly one channel entry: the sample-joined views join a quantity
+# to every entry it matches, so a sample channel the run lists twice counts it
+# twice. Runs that are not in the run view are left to the run_file_name check.
 _FEATURE_LABEL_SAMPLE_SQL = sql_build(
     """
                 WITH units AS MATERIALIZED (
@@ -150,7 +152,7 @@ _FEATURE_LABEL_SAMPLE_SQL = sql_build(
                 FROM units u
                 LEFT JOIN unit_samples us USING (unit_id)
                 GROUP BY u.unit_id, u.run_file_name, u.label, u.n_values
-                HAVING COUNT(DISTINCT us.sample_accession) != 1
+                HAVING COUNT(us.sample_accession) != 1
                 ORDER BY u.run_file_name, u.label
                 """,
     run_channels=_RUN_CHANNELS_SQL,
@@ -202,7 +204,8 @@ def _feature_label_issues(duplicated: int, units: list[tuple]) -> list[Validatio
     """Issues for feature labels that list a sample twice or name no single sample.
 
     *units* are the (run_file_name, label, n_values, sample_count, samples)
-    rows of the (run, label) pairs that resolve to no sample or to several.
+    rows of the (run, label) pairs that match no channel entry of their run or
+    several: of several samples, or of one sample the run lists more than once.
     """
     issues = []
     if duplicated:
@@ -217,12 +220,15 @@ def _feature_label_issues(duplicated: int, units: list[tuple]) -> list[Validatio
     ambiguous = [unit for unit in units if unit[3] > 1]
     if ambiguous:
         issues.append(_label_pair_issue(ambiguous, "match the labels of several samples"))
+    repeated = [unit for unit in units if unit[3] == 1]
+    if repeated:
+        issues.append(_label_pair_issue(repeated, "match a sample channel listed more than once in the samples"))
     return issues
 
 
 def _label_pair_issue(units: list[tuple], what: str) -> ValidationIssue:
     """One ambiguous_label_sample issue for the (run, label, n_values, sample_count, samples) *units*."""
-    examples = [f"({run!r}, {label!r})" + (f" -> {samples!r}" if count > 1 else "") for run, label, _, count, samples in units]
+    examples = [f"({run!r}, {label!r})" + (f" -> {samples!r}" if count else "") for run, label, _, count, samples in units]
     message = (
         f"{sum(unit[2] for unit in units)} feature intensities in {len(units)} (run_file_name, label) pair(s) "
         f"{what} of their run ({_examples(examples)}); each label must name exactly one sample in run.samples"
@@ -558,12 +564,13 @@ class _DatasetValidationMixin:
         )
 
     def _check_feature_label_samples(self, result: ValidationResult, *, strict: bool) -> None:
-        """Require each feature label to name exactly one sample of its run, once per row.
+        """Require each feature label to name exactly one sample channel of its run, once per row.
 
         ``run.samples[].label`` is the canonical channel name and must match
-        ``feature.intensities[].label`` exactly (see the data-model spec). Each
-        distinct (run_file_name, label) pair is resolved once; rows of a run that
-        is not in the run view are left to :meth:`_check_run_file_names`.
+        ``feature.intensities[].label`` exactly (see the data-model spec), and
+        the run must list that channel once. Each distinct (run_file_name,
+        label) pair is resolved once; rows of a run that is not in the run view
+        are left to :meth:`_check_run_file_names`.
         """
         try:
             duplicated = self._engine.execute(_DUPLICATE_FEATURE_LABEL_SQL).fetchall()[0][0]
