@@ -211,7 +211,7 @@ def test_coverage_counts_shared_peptides_named_by_psm_evidence(dataset_dir, tmp_
 
 @pytest.mark.parametrize("direction", ["forward", "reverse"])
 def test_coverage_keeps_psm_evidence_after_accession_normalization(dataset_dir, tmp_path, direction):
-    """Normalizing PG/feature identifiers must retain shared-peptide PSM evidence."""
+    """Normalizing identifiers, the PSM view's included, must retain shared-peptide PSM evidence."""
     from qpx.writers import PsmWriter
     from tests.conftest import make_psm_record
 
@@ -236,7 +236,6 @@ def test_coverage_keeps_psm_evidence_after_accession_normalization(dataset_dir, 
     psm["protein_accessions"] = [full if direction == "forward" else "P67890"]
     with PsmWriter(dataset_dir / "exp.psm.parquet") as writer:
         writer.write_batch([psm])
-    psm_before = (dataset_dir / "exp.psm.parquet").read_bytes()
 
     result = CliRunner().invoke(
         transform,
@@ -250,7 +249,7 @@ def test_coverage_keeps_psm_evidence_after_accession_normalization(dataset_dir, 
     anchor = "P67890" if direction == "forward" else full
     assert pg[anchor]["sequence_coverage"] == pytest.approx(100 * 8 / 13, rel=1e-5)
     assert list(pg) == anchors_before
-    assert (dataset_dir / "exp.psm.parquet").read_bytes() == psm_before
+    assert pq.read_table(dataset_dir / "exp.psm.parquet").column("protein_accessions").to_pylist() == [[anchor]]
 
 
 @pytest.mark.parametrize("in_place", [True, False])
