@@ -192,7 +192,14 @@ class TestNameToUnimod:
 class TestUnimodNames:
     @pytest.mark.parametrize(
         ("accession", "name"),
-        [(4, "carbamidomethyl"), (737, "tmt6plex"), (2016, "tmtpro"), (214, "itraq4plex"), (259, "label:13c(6)15n(2)")],
+        [
+            (4, "carbamidomethyl"),
+            (737, "tmt6plex"),
+            (737, "sixplex tandem mass tag®"),
+            (2016, "tmtpro"),
+            (214, "itraq4plex"),
+            (259, "label:13c(6)15n(2)"),
+        ],
     )
     def test_names_of_accession(self, accession, name):
         assert name in unimod_names(accession)

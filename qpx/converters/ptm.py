@@ -74,10 +74,21 @@ class _UnimodSite(NamedTuple):
     terminus: Optional[str]
 
 
+def _text(value) -> str:
+    """Decode pyopenms names returned as bytes."""
+    if not isinstance(value, bytes):
+        return value
+    try:
+        return value.decode("utf-8")
+    except UnicodeDecodeError:
+        # Some ModificationsDB names contain Latin-1 bytes.
+        return value.decode("latin-1")
+
+
 def _modification_names(mod) -> set[str]:
     """Lower-cased names of a ``ResidueModification``: Unimod title, full id, full name and synonyms."""
-    names = {mod.getId(), mod.getFullId(), mod.getFullName()}
-    names.update(name.decode() if isinstance(name, bytes) else name for name in mod.getSynonyms())
+    names = {_text(name) for name in (mod.getId(), mod.getFullId(), mod.getFullName())}
+    names.update(_text(name) for name in mod.getSynonyms())
     return {name.lower() for name in names if name}
 
 
