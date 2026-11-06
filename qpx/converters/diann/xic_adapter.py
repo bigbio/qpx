@@ -7,12 +7,12 @@ import re
 from collections.abc import Iterable
 from pathlib import Path
 
-import duckdb
 import pyarrow as pa
 import pyarrow.parquet as pq
 
 from qpx.converters.diann.constants import to_proforma
 from qpx.core.data import XicSchema
+from qpx.core.engine import create_converter_connection
 from qpx.writers import XicWriter
 
 logger = logging.getLogger(__name__)
@@ -101,6 +101,8 @@ def convert_diann_xic(
     extraction_window_seconds: float | None = None,
     qvalue_threshold: float | None = None,
     transition_format: str = "mzPAF",
+    duckdb_memory: str | None = None,
+    duckdb_threads: int | None = None,
 ) -> int:
     """Merge DIA-NN per-run XIC exports into one dataset-level QPX XIC file.
 
@@ -127,6 +129,8 @@ def convert_diann_xic(
         Optional q-value threshold used to select the exported precursors.
     transition_format:
         Annotation grammar declared for fragment ``transition`` values; defaults to mzPAF.
+    duckdb_memory, duckdb_threads:
+        DuckDB memory limit (e.g. ``"16GB"``) and thread count for reading the exports.
 
     Returns
     -------
@@ -151,7 +155,7 @@ def convert_diann_xic(
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    con = duckdb.connect()
+    con = create_converter_connection(memory_limit=duckdb_memory, threads=duckdb_threads)
     precursor_cache: dict[str, tuple[str, int]] = {}
     transition_cache: dict[str, dict] = {}
     total = 0

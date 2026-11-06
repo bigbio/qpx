@@ -142,3 +142,38 @@ def test_diann_cli_provenance_records_only_written_xic(tmp_path, has_xic):
     steps = pq.read_table(output / "t.provenance.parquet").to_pylist()
     conversion = next(step for step in steps if step["step_name"] == "diann_to_qpx")
     assert ("xic" in conversion["output_views"]) is has_xic
+
+
+def test_diann_cli_applies_resource_limits_to_xic(tmp_path, monkeypatch):
+    """--max-cpus and --max-memory reach the DuckDB connection that reads the XIC exports."""
+    from qpx.converters.diann import xic_adapter
+
+    calls = []
+    connect = xic_adapter.create_converter_connection
+    monkeypatch.setattr(xic_adapter, "create_converter_connection", lambda **kwargs: calls.append(kwargs) or connect(**kwargs))
+    examples = Path(__file__).resolve().parents[1] / "examples" / "diann" / "small"
+    xic_folder = tmp_path / "xic"
+    xic_folder.mkdir()
+    _write_xic(xic_folder / "run1.xic.parquet")
+
+    result = CliRunner().invoke(
+        convert_diann_cmd,
+        [
+            "--report-path",
+            str(examples / "diann_report.tsv"),
+            "--sdrf-file",
+            str(examples / "PXD019909-DIA.sdrf.tsv"),
+            "--xic-folder",
+            str(xic_folder),
+            "--output-folder",
+            str(tmp_path / "out"),
+            "--max-cpus",
+            "1",
+            "--max-memory",
+            "1GB",
+            "--no-mudata",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert calls == [{"memory_limit": "1GB", "threads": 1}]

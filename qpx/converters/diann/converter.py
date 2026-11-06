@@ -150,6 +150,8 @@ class DiaNNConverter(BaseOrchestrator):
             xic_paths,
             Path(output_folder) / f"{prefix}.xic.parquet",
             compression=self._compression,
+            duckdb_memory=self._memory,
+            duckdb_threads=self._threads,
             **kwargs,
         )
         self._written_views.append(XIC)
