@@ -102,11 +102,14 @@ The `convert` command group provides converters for multiple proteomics software
 
 **Shared metadata options.** The commands `diann`, `maxquant`, `fragpipe`, `mzidentml`, `openms-consensus`, `quantms-msstats`, `spectronaut` and `cdap` accept five options: `--software-name`, `--software-version`, `--software-config`, `--enrich-pride` and `--compute-integrity`. `--software-version` and `--software-config` require `--software-name`. `--enrich-pride` needs `--project-accession`. Without it, or when PRIDE cannot be reached, the command prints a warning and continues. `--compute-integrity` covers the Parquet and h5ad files, not the `.h5mu` file. The steps run in this order: conversion, `--fasta`, `--software-name`, `--enrich-pride`, MuData, `--compute-integrity`. The `--fasta` option and MuData exist only on `diann` and `openms-consensus`.
 
+**Modifications.** The converters write `peptidoform` in ProForma with Unimod accessions (`PEPTM[UNIMOD:35]K`). Modification names (`maxquant`, `spectronaut`) and delta masses (`fragpipe`, `cdap`) are resolved with the Unimod release that ships with pyopenms (`ModificationsDB`). A name is looked up among Unimod names and synonyms, with or without the vendor site suffix (`Phospho (STY)`, `Deamidation (NQ)`, `Pyro-glu from E`), plus a few vendor names Unimod lacks (`GlyGly`, `TMT10plex`, `TMT16plex`); a name Unimod does not know stays a name in the peptidoform, with square brackets replaced by parentheses, and is logged. A name for a terminus (`Acetyl (Protein N-term)`, `Amidated (Protein C-term)`) is placed on that terminus. A mass gets the closest Unimod entry within 0.01 Da that Unimod defines at that residue or terminus. Entries of equal mass at the same site resolve only to the modification search engines are configured with (iTRAQ4plex `UNIMOD:214`, not mTRAQ:13C(3)15N(1) `UNIMOD:889`; Butyryl `UNIMOD:1289`, not Crotonaldehyde `UNIMOD:253`). Any other tie (Isovaleryl, 2-methylbutyryl and Pentanoyl on K) and a mass without an entry at that site, such as TMT6plex on Y, are kept as the signed mass (`[+999.1234]`; `cdap` writes `[CHEMMOD:+999.123]` and leaves `calculated_mz` null). OpenMS' own `ModificationsDB` entries (record ids from 99900) are not used. `calculated_mz` uses the same Unimod masses.
+
 ## Available Commands
 
 - [openms](#openms) - Enrich native OpenMS `-out_qpx` output into a full QPX dataset
 - [openms-consensus](#openms-consensus) - Convert an OpenMS consensusXML (+ SDRF) to QPX (interim; pg intensity = unnormalized unique-peptide sum)
 - [diann](#diann) - Convert DIA-NN report to QPX format
+- [diann-xic](#diann-xic) - Merge DIA-NN XIC exports into one QPX xic view
 - [spectronaut](#spectronaut) - Convert Spectronaut report to QPX format
 - [maxquant](#maxquant) - Convert MaxQuant output to QPX format
 - [fragpipe](#fragpipe) - Convert FragPipe output to QPX format
@@ -179,6 +182,18 @@ qpxc convert diann \
     --verbose
 ```
 
+#### XIC Traces from DIA-NN `--xic` Export {#diann-example-xic}
+
+Merge the per-run `*.xic.parquet` files written by DIA-NN's `--xic` option into the dataset's single `xic` view:
+
+```bash
+qpxc convert diann \
+    --report-path tests/examples/diann/full/diann_report.tsv.gz \
+    --sdrf-file tests/examples/diann/full/PXD036609.sdrf.tsv \
+    --xic-folder ./diann_xic \
+    --output-folder ./output
+```
+
 ### Output Files {#diann-output}
 
 Output files generated:
@@ -186,6 +201,7 @@ Output files generated:
 - **Feature**: `{output-prefix}-{uuid}.feature.parquet` (always produced)
 - **Protein Group**: `{output-prefix}-{uuid}.pg.parquet` (produced when `--pg-matrix-path` is provided)
 - **Mass spectra**: `{output-prefix}.mz.parquet` (produced when `--mzml-info-folder` contains `*_ms2_info.parquet`; feature-matched MS2 spectra only)
+- **XIC**: `{output-prefix}.xic.parquet` (produced when `--xic-folder` contains DIA-NN `*.xic.parquet` exports)
 - **MuData**: `{output-prefix}.h5mu` (written by default; `--no-mudata` skips it)
 
 ### Common Issues {#diann-issues}
@@ -209,6 +225,53 @@ Output files generated:
 - Use verbose mode during initial testing to diagnose issues
 - Ensure SDRF file correctly matches sample names in DIA-NN report
 - For protein groups, ensure both report and pg_matrix files are from the same DIA-NN run
+
+---
+
+## diann-xic
+
+Merge DIA-NN per-run XIC exports into one dataset-level QPX `xic.parquet`.
+
+### Description {#diann-xic-description}
+
+```python exec="1" html="1" session="doc_utils"
+from qpx.cli.convert import convert_diann_xic_cmd
+
+print(generate_description(convert_diann_xic_cmd))
+```
+
+### Parameters {#diann-xic-parameters}
+
+```python exec="1" html="1" session="doc_utils"
+from qpx.cli.convert import convert_diann_xic_cmd
+
+print(generate_params_table(convert_diann_xic_cmd))
+```
+
+### Usage Example {#diann-xic-example}
+
+```bash
+qpxc convert diann-xic \
+    --xic-folder ./diann_xic \
+    --output-folder ./output \
+    --output-prefix PXD014414 \
+    --xic-selection targets \
+    --xic-window apex \
+    --xic-extraction-window-seconds 10 \
+    --xic-qvalue-threshold 0.01
+```
+
+`--xic-folder` must contain the `*.xic.parquet` files written by DIA-NN's
+`--xic` option. All runs are merged into `PXD014414.xic.parquet`; `run_file_name`
+distinguishes them. The file footer records `xic_selection`, `xic_window`,
+`xic_extraction_window_seconds`, `xic_qvalue_threshold`, `xic_smoothed`,
+`xic_zero_points`, `xic_rt_unit` and `transition_format`. Use
+`qpxc convert diann --xic-folder ...` instead when you are also converting the
+DIA-NN report and want the XIC view in the same output folder.
+
+### Output Files {#diann-xic-output}
+
+- **XIC**: `{output-prefix}.xic.parquet`
 
 ---
 
@@ -396,11 +459,16 @@ Depending on `--structures` parameter:
 
 - **Solution**: Provide `--protein-groups-file` for accurate Q-value mapping
 
+**Issue**: `SDRF labels [...] are not channels of a TMT plex` or `... describe a SILAC experiment`
+
+- **Solution**: Each `Reporter intensity N` column is read as the channel at that position of the TMT or iTRAQ plex (TMT6 to TMTpro 18, iTRAQ 4 and 8; partial plexes too) that holds all SDRF `comment[label]` values, so labels from different plexes cannot be mapped. SILAC is not supported yet ([#308](https://github.com/bigbio/qpx/issues/308)). A conversion that writes a feature or pg view stops before writing any file; a PSM-only conversion reads no reporter columns and is not affected.
+
 ### Best Practices {#maxquant-best-practices}
 
 - Use `--structures` to control which output files are generated
-- Always provide `--protein-groups-file` when available for better data quality
+- Always provide `--protein-groups-file` when available: features then take the protein group their `Protein group IDs` name, the membership the pg view carries
 - Ensure SDRF sample names match MaxQuant experiment names
+- Provide `--sdrf-file` with the PSM and feature conversions: MaxQuant leaves fixed modifications out of `Modified sequence`, and the SDRF's `MT=fixed` modifications (except TMT, iTRAQ and SILAC labels, which MaxQuant does not report as modifications) are added to the peptidoforms so they match `calculated_mz`
 - Use compressed files (.gz) to save disk space
 - Use `--spectral-data` flag if downstream analysis requires spectral information
 

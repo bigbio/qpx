@@ -1,12 +1,14 @@
-"""CDAP converter constants -- channel definitions, modification masses, decoy prefix.
+"""CDAP converter constants -- channel definitions, decoy prefix.
 
 The CPTAC ``.psm`` tab-separated files produced by CDAP (Common Data Analysis
 Pipeline) contain TMT/iTRAQ reporter ion intensities inline with PSM-level
 identification data.  Constants in this module summarise:
 
     * Reporter-ion channel naming variants observed across all 91 CPTAC studies.
-    * Modification delta-mass patterns and their UNIMOD accessions.
     * Decoy protein prefix used by CDAP (``XXX_``).
+
+Modification delta masses are resolved to Unimod accessions by
+:func:`qpx.converters.ptm.mass_to_unimod` (see ``peptidoform.py``).
 
 Source survey: ``/home/shenyufei/.windsurf/plans/cdap-psm-survey-77e878.md``.
 """
@@ -70,37 +72,6 @@ CHANNEL_DEFS: dict[str, list[str]] = {
     ],
     "iTRAQ4": ["iTRAQ114", "iTRAQ115", "iTRAQ116", "iTRAQ117"],
 }
-
-# ---------------------------------------------------------------------------
-# Modification masses -> UNIMOD accessions
-# ---------------------------------------------------------------------------
-
-# N-term/Lys label tag masses. Used to identify and strip the labelling
-# modification when computing the stripped ``sequence`` field.  Values map the
-# delta-mass token (as it appears in ``PeptideSequence``) to the UNIMOD id.
-LABEL_TAG_MASSES: dict[str, int] = {
-    "+229.163": 737,  # TMT6/10/11
-    "+304.207": 730,  # TMTpro / TMT18
-    "+144.102": 214,  # iTRAQ4
-}
-
-# Variable / fixed PTM masses found in the survey, in addition to the label
-# tags above. Mass strings are kept as the literal token CDAP emits so that the
-# parser can compare without round-tripping floats.
-PTM_MASSES: dict[str, int] = {
-    "+57.021": 4,  # Carbamidomethyl (fixed on C)
-    "+79.966": 21,  # Phospho (S/T/Y)
-    "+15.995": 35,  # Oxidation (M)
-    "+42.011": 1,  # Acetyl (N-term/K)
-    "+42.010": 1,  # Acetyl (mass-quantisation variant)
-    "+114.043": 121,  # GlyGly (K) -- Ubiquitylation remnant
-    "+0.984": 7,  # Deamidation (N/Q)
-    "-17.027": 28,  # Gln->pyro-Glu (N-term Q)
-}
-
-# Combined lookup used by ``peptidoform.py``; preserves the label-vs-PTM split
-# so that callers can choose to strip labels but keep PTMs.
-ALL_MOD_MASSES: dict[str, int] = {**LABEL_TAG_MASSES, **PTM_MASSES}
 
 # ---------------------------------------------------------------------------
 # Decoy definitions

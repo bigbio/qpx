@@ -9,10 +9,10 @@ sequence::
 
 The N-terminal label tag (e.g. TMT/iTRAQ on the alpha amine) appears before
 the first residue.  Subsequent ``±mass`` tokens annotate the residue that
-immediately precedes them.  Tokens are mapped to UNIMOD accessions via the
-mass tables in :mod:`qpx.converters.cdap.constants`; unknown masses are passed
-through unchanged as ``CHEMMOD`` strings so that downstream tooling can still
-report them.
+immediately precedes them.  Tokens are mapped to Unimod accessions at their
+residue or N-terminus with :func:`qpx.converters.ptm.mass_to_unimod`; masses
+without a Unimod entry there are passed through unchanged as ``CHEMMOD``
+strings so that downstream tooling can still report them.
 """
 
 from __future__ import annotations
@@ -21,8 +21,7 @@ import re
 from functools import lru_cache
 from typing import Iterable
 
-from qpx.converters.cdap.constants import ALL_MOD_MASSES
-from qpx.converters.ptm import build_proforma
+from qpx.converters.ptm import build_proforma, mass_to_unimod, position_site
 
 # Regex capturing a single signed delta-mass token (e.g. ``+229.163``,
 # ``-17.027``).  Anchored to start-of-string when scanning the prefix; the
@@ -30,14 +29,14 @@ from qpx.converters.ptm import build_proforma
 _MASS_TOKEN_RE = re.compile(r"^([+-]\d+\.\d+)")
 
 
-def _resolve_mass_to_unimod(mass_token: str) -> str:
-    """Map a CDAP delta-mass token (e.g. ``+229.163``) to a UNIMOD or CHEMMOD tag.
+def _resolve_mass_to_unimod(mass_token: str, sequence: str, position: int) -> str:
+    """Map a CDAP delta-mass token (e.g. ``+229.163``) at *position* to a UNIMOD or CHEMMOD tag.
 
-    The :data:`ALL_MOD_MASSES` table is the authoritative source.  Anything not
-    found there is preserved as a ``CHEMMOD:±mass`` string so the converter
-    never silently drops a modification.
+    Position 0 is the N-terminus.  A mass without a Unimod entry at that residue
+    or terminus is preserved as a ``CHEMMOD:±mass`` string so the converter never
+    silently drops a modification.
     """
-    accession = ALL_MOD_MASSES.get(mass_token)
+    accession = mass_to_unimod(float(mass_token), *position_site(sequence, position))
     if accession is not None:
         return f"UNIMOD:{accession}"
     return f"CHEMMOD:{mass_token}"
@@ -58,7 +57,7 @@ def cdap_to_proforma(peptide_seq: str) -> str:
         return ""
 
     sequence_chars: list[str] = []
-    mods: list[tuple[int, str]] = []
+    mods: list[tuple[int, str]] = []  # (position, mass token)
     i = 0
     n = len(peptide_seq)
     last_residue_pos = 0  # 1-indexed position of the most recent amino acid
@@ -73,9 +72,8 @@ def cdap_to_proforma(peptide_seq: str) -> str:
                 i += 1
                 continue
             mass_token = match.group(1)
-            tag = _resolve_mass_to_unimod(mass_token)
-            position = last_residue_pos  # 0 means N-term in build_proforma()
-            mods.append((position, tag))
+            # 0 means N-term in build_proforma(); resolved once the residues are known.
+            mods.append((last_residue_pos, mass_token))
             i += len(mass_token)
         elif ch.isalpha():
             sequence_chars.append(ch.upper())
@@ -86,7 +84,8 @@ def cdap_to_proforma(peptide_seq: str) -> str:
             # the survey saw none of these but stay defensive.
             i += 1
 
-    return build_proforma("".join(sequence_chars), mods)
+    sequence = "".join(sequence_chars)
+    return build_proforma(sequence, [(pos, _resolve_mass_to_unimod(token, sequence, pos)) for pos, token in mods])
 
 
 @lru_cache(maxsize=65536)

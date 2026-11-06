@@ -60,6 +60,54 @@ class TestMaxQuantToProforma:
         result = to_proforma("_PEPTS(Phospho (STY))IDEK_")
         assert result == "PEPTS[UNIMOD:21]IDEK"
 
+    @pytest.mark.parametrize(
+        ("modified_sequence", "expected"),
+        [
+            # Names the hand-written map did not hold
+            ("_PEPK(GlyGly (K))R_", "PEPK[UNIMOD:121]R"),
+            ("_PEPK(Acetyl (K))R_", "PEPK[UNIMOD:1]R"),
+            ("_(Acetyl (N-term))PEPK_", "[UNIMOD:1]-PEPK"),
+            ("_(Glu->pyro-Glu)EPEPK_", "[UNIMOD:27]-EPEPK"),
+            ("_PEPS(Phospho (ST))K_", "PEPS[UNIMOD:21]K"),
+            ("_PEPN(Hex(5)HexNAc(2) (N))K_", "PEPN[UNIMOD:137]K"),
+            # Names the map gave the wrong accession
+            ("_(TMTpro (N-term))PEPK(TMTpro (K))_", "[UNIMOD:2016]-PEPK[UNIMOD:2016]"),
+            ("_(TMT16plex (N-term))PEPK(TMT16plex (K))_", "[UNIMOD:2016]-PEPK[UNIMOD:2016]"),
+            ("_(iTRAQ8plex (N-term))PEPK(iTRAQ8plex (K))_", "[UNIMOD:730]-PEPK[UNIMOD:730]"),
+            ("_(Pyro-glu from E)EPEPK_", "[UNIMOD:27]-EPEPK"),
+            # Names the map already resolved
+            ("_(TMT10plex (N-term))PEPK(TMT10plex (K))_", "[UNIMOD:737]-PEPK[UNIMOD:737]"),
+            ("_(iTRAQ4plex (N-term))PEPK(iTRAQ4plex (K))_", "[UNIMOD:214]-PEPK[UNIMOD:214]"),
+            ("_PEPN(Deamidation (NQ))Q(Deamidation (NQ))K_", "PEPN[UNIMOD:7]Q[UNIMOD:7]K"),
+            ("_(Gln->pyro-Glu)QPEPK_", "[UNIMOD:28]-QPEPK"),
+            ("_PEPK(Methyl (KR))R(Dimethyl (KR))K(Trimethyl (K))_", "PEPK[UNIMOD:34]R[UNIMOD:36]K[UNIMOD:37]"),
+            ("_(Formyl (Protein N-term))PEPK_", "[UNIMOD:122]-PEPK"),
+            ("_(UniMod:35)PEPK_", "[UNIMOD:35]-PEPK"),
+            # A C-terminal name follows the last residue but modifies the C-terminus
+            ("_PEPTIDEK(Amidated (Protein C-term))_", "PEPTIDEK-[UNIMOD:2]"),
+            ("_(Acetyl (Protein N-term))PEPK(Amidated (C-term))_", "[UNIMOD:1]-PEPK-[UNIMOD:2]"),
+        ],
+    )
+    def test_names_resolve_through_unimod(self, modified_sequence, expected):
+        from qpx.converters.maxquant.constants import to_proforma
+
+        assert to_proforma(modified_sequence) == expected
+
+    def test_signed_mass_name(self):
+        """A mass in place of a name is resolved like a FragPipe mass, else kept as the mass."""
+        from qpx.converters.maxquant.constants import to_proforma
+
+        assert to_proforma("_PEPM(+15.9949)K_") == "PEPM[UNIMOD:35]K"
+        assert to_proforma("_PEPM(+999.1234)K_") == "PEPM[+999.1234]K"
+
+    def test_unknown_name_is_bracket_safe_and_logged(self, caplog):
+        """An unknown name stays a name, without square brackets that would end the ProForma tag."""
+        from qpx.converters.maxquant.constants import to_proforma
+
+        with caplog.at_level("WARNING", logger="qpx.converters.ptm"):
+            assert to_proforma("_PEPK(Odd[1] (K))R_") == "PEPK[Odd(1) (K)]R"
+        assert "Odd[1] (K)" in caplog.text
+
 
 class TestFragPipeToProforma:
     """Test to_proforma() from fragpipe.constants builds ProForma from sequence + mods."""
@@ -82,18 +130,68 @@ class TestFragPipeToProforma:
         assert result == "[UNIMOD:1]-PEPTIDEK"
 
     def test_cterm(self):
-        """Preserve a FragPipe C-terminal token and its terminal position."""
+        """Preserve a FragPipe C-terminal token and its terminal position.
+
+        -0.9840 Da on the C-terminus is Unimod's C-terminal amidation (UNIMOD:2).
+        """
         from qpx.converters.fragpipe.constants import to_modifications
 
         peptidoform, modifications = to_modifications("C-term(-0.9840)", "PEPTIDEK")
-        assert peptidoform == "PEPTIDEK-[-0.984]"
+        assert peptidoform == "PEPTIDEK-[UNIMOD:2]"
         assert modifications == [
             {
-                "name": "CHEMMOD:-0.984",
+                "name": "UNIMOD:2",
+                "accession": "UNIMOD:2",
+                "positions": [{"position": 9, "amino_acid": None, "scores": None}],
+            }
+        ]
+
+    def test_cterm_unknown_mass(self):
+        """A C-terminal mass without a Unimod entry keeps its mass and terminal position."""
+        from qpx.converters.fragpipe.constants import to_modifications
+
+        peptidoform, modifications = to_modifications("C-term(-1.2345)", "PEPTIDEK")
+        assert peptidoform == "PEPTIDEK-[-1.2345]"
+        assert modifications == [
+            {
+                "name": "CHEMMOD:-1.2345",
                 "accession": None,
                 "positions": [{"position": 9, "amino_acid": None, "scores": None}],
             }
         ]
+
+    @pytest.mark.parametrize(
+        ("mass", "accession"),
+        [("229.1629", 737), ("304.2071", 2016), ("144.1021", 214), ("304.2054", 730)],
+    )
+    def test_isobaric_labels(self, mass, accession):
+        """TMT6plex, TMTpro, iTRAQ4plex and iTRAQ8plex on the N-terminus and Lys get their own accession.
+
+        The hand-written table returned Cysteinyl (UNIMOD:312) for TMT and
+        Ammonia-loss (UNIMOD:385) for TMTpro and iTRAQ8plex.
+        """
+        from qpx.converters.fragpipe.constants import to_proforma
+
+        result = to_proforma(f"N-term({mass}), 8K({mass})", "PEPTIDEK")
+        assert result == f"[UNIMOD:{accession}]-PEPTIDEK[UNIMOD:{accession}]"
+
+    @pytest.mark.parametrize(
+        ("assigned", "sequence", "expected"),
+        [
+            # Butyryl (UNIMOD:1289) and Crotonaldehyde (UNIMOD:253) weigh the same on Lys
+            ("4K(70.0419)", "PEPK", "PEPK[UNIMOD:1289]"),
+            # Isovaleryl, 2-methylbutyryl and Pentanoyl weigh the same on Lys: no accession
+            ("4K(84.0575)", "PEPK", "PEPK[+84.0575]"),
+            # Unimod has no phosphate on Ala; OpenMS' own PhosphoDecoy (99913) is not Unimod
+            ("1A(79.9663)", "APEPK", "A[+79.9663]PEPK"),
+            # OpenMS' CUSTOM0 (99900) is not Unimod
+            ("2E(1.0078)", "PEPK", "PE[+1.0078]PK"),
+        ],
+    )
+    def test_masses_resolve_to_unimod_accessions_only(self, assigned, sequence, expected):
+        from qpx.converters.fragpipe.constants import to_proforma
+
+        assert to_proforma(assigned, sequence) == expected
 
     def test_multiple_mods(self):
         from qpx.converters.fragpipe.constants import to_proforma
@@ -113,6 +211,56 @@ class TestFragPipeToProforma:
         # Mass that doesn't match any known UNIMOD
         result = to_proforma("5X(999.1234)", "PEPTXIDEK")
         assert result == "PEPTX[+999.1234]IDEK"
+
+
+class TestSpectronautToProforma:
+    """Spectronaut ``EG.ModifiedSequence`` names resolve through Unimod."""
+
+    @pytest.mark.parametrize(
+        ("modified_sequence", "expected"),
+        [
+            ("_PIGLC[Carbamidomethyl (C)]IAPVLAAK_", "PIGLC[UNIMOD:4]IAPVLAAK"),
+            ("_[Acetyl (Protein N-term)]M[Oxidation (M)]PEPK_", "[UNIMOD:1]-M[UNIMOD:35]PEPK"),
+            ("_PEPS[Phospho (STY)]K_", "PEPS[UNIMOD:21]K"),
+            ("_PEPK[GlyGly (K)]R_", "PEPK[UNIMOD:121]R"),
+            ("_PEPN[Deamidated (NQ)]K_", "PEPN[UNIMOD:7]K"),
+            ("_PEPK[Methylation (KR)]R_", "PEPK[UNIMOD:34]R"),
+            ("_[Formylation (Protein N-term)]PEPK_", "[UNIMOD:122]-PEPK"),
+            ("_[TMT6plex (Protein N-term)]PEPK[TMT6plex (K)]_", "[UNIMOD:737]-PEPK[UNIMOD:737]"),
+            # TMTpro was mapped to TMT6plex (UNIMOD:737), 75.04 Da per label too light
+            ("_[TMTpro (Protein N-term)]PEPK[TMTpro (K)]_", "[UNIMOD:2016]-PEPK[UNIMOD:2016]"),
+            # A C-terminal name follows the last residue but modifies the C-terminus
+            ("_PEPTIDEK[Amidated (Protein C-term)]_", "PEPTIDEK-[UNIMOD:2]"),
+        ],
+    )
+    def test_names_resolve_through_unimod(self, modified_sequence, expected):
+        from qpx.converters.spectronaut.constants import to_proforma
+
+        assert to_proforma(modified_sequence) == expected
+
+    def test_cterm_name_position_matches_fragpipe(self):
+        """Spectronaut, MaxQuant and FragPipe put a C-terminal amidation on the C-terminus, position 9."""
+        from qpx.converters.fragpipe.constants import to_modifications as fragpipe_modifications
+        from qpx.converters.maxquant.constants import to_proforma as maxquant_proforma
+        from qpx.converters.ptm import from_proforma
+        from qpx.converters.spectronaut.constants import to_modifications as spectronaut_modifications
+
+        expected = fragpipe_modifications("C-term(-0.9840)", "PEPTIDEK")
+        assert expected[1][0]["positions"] == [{"position": 9, "amino_acid": None, "scores": None}]
+        assert spectronaut_modifications("_PEPTIDEK[Amidated (Protein C-term)]_", "PEPTIDEK") == expected
+        maxquant = maxquant_proforma("_PEPTIDEK(Amidated (Protein C-term))_")
+        assert from_proforma(maxquant, "PEPTIDEK") == expected
+
+    def test_tmtpro_precursor_mz(self):
+        """The precursor m/z of a TMTpro peptide matches pyopenms."""
+        import pyopenms as oms
+
+        from qpx.converters.ptm import compute_precursor_mz
+        from qpx.converters.spectronaut.constants import to_proforma
+
+        expected = oms.AASequence.fromString("(TMTpro)PEPTIDEK(TMTpro)").getMZ(2)
+        peptidoform = to_proforma("_[TMTpro (Protein N-term)]PEPTIDEK[TMTpro (K)]_")
+        assert compute_precursor_mz(peptidoform, 2) == pytest.approx(expected, abs=1e-4)
 
 
 class TestDiannToProforma:
@@ -330,6 +478,30 @@ class TestMaxQuantPhosphoProbabilities:
 
         # No parenthetical probabilities -> None
         assert parse_phospho_probabilities("_PEPTIDEK_") is None
+
+    def test_unknown_name_keeps_psm_peptidoform_and_phospho_site(self):
+        """A name with parentheses stays one tag in the PSM peptidoform; later positions do not shift.
+
+        The PSM adapter re-parses the feature peptidoform with ``from_proforma``,
+        which turned ``K[RGG (K)]`` into ``K[RGG [K]]``: an extra modification
+        and every later position one residue too far (the phosphate on S5
+        reported on T6, and T6 marked as the assigned candidate).
+        """
+        from qpx.converters.maxquant.constants import parse_phospho_probabilities, phospho_candidates, to_proforma
+        from qpx.converters.ptm import from_proforma
+
+        sequence = "AAKPSTK"
+        feature_peptidoform = to_proforma("_AAK(RGG (K))PS(Phospho (STY))TK_")
+        site_scores = parse_phospho_probabilities("_AAKPS(0.9)T(0.1)K_")
+        psm_peptidoform, modifications = from_proforma(feature_peptidoform, sequence, site_scores=site_scores)
+
+        assert feature_peptidoform == psm_peptidoform == "AAK[RGG (K)]PS[UNIMOD:21]TK"
+        sites = {mod["name"]: [(p["position"], p["amino_acid"]) for p in mod["positions"]] for mod in modifications}
+        assert sites == {"RGG (K)": [(3, "K")], "UNIMOD:21": [(5, "S")]}
+        assigned = [
+            (c["position"], c["amino_acid"]) for c in phospho_candidates(site_scores, sequence, modifications) if c["assigned"]
+        ]
+        assert assigned == [(5, "S")]
 
 
 class TestMzIdentMLBuildPeptidoform:

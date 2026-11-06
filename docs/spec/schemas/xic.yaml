@@ -1,0 +1,158 @@
+name: xic
+file_type: xic_file
+primary_key: [xic_id]
+doc: "Extracted-ion chromatograms (XIC) for DIA and targeted acquisitions — one row per traced precursor or fragment ion per run"
+
+fields:
+  # Identity
+  xic_id:
+    type: string
+    required: true
+    doc: "Opaque identifier of one chromatogram trace. Producer-supplied (e.g. <run_file_name>|<precursor_id>|<transition>|<isotope>|<compensation_voltage>) and unique within the file; the primary key of this view."
+  run_file_name:
+    type: string
+    required: true
+    doc: "Raw data file containing the trace (without extension); links to run_file_name in the run, feature, psm, and mz views."
+  label:
+    type: string
+    required: true
+    doc: "Channel label. Use 'LFQ' for label-free DIA, or the reporter/plex channel name (e.g. 'TMT126') for multiplexed traces. Matches feature.intensities[].label."
+  feature_ids:
+    type: "list<int64>"
+    optional: true
+    nullable: true
+    doc: "Optional links to the feature.feature_id rows this trace supports. A trace is precursor-level evidence and can support several candidate peak groups, so this is a list rather than one feature id."
+  feature_scores:
+    type: "list<feature_score>"
+    optional: true
+    nullable: true
+    doc: "Per-feature scores for this trace, for producers whose fragment scores depend on the feature (e.g. area, apex intensity/RT, mass error or shape scores). Use trace-level additional_scores for scores that do not depend on a feature."
+  compensation_voltage:
+    type: float32
+    optional: true
+    nullable: true
+    doc: "FAIMS compensation voltage of the trace, when the acquisition uses FAIMS; part of the trace identity because one precursor can be traced at several voltages."
+
+  # Precursor identity
+  precursor_id:
+    type: string
+    required: true
+    doc: "The producer's precursor identifier (DIA-NN pr: modified sequence plus charge, e.g. 'PEPTM(UniMod:35)IDEK2'). Preserved as reported so a trace can be traced back to the source file."
+  peptidoform:
+    type: string
+    required: true
+    doc: "Precursor peptidoform in ProForma notation; links to feature.peptidoform and psm.peptidoform."
+  charge:
+    type: int16
+    required: true
+    doc: "Precursor charge state."
+
+  # Traced ion
+  transition:
+    type: string
+    required: true
+    doc: "Transition annotation: 'ms1' for the precursor trace, or a fragment label such as 'y7^1' or 'b4^2'. Fragment annotations should follow mzPAF (the PSI peak annotation format) where the producer supports it; ms1 is reserved for the precursor trace."
+  transition_type:
+    type: string
+    required: true
+    doc: "Kind of trace: 'ms1' for the precursor (MS1) trace, 'fragment' for a fragment-ion (MS2) trace."
+  fragment_type:
+    type: string
+    optional: true
+    nullable: true
+    doc: "Fragment-ion series (e.g. 'b', 'y'). Null for an ms1 trace or a fragment the producer did not annotate."
+  fragment_number:
+    type: int16
+    optional: true
+    nullable: true
+    doc: "Fragment-ion ordinal measured from its terminus (y7 -> 7). Null when the transition carries no fragment annotation."
+  fragment_charge:
+    type: int16
+    optional: true
+    nullable: true
+    doc: "Charge of the traced fragment ion (y7^1 -> 1). Null when the producer does not report it."
+  neutral_loss:
+    type: string
+    optional: true
+    nullable: true
+    doc: "Neutral-loss annotation of the traced ion (e.g. '-H2O'). Null when the trace has no neutral loss."
+  isotope:
+    type: int16
+    optional: true
+    nullable: true
+    doc: "Isotope index of the traced ion: 0 is monoisotopic, 1 is M+1, and so on. Applies to both precursor (ms1) and fragment traces; null when the producer does not report isotope resolution."
+  target_mz:
+    type: float32
+    optional: true
+    nullable: true
+    doc: "m/z the trace was extracted at: the precursor m/z for an ms1 trace, or the product-ion m/z for a fragment trace. Null when the producer does not report it."
+  target_rt:
+    type: float32
+    optional: true
+    nullable: true
+    doc: "Expected/target retention time of the trace in seconds, when the producer reports one (e.g. the library or predicted apex)."
+  rt_start:
+    type: float32
+    optional: true
+    nullable: true
+    doc: "Start of the extraction window in seconds. Null when the producer does not report the window or the whole run was extracted."
+  rt_stop:
+    type: float32
+    optional: true
+    nullable: true
+    doc: "End of the extraction window in seconds. Null when the producer does not report the window or the whole run was extracted."
+  target_ion_mobility:
+    type: float32
+    optional: true
+    nullable: true
+    doc: "Target ion-mobility value of the trace (1/K0), when the acquisition is ion-mobility coupled and the producer reports it."
+  ion_mobility_start:
+    type: float32
+    optional: true
+    nullable: true
+    doc: "Start of the ion-mobility extraction window (1/K0), when applicable."
+  ion_mobility_stop:
+    type: float32
+    optional: true
+    nullable: true
+    doc: "End of the ion-mobility extraction window (1/K0), when applicable."
+  library_intensity:
+    type: float32
+    optional: true
+    nullable: true
+    doc: "Library or predicted relative intensity of this fragment, when available; useful as an ML feature or for transition prioritisation."
+  used_for_quantification:
+    type: bool
+    optional: true
+    nullable: true
+    doc: "True when the producer used this trace for quantification or scoring, false when it was only extracted for inspection. Null when the producer does not mark it."
+
+  # Measurement
+  rt:
+    type: "list<float32>"
+    required: true
+    doc: "Raw retention times of the trace in seconds, strictly increasing and in acquisition order. Not aligned or iRT-corrected. MUST have the same length as intensity and, when present, mz."
+  intensity:
+    type: "list<float32>"
+    required: true
+    doc: "Raw intensity at each retention time, as exported by the producer; zero-intensity points are kept and QPX does not smooth them. MUST have the same length as rt; element i corresponds to rt[i]."
+  mz:
+    type: "list<float32>"
+    optional: true
+    nullable: true
+    doc: "Optional observed m/z at each retention time, aligned with rt; enables mass-error traces. Null when the producer does not report a per-point m/z."
+  is_decoy:
+    type: bool
+    optional: true
+    nullable: true
+    doc: "Decoy flag for the precursor when the producer reports one; null when the trace is not classified."
+  additional_scores:
+    type: "list<score>"
+    optional: true
+    doc: "Trace-level scores reported by the producer. Feature-by-trace score tables (several candidate features sharing one trace) are outside this view."
+
+  # Metadata
+  cv_params:
+    type: "list<cv_param>"
+    optional: true
+    doc: "Controlled-vocabulary parameters for trace-specific metadata. Settings that are constant for a run (m/z tolerance, extraction-window width, smoothing method) belong in run/provenance metadata, not repeated on every row."

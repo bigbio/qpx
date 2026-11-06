@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from functools import lru_cache
 
-from qpx.converters.ptm import build_proforma, from_proforma, mass_to_unimod
+from qpx.converters.ptm import build_proforma, from_proforma, mass_tag, position_site
 
 # ---------------------------------------------------------------------------
 # Decoy detection
@@ -35,6 +35,30 @@ def is_decoy_accession(protein_field: str) -> bool:
 _FP_MOD_TOKEN_RE = re.compile(r"(?:(\d+)([A-Z])|([NC]-term))\(([^)]+)\)")
 
 
+def _token_modification(token: str, sequence: str) -> tuple[int, str] | None:
+    """Position and ProForma tag of one Assigned Modifications token, or ``None`` if unparseable.
+
+    The mass is resolved to a Unimod accession at the token's residue or terminus
+    (see :func:`qpx.converters.ptm.mass_to_unimod`); a mass without a Unimod
+    entry there is kept as the signed mass.
+    """
+    m = _FP_MOD_TOKEN_RE.match(token.strip())
+    if not m:
+        return None
+    pos_str, _aa, terminus, mass_str = m.groups()
+    try:
+        mass = float(mass_str)
+    except ValueError:
+        return None
+    if terminus == "N-term":
+        position = 0
+    elif terminus == "C-term":
+        position = len(sequence) + 1
+    else:
+        position = int(pos_str)
+    return position, mass_tag(mass, *position_site(sequence, position))
+
+
 @lru_cache(maxsize=8192)
 def to_proforma(assigned_mods: str, sequence: str) -> str:
     """Build ProForma from a FragPipe sequence and Assigned Modifications string.
@@ -51,40 +75,7 @@ def to_proforma(assigned_mods: str, sequence: str) -> str:
         return ""
     if not assigned_mods or not assigned_mods.strip():
         return sequence
-
-    mods: list[tuple[int, str]] = []
-
-    for token in assigned_mods.split(","):
-        token = token.strip()
-        if not token:
-            continue
-
-        m = _FP_MOD_TOKEN_RE.match(token)
-        if not m:
-            continue
-
-        pos_str, _aa, terminus, mass_str = m.groups()
-        try:
-            mass = float(mass_str)
-        except ValueError:
-            continue
-
-        unimod_id = mass_to_unimod(mass)
-        if unimod_id is not None:
-            tag = f"UNIMOD:{unimod_id}"
-        else:
-            tag = f"+{mass}" if mass >= 0 else str(mass)
-
-        if terminus == "N-term":
-            position = 0
-        elif terminus == "C-term":
-            position = len(sequence) + 1
-        elif pos_str is not None:
-            position = int(pos_str)
-        else:
-            continue
-        mods.append((position, tag))
-
+    mods = [mod for token in assigned_mods.split(",") if (mod := _token_modification(token, sequence)) is not None]
     return build_proforma(sequence, mods)
 
 

@@ -92,6 +92,7 @@ class _DatasetWriteMixin:
         "pepmap": ("PepMapWriter", ".pepmap.parquet"),
         "site": ("SiteWriter", ".site.parquet"),
         "proteoform": ("ProteoformWriter", ".proteoform.parquet"),
+        "xic": ("XicWriter", ".xic.parquet"),
     }
 
     def save_structure(
