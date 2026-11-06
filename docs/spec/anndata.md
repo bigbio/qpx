@@ -131,7 +131,7 @@ A protein-group quantity exists once per [quantification unit](data-model.md#qua
 
 Decoy precursors and protein groups are left out by default. `build_mudata(ds, include_decoys=True)` keeps them and adds a boolean `is_decoy` column to each modality's `var`; `mdata.uns["qpx_include_decoys"]` records the choice.
 
-Several values can land in one matrix cell, such as two features of one precursor in one run (a MaxQuant MS/MS and a match-between-runs feature). They are combined with `build_mudata(ds, duplicates="sum")` (the default) or `duplicates="mean"`. Each modality's `uns["qpx_duplicates"]` records the aggregation and the number of such cells, and the build logs a warning when there are any.
+Several values can land in one matrix cell, such as two features of one precursor in one run (a MaxQuant MS/MS and a match-between-runs feature). They are combined with `build_mudata(ds, duplicates="sum")` (the default) or `duplicates="mean"`. Each modality's `uns["qpx_duplicates"]` records the aggregation and the number of such cells, and the build logs a warning when there are any. A null intensity (a protein group identified but not quantified) is not a value: it is left out of the combination and the count, and a cell with no other value is NaN.
 
 ### Cross-modality mapping
 

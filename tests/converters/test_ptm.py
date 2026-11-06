@@ -6,6 +6,7 @@ import pytest
 from qpx.converters.ptm import (
     _PREFERRED_ON_TIE,
     UNIMOD_MASS,
+    _modification_names,
     _normalize_peptidoform,
     _text,
     build_proforma,
@@ -206,6 +207,34 @@ class TestUnimodNames:
     def test_unknown_and_openms_entries_have_no_names(self):
         assert unimod_names(99900) == frozenset()
         assert unimod_names(10**6) == frozenset()
+
+    def test_names_from_bytes_are_text(self):
+        """pyopenms 3.5 (Python 3.10) returns synonyms and non-ASCII full names as Latin-1 bytes.
+
+        A bytes name in the set made a label check such as ``re.search`` over
+        ``unimod_names(737)`` raise TypeError whenever the hash order put it
+        before a matching name, and a Latin-1 synonym could not be decoded as UTF-8.
+        """
+
+        class Modification:
+            def getId(self):
+                return "TMT6plex"
+
+            def getFullId(self):
+                return "TMT6plex (K)"
+
+            def getFullName(self):
+                return b"Sixplex Tandem Mass Tag\xae"
+
+            def getSynonyms(self):
+                return [b"TMT 6-plex", b"Sixplex\xae", "tmt6"]
+
+        names = _modification_names(Modification())
+
+        assert names == {"tmt6plex", "tmt6plex (k)", "sixplex tandem mass tag\u00ae", "tmt 6-plex", "sixplex\u00ae", "tmt6"}
+
+    def test_names_of_installed_pyopenms_are_text(self):
+        assert all(isinstance(name, str) for name in unimod_names(737))
 
 
 class TestModificationTag:
