@@ -24,11 +24,13 @@ QPX is a comprehensive ecosystem for proteomics data that provides:
 
 ![QPX Architecture](images/qpx-architecture.svg)
 
-QPX provides a comprehensive proteomics data processing architecture with core modules for data conversion, transformation, visualization, statistical analysis, and project management.
+`qpxc convert` turns tool outputs into a QPX dataset: one folder of `{prefix}.{view}.parquet` files (PSMs, precursor features, protein groups, spectra, fragments, peptide-to-protein mappings, proteins, modification sites, proteoforms and metadata) and optional HDF5 analysis matrices (`.h5mu`, `.ae.h5ad`, `.de.h5ad`). Available views depend on the input tool. Datasets are read with SQL (DuckDB), the Python API, scverse tools or any Parquet reader, and maintained with `qpxc transform` and `qpxc migrate`.
 
 ### Performance
 
 ![QPX Benchmark](images/qpx-benchmark.svg)
+
+The figure uses the LFQ and TMT outputs of [PXD007683](https://www.ebi.ac.uk/pride/archive/projects/PXD007683). Queries compare a gzip mzTab PSM section read with pandas against the QPX PSM view read with DuckDB; each query ran in five fresh processes with a warm OS page cache, and the figure shows medians, with imports, conversion and `relayout` outside the timed interval. The text workflow parses the whole PSM section for every query, while DuckDB reads only the needed Parquet columns and answers an unfiltered count from the footer. Memory is the increase in peak RSS above the imported process. Storage compares related outputs after `qpxc transform relayout`, which sorts records, remaps IDs and reduces the precision of selected measured values, so the sizes are not a lossless compression ratio. Measurements used an Intel Core Ultra 7 270K Plus (24 logical CPUs, 122.9 GiB RAM), Python 3.13.9, DuckDB 1.5.2, pandas 2.3.3 and PyArrow 24; results depend on the data, query and machine.
 
 ---
 
@@ -45,9 +47,10 @@ QPX provides a comprehensive proteomics data processing architecture with core m
 | **OpenMS consensusXML** | consensusXML     | consensusXML         | consensusXML             |
 | **CPTAC CDAP**          | .psm             | .psm reporter ions   | feature-derived          |
 | **mzIdentML**           | .mzid / .mzid.gz | -                    | -                        |
+| **QuantMS MSstats**     | -                | `*_msstats_in.csv`   | -                        |
 | **SDRF**                | -                | -                    | - (sample + run)         |
 
-All conversions produce standardized Parquet and AnnData files following the [QPX specification](spec/index.md).
+All conversions produce standardized Parquet and AnnData files following the [QPX specification](spec/index.md). `qpxc convert mz` reads spectra from mzML files into the `mz` view.
 
 ---
 
