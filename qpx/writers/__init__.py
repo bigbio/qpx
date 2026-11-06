@@ -15,7 +15,7 @@ from qpx.writers.psm import PsmWriter
 from qpx.writers.run import RunWriter
 from qpx.writers.sample import SampleWriter
 from qpx.writers.site import SiteWriter
-from qpx.writers.xic import XicWriter
+from qpx.writers.xic import XicExtraction, XicWriter
 
 __all__ = [
     "BaseWriter",
@@ -33,5 +33,6 @@ __all__ = [
     "FragmentWriter",
     "ProteinWriter",
     "ProteoformWriter",
+    "XicExtraction",
     "XicWriter",
 ]

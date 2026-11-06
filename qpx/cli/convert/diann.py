@@ -24,6 +24,18 @@ from .options import (
 from .postprocess import _finish_conversion
 
 
+def _xic_extraction(options: dict):
+    """The trace selection that the ``--xic-*`` options declare."""
+    from qpx.writers import XicExtraction
+
+    return XicExtraction(
+        selection=options["xic_selection"],
+        window=options["xic_window"],
+        extraction_window_seconds=options["xic_extraction_window_seconds"],
+        qvalue_threshold=options["xic_qvalue_threshold"],
+    )
+
+
 def _write_diann_views(converter, options: dict, prefix: str) -> None:
     """Write DIA-NN data views and their metadata in conversion order."""
     output_folder = options["output_folder"]
@@ -59,13 +71,7 @@ def _write_diann_views(converter, options: dict, prefix: str) -> None:
             logging.getLogger(__name__).warning("No *.xic.parquet files found in %s; the xic view was not written", xic_folder)
         else:
             traces = converter.convert_xic(
-                xic_files,
-                output_folder=output_folder,
-                output_prefix=prefix,
-                selection=options.get("xic_selection", "targets"),
-                window=options.get("xic_window", "apex"),
-                extraction_window_seconds=options.get("xic_extraction_window_seconds"),
-                qvalue_threshold=options.get("xic_qvalue_threshold"),
+                xic_files, output_folder=output_folder, output_prefix=prefix, extraction=_xic_extraction(options)
             )
             click.echo(f"XIC view: {traces} traces across {len(xic_files)} runs")
     converter.convert_sdrf(output_folder=output_folder, prefix=prefix)
@@ -265,17 +271,7 @@ def convert_diann_cmd(**kwargs):
 @_output_folder_option
 @_output_prefix_option
 @_verbose_option
-def convert_diann_xic_cmd(
-    xic_folder,
-    label,
-    xic_selection,
-    xic_window,
-    xic_extraction_window_seconds,
-    xic_qvalue_threshold,
-    output_folder,
-    output_prefix,
-    verbose,
-):
+def convert_diann_xic_cmd(**options):
     """Merge DIA-NN XIC exports into one QPX xic view.
 
     DIA-NN writes one ``*.xic.parquet`` per run when ``--xic`` is enabled.
@@ -289,26 +285,21 @@ def convert_diann_xic_cmd(
             --output-folder ./qpx_output \\
             --output-prefix PXD014414
     """
-    if verbose:
+    if options["verbose"]:
         logging.getLogger().setLevel(logging.DEBUG)
 
-    xic_files = sorted(Path(xic_folder).glob("*.xic.parquet"))
+    xic_files = sorted(Path(options["xic_folder"]).glob("*.xic.parquet"))
     if not xic_files:
-        raise click.ClickException(f"No *.xic.parquet files found in {xic_folder}")
+        raise click.ClickException(f"No *.xic.parquet files found in {options['xic_folder']}")
 
+    output_folder = options["output_folder"]
     output_folder.mkdir(parents=True, exist_ok=True)
-    prefix = output_prefix or "diann"
+    prefix = options["output_prefix"] or "diann"
 
     from qpx.converters.diann.xic_adapter import convert_diann_xic
 
     traces = convert_diann_xic(
-        xic_files,
-        output_folder / f"{prefix}.xic.parquet",
-        label=label,
-        selection=xic_selection,
-        window=xic_window,
-        extraction_window_seconds=xic_extraction_window_seconds,
-        qvalue_threshold=xic_qvalue_threshold,
+        xic_files, output_folder / f"{prefix}.xic.parquet", label=options["label"], extraction=_xic_extraction(options)
     )
     click.echo(
         f"XIC conversion complete: {traces} traces from {len(xic_files)} run(s). "
