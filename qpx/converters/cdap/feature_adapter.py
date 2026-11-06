@@ -22,6 +22,7 @@ import pandas as pd
 
 from qpx.converters.base import resolve_columns
 from qpx.converters.cdap.base_adapter import CdapBaseAdapter
+from qpx.converters.cdap.constants import CANONICAL_LABELS
 from qpx.converters.mappings import get_field_mappings
 from qpx.writers.feature import FeatureWriter
 
@@ -83,7 +84,6 @@ class CdapFeatureAdapter(CdapBaseAdapter):
         with FeatureWriter(
             output_path,
             creator=creator,
-            compression=self._compression,
             identity_composite=_FEATURE_IDENTITY_COMPOSITE,
         ) as writer:
             self._stream_transform_write(agg_sql, writer, chunksize)
@@ -182,7 +182,7 @@ class CdapFeatureAdapter(CdapBaseAdapter):
 
         observed_mz = self._finite_float(row.get("best_observed_mz"))
         # ``calculated_mz`` is a THEORETICAL mass. When the peptidoform carries
-        # an unparseable token (e.g. a CHEMMOD unknown-mass tag), keep it NULL
+        # an unparseable token (e.g. a name without a known mass), keep it NULL
         # rather than falling back to a measured precursor m/z, which would
         # silently corrupt the theoretical-mass semantics (bigbio/qpx#250).
         calculated_mz = self._calculated_mz(peptidoform, charge)
@@ -221,6 +221,7 @@ class CdapFeatureAdapter(CdapBaseAdapter):
                 "gg_accessions": None,
                 "gg_names": None,
                 "id_run_file_name": run_file_name,
+                "identification_type": "direct",
                 "rt_start": None,
                 "rt_stop": None,
             }
@@ -270,17 +271,19 @@ class CdapFeatureAdapter(CdapBaseAdapter):
         channel_cols: list[str],
         channel_aliases: list[str],
     ) -> list[dict]:
-        """Extract reporter-ion or LFQ intensities from the row."""
+        """Extract reporter-ion or LFQ intensities from the row.
+
+        A channel without signal is an identified, unquantified label: CDAP's 0
+        is a sentinel, so it becomes a null entry.
+        """
         intensities: list[dict] = []
         if channel_cols:
             for col, alias in zip(channel_cols, channel_aliases):
                 val = self._optional_float(row.get(alias))
-                if val is not None and val > 0:
-                    intensities.append({"label": col, "intensity": val})
+                intensities.append({"label": CANONICAL_LABELS[col], "intensity": val if val else None})
         elif "best_precursor_area" in row:
             val = self._optional_float(row.get("best_precursor_area"))
-            if val is not None and val > 0:
-                intensities.append({"label": "LFQ", "intensity": val})
+            intensities.append({"label": "LFQ", "intensity": val if val else None})
         return intensities
 
     _FEATURE_SCORE_DEFS: tuple[tuple[str, str, bool], ...] = (

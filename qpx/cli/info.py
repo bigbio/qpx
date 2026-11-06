@@ -50,9 +50,11 @@ def info(ctx, dataset_path: Optional[Path], verbose: bool):
         # Show dataset summary
         qpxc info --dataset-path ./PXD014414
 
+    \b
         # Show schema for a specific structure
         qpxc info schema --dataset-path ./PXD014414 --structure feature
 
+    \b
         # Show Parquet footer metadata
         qpxc info metadata --file ./PXD014414/data.feature.parquet
     """
@@ -173,9 +175,11 @@ def info_schema_cmd(
         # Schema from a dataset structure
         qpxc info schema --dataset-path ./PXD014414 --structure feature
 
+    \b
         # Schema from a standalone Parquet file
         qpxc info schema --file ./data.feature.parquet
 
+    \b
         # Canonical QPX schema (from code)
         qpxc info schema --structure feature --canonical
     """
@@ -294,6 +298,7 @@ def info_metadata_cmd(
         # Single file
         qpxc info metadata --file ./data.feature.parquet
 
+    \b
         # All files in a dataset
         qpxc info metadata --dataset-path ./PXD014414
     """

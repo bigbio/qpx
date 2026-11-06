@@ -48,7 +48,11 @@ def test_fragpipe_retains_only_units_with_identification(tmp_path, missing_quant
         assert retained[0]["grouped_runs"] == ["run1", "run2"]
         assert retained[0]["label"] == "LFQ"
         assert retained[0]["intensity"] is None
-        assert retained[0]["additional_intensities"] is None
+        # The experiment's spectral count; FragPipe's zero MaxLFQ is not a quantity.
+        count_name = count_column.lower().replace(" ", "_")
+        assert retained[0]["additional_intensities"] == [
+            {"label": "LFQ", "intensities": [{"intensity_name": count_name, "intensity_value": 2.0}]}
+        ]
         assert retained[0]["pg_qvalue"] == pytest.approx(0.001)
     assert sorted(row["intensity"] for row in rows if row["anchor_protein"] == "P2") == [100, 200]
 
@@ -163,5 +167,7 @@ def test_maxquant_tmt_identification_skips_channels_without_a_sample(tmp_path):
     rows = {row["label"]: row for row in pq.read_table(output).to_pylist()}
     assert sorted(rows, key=labels.index) == labels[:6]
     assert rows["TMT129N"]["intensity"] is None
+    # The zero corrected intensity beside a missing one is MaxQuant's sentinel, and
+    # the experiment's MS/MS count is a spectral count of the label-free rows only.
     assert rows["TMT129N"]["additional_intensities"] is None
     assert rows["TMT126"]["intensity"] == 100

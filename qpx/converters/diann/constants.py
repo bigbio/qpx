@@ -5,7 +5,19 @@ from __future__ import annotations
 import re
 from functools import lru_cache
 
-from qpx.converters.ptm import build_proforma, from_proforma
+from qpx.converters.ptm import (
+    build_proforma,
+    format_mass_shift,
+    from_proforma,
+    modification_tag,
+    normalize_peptidoform,
+    position_site,
+)
+
+# DIA-NN's plexDIA SILAC channels tag every labelled residue with a zero-mass
+# (SILAC) modification; the feature peptidoform is the light partner's and has
+# no SILAC label.
+_LABEL_TAGS = frozenset({"silac"})
 
 # ---------------------------------------------------------------------------
 # PTM parsing: DIA-NN Modified.Sequence -> ProForma
@@ -13,16 +25,23 @@ from qpx.converters.ptm import build_proforma, from_proforma
 
 
 @lru_cache(maxsize=8192)
-def to_proforma(modified_sequence: str) -> str:
-    """Convert a DIA-NN Modified.Sequence to ProForma notation.
+def to_proforma(modified_sequence: str, mod_masses: tuple[tuple[str, float], ...] = ()) -> str:
+    """Convert a DIA-NN Modified.Sequence to canonical ProForma notation.
 
     DIA-NN encodes modifications with parentheses::
 
         PEPTM(UniMod:35)IDE       -> PEPTM[UNIMOD:35]IDE
         (UniMod:1)PEPTIDE         -> [UNIMOD:1]-PEPTIDE
+        (mTRAQ)PEPTIDEK(mTRAQ)    -> [UNIMOD:888]-PEPTIDEK[UNIMOD:888]
+
+    A modification named in *mod_masses* (the ``--fixed-mod`` / ``--var-mod``
+    declarations of the DIA-NN log, which ``--original-mods`` reports keep by
+    name) is resolved from its declared mass; other names are resolved through
+    Unimod. The (SILAC) channel tag is dropped.
 
     Args:
         modified_sequence: The ``Modified.Sequence`` value from DIA-NN output.
+        mod_masses: Declared ``(name, mass delta)`` pairs.
 
     Returns:
         ProForma string, e.g. ``PEPTM[UNIMOD:35]IDEK``.
@@ -30,6 +49,7 @@ def to_proforma(modified_sequence: str) -> str:
     if not modified_sequence:
         return ""
 
+    masses = dict(mod_masses)
     mods: list[tuple[int, str]] = []
     plain_chars: list[str] = []
     i = 0
@@ -40,20 +60,47 @@ def to_proforma(modified_sequence: str) -> str:
         if modified_sequence[i] == "(":
             end = modified_sequence.index(")", i)
             inner = modified_sequence[i + 1 : end]
-            normalised = re.sub(r"(?i)unimod:", "UNIMOD:", inner)
-            position = 0 if seq_pos == 0 else seq_pos
-            mods.append((position, normalised))
             i = end + 1
+            mass = masses.get(inner)
+            if inner.casefold() in _LABEL_TAGS or mass == 0:
+                continue
+            tag = format_mass_shift(mass) if mass is not None else re.sub(r"(?i)unimod:", "UNIMOD:", inner)
+            mods.append((seq_pos, tag))
         else:
             plain_chars.append(modified_sequence[i])
             seq_pos += 1
             i += 1
 
     plain_seq = "".join(plain_chars)
-    return build_proforma(plain_seq, mods)
+    return normalize_peptidoform(build_proforma(plain_seq, mods))
 
 
-def to_modifications(modified_sequence: str, sequence: str) -> tuple[str, list[dict] | None]:
+# Site.Occupancy.Probabilities: S(UniMod:21){0.92}T(UniMod:21){0.08}K
+_OCCUPANCY_TOKEN_RE = re.compile(r"([A-Z])|\(([^()]*)\)(?:\{([\d.eE+-]+)\})?")
+
+
+def occupancy_sites(occupancy: str, sequence: str, mod_masses: tuple[tuple[str, float], ...] = ()) -> dict[str, dict[int, float]]:
+    """Per-modification site occupancy probabilities from ``Site.Occupancy.Probabilities``.
+
+    Keys are the canonical tags of :func:`to_proforma`. Only variable modifications
+    have a probability in curly brackets.
+    """
+    masses = dict(mod_masses)
+    sites: dict[str, dict[int, float]] = {}
+    position = 0
+    for residue, name, probability in _OCCUPANCY_TOKEN_RE.findall(occupancy):
+        if residue:
+            position += 1
+        elif probability:
+            mass = masses.get(name)
+            tag = format_mass_shift(mass) if mass is not None else modification_tag(name, *position_site(sequence, position))
+            sites.setdefault(tag, {})[position] = float(probability)
+    return sites
+
+
+def to_modifications(
+    modified_sequence: str, sequence: str, mod_masses: tuple[tuple[str, float], ...] = ()
+) -> tuple[str, list[dict] | None]:
     """Parse modifications from a DIA-NN Modified.Sequence string.
 
     Converts to ProForma first, then delegates to the shared ``from_proforma``
@@ -62,10 +109,11 @@ def to_modifications(modified_sequence: str, sequence: str) -> tuple[str, list[d
     Args:
         modified_sequence: The ``Modified.Sequence`` value from DIA-NN output.
         sequence: Stripped peptide sequence (no modification annotations).
+        mod_masses: Declared ``(name, mass delta)`` pairs, as for :func:`to_proforma`.
 
     Returns:
         Tuple of (peptidoform, modifications) where modifications is a list
         of modification dicts per QPX schema, or ``None`` if unmodified.
     """
-    proforma = to_proforma(modified_sequence)
+    proforma = to_proforma(modified_sequence, mod_masses)
     return from_proforma(proforma, sequence, meta=None)

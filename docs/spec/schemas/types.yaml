@@ -32,7 +32,7 @@ modification:
 intensity:
   fields:
     label: {type: string}
-    intensity: {type: float32}
+    intensity: {type: float32, nullable: true, minimum: 0}
 
 intensity_pair:
   fields:
@@ -51,6 +51,14 @@ pg_protein:
     end: {type: int32, nullable: true}
     pre: {type: string, nullable: true}
     post: {type: string, nullable: true}
+
+channel_detail:
+  fields:
+    label: {type: string}
+    mz: {type: float64, nullable: true}
+    rt: {type: float32, nullable: true}
+    qvalue: {type: float64, nullable: true}
+    evidence: {type: float64, nullable: true}
 
 protein_position:
   fields:
@@ -75,6 +83,8 @@ sample_channel:
     label: {type: string}
     biological_replicate: {type: int32, nullable: true}
     technical_replicate: {type: int32, nullable: true}
+    channel_role: {type: string, nullable: true}
+    mixture: {type: string, nullable: true}
 
 modification_param:
   fields:
@@ -83,6 +93,12 @@ modification_param:
     fixed: {type: bool, nullable: true}
     position: {type: string, nullable: true}
     target_amino_acid: {type: string, nullable: true}
+    mass_delta: {type: float64, nullable: true}
+
+label_definition:
+  fields:
+    label: {type: string}
+    modifications: {type: "list<modification_param>"}
 
 modification_candidate:
   fields:
@@ -157,7 +173,7 @@ cross_link:
     xl_type: {type: string}
     partner_sequence: {type: string, nullable: true}
     partner_peptidoform: {type: string, nullable: true}
-    donor_position: {type: int32}
+    donor_position: {type: int32, nullable: true}
     acceptor_position: {type: int32, nullable: true}
     linker_name: {type: string}
     linker_accession: {type: string, nullable: true}

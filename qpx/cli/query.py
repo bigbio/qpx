@@ -17,6 +17,7 @@ from typing import Optional
 
 import click
 
+from qpx.cli.resources import duckdb_resource_options
 from qpx.dataset import Dataset
 
 logger = logging.getLogger("qpx.cli.query")
@@ -75,15 +76,7 @@ def query_cmd():
     "--structures",
     help="Comma-separated list of structures to load (default: all found)",
 )
-@click.option(
-    "--duckdb-memory",
-    help="DuckDB memory limit (e.g., '16GB')",
-)
-@click.option(
-    "--duckdb-threads",
-    help="DuckDB thread count",
-    type=int,
-)
+@duckdb_resource_options
 @click.option("--verbose", help="Enable verbose logging", is_flag=True)
 def query_sql_cmd(**kwargs):
     """Run an arbitrary SQL query against a QPX dataset.
@@ -99,12 +92,14 @@ def query_sql_cmd(**kwargs):
             --dataset-path ./PXD014414 \\
             --sql "SELECT run_file_name, COUNT(*) AS n FROM feature GROUP BY 1"
 
+    \b
         # Join feature with run, export to CSV
         qpxc query sql \\
             --dataset-path ./PXD014414 \\
             --sql "SELECT f.sequence, r.run_file_name FROM feature f JOIN run r USING (run_file_name)" \\
             --output results.csv
 
+    \b
         # Query specific structures only
         qpxc query sql \\
             --dataset-path ./PXD014414 \\
@@ -116,8 +111,6 @@ def query_sql_cmd(**kwargs):
     output = kwargs["output"]
     output_format = kwargs["output_format"]
     structures = kwargs["structures"]
-    duckdb_memory = kwargs["duckdb_memory"]
-    duckdb_threads = kwargs["duckdb_threads"]
     verbose = kwargs["verbose"]
 
     if verbose:
@@ -127,12 +120,7 @@ def query_sql_cmd(**kwargs):
 
     structure_list = [s.strip() for s in structures.split(",")] if structures else None
 
-    with qpx.open_dataset(
-        dataset_path,
-        structures=structure_list,
-        duckdb_memory=duckdb_memory,
-        duckdb_threads=duckdb_threads,
-    ) as ds:
+    with qpx.open_dataset(dataset_path, structures=structure_list) as ds:
         logger.info(f"Opened dataset: {ds}")
         logger.info(f"Executing SQL: {sql_query}")
 
@@ -200,6 +188,7 @@ def query_filter_cmd(**kwargs):
             --structure feature \\
             --condition "charge > 2 AND global_qvalue < 0.01"
 
+    \b
         # Filter PSMs, select specific columns
         qpxc query filter \\
             --dataset-path ./PXD014414 \\
@@ -208,6 +197,7 @@ def query_filter_cmd(**kwargs):
             --columns "sequence,charge,score" \\
             --limit 100
 
+    \b
         # Export filtered protein groups to parquet
         qpxc query filter \\
             --dataset-path ./PXD014414 \\
@@ -309,6 +299,7 @@ def query_head_cmd(
             --dataset-path ./PXD014414 \\
             --structure feature
 
+    \b
         # Show 5 PSM rows with specific columns
         qpxc query head \\
             --dataset-path ./PXD014414 \\
@@ -355,6 +346,23 @@ def query_head_cmd(
 # ---------------------------------------------------------------------------
 
 
+def _json_records(df) -> str:
+    """JSON records with identity columns as decimal strings.
+
+    Identity columns are 64-bit: above 2**53 a JavaScript number rounds them and
+    lookups by id fail, so JSON carries them as strings.
+    """
+    import pandas as pd
+
+    ids = {}
+    for column in df.columns:
+        if column.endswith("_id") and pd.api.types.is_integer_dtype(df[column]):
+            ids[column] = df[column].astype("string")
+        elif column.endswith("_ids"):
+            ids[column] = df[column].map(lambda values: [str(value) for value in values], na_action="ignore")
+    return df.assign(**ids).to_json(orient="records", indent=2)
+
+
 def _write_output(df, path: Path, fmt: str):
     """Write a DataFrame to a file in the requested format."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -370,7 +378,7 @@ def _write_output(df, path: Path, fmt: str):
         table = pa.Table.from_pandas(df)
         pq.write_table(table, str(path), compression="zstd")
     elif fmt == "json":
-        df.to_json(path, orient="records", indent=2)
+        path.write_text(_json_records(df))
     else:
         df.to_csv(path, index=False)
 
@@ -382,6 +390,6 @@ def _print_dataframe(df, fmt: str):
     elif fmt == "tsv":
         sys.stdout.write(df.to_csv(index=False, sep="\t"))
     elif fmt == "json":
-        sys.stdout.write(df.to_json(orient="records", indent=2))
+        sys.stdout.write(_json_records(df))
     else:
         sys.stdout.write(df.to_csv(index=False))

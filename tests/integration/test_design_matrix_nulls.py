@@ -33,7 +33,9 @@ def _nullable_dataset(tmp_path, request):
     proteins = []
     for run_name, identifier, intensity in observations:
         intensities = [{"label": "TMT126", "intensity": None if request.param else intensity}]
-        proteins.append(make_pg_record(anchor_protein=identifier, run_file_name=run_name, intensities=intensities))
+        proteins.append(
+            make_pg_record(anchor_protein=identifier, run_file_name=run_name, intensities=intensities, pg_accessions=[identifier])
+        )
     with PgWriter(tmp_path / "nullable.pg.parquet") as writer:
         writer.write_batch(proteins)
 

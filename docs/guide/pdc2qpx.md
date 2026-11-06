@@ -35,7 +35,6 @@ qpxc pdc2qpx -a PDC000109 --download-dir ./downloads --output-folder ./qpx/PDC00
 | `--ms-levels` | MS levels for the mz view (e.g. `2` or `1,2`) | all |
 | `--max-cpus` | Threads for the CDAP conversion | one per CPU (DuckDB default) |
 | `--max-memory` | Memory limit for the CDAP conversion | 80% of RAM (DuckDB default) |
-| `--download-threads` | Parallel HTTP Range threads per file | 24 |
 | `--skip-download` | Use files already present under `<download-dir>/<study>/` | off |
 | `--stop-on-error` | With multiple studies, abort on the first failure | off (continue) |
 

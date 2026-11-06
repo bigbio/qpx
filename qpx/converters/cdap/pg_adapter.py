@@ -1,19 +1,33 @@
-"""CDAP PG adapter -- aggregate features into per-run protein groups.
+"""CDAP PG adapter -- aggregate features into protein groups per quantification unit.
 
 Reads the ``feature.parquet`` written by :class:`CdapFeatureAdapter` and rolls
-features up to ``(anchor_protein, run_file_name)`` groups.  Reporter-ion or
-LFQ intensities are summed across the contributing features per channel; the
-peptide / feature counts and score summaries follow the QPX :class:`PgSchema`.
+features up to ``(protein group, unit)``, where a unit is the set of fraction
+runs of one plex or sample.  Reporter-ion or LFQ intensities are summed across
+the contributing features per channel; the peptide / feature counts and score
+summaries follow the QPX :class:`PgSchema`.
 """
 
 from __future__ import annotations
 
+import re
+from collections import defaultdict
 from typing import Optional
 
 import pandas as pd
 
 from qpx.converters.cdap.base_adapter import CdapBaseAdapter
 from qpx.writers.pg import PgWriter
+
+_UNIT_SEPARATOR = "\t"
+_FRACTION_SUFFIX = re.compile(r"_fr?\d+$", re.IGNORECASE)
+
+
+def units_from_fraction_names(runs: list[str]) -> dict[str, list[str]]:
+    """Group runs by name, without their ``_fNN`` suffix: CPTAC's fractions of one plex."""
+    groups: dict[str, list[str]] = defaultdict(list)
+    for run in sorted(runs):
+        groups[_FRACTION_SUFFIX.sub("", run)].append(run)
+    return {run: members for members in groups.values() for run in members}
 
 
 class CdapPgAdapter(CdapBaseAdapter):
@@ -25,8 +39,14 @@ class CdapPgAdapter(CdapBaseAdapter):
         output_path: str,
         chunksize: int = 100_000,
         creator: str = "cdap",
+        run_units: Optional[dict[str, list[str]]] = None,
     ) -> None:
-        """Aggregate the given feature parquet into per-run protein groups."""
+        """Aggregate the given feature parquet into protein groups per unit.
+
+        ``run_units`` maps a run to the runs of its quantification unit (from PDC
+        metadata or an SDRF). Runs it does not name are grouped by their ``_fNN``
+        suffix; a run without one is its own unit.
+        """
         self._load_parquet("features", feature_path)
         actual_cols = self.get_table_columns("features")
         required = {"anchor_protein", "run_file_name", "pg_accessions"}
@@ -34,9 +54,16 @@ class CdapPgAdapter(CdapBaseAdapter):
         if missing:
             raise ValueError(f"feature.parquet missing columns: {sorted(missing)}")
 
+        runs = [row[0] for row in self._conn.execute("SELECT DISTINCT run_file_name FROM features").fetchall()]
+        known = run_units or {}
+        units = {**units_from_fraction_names([run for run in runs if run not in known]), **known}
+        self._conn.register(
+            "run_units",
+            pd.DataFrame({"run_file_name": runs, "unit_runs": [_UNIT_SEPARATOR.join(sorted(units[run])) for run in runs]}),
+        )
         sql = self._build_aggregation_sql()
         self.logger.info("Transforming CDAP protein groups ...")
-        with PgWriter(output_path, creator=creator, compression=self._compression) as writer:
+        with PgWriter(output_path, creator=creator) as writer:
             self._stream_transform_write(sql, writer, chunksize)
 
         self.logger.info("CDAP PG conversion complete -> %s", output_path)
@@ -47,7 +74,7 @@ class CdapPgAdapter(CdapBaseAdapter):
 
     @staticmethod
     def _build_aggregation_sql() -> str:
-        """Build a query that aggregates features per (protein group, run).
+        """Build a query that aggregates features per (protein group, unit).
 
         The group key is the FULL protein-group membership (the sorted set of
         ``pg_accessions`` accessions), not the leading ``anchor_protein``.
@@ -72,7 +99,7 @@ class CdapPgAdapter(CdapBaseAdapter):
             ")\n"
             "SELECT\n"
             "    min(anchor_protein) AS anchor_protein,\n"
-            "    run_file_name,\n"
+            "    unit_runs,\n"
             "    any_value(is_decoy) AS any_decoy,\n"
             "    bool_and(is_decoy) AS all_decoy,\n"
             "    count(*) AS feature_count,\n"
@@ -82,8 +109,8 @@ class CdapPgAdapter(CdapBaseAdapter):
             "    list(intensities) AS intensities_per_feature,\n"
             "    list(pg_accessions) AS pg_accessions_per_feature,\n"
             "    list(additional_scores) AS additional_scores_per_feature\n"
-            "FROM keyed\n"
-            "GROUP BY pg_membership_key, run_file_name"
+            "FROM keyed JOIN run_units USING (run_file_name)\n"
+            "GROUP BY pg_membership_key, unit_runs"
         )
 
     # ------------------------------------------------------------------
@@ -99,7 +126,6 @@ class CdapPgAdapter(CdapBaseAdapter):
         anchor_protein = row.get("anchor_protein")
         if not isinstance(anchor_protein, str) or not anchor_protein:
             return None
-        run_file_name = row.get("run_file_name") or ""
 
         # Reporter / LFQ intensities: union channels across the features then sum.
         intensities = self._merge_intensities(row.get("intensities_per_feature"))
@@ -132,7 +158,7 @@ class CdapPgAdapter(CdapBaseAdapter):
             "gg_names": None,
             "gg_qvalue": None,
             "anchor_protein": anchor_protein,
-            "grouped_runs": [run_file_name],
+            "grouped_runs": row["unit_runs"].split(_UNIT_SEPARATOR),
             "global_qvalue": None,
             "pg_qvalue": None,
             "intensities": intensities or None,
@@ -160,10 +186,10 @@ class CdapPgAdapter(CdapBaseAdapter):
 
     @staticmethod
     def _merge_intensities(intensities_per_feature) -> list[dict]:
-        """Sum intensities by channel across all features in the group."""
+        """Sum intensities by channel across all features in the group; a channel without signal stays null."""
         if intensities_per_feature is None:
             return []
-        totals: dict[str, float] = {}
+        totals: dict[str, Optional[float]] = {}
         for feature_intensities in intensities_per_feature:
             if feature_intensities is None or (hasattr(feature_intensities, "__len__") and len(feature_intensities) == 0):
                 continue
@@ -172,12 +198,12 @@ class CdapPgAdapter(CdapBaseAdapter):
                     continue
                 label = entry.get("label") if isinstance(entry, dict) else None
                 value = entry.get("intensity") if isinstance(entry, dict) else None
-                if label is None or value is None:
+                if label is None:
                     continue
-                try:
-                    totals[label] = totals.get(label, 0.0) + float(value)
-                except (TypeError, ValueError):
-                    continue
+                if value is None:
+                    totals.setdefault(label, None)
+                else:
+                    totals[label] = (totals.get(label) or 0.0) + float(value)
         return [{"label": label, "intensity": value} for label, value in totals.items()]
 
     @staticmethod

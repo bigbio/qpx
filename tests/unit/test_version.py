@@ -18,8 +18,8 @@ from tests.conftest import make_pg_record
 
 def test_spec_version_is_the_format_version():
     """The spec version is the two-component format version, distinct from the build."""
-    assert QPX_SPEC_VERSION == "1.2"
-    assert parse_spec_version(QPX_SPEC_VERSION) == (1, 2)
+    assert QPX_SPEC_VERSION == "1.3"
+    assert parse_spec_version(QPX_SPEC_VERSION) == (1, 3)
     assert parse_spec_version("1.0") < parse_spec_version("1.1")
 
 
@@ -219,6 +219,22 @@ def test_dataset_with_one_bad_pg_file_still_opens_other_structures(tmp_path):
     assert ds.sample is not None  # other structure usable
     assert "sample" in ds.available_structures
     assert ds.sample.to_df().shape[0] == 1
+
+
+def test_validation_reports_a_structure_that_could_not_be_read(tmp_path):
+    """A skipped pg fails validation, by default and when requested, instead of leaving the dataset VALID."""
+    from qpx.dataset import Dataset
+
+    prefix = tmp_path.name
+    pq.write_table(pa.table({"sample_accession": ["S1"]}), tmp_path / f"{prefix}.sample.parquet")
+    _write_old_pg_file(tmp_path / f"{prefix}.pg.parquet")
+
+    with Dataset(tmp_path) as ds:
+        assert list(ds.skipped_structures) == ["pg"]
+        for results in (ds.validate(), ds.validate(structures=["pg"])):
+            [issue] = results["pg"].issues
+            assert (issue.check, issue.severity) == ("unreadable_structure", "error")
+            assert "grouped_runs" in issue.message
 
 
 def _write_channel_feature_file(path):

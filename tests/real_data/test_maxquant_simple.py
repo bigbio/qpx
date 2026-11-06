@@ -147,7 +147,7 @@ class TestFeatureConversion:
             if row is None:
                 continue
             for entry in row:
-                assert entry["intensity"] >= 0
+                assert entry["intensity"] is None or entry["intensity"] >= 0
 
     def test_schema_validation(self, feature_table):
         from qpx.core.data import FeatureSchema

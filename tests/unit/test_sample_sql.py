@@ -155,12 +155,13 @@ def test_feature_helpers_match_the_resolution_rule(tmt_dataset):
         quantified = ds.feature.for_quantification(ds).to_df()
         abundance = ds.intensity("peptide").to_df()
 
+    # The peptide view leaves decoys out; for_quantification keeps them.
+    targets = reference[~reference["is_decoy"]]
     columns = ("sequence", "sample_accession", "label", "intensity")
-    pd.testing.assert_frame_equal(_sorted(view, columns), _sorted(reference, columns), check_dtype=False)
+    pd.testing.assert_frame_equal(_sorted(view, columns), _sorted(targets, columns), check_dtype=False)
     pd.testing.assert_frame_equal(_sorted(quantified, columns), _sorted(reference, columns), check_dtype=False)
     assert set(quantified["fraction"]) == {"1", "2"}
 
-    targets = reference[~reference["is_decoy"]]
     expected = targets.groupby(["sample_accession", "peptidoform"], as_index=False)["intensity"].sum()
     expected = expected.rename(columns={"peptidoform": "feature_id"})
     columns = ("sample_accession", "feature_id", "intensity")
@@ -173,8 +174,8 @@ def test_pg_helpers_resolve_each_unit_once_per_sample(tmt_dataset):
         abundance = ds.intensity("protein").to_df()
         view = ds.protein_view.intensity().to_df()
 
-    # 2 plexes x 3 groups x 16 channels; the decoy group drops out of intensity().
-    assert len(view) == 2 * 3 * 16
+    # 2 plexes x 2 target groups x 16 channels: the decoy group drops out of both.
+    assert len(view) == 2 * 2 * 16
     assert len(abundance) == 2 * 2 * 16
     row = view[(view["protein_accession"] == "P1") & (view["sample_accession"] == "plexB_TMT127N")]
     assert row["intensity"].tolist() == [101.0]

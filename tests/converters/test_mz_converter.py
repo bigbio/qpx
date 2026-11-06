@@ -6,6 +6,7 @@ pyopenms so the tests are self-contained and fast.
 """
 
 import gzip
+import random
 import shutil
 
 import pyarrow as pa
@@ -16,13 +17,20 @@ pytest.importorskip("pyopenms")
 
 
 def _make_mini_mzml(
-    path, specs, native_id="controllerType=0 controllerNumber=1 scan={scan}", injection_time=None, ion_mobility=None, tic=None
+    path,
+    specs,
+    native_id="controllerType=0 controllerNumber=1 scan={scan}",
+    injection_time=None,
+    ion_mobility=None,
+    tic=None,
+    peaks=([100.0, 200.0, 300.0], [10.0, 20.0, 30.0]),
 ):
     """Write a minimal mzML at *path*.
 
     *specs* is a list of ``(ms_level, scan, rt_seconds)`` tuples. MS2+ spectra
-    get a precursor. Native IDs default to the Thermo ``scan=N`` form so
-    scan-number extraction can be exercised.
+    get a precursor and every spectrum the ``(mz, intensity)`` *peaks*. Native
+    IDs default to the Thermo ``scan=N`` form so scan-number extraction can be
+    exercised.
     """
     import pyopenms as oms
 
@@ -39,7 +47,7 @@ def _make_mini_mzml(
             precursor.setMZ(500.0 + scan)
             precursor.setCharge(2)
             spectrum.setPrecursors([precursor])
-        spectrum.set_peaks(([100.0, 200.0, 300.0], [10.0, 20.0, 30.0]))
+        spectrum.set_peaks(peaks)
         exp.addSpectrum(spectrum)
     oms.MzMLFile().store(str(path), exp)
     if injection_time is not None:
@@ -175,12 +183,15 @@ def test_inverse_ion_mobility_comes_from_the_selected_ion(tmp_path):
 
 
 def test_peak_arrays_use_byte_stream_split(tmp_path):
-    """Spectrum m/z and intensity leaves are written with BYTE_STREAM_SPLIT."""
+    """Continuous spectrum m/z and intensity leaves measure smallest, and are written, with BYTE_STREAM_SPLIT."""
     from qpx.transforms.spectra_mapping import SpectraMappingTransform
 
     d = tmp_path / "mzml"
     d.mkdir()
-    _make_mini_mzml(d / "run_f.mzML", [(1, 1, 60.0), (2, 2, 60.5)])
+    rng = random.Random(0)
+    mz = sorted(rng.uniform(100, 2000) for _ in range(2000))
+    intensity = [rng.lognormvariate(10, 2) for _ in range(2000)]
+    _make_mini_mzml(d / "run_f.mzML", [(1, 1, 60.0), (2, 2, 60.5)], peaks=(mz, intensity))
     out = tmp_path / "out.mz.parquet"
     SpectraMappingTransform(mzml_directory=d).write_mz_parquet_from_dir(out)
 
@@ -228,3 +239,65 @@ def test_total_ion_current_is_the_reported_tic(tmp_path):
 
     rows = pq.read_table(str(out), columns=["run_file_name", "total_ion_current"]).to_pylist()
     assert {row["run_file_name"]: row["total_ion_current"] for row in rows} == {"run_j": 1000.0, "run_k": 60.0}
+
+
+@pytest.mark.parametrize(
+    ("cv_param", "column", "value"),
+    [
+        (
+            '<cvParam cvRef="MS" accession="MS:1002476" name="ion mobility drift time" value="25.5" '
+            'unitAccession="UO:0000028" unitName="millisecond" unitCvRef="UO" />',
+            "drift_time",
+            25.5,
+        ),
+        (
+            '<cvParam cvRef="MS" accession="MS:1001581" name="FAIMS compensation voltage" value="-45.0" '
+            'unitAccession="UO:0000218" unitName="volt" unitCvRef="UO" />',
+            "compensation_voltage",
+            -45.0,
+        ),
+    ],
+)
+def test_drift_time_and_faims_voltage_have_their_own_columns(tmp_path, cv_param, column, value):
+    from qpx.transforms.spectra_mapping import SpectraMappingTransform
+
+    d = tmp_path / "mzml"
+    d.mkdir()
+    path = d / "run.mzML"
+    _make_mini_mzml(path, [(2, 1, 60.0)])
+    path.write_text(path.read_text().replace("<scan>", "<scan>" + cv_param))
+    out = tmp_path / "out.mz.parquet"
+    SpectraMappingTransform(mzml_directory=d).write_mz_parquet_from_dir(out)
+
+    row = pq.read_table(str(out)).to_pylist()[0]
+    assert row[column] == pytest.approx(value)
+    assert row["inverse_ion_mobility"] is None
+
+
+def test_per_peak_ion_mobility_is_kept_with_its_unit(tmp_path):
+    import numpy as np
+    import pyopenms as oms
+
+    from qpx.transforms.spectra_mapping import SpectraMappingTransform
+
+    d = tmp_path / "mzml"
+    d.mkdir()
+    spectrum = oms.MSSpectrum()
+    spectrum.setMSLevel(1)
+    spectrum.setRT(60.0)
+    spectrum.setNativeID("scan=1")
+    spectrum.set_peaks(([100.0, 200.0], [10.0, 20.0]))
+    mobility = oms.FloatDataArray()
+    mobility.setName("Ion Mobility")
+    mobility.set_data(np.array([0.8, 0.9], dtype=np.float32))
+    spectrum.setFloatDataArrays([mobility])
+    experiment = oms.MSExperiment()
+    experiment.addSpectrum(spectrum)
+    oms.MzMLFile().store(str(d / "run.mzML"), experiment)
+    out = tmp_path / "out.mz.parquet"
+
+    SpectraMappingTransform(mzml_directory=d).write_mz_parquet_from_dir(out)
+
+    row = pq.read_table(str(out)).to_pylist()[0]
+    assert row["ion_mobility_array"] == pytest.approx([0.8, 0.9])
+    assert row["ion_mobility_array_unit"] == "ms"

@@ -231,3 +231,25 @@ def test_scores_integration():
     assert "diann_qvalue" in names
     for e in entries:
         assert "ontology_version" in e
+
+
+@pytest.mark.parametrize(
+    ("score_name", "expected"),
+    [
+        ("mascot_expectation_value", False),
+        ("psm_level_q_value", False),
+        ("percolator_q_value", False),
+        ("ms_gf_specevalue", False),
+        ("x_tandem_expect", False),
+        ("comet_expectation_value", False),
+        ("posterior_error_probability", False),
+        ("mascot_score", True),
+        ("ms_gf_rawscore", True),
+        ("some_unknown_metric", None),
+    ],
+)
+def test_score_direction_is_never_guessed(score_name, expected):
+    """E-values and q-values are lower-is-better; an unknown direction stays None (#154)."""
+    from qpx.core.scores import is_higher_better
+
+    assert is_higher_better(score_name) is expected

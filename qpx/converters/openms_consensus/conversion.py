@@ -33,13 +33,15 @@ from qpx.converters.openms_consensus.psm_adapter import (
     uniform_scan_format,
 )
 from qpx.converters.openms_consensus.record_linking import _cf_feature_psm_records, _PsmKeys, _RecordContext
-from qpx.writers.base import parquet_write_options
+from qpx.writers.encoding import SampledParquetWriter
 from qpx.writers.feature import FeatureWriter
 from qpx.writers.pg import PgWriter
 from qpx.writers.psm import PsmWriter
 
 _log = logging.getLogger("qpx.converters.openms_consensus.converter")
-_PSM_IDENTITY_COMPOSITE = ("peptidoform", "charge", "run_file_name", "scan")
+_PSM_IDENTITY_COMPOSITE = ("run_file_name", "scan", "peptidoform", "charge")
+# Pending record dicts cost far more than their row groups: keep few of them.
+_STREAM_BATCH = 20_000
 
 
 @dataclass(frozen=True)
@@ -49,7 +51,6 @@ class _OutputConfig:
     folder: Path
     prefix: str
     creator: str
-    compression: str
 
 
 @dataclass(frozen=True)
@@ -59,7 +60,6 @@ class _ConversionConfig:
     output: _OutputConfig
     structures: tuple[str, ...]
     sdrf_path: Optional[str]
-    pg_top: int
     include_unassigned_psms: bool
 
 
@@ -110,7 +110,7 @@ def _rewrite_parquet_rows(
     source = pq.ParquetFile(str(path))
     try:
         schema = source.schema_arrow
-        with pq.ParquetWriter(str(tmp), schema=schema, **parquet_write_options(schema, compression)) as writer:
+        with SampledParquetWriter(tmp, schema, compression) as writer:
             offset = 0
             for index in range(source.num_row_groups):
                 table = source.read_row_group(index)
@@ -173,9 +173,9 @@ def _warn_channel_mismatch(cm, sdrf_path) -> None:
             _log.warning("consensusXML/SDRF channel mismatch: %s", msg)
 
 
-def _write_view(writer_cls, path, records, *, creator, compression, identity_composite=None, scan_format=None):
+def _write_view(writer_cls, path, records, *, creator, identity_composite=None, scan_format=None):
     """Write records via a view writer; empty input does not create a file."""
-    kwargs = {"creator": creator, "compression": compression, "scan_format": scan_format}
+    kwargs = {"creator": creator, "scan_format": scan_format}
     if identity_composite is not None:
         kwargs["identity_composite"] = identity_composite
     with writer_cls(str(path), **kwargs) as w:
@@ -212,7 +212,7 @@ def _finalize_in_memory_records(feat_recs, psm_recs, seen, dedup):
 def _write_pg(pg, config, written) -> None:
     """Write accumulated protein groups when they contain exportable rows."""
     if pg is not None:
-        records = pg.build(config.sdrf_path, config.pg_top)
+        records = pg.build(config.sdrf_path)
         if records:
             output = config.output
             written["pg"] = _write_view(
@@ -220,11 +220,10 @@ def _write_pg(pg, config, written) -> None:
                 output.folder / f"{output.prefix}.pg.parquet",
                 records,
                 creator=output.creator,
-                compression=output.compression,
             )
 
 
-def _stream_feature_psm(cm, writers, context, pg, config, scan_formats: set[str | None], *, batch=100_000) -> int:
+def _stream_feature_psm(cm, writers, context, pg, config, scan_formats: set[str | None], *, batch=_STREAM_BATCH) -> int:
     """Write one ordered element/unassigned pass in batches and accumulate PG evidence."""
     fw, pw = writers
     maps = pg.maps if pg is not None else None
@@ -258,7 +257,11 @@ def _stream_feature_psm(cm, writers, context, pg, config, scan_formats: set[str 
                 seen.unassigned = True
             if pw is not None and config.include_unassigned_psms:
                 # Unassigned PSMs map to no feature -> feature_id stays null.
-                psm_buf.extend(psm_records_for_pid(obj, context.resolve_run, seen, enzyme=context.enzyme, confidence=confidence))
+                psm_buf.extend(
+                    psm_records_for_pid(
+                        obj, context.resolve_run, seen, enzyme=context.enzyme, confidence=confidence, ms1=context.ms1
+                    )
+                )
                 collect_psm_scan_formats([obj], scan_formats)
             if maps is not None:
                 # Protein inference always sees every identification, whether or
@@ -282,7 +285,7 @@ def _open_stream_writers(stack, config) -> tuple:
                 str(output.folder / f"{output.prefix}.feature.parquet"),
                 creator=output.creator,
                 identity_composite=_FEATURE_IDENTITY_COMPOSITE,
-                compression=output.compression,
+                batch_size=_STREAM_BATCH,
             )
         )
     if "psm" in config.structures:
@@ -291,7 +294,7 @@ def _open_stream_writers(stack, config) -> tuple:
                 str(output.folder / f"{output.prefix}.psm.parquet"),
                 creator=output.creator,
                 identity_composite=_PSM_IDENTITY_COMPOSITE,
-                compression=output.compression,
+                batch_size=_STREAM_BATCH,
             )
         )
     return fw, pw
@@ -333,7 +336,7 @@ def _convert_streaming(consensusxml_paths, config) -> dict:
             _warn_channel_mismatch(cm, config.sdrf_path)
             context = _RecordContext.from_map(cm, config.structures, seen, dedup, config.sdrf_path)
             if pg is not None:
-                pg.add_source(cm, context.map_info)
+                pg.add_source(cm, context.map_info, path)
             seen.start_file()
             _stream_feature_psm(cm, writers, context, pg, config, scan_formats)
         declare_psm_scan_format(writers[1], scan_formats)
@@ -343,7 +346,7 @@ def _convert_streaming(consensusxml_paths, config) -> dict:
     return written
 
 
-def _memory_map_records(cm, seen, dedup, pg, config, scan_formats) -> tuple[list, list]:
+def _memory_map_records(cm, path, seen, dedup, pg, config, scan_formats) -> tuple[list, list]:
     """Collect assigned records before unassigned PSMs from one loaded map."""
     context = _RecordContext.from_map(cm, config.structures, seen, dedup, config.sdrf_path)
     seen.start_file()
@@ -365,10 +368,12 @@ def _memory_map_records(cm, seen, dedup, pg, config, scan_formats) -> tuple[list
     seen.unassigned = True
     if "psm" in config.structures and config.include_unassigned_psms:
         for pid in cm.getUnassignedPeptideIdentifications():
-            psm_recs.extend(psm_records_for_pid(pid, context.resolve_run, seen, enzyme=context.enzyme, confidence=confidence))
+            psm_recs.extend(
+                psm_records_for_pid(pid, context.resolve_run, seen, enzyme=context.enzyme, confidence=confidence, ms1=context.ms1)
+            )
             collect_psm_scan_formats([pid], scan_formats)
     if pg is not None:
-        pg.add_source(cm, context.map_info)
+        pg.add_source(cm, context.map_info, path)
         accumulate_consensus_map(cm, context.map_info, context.resolve_run, pg.maps)
     return feat_recs, psm_recs
 
@@ -383,7 +388,6 @@ def _write_memory_records(feat_recs, psm_recs, scan_formats, config) -> dict:
             output.folder / f"{output.prefix}.feature.parquet",
             feat_recs,
             creator=output.creator,
-            compression=output.compression,
             identity_composite=_FEATURE_IDENTITY_COMPOSITE,
         )
     if "psm" in config.structures and psm_recs:
@@ -392,7 +396,6 @@ def _write_memory_records(feat_recs, psm_recs, scan_formats, config) -> dict:
             output.folder / f"{output.prefix}.psm.parquet",
             psm_recs,
             creator=output.creator,
-            compression=output.compression,
             identity_composite=_PSM_IDENTITY_COMPOSITE,
             scan_format=uniform_scan_format(scan_formats),
         )
@@ -412,7 +415,7 @@ def _convert_in_memory(consensusxml_paths, config) -> dict:
         cm = load_consensus_map(path)
         _claim_runs(run_owner, path, cm)
         _warn_channel_mismatch(cm, config.sdrf_path)
-        features, psms = _memory_map_records(cm, seen, dedup, pg, config, scan_formats)
+        features, psms = _memory_map_records(cm, path, seen, dedup, pg, config, scan_formats)
         feat_recs.extend(features)
         psm_recs.extend(psms)
     dedup.log()

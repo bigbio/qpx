@@ -8,7 +8,7 @@ import pandas as pd
 
 from qpx.core.files import run_file_stem
 from qpx.core.sample_sql import UNIT_SEPARATOR
-from qpx.core.sql import sql_build
+from qpx.core.sql import sql_build, validate_identifier
 
 if TYPE_CHECKING:
     from qpx.core.engine import DuckDBEngine
@@ -21,8 +21,10 @@ _RUN_OBS_SQL = """
                        rs.label,
                        rs.biological_replicate,
                        rs.technical_replicate,
-                       $optional
-                FROM run r, UNNEST(r.samples) AS _t(rs)
+                       $optional$characteristics
+                FROM run r
+                CROSS JOIN UNNEST(r.samples) AS _t(rs)
+                $sample_join
                 """
 
 # Columns of run.parquet that describe one raw file rather than its samples.
@@ -32,6 +34,19 @@ RUN_LEVEL_COLUMNS = ("run_accession", "fraction", "instrument")
 # disagree, e.g. a producer that groups re-injections of a sample into one unit.
 # Such a unit leaves them empty instead of taking one member's value.
 _REPLICATE_COLUMNS = ("biological_replicate", "technical_replicate")
+
+
+def _sample_characteristics(engine: DuckDBEngine) -> tuple[str, str]:
+    """Select list and join adding the sample.parquet characteristics, when the dataset has one."""
+    if not _has_view(engine, "sample"):
+        return "", ""
+    columns = [
+        name
+        for name, column_type, *_ in engine.execute("DESCRIBE sample").fetchall()
+        if column_type == "VARCHAR" and name != "sample_accession"
+    ]
+    select = "".join(f", s.{validate_identifier(name)}" for name in columns)
+    return select, "LEFT JOIN sample s ON s.sample_accession = rs.sample_accession"
 
 
 def _has_view(engine: DuckDBEngine, name: str) -> bool:
@@ -101,7 +116,9 @@ def _run_sample_records(engine: DuckDBEngine) -> pd.DataFrame:
         return pd.DataFrame()
     # fraction and instrument are optional run columns: an absent one reads as null.
     optional = engine.optional_columns("run", "r", ("fraction", "instrument"))
-    return engine.execute(sql_build(_RUN_OBS_SQL, optional=optional)).fetchdf()
+    characteristics, sample_join = _sample_characteristics(engine)
+    sql = sql_build(_RUN_OBS_SQL, optional=optional, characteristics=characteristics, sample_join=sample_join)
+    return engine.execute(sql).fetchdf()
 
 
 def _without_run_lookup(observation_keys: pd.DataFrame, all_labels: bool) -> pd.DataFrame:

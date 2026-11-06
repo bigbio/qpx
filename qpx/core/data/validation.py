@@ -60,47 +60,111 @@ class ValidationResult:
         return f"{self.structure}: {status}{detail}"
 
 
-# Unit-interval columns of the site and proteoform views: q-values,
-# probabilities and evidence fractions.
-_UNIT_INTERVAL_COLUMNS = {
-    "site": ("site_qvalue", "modified_probability", "evidence_fraction"),
-    "proteoform": ("proteoform_qvalue",),
-}
 # Tolerance for a residue's evidence fractions summing to 1.
 _FRACTION_SUM_TOLERANCE = 1e-6
 # Producers round candidate probabilities (MaxQuant to three decimals), so an
 # alternative group can sum to a few thousandths above 1.
 _CANDIDATE_SUM_TOLERANCE = 0.01
-# Closed vocabularies of the site and proteoform views. ``prior_evidence`` and
-# ``source`` are open: producers name their own evidence classes and sources.
+# Closed vocabularies. ``prior_evidence`` and ``source`` are open: producers name
+# their own evidence classes and sources.
 _VOCABULARIES = {
+    "feature": {"identification_type": ("direct", "transferred", "secondary")},
     "proteoform": {"kind": ("canonical", "isoform", "variant", "chain"), "evidence": ("specific", "shared")},
     "xic": {"transition_type": ("ms1", "fragment")},
 }
+# Views that describe the whole dataset in exactly one row.
+_SINGLE_ROW_VIEWS = ("dataset",)
+# Score names are snake_case identifiers (docs/spec/scores.md).
+_SCORE_NAME_PATTERN = r"^[a-z0-9]+(_[a-z0-9]+)*$"
 
 
-def _out_of_range_count(values: pa.ChunkedArray | pa.Array) -> int:
-    """Non-null values that are not finite numbers in [0, 1]; 0 for non-float input."""
+def _out_of_range_count(values: pa.ChunkedArray | pa.Array, minimum: float | None = 0.0, maximum: float | None = 1.0) -> int:
+    """Non-null values that are not finite numbers in [minimum, maximum]; 0 for non-float input."""
     if not pa.types.is_floating(values.type):
         return 0
-    bad = pc.or_(
-        pc.or_(pc.less(values, 0.0), pc.greater(values, 1.0)),
-        pc.invert(pc.is_finite(values)),
-    )
+    bad = pc.invert(pc.is_finite(values))
+    if minimum is not None:
+        bad = pc.or_(bad, pc.less(values, minimum))
+    if maximum is not None:
+        bad = pc.or_(bad, pc.greater(values, maximum))
     return pc.sum(pc.cast(pc.fill_null(bad, False), pa.int64())).as_py() or 0
+
+
+def _range_values(column: pa.ChunkedArray | pa.Array, path: tuple[str, ...]) -> pa.ChunkedArray | pa.Array | None:
+    """The values at *path* (a column, or a field of its struct or list-of-struct type); None when the type differs."""
+    if len(path) == 1:
+        return column
+    if pa.types.is_list(column.type):
+        column = pc.call_function("list_flatten", [column])
+    if not pa.types.is_struct(column.type) or column.type.get_field_index(path[1]) < 0:
+        return None
+    return pc.call_function("struct_field", [column], pc.StructFieldOptions(path[1]))
+
+
+def _nonnullable_paths(arrow_type: pa.DataType, prefix: tuple[str, ...] = ()) -> list[tuple[str, ...]]:
+    """Paths to the struct fields below a column of *arrow_type* that the schema declares non-nullable."""
+    if pa.types.is_list(arrow_type):
+        return _nonnullable_paths(arrow_type.value_type, prefix)
+    if not pa.types.is_struct(arrow_type):
+        return []
+    paths = []
+    for child in arrow_type:
+        if not child.nullable:
+            paths.append((*prefix, child.name))
+        paths.extend(_nonnullable_paths(child.type, (*prefix, child.name)))
+    return paths
+
+
+def _nested_null_count(column: pa.ChunkedArray | pa.Array, path: tuple[str, ...]) -> int:
+    """Nulls at *path* below *column* within non-null structs; 0 when the data has another layout."""
+    parent = column
+    for depth, name in enumerate(path):
+        if pa.types.is_list(parent.type):
+            parent = pc.call_function("list_flatten", [parent])
+        if not pa.types.is_struct(parent.type) or parent.type.get_field_index(name) < 0:
+            return 0
+        child = pc.call_function("struct_field", [parent], pc.StructFieldOptions(name))
+        if depth == len(path) - 1:
+            # struct_field is null where its struct is; count only the field's own nulls.
+            return child.null_count - parent.null_count
+        parent = child
+    return 0
+
+
+def _bad_score_names(column: pa.ChunkedArray | pa.Array) -> pa.ChunkedArray | pa.Array:
+    """The score_name values of an additional_scores column that are not snake_case."""
+    names = _range_values(column, ("additional_scores", "score_name"))
+    if names is None or not pa.types.is_string(names.type):
+        return pa.array([], pa.string())
+    snake = pc.call_function("match_substring_regex", [names], pc.MatchSubstringOptions(_SCORE_NAME_PATTERN))
+    return names.filter(pc.call_function("invert", [snake]))
+
+
+def _score_name_issues(count: int, example: str | None, structure: str) -> list[ValidationIssue]:
+    if not count:
+        return []
+    message = f"{count} additional_scores entries have a score_name that is not snake_case, e.g. {example!r}"
+    return [_issue(structure, "score_name_format", "warning", "additional_scores", message)]
 
 
 def _issue(structure: str, check: str, severity: str, column: str, message: str) -> ValidationIssue:
     return ValidationIssue(structure=structure, check=check, severity=severity, column=column, message=message)
 
 
-def _unit_interval_issues(counts: dict[str, int], structure: str, severity: str) -> list[ValidationIssue]:
-    """Flag q-values, probabilities and evidence fractions outside [0, 1] or not finite."""
+def _range_issues(counts: dict[tuple[str, ...], int], ranges: dict, structure: str, severity: str) -> list[ValidationIssue]:
+    """Flag values outside the range their schema declares, NaN and infinities."""
     issues = []
-    for name, bad in counts.items():
+    for path, bad in counts.items():
         if bad:
-            message = f"{bad} value(s) of {name} are not finite numbers in [0, 1]"
-            issues.append(_issue(structure, "value_out_of_range", severity, name, message))
+            minimum, maximum = ranges[path]
+            if minimum is None:
+                bounds = f"<= {maximum}"
+            elif maximum is None:
+                bounds = f">= {minimum}"
+            else:
+                bounds = f"in [{minimum}, {maximum}]"
+            message = f"{bad} value(s) of {'.'.join(path)} are not finite numbers {bounds}"
+            issues.append(_issue(structure, "value_out_of_range", severity, path[0], message))
     return issues
 
 
@@ -181,12 +245,13 @@ def _chromatogram_length_counts(table: pa.Table | pa.RecordBatch) -> int:
         arrays.append(table.column("mz"))
     if not all(pa.types.is_list(array.type) for array in arrays):
         return 0
-    expected = pc.list_value_length(arrays[0])
+    expected = pc.call_function("list_value_length", [arrays[0]])
     mismatch = pa.scalar(False)
     for array in arrays[1:]:
-        differs = pc.fill_null(pc.not_equal(expected, pc.list_value_length(array)), False)
-        mismatch = pc.or_(mismatch, differs)
-    return pc.sum(pc.cast(mismatch, pa.int64())).as_py() or 0
+        lengths = pc.call_function("list_value_length", [array])
+        differs = pc.fill_null(pc.call_function("not_equal", [expected, lengths]), False)
+        mismatch = pc.call_function("or", [mismatch, differs])
+    return pc.call_function("sum", [pc.cast(mismatch, pa.int64())]).as_py() or 0
 
 
 def _chromatogram_length_issues(count: int, structure: str, severity: str) -> list[ValidationIssue]:
@@ -213,6 +278,14 @@ def _rt_monotonic_counts(values: pa.Array | pa.ChunkedArray) -> int:
                 bad += 1
             previous = rt
     return bad
+
+
+def _xic_counts(batch: pa.Table | pa.RecordBatch, structure: str) -> tuple[int, int]:
+    """XIC rows with arrays of different length and with retention times not strictly increasing."""
+    if structure != "xic":
+        return 0, 0
+    rt_monotonic = _rt_monotonic_counts(batch.column("rt")) if "rt" in batch.schema.names else 0
+    return _chromatogram_length_counts(batch), rt_monotonic
 
 
 def _rt_monotonic_issues(count: int, structure: str, severity: str) -> list[ValidationIssue]:
@@ -423,16 +496,41 @@ def _anchor_without_membership(table: pa.Table | pa.RecordBatch) -> int:
     return pc.sum(pc.cast(violation, pa.int64())).as_py() or 0
 
 
-def _anchor_membership_issues(bad: int, structure: str, severity: str) -> list[ValidationIssue]:
+def _anchor_outside_membership(table: pa.Table | pa.RecordBatch) -> int:
+    """Rows whose anchor_protein is not one of their pg_accessions, in either list type."""
+    names = table.schema.names
+    if "anchor_protein" not in names or "pg_accessions" not in names or len(table) == 0:
+        return 0
+    anchor = table.column("anchor_protein")
+    groups = table.column("pg_accessions")
+    if isinstance(groups, pa.ChunkedArray):
+        anchor, groups = anchor.combine_chunks(), groups.combine_chunks()
+    if not pa.types.is_list(groups.type) or not pa.types.is_string(anchor.type):
+        return 0  # reported by the type check
+    members = groups.flatten()
+    if pa.types.is_struct(members.type):
+        members = members.field("accession")
+    parents = pc.list_parent_indices(groups)
+    matched = pc.equal(members, pc.take(anchor, parents))
+    rows_with_anchor = pc.count_distinct(parents.filter(pc.fill_null(matched, False))).as_py()
+    rows_with_both = pc.count_distinct(parents.filter(pc.is_valid(pc.take(anchor, parents)))).as_py()
+    return rows_with_both - rows_with_anchor
+
+
+def _anchor_membership_issues(bad: int, outside: int, structure: str, severity: str) -> list[ValidationIssue]:
+    issues = []
+    if outside:
+        message = f"{outside} row(s) have an anchor_protein that is not one of their pg_accessions"
+        issues.append(_issue(structure, "anchor_outside_membership", "warning", "anchor_protein", message))
     if not bad:
-        return []
+        return issues
     message = (
         f"{bad} row(s) have anchor_protein set but no pg_accessions "
         "(protein-group membership). The group is the analyte and the "
         "feature->pg join key, so a row with a leading protein must carry "
         "its full pg_accessions membership."
     )
-    return [_issue(structure, "anchor_without_membership", severity, "pg_accessions", message)]
+    return [*issues, _issue(structure, "anchor_without_membership", severity, "pg_accessions", message)]
 
 
 # Link checks of the site and proteoform views, as constant queries.

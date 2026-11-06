@@ -119,3 +119,73 @@ def test_cross_link_round_trip(tmp_path):
     assert len(xl) == 2
     assert xl[0]["xl_type"] == "inter"
     assert xl[1]["xl_type"] == "intra"
+
+
+@pytest.mark.parametrize(
+    ("peptidoform", "position", "tagged"),
+    [
+        ("PEPK", 4, "PEPK[#XL1]"),
+        ("PEM[Oxidation]K", 3, "PEM[Oxidation][#XL1]K"),
+        ("PEPK", 0, "[#XL1]-PEPK"),
+        ("[Acetyl]-PEPK", 0, "[#XL1][Acetyl]-PEPK"),
+        ("[Acetyl]-PEPK", 1, "[Acetyl]-P[#XL1]EPK"),
+        ("PEPK", 5, "PEPK-[#XL1]"),
+    ],
+)
+def test_tag_goes_after_the_residue_and_its_modifications(peptidoform, position, tagged):
+    from qpx.converters.mzidentml.crosslinks import _tag_residue
+
+    assert _tag_residue(peptidoform, position, "#XL1") == tagged
+
+
+def _link(**fields):
+    return {
+        "partner_peptidoform": "SEK",
+        "donor_position": 4,
+        "acceptor_position": 3,
+        "linker_accession": "XLMOD:02001",
+        "linker_mass": 138.0681,
+        **fields,
+    }
+
+
+def test_crosslinked_peptidoform_names_the_whole_species():
+    from qpx.converters.mzidentml.crosslinks import crosslinked_peptidoform
+
+    assert crosslinked_peptidoform("PEPK", None) is None
+    assert crosslinked_peptidoform("PEPK", [_link()]) == "PEPK[XLMOD:02001#XL1]//SEK[#XL1]"
+    assert crosslinked_peptidoform("PEPK", [_link(linker_accession=None)]) == "PEPK[+138.0681#XL1]//SEK[#XL1]"
+    # A looplink stays on one peptide, and noncovalent peptides share no site.
+    assert crosslinked_peptidoform("PEKK", [_link(partner_peptidoform=None, donor_position=3, acceptor_position=4)]) == (
+        "PEK[XLMOD:02001#XL1]K[#XL1]"
+    )
+    assert crosslinked_peptidoform("PEPK", [_link(donor_position=None, acceptor_position=None)]) == "PEPK//SEK"
+
+
+def test_partner_fields_cover_the_partner_and_a_decoy_on_either_side():
+    from qpx.converters.mzidentml.crosslinks import partner_fields
+
+    parsed = {
+        "peptide_evidence": {
+            "a": {"db_ref": "d1", "start": 10, "is_decoy": False},
+            "b": {"db_ref": "d2", "start": 20, "is_decoy": True},
+            "b2": {"db_ref": "d3", "start": 30, "is_decoy": False},
+        },
+        "db_sequences": {"d1": "P1", "d2": "DECOY_P2", "d3": "P3"},
+    }
+    alpha = {"peptide_evidence_refs": ["a"]}
+
+    fields = partner_fields(alpha, {"peptide_evidence_refs": ["b", "b2"]}, parsed)
+    assert fields == {
+        "protein_starts": [10],
+        "partner_protein_accessions": ["DECOY_P2", "P3"],
+        "partner_protein_starts": [20, 30],
+        "crosslink_decoy_class": "target_decoy",
+        "is_decoy": True,
+    }
+    assert partner_fields(alpha, None, parsed) == {"protein_starts": [10]}
+    assert partner_fields(alpha, {"peptide_evidence_refs": ["b2"]}, parsed)["crosslink_decoy_class"] == "target_target"
+    assert (
+        partner_fields({"peptide_evidence_refs": ["b"]}, {"peptide_evidence_refs": ["b"]}, parsed)["crosslink_decoy_class"]
+        == "decoy_decoy"
+    )

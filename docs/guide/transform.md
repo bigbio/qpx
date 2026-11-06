@@ -103,9 +103,11 @@ The `transform` command group provides tools for processing and transforming QPX
 ## Available Commands
 
 - [gene-map](#gene-map) - Map genes from FASTA
+- [site](#site) - Quantify modification sites from the feature view
 - [protein-properties](#protein-properties) - Fill protein coverage, molecular weight and peptide positions from an optional FASTA
 - [normalize-accessions](#normalize-accessions) - Normalize protein accession formats (full ↔ bare)
 - [update-metadata](#update-metadata) - Update sample/run metadata from a revised SDRF
+- [relayout](#relayout) - Sort a dataset's views for selective reads
 - [quantify](#quantify) - Protein quantification via mokume (DirectLFQ, MaxLFQ, iBAQ, TopN, etc.)
 
 ---
@@ -144,7 +146,7 @@ print(generate_example(transform_gene_map_cmd, "Map gene information to parquet 
 
 ```bash
 qpxc transform gene-map \
-    --parquet-path ./output/feature.parquet \
+    --parquet-path ./output/diann.feature.parquet \
     --fasta tests/examples/fasta/Homo-sapiens.fasta \
     --output-folder ./output
 ```
@@ -200,6 +202,7 @@ The same step runs after conversion when `--fasta` is passed to `qpxc convert di
 | --- | --- |
 | `--dataset` | QPX dataset directory (flat Parquet views) |
 | `--fasta` | Protein FASTA used for the search (plain or `.gz`) |
+| `--fasta-uri` | Where others can get this FASTA, recorded in provenance beside its checksum |
 | `--in-place` | Overwrite the dataset's files |
 | `--output-folder` | Write an annotated copy instead (empty, outside the dataset) |
 
@@ -223,6 +226,20 @@ qpxc convert diann --report-path report.parquet ... --fasta search.fasta
 - Coverage reflects the peptides **exported in the dataset** (after FDR filtering). On PXD000612 it agrees with OpenMS's recorded coverage to a median difference of 0.0 points (93% of groups within 1 point, correlation 0.9995).
 
 ---
+
+## site
+
+Writes `site.parquet` from the feature view: per run and label, the intensity of the peptides that place a modification on a residue of their anchor protein, and its share of all peptides covering that residue ([Modification Sites](../spec/site.md#quantified-sites)). It needs `feature.pg_positions`, so run `protein-properties --fasta` first where the converter did not fill them.
+
+```bash
+qpxc transform site --dataset ./qpx_output --modification Phospho --in-place
+```
+
+| Parameter | Description | Required |
+|-----------|-------------|----------|
+| `--dataset` | Dataset directory | Yes |
+| `--modification` | Unimod name or accession; repeat for several | Yes |
+| `--in-place` / `--output-folder` | Where to write: exactly one | Yes |
 
 ## normalize-accessions
 
@@ -284,6 +301,22 @@ print(generate_example(transform_update_metadata_cmd, "Update dataset metadata f
 
 ---
 
+## relayout
+
+Sorts a dataset's views for publishing, and writes them in row groups with a page index. See [Physical Layout](../spec/serialization.md#physical-layout) for the defaults and their trade-offs.
+
+```bash
+qpxc transform relayout --dataset ./qpx_output --output-folder ./qpx_sorted
+
+# One view, by chosen columns
+qpxc transform relayout --dataset ./qpx_output --in-place \\
+    --view psm --sort-by run_file_name,scan
+```
+
+The ids of a sorted feature, pg or psm view are numbered 1, 2, 3, … in the new row order, and the columns that hold them follow. A name-value list of one layout becomes a struct, which QPX reads back as the list, and measured values are rounded to the precision of the measurement; see [Physical Layout](../spec/serialization.md#physical-layout). If the dataset records integrity, its checksums are refreshed for the rewritten files, and its h5mu is built again when feature or pg is sorted.
+
+Sorting a large view needs memory. DuckDB 2.0 keeps to `--memory-limit` and spills the rest to `--temp-directory`; DuckDB 1.5 can go well past the limit when it sorts wide rows with nested columns. PXD030304, a DIA-NN feature view of 229 million rows and 18.3 GB, grew past 100 GB under DuckDB 1.5.2 with its default limit of 80% of RAM, and to 77 GB with `--memory-limit 48GB` before it was stopped; under DuckDB 2.0 with `--memory-limit 40GB` it took 40 minutes and peaked at 44 GB. For views of this size, use DuckDB 2.0 (Python 3.11 or later) and set `--memory-limit`.
+
 ## quantify
 
 Compute protein-level quantification from QPX feature data using [mokume](https://github.com/bigbio/mokume).
@@ -315,13 +348,19 @@ print(generate_params_table(transform_quantify_cmd))
 | `ibaq` | Intensity-Based Absolute Quantification | `pip install "qpx[quantify]"` + `--fasta` |
 | `sum` | Sum of all peptide intensities | `pip install "qpx[quantify]"` |
 
+`maxlfq` runs the MaxLFQ algorithm, not DirectLFQ, even when DirectLFQ is installed. Charge states and peptidoforms of a peptide are summed in each run and label before quantification, so `topn` and `top3` rank peptides. Every target feature in the input is used, so filter a dataset first if you want a stricter confidence threshold.
+
+`--feature-path` takes a feature file, a dataset directory, or a directory partitioned by run. `-o` chooses the format by suffix: `.parquet`, `.tsv`, `.csv`, or, for `ibaq`, the absolute-expression view `.ae.h5ad`.
+
+When an SDRF has several `factor value[...]` columns, `--factor` chooses the condition (`--factor disease`). Without it the first column is used, with a warning.
+
 ### Usage Examples {#quantify-examples}
 
 #### DirectLFQ (default) {#quantify-example-directlfq}
 
 ```bash
 qpxc transform quantify \
-    --feature-path ./qpx_output/feature.parquet \
+    --feature-path ./qpx_output/diann.feature.parquet \
     --method directlfq \
     -o proteins_directlfq.parquet
 ```
@@ -330,7 +369,7 @@ qpxc transform quantify \
 
 ```bash
 qpxc transform quantify \
-    --feature-path ./qpx_output/feature.parquet \
+    --feature-path ./qpx_output/diann.feature.parquet \
     --method ibaq --fasta proteome.fasta \
     -o proteins_ibaq.tsv
 ```
@@ -339,7 +378,7 @@ qpxc transform quantify \
 
 ```bash
 qpxc transform quantify \
-    --feature-path ./qpx_output/feature.parquet \
+    --feature-path ./qpx_output/diann.feature.parquet \
     --method maxlfq --threads 8 \
     -o proteins_maxlfq.parquet
 ```
@@ -348,7 +387,7 @@ qpxc transform quantify \
 
 ```bash
 qpxc transform quantify \
-    --feature-path ./qpx_output/feature.parquet \
+    --feature-path ./qpx_output/diann.feature.parquet \
     --method topn --topn-n 5 --normalize \
     -o proteins_top5.parquet
 ```

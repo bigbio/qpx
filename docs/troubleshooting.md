@@ -29,6 +29,16 @@ Common issues and solutions when using qpx.
    conda activate qpx
    ```
 
+### Older releases fail with DuckDB 2.0
+
+QPX 1.0.0 to 1.1.6 set no upper bound on DuckDB, so a fresh install takes DuckDB 2.0, which they do not support: the DIA-NN, MaxQuant and Spectronaut converters, `validate` and `to_arrow()` fail with `BinderException` or a missing `fetch_record_batch`. Upgrade to 1.2.0 or later, or pin the older DuckDB:
+
+```bash
+pip install "qpx<1.2" "duckdb<2"
+```
+
+A conversion records the DuckDB and PyArrow versions it ran with as `dependency_duckdb` and `dependency_pyarrow` in its provenance step.
+
 ### Python version incompatibility
 
 **Problem**: Installation fails with Python version errors.
@@ -84,31 +94,7 @@ pip install venn pyopenms
 
 **Problem**: `MemoryError` or system becomes unresponsive with large datasets.
 
-**Solutions**:
-
-1. Process files in batches if supported by the command
-
-2. Increase available memory or use a machine with more RAM
-
-3. For DIA-NN reports, use the `--qvalue-threshold` to filter data:
-
-   ```bash
-   qpxc convert diann \
-       --report-path report.tsv \
-       --sdrf-path metadata.sdrf.tsv \
-       --mzml-info-folder ./mzml_info \
-       --qvalue-threshold 0.01 \
-       --output-folder ./output
-   ```
-
-4. For MaxQuant, use the `--max-memory` option:
-
-   ```bash
-   qpxc convert maxquant \
-       --msms-file msms.txt \
-       --output-folder ./output \
-       --max-memory 8GB
-   ```
+Each converter uses memory differently, and for most of them a larger `--max-memory` makes the peak higher, not lower. See [Memory](guide/convert.md#memory) for what to do with each one.
 
 ### Invalid file format errors
 
@@ -190,6 +176,8 @@ qpxc validate --file ./data.feature.parquet
 ### Common validation errors
 
 **Missing required column**: A required column is absent from the Parquet file. Check the [schema reference](spec/schemas.md) for required fields.
+
+**Missing column ... (its values may be null, but the column must be present)**: `Required: no` in the view tables means the values may be null, not that the column may be left out. Only fields marked `optional` in the schema may be absent. The QPX writers add these columns for you; a producer writing Parquet itself writes them as all-null columns of the schema's type.
 
 **Type mismatch**: A column has a different Arrow type than the schema expects. This usually means the data was written with an older version of qpx or a different tool.
 
@@ -279,7 +267,7 @@ qpxc convert sdrf \
 
 **Solutions**:
 
-1. Use `--duckdb-memory` to increase DuckDB memory (query commands):
+1. Use `--duckdb-memory` to increase DuckDB memory (`validate`, `query sql` and the `transform gene-map`/`protein-properties` commands):
 
    ```bash
    qpxc query sql \
@@ -298,41 +286,20 @@ qpxc convert sdrf \
        --max-memory 32GB
    ```
 
-2. Use `--limit` or SQL `LIMIT` to restrict results
-
-3. Export large results directly to Parquet:
+2. DuckDB writes what does not fit in memory to disk. Convert commands, and transform commands given `--output-folder`, put these spill files in `.tmp` in the output folder; the other commands use `.tmp` in the working directory. When that disk is small or read-only, point `--temp-dir` at one with free space:
 
    ```bash
-   qpxc query sql \
+   qpxc validate \
        --dataset-path ./PXD014414 \
-       --sql "SELECT * FROM feature" \
-       --output results.parquet \
-       --output-format parquet
+       --duckdb-memory 8GB \
+       --temp-dir /scratch/qpx_spill
    ```
 
-## Performance Issues
-
-### Slow processing
-
-**Solutions**:
-
-1. Use SSD storage for input/output files
-
-2. Increase available RAM
-
-3. For large datasets, consider processing samples in parallel
-
-4. Use compressed input files (.gz) to reduce I/O
+3. Use SQL `LIMIT` and select only the columns you need. Parquet reads only those columns.
 
 ### High memory usage
 
-**Solutions**:
-
-1. Close other applications to free memory
-
-2. Process smaller batches of data
-
-3. Use streaming/chunked processing where available
+Close other applications, and for a conversion see [Memory](guide/convert.md#memory).
 
 ## Getting More Help
 

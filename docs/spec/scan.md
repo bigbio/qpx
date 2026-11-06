@@ -71,6 +71,15 @@ update its footer declaration: conversion warns and leaves `scan_format`
 unset. PyArrow 17 or newer supports the late update. A declaration known before
 the first batch is written works on all supported versions.
 
+The mzIdentML converter declares `scan` or `index` from the spectrum references
+in the same way. With `--mgf-path`, `index=N` references become the scan numbers
+the MGF records (`SCANS=` or a `scan=` title), and the PSM view declares `scan`;
+without it they stay file positions and the view declares `index`. `qpxc` joins of
+PSMs to spectra follow the declaration, and the mz view declares its own format.
+
+A value that is not a scan number must be declared: a file without `scan_format`
+is read as holding scan numbers.
+
 For a declared PSM format, validation checks non-empty scan arrays against the
 lengths above. A mismatch is a warning by default and an error under strict
 validation, including `qpxc validate`. Legacy files without `scan_format` remain
@@ -97,6 +106,10 @@ flowchart TD
     style F fill:#e8f5e9
 ```
 
+## DIA
+
+In a DIA run no scan belongs to one precursor. `scan` on a DIA feature is the MS2 scan at the precursor's apex: the report's `MS2.Scan` (`Ms2.Scan` in a 2.x report written with `--export-quant`) for DIA-NN, else the MS2 scan nearest to `rt` when `--mzml-info-folder` gives the scan list. Spectronaut reports have no scan, so it is empty.
+
 ## Where scan is used
 
 The `scan` field appears in the following QPX views:
@@ -118,10 +131,11 @@ The `scan_format` is stored in the Parquet file metadata alongside other QPX met
 import pyarrow.parquet as pq
 
 file_metadata = {
-    "qpx_version": "1.2",
+    "qpx_version": "1.3",
     "scan_format": "scan",
     "file_type": "psm_file",
-    "software_provider": "quantms 1.3.0",
+    "software_provider": "qpx",
+    "creator": "quantms",
     "project_accession": "PXD012345",
     "creation_date": "2024-06-15",
 }

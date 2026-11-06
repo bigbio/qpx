@@ -20,6 +20,10 @@ class PSM(BaseStructure):
         """Filter PSMs by run file."""
         return self.filter(f"run_file_name = '{_escape_sql_string(run_file_name)}'")
 
+    def confident(self, max_qvalue: float = 0.01) -> "PSM":
+        """Filter to target PSMs at or below a PSM-level q-value; a PSM without one is left out."""
+        return self.filter(f"is_decoy = false AND qvalue <= {float(max_qvalue)}")
+
     def targets_only(self) -> "PSM":
         """Filter to target PSMs only (exclude decoys)."""
         return self.filter("is_decoy = false")

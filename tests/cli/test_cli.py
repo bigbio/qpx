@@ -1,7 +1,9 @@
 """CLI command tests — convert, transform, query, info, validate, ontology."""
 
+import json
 import re
 
+import pandas as pd
 import pytest
 from click.testing import CliRunner
 
@@ -468,7 +470,33 @@ class TestValidateCLI:
     def test_validate_help_renders(self):
         runner = CliRunner()
         result = runner.invoke(qpx_main, ["validate", "--help"])
-        _assert_help(result, "--dataset-path", "--file", "--structure")
+        _assert_help(result, "--dataset-path", "--file", "--structure", "--semantic")
+
+    def test_validate_semantic_fails_a_wrong_calculated_mz(self, tmp_path):
+        """--semantic checks calculated_mz against the peptidoform; the default run does not."""
+        from qpx.writers import FeatureWriter
+        from tests.conftest import make_feature_record
+
+        path = tmp_path / "a.feature.parquet"
+        with FeatureWriter(path) as w:
+            w.write_batch([make_feature_record(calculated_mz=500.0, observed_mz=500.0)])
+        runner = CliRunner()
+        assert runner.invoke(qpx_main, ["validate", "--file", str(path)]).exit_code == 0
+        result = runner.invoke(qpx_main, ["validate", "--file", str(path), "--semantic"])
+        assert result.exit_code == 1
+        assert "calculated_mz" in result.output
+
+    def test_validate_reports_an_unreadable_file(self, tmp_path):
+        """A pre-1.1 pg file is reported as invalid, without a traceback."""
+        from tests.unit.test_version import _write_old_pg_file
+
+        path = tmp_path / "old.pg.parquet"
+        _write_old_pg_file(path)
+        result = CliRunner().invoke(qpx_main, ["validate", "--file", str(path)])
+        assert result.exit_code == 1
+        assert isinstance(result.exception, SystemExit)
+        assert "pg: INVALID" in result.output
+        assert "could not be read" in result.output
 
 
 # ---------------------------------------------------------------------------
@@ -531,3 +559,38 @@ class TestStructureChoicesMatchTheRegistry:
 
         assert "pepmap" in validate_structures
         assert "pepmap" in query_structures
+
+
+def test_query_json_writes_ids_as_decimal_strings():
+    """A JavaScript number rounds a 64-bit id, so JSON carries it as a string."""
+    from qpx.cli.query import _json_records
+
+    frame = pd.DataFrame(
+        {
+            "feature_id": pd.array([9007199254740993, None], dtype="Int64"),
+            "psm_ids": pd.Series([[9007199254740995], pd.NA], dtype=object),
+            "charge": [2, 3],
+        }
+    )
+    records = json.loads(_json_records(frame))
+    assert records[0] == {"feature_id": "9007199254740993", "psm_ids": ["9007199254740995"], "charge": 2}
+    assert records[1]["feature_id"] is None
+    assert records[1]["psm_ids"] is None
+
+
+def _commands(group, path=()):
+    for name in group.list_commands(None):
+        command = group.get_command(None, name)
+        if hasattr(command, "list_commands"):
+            yield from _commands(command, (*path, name))
+        else:
+            yield " ".join((*path, name)), command
+
+
+@pytest.mark.parametrize("name, command", list(_commands(qpx_main)), ids=lambda value: value if isinstance(value, str) else "")
+def test_help_keeps_each_example_on_its_own_line(name, command):
+    """Click rewraps a help paragraph unless it starts with the \\b control character."""
+    runner_result = CliRunner().invoke(qpx_main, [*name.split(), "--help"])
+    description = runner_result.output.split("Options:")[0]
+    assert "\\b" not in description
+    assert not re.search(r"\\ +--", description)

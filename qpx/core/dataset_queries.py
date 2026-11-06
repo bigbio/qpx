@@ -7,12 +7,46 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from qpx.core.convert import QueryResult
+from qpx.core.data.identity import derive_id
+from qpx.core.query import _escape_sql_string
 from qpx.core.sample_sql import feature_sample_ctes, pg_sample_ctes
 from qpx.core.sql import escape_path, sql_build
 
 if TYPE_CHECKING:
     import pandas as pd
 
+# The analyte a peptide-level abundance is keyed by.
+_PEPTIDE_KEYS = {
+    "peptidoform": "peptidoform",
+    "precursor": "peptidoform || '/' || charge",
+    "sequence": "sequence",
+}
+# pg and feature with an additional intensity ($name) in place of the primary one.
+# A pg row carries the additional intensities of its own label.
+_PG_ADDITIONAL_SQL = """(
+    SELECT p.* REPLACE (x.intensity_value AS intensity)
+    FROM pg p
+    CROSS JOIN UNNEST(p.additional_intensities) AS _a(a)
+    CROSS JOIN UNNEST(a.intensities) AS _x(x)
+    WHERE a.label = p.label AND x.intensity_name = '$name'
+)"""
+_FEATURE_ADDITIONAL_SQL = """(
+    SELECT * REPLACE (
+        list_filter(
+            list_transform(additional_intensities, lambda a: {
+                'label': a.label,
+                'intensity': list_filter(a.intensities, lambda x: x.intensity_name = '$name')[1].intensity_value
+            }),
+            lambda e: e.intensity IS NOT NULL
+        ) AS intensities
+    )
+    FROM feature
+)"""
+_ADDITIONAL_NAMES_SQL = """
+    SELECT DISTINCT x.intensity_name
+    FROM (SELECT UNNEST(a.intensities) AS x FROM (SELECT UNNEST(additional_intensities) AS a FROM $table))
+    ORDER BY 1
+"""
 
 # design_matrix aggregations and the DuckDB functions of its out-of-core pivot.
 _AGGREGATIONS = ("mean", "median", "sum", "min", "max")
@@ -49,22 +83,24 @@ _PER_FRACTION_PG_CAUSE = (
 # Since QPX 1.1 the pg view is flattened: one row per label with scalar
 # p.label / p.intensity (no intensities list to UNNEST). Each pg row matches the
 # sample carrying its label in its quantification unit (pg_unit_samples). ID-only
-# rows (null label / intensity) never match a sample label and drop out.
+# rows (null label) never match a sample label and drop out. The group, not its
+# anchor protein, is the analyte: groups can share a leader.
 _PROTEIN_ABUNDANCE_SQL = """
     SELECT us.sample_accession,
-           p.anchor_protein AS feature_id,
+           array_to_string(list_sort(p.pg_accessions), ';') AS feature_id,
            p.intensity,
            us.unit_runs || '|' || p.label AS quantification_unit
-    FROM pg p
+    FROM $source p
     JOIN pg_unit_samples us
       ON us.grouped_runs = p.grouped_runs
      AND us.sample_label = p.label
     WHERE p.is_decoy = false
 """
 
-# A peptidoform's features are summed within its quantification unit (charge
-# states, fractions of one sample), never across units, and modified forms (a
-# heavy standard, a phosphosite) stay apart. The unit's channel is the sample
+# A peptide's features (by its key: peptidoform, precursor or sequence) are
+# summed within its quantification unit (charge states, fractions of one
+# sample), never across units, and modified forms (a heavy standard, a
+# phosphosite) stay apart. The unit's channel is the sample
 # label, except in a single-sample unit whose features carry several labels
 # (SILAC or plexDIA L/H without SDRF labels): there each label is its own unit,
 # not a sum. That is decided per unit, over all its runs, not per feature or per
@@ -87,24 +123,22 @@ _UNIT_LABELS_CTE = """
 
 _PEPTIDE_ABUNDANCE_SQL = """
     SELECT sample_accession,
-           peptidoform AS feature_id,
+           feature_id,
            SUM(intensity) AS intensity,
            unit_runs || '|' || unit_label AS quantification_unit
     FROM (
-        SELECT fs.sample_accession, fs.peptidoform, fs.intensity, fs.unit_runs,
+        SELECT fs.sample_accession, $key AS feature_id, fs.intensity, fs.unit_runs,
                CASE WHEN ul.n_unit_labels > 1 THEN coalesce(fs.intensity_label, fs.sample_label)
                     ELSE fs.sample_label END AS unit_label
         FROM feature_samples fs
         LEFT JOIN unit_labels ul USING (unit_runs)
     )
-    GROUP BY sample_accession, unit_runs, unit_label, peptidoform
+    GROUP BY sample_accession, unit_runs, unit_label, feature_id
 """
 
 
-def _design_matrix_keys(value_col: str, agg: str | None, by: str) -> list[str]:
+def _design_matrix_keys(agg: str | None, by: str) -> list[str]:
     """Validate the design_matrix options and return its row keys."""
-    if value_col != "intensity":
-        raise ValueError(f"value_col must be 'intensity', got {value_col!r}")
     if agg is not None and agg not in _AGGREGATIONS:
         raise ValueError(f"agg must be None or one of {_AGGREGATIONS}, got {agg!r}")
     if by not in ("sample", "unit"):
@@ -141,22 +175,25 @@ class _DatasetQueryMixin:
     # ``grouped_runs`` is unnested so the run test is an equality: all three
     # conditions are then hash-join keys instead of a filter applied to every
     # same-membership pair. The view is unordered; link_feature_pg() sorts.
+    # Files with ``pg_group_id`` (spec 1.3) compare that flat key instead of lists.
     _LINK_FEATURE_PG_SQL = """
         WITH feat_labels AS (
             SELECT
                 f.feature_id AS feature_id,
                 f.run_file_name AS run_file_name,
-                list_sort(list_transform(f.pg_accessions, lambda x: x.accession)) AS membership,
+                $feature_membership AS membership,
                 UNNEST(list_transform(f.intensities, lambda i: i.label)) AS feature_label
             FROM feature f
+            $feature_filter
         ),
         pg_runs AS (
             SELECT
                 p.pg_id AS pg_id,
                 p.label AS label,
-                list_sort(p.pg_accessions) AS membership,
+                $pg_membership AS membership,
                 UNNEST(p.grouped_runs) AS run_file_name
             FROM pg p
+            $pg_filter
         )
         SELECT DISTINCT
             fl.feature_id AS feature_id,
@@ -176,16 +213,38 @@ class _DatasetQueryMixin:
     _FEATURE_PG_LINK_VIEW = "qpx_feature_pg_link"
     _FEATURE_PSM_LINK_VIEW = "qpx_feature_psm_link"
 
+    def _feature_pg_link_sql(self, group: list[str] | None = None) -> str:
+        """The softlink query, on ``pg_group_id`` when both views have it, optionally of one protein group."""
+        by_id = all("pg_group_id" in self._engine.view_columns(view) for view in ("feature", "pg"))
+        feature_membership = "f.pg_group_id" if by_id else "list_sort(list_transform(f.pg_accessions, lambda x: x.accession))"
+        pg_membership = "p.pg_group_id" if by_id else "list_sort(p.pg_accessions)"
+        feature_filter = pg_filter = ""
+        if group is not None:
+            members = "[" + ", ".join(f"'{_escape_sql_string(accession)}'" for accession in sorted(group)) + "]"
+            key = str(derive_id([sorted(group)])) if by_id else members
+            feature_filter = f"WHERE {feature_membership} = {key}"
+            pg_filter = f"WHERE {pg_membership} = {key}"
+        return sql_build(
+            self._LINK_FEATURE_PG_SQL,
+            feature_membership=feature_membership,
+            pg_membership=pg_membership,
+            feature_filter=feature_filter,
+            pg_filter=pg_filter,
+        )
+
     def _register_feature_pg_link_view(self) -> None:
         """Register the feature->pg softlink as the ``qpx_feature_pg_link`` view."""
-        self._engine.register_view(self._FEATURE_PG_LINK_VIEW, self._LINK_FEATURE_PG_SQL)
+        self._engine.register_view(self._FEATURE_PG_LINK_VIEW, self._feature_pg_link_sql())
 
     def _register_feature_psm_link_view(self) -> None:
         """Register the feature<->psm softlink as the ``qpx_feature_psm_link`` view."""
         self._engine.register_view(self._FEATURE_PSM_LINK_VIEW, self._LINK_FEATURE_PSM_SQL)
 
-    def link_feature_pg(self) -> QueryResult:
+    def link_feature_pg(self, group: list[str] | None = None) -> QueryResult:
         """Compute the feature->pg softlink as ``(feature_id, pg_id, label)`` rows.
+
+        ``group`` limits it to the protein group with exactly these members, which
+        is filtered before the join and takes a fraction of the whole link's time.
 
         A label-aware read-side join of the registered ``feature`` and ``pg``
         views (bigbio/qpx#269): a feature links to a pg row only when their
@@ -203,6 +262,8 @@ class _DatasetQueryMixin:
             channel/fraction produce no rows (this is correct, not an error).
         """
         self._require_feature_pg("link_feature_pg")
+        if group is not None:
+            return QueryResult(self._engine.connection, f"{self._feature_pg_link_sql(group)} ORDER BY feature_id, pg_id")
         self._register_feature_pg_link_view()
         return QueryResult(
             self._engine.connection, "SELECT feature_id, pg_id, label FROM qpx_feature_pg_link ORDER BY feature_id, pg_id"
@@ -342,24 +403,33 @@ class _DatasetQueryMixin:
 
     # --- Analysis helpers ---
 
-    def _abundance_sql(self, level: str) -> str:
+    def _abundance_sql(self, level: str, key: str | None = None, value_col: str = "intensity") -> str:
         """Build the long-form abundance SQL for a given level.
 
         Returns SQL that produces columns: sample_accession, feature_id,
-        intensity, quantification_unit.
+        intensity, quantification_unit. *value_col* names the quantity: the
+        primary ``intensity`` or an additional intensity.
         """
+        name = None if value_col == "intensity" else _escape_sql_string(value_col)
         if level == "protein":
+            if key is not None:
+                raise ValueError("key applies to level='peptide'; proteins are keyed by their group membership")
             if self.pg is None or self.run is None:
                 raise ValueError("level='protein' requires pg and run structures.")
-            return pg_sample_ctes() + _PROTEIN_ABUNDANCE_SQL
+            source = "pg" if name is None else sql_build(_PG_ADDITIONAL_SQL, name=name)
+            return pg_sample_ctes() + sql_build(_PROTEIN_ABUNDANCE_SQL, source=source)
         if level == "peptide":
+            expression = _PEPTIDE_KEYS.get(key or "peptidoform")
+            if expression is None:
+                raise ValueError(f"key must be one of {sorted(_PEPTIDE_KEYS)}, got {key!r}")
             if self.feature is None or self.run is None:
                 raise ValueError("level='peptide' requires feature and run structures.")
-            ctes = feature_sample_ctes(("peptidoform",), feature_where="f.is_decoy = false")
-            return ctes + "," + _UNIT_LABELS_CTE + _PEPTIDE_ABUNDANCE_SQL
+            source = "feature" if name is None else sql_build(_FEATURE_ADDITIONAL_SQL, name=name)
+            ctes = feature_sample_ctes(("sequence", "peptidoform", "charge"), source=source, feature_where="f.is_decoy = false")
+            return ctes + "," + _UNIT_LABELS_CTE + sql_build(_PEPTIDE_ABUNDANCE_SQL, key=expression)
         raise ValueError(f"level must be 'protein' or 'peptide', got '{level}'")
 
-    def intensity(self, level: str = "protein") -> QueryResult:
+    def intensity(self, level: str = "protein", key: str | None = None) -> QueryResult:
         """Lazy long-form intensity query — scalable for large datasets.
 
         Returns a QueryResult that stays lazy until you materialize it.
@@ -370,6 +440,10 @@ class _DatasetQueryMixin:
         ----------
         level : str
             "protein" (uses pg + run) or "peptide" (uses feature + run).
+        key : str | None
+            The peptide analyte: ``"peptidoform"`` (default), ``"precursor"``
+            (peptidoform and charge) or ``"sequence"``. Proteins are keyed by their
+            group membership, the sorted ``pg_accessions`` joined by ``;``.
 
         Returns
         -------
@@ -391,11 +465,17 @@ class _DatasetQueryMixin:
         Materialize when data fits in memory:
             df = ds.intensity("protein").to_df()
 
-        Write directly to Parquet (out-of-core):
-            ds.intensity("protein").to_arrow()  # Arrow is more compact than pandas
+        Arrow is more compact than pandas:
+            table = ds.intensity("protein").to_arrow()
         """
-        sql = self._abundance_sql(level)
+        sql = self._abundance_sql(level, key)
         return QueryResult(self._engine.connection, sql)
+
+    def _additional_intensity_names(self, level: str) -> list[str]:
+        """Names of the additional intensities of the level's table."""
+        table = "pg" if level == "protein" else "feature"
+        rows = self._engine.execute(sql_build(_ADDITIONAL_NAMES_SQL, table=table)).fetchall()
+        return [row[0] for row in rows]
 
     def design_matrix(
         self,
@@ -405,6 +485,8 @@ class _DatasetQueryMixin:
         output_path: str | Path | None = None,
         agg: str | None = None,
         by: str = "sample",
+        *,
+        key: str | None = None,
     ) -> "pd.DataFrame | Path":
         """Pivot intensity data into a samples-by-features matrix (DataFrame or Parquet).
 
@@ -418,7 +500,8 @@ class _DatasetQueryMixin:
         level : str
             "protein" (uses pg + run) or "peptide" (uses feature + run).
         value_col : str
-            Only ``"intensity"`` (the primary quantity) is supported.
+            The quantity to pivot: ``"intensity"`` (the primary quantity) or the
+            ``intensity_name`` of an additional intensity, such as ``"lfq"``.
         fillna : float | None
             Value for missing cells; None (default) keeps NaN. Not used with *output_path*.
         output_path : str | Path | None
@@ -427,11 +510,17 @@ class _DatasetQueryMixin:
             How to combine several values of one cell.
         by : {"sample", "unit"}
             Rows are ``sample_accession``, or ``(sample_accession, quantification_unit)``.
+        key : str | None
+            The peptide analyte (see :meth:`intensity`).
         """
         import pandas as pd
 
-        keys = _design_matrix_keys(value_col, agg, by)
-        sql = self._abundance_sql(level)
+        keys = _design_matrix_keys(agg, by)
+        sql = self._abundance_sql(level, key, value_col)
+        if value_col != "intensity":
+            names = self._additional_intensity_names(level)
+            if value_col not in names:
+                raise ValueError(f"value_col must be 'intensity' or an additional intensity {names}, got {value_col!r}")
         if agg is None:
             self._require_one_value_per_cell(sql, keys, level)
         if output_path is not None:
@@ -461,7 +550,7 @@ class _DatasetQueryMixin:
             )
             remedy = ", or by='unit' for one row per quantification unit"
         else:
-            cause = f"{cells} cells hold several values within one quantification unit (e.g. groups sharing a leader)"
+            cause = f"{cells} cells hold several values within one quantification unit (repeated pg rows of one group)"
             remedy = ""
         raise ValueError(
             f"design_matrix(level={level!r}): {cause}. Pass agg='mean' (or 'median', 'sum', 'min', 'max') "
@@ -470,17 +559,19 @@ class _DatasetQueryMixin:
 
     def _pivot_to_parquet(self, sql: str, keys: list[str], aggregate: str, output_path: Path) -> Path:
         """Pivot the long form into *output_path* out-of-core with DuckDB."""
+        # DuckDB 1.6 development builds crash on PIVOT of a subquery holding CTEs, but not of a view.
+        self._engine.execute(f"CREATE OR REPLACE TEMP VIEW _matrix_source AS {sql}")
         pivot_sql = sql_build(
             """COPY (
-                PIVOT (SELECT $keys, feature_id, intensity FROM ($base_sql))
+                PIVOT (SELECT $keys, feature_id, intensity FROM _matrix_source)
                 ON feature_id USING $aggregate(intensity) GROUP BY $keys
             ) TO '$out_path' (FORMAT PARQUET)""",
-            base_sql=sql,
             keys=", ".join(keys),
             aggregate=aggregate,
             out_path=escape_path(str(output_path)),
         )
         self._engine.execute(pivot_sql)
+        self._engine.execute("DROP VIEW _matrix_source")
         return output_path
 
     # --- View accessors (cached) ---

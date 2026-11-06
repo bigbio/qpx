@@ -3,6 +3,8 @@
 import pyarrow.parquet as pq
 import pytest
 
+from qpx.converters.localization import parse_site_probabilities
+
 # ---------------------------------------------------------------------------
 # ProForma conversion unit tests
 # ---------------------------------------------------------------------------
@@ -108,6 +110,29 @@ class TestMaxQuantToProforma:
             assert to_proforma("_PEPK(Odd[1] (K))R_") == "PEPK[Odd(1) (K)]R"
         assert "Odd[1] (K)" in caplog.text
 
+    def test_fixed_mods_written_inline(self):
+        from qpx.converters.maxquant.constants import to_proforma
+
+        fixed = (("UNIMOD:4", "C", ""), ("UNIMOD:737", "", "N"), ("UNIMOD:737", "K", ""))
+        assert to_proforma("_ACM(Oxidation (M))K_", fixed) == "[UNIMOD:737]-AC[UNIMOD:4]M[UNIMOD:35]K[UNIMOD:737]"
+        # A blocked N-terminus takes no label.
+        assert to_proforma("_(Acetyl (Protein N-term))ACK_", fixed) == "[UNIMOD:1]-AC[UNIMOD:4]K[UNIMOD:737]"
+
+    def test_fixed_mods_from_sdrf_and_parameters(self, tmp_path):
+        from qpx.converters.maxquant.constants import parameters_fixed_mods, sdrf_fixed_mods
+
+        entries = [
+            {"accession": "UNIMOD:4", "name": "Carbamidomethyl", "fixed": True, "position": None, "target_amino_acid": "C"},
+            {"accession": "", "name": "TMT6plex", "fixed": True, "position": "Any N-term", "target_amino_acid": None},
+            {"accession": "UNIMOD:35", "name": "Oxidation", "fixed": False, "position": None, "target_amino_acid": "M"},
+        ]
+        # TMT6plex is a quantification label: it comes from the SDRF channel labels instead.
+        assert sdrf_fixed_mods(entries) == (("UNIMOD:4", "C", ""),)
+        params = tmp_path / "parameters.txt"
+        params.write_text("Parameter\tValue\nFixed modifications\tCarbamidomethyl (C);TMTpro (K)\n")
+        assert parameters_fixed_mods(params) == (("UNIMOD:4", "C", ""), ("UNIMOD:2016", "K", ""))
+        assert parameters_fixed_mods(tmp_path / "missing.txt") == ()
+
 
 class TestFragPipeToProforma:
     """Test to_proforma() from fragpipe.constants builds ProForma from sequence + mods."""
@@ -140,7 +165,7 @@ class TestFragPipeToProforma:
         assert peptidoform == "PEPTIDEK-[UNIMOD:2]"
         assert modifications == [
             {
-                "name": "UNIMOD:2",
+                "name": "Amidated",
                 "accession": "UNIMOD:2",
                 "positions": [{"position": 9, "amino_acid": None, "scores": None}],
             }
@@ -154,7 +179,7 @@ class TestFragPipeToProforma:
         assert peptidoform == "PEPTIDEK-[-1.2345]"
         assert modifications == [
             {
-                "name": "CHEMMOD:-1.2345",
+                "name": "-1.2345",
                 "accession": None,
                 "positions": [{"position": 9, "amino_acid": None, "scores": None}],
             }
@@ -294,6 +319,8 @@ class TestDiannToProforma:
 
 
 class TestFragPipeFeatureAdapter:
+    _RUNS = {"experiment_1": ["run_1"], "experiment_2": ["run_2"]}
+
     def _write_ion_tsv(self, tmp_path):
         """Write a minimal combined_ion.tsv."""
         tsv = tmp_path / "combined_ion.tsv"
@@ -325,7 +352,7 @@ class TestFragPipeFeatureAdapter:
         tsv = self._write_ion_tsv(tmp_path)
         output = tmp_path / "test.feature.parquet"
         with FragPipeFeatureAdapter() as adapter:
-            adapter.convert(feature_path=str(tsv), output_path=str(output))
+            adapter.convert(feature_path=str(tsv), output_path=str(output), experiment_to_runs=self._RUNS)
         assert output.exists()
         table = pq.read_table(output)
         # row1 -> 2 experiments (1000 + 2000), row2 -> 1 experiment (3000, experiment_2 = 0)
@@ -346,7 +373,7 @@ class TestFragPipeFeatureAdapter:
         )
         output = tmp_path / "test.feature.parquet"
         with FragPipeFeatureAdapter() as adapter:
-            adapter.convert(feature_path=str(tsv), output_path=str(output))
+            adapter.convert(feature_path=str(tsv), output_path=str(output), experiment_to_runs=self._RUNS)
 
         table = pq.read_table(output)
         assert set(table.column("quantification_unit_id").to_pylist()) == {"experiment_1"}
@@ -361,7 +388,7 @@ class TestFragPipeFeatureAdapter:
         output = tmp_path / "test.feature.parquet"
         with FragPipeFeatureAdapter() as adapter:
             with pytest.raises(ValueError, match="combined_peptide.tsv.*peptide-level.*combined_ion.tsv"):
-                adapter.convert(feature_path=str(tsv), output_path=str(output))
+                adapter.convert(feature_path=str(tsv), output_path=str(output), experiment_to_runs=self._RUNS)
         assert not output.exists()
 
     def test_ion_modifications_parsed(self, tmp_path):
@@ -370,7 +397,7 @@ class TestFragPipeFeatureAdapter:
         tsv = self._write_ion_tsv(tmp_path)
         output = tmp_path / "test.feature.parquet"
         with FragPipeFeatureAdapter() as adapter:
-            adapter.convert(feature_path=str(tsv), output_path=str(output))
+            adapter.convert(feature_path=str(tsv), output_path=str(output), experiment_to_runs=self._RUNS)
         table = pq.read_table(output)
         # The second peptide (ANOTHERK) has mods, appears in experiment_1 only
         df = table.to_pandas()
@@ -387,7 +414,7 @@ class TestFragPipeFeatureAdapter:
         tsv = self._write_ion_tsv(tmp_path)
         output = tmp_path / "test.feature.parquet"
         with FragPipeFeatureAdapter() as adapter:
-            adapter.convert(feature_path=str(tsv), output_path=str(output))
+            adapter.convert(feature_path=str(tsv), output_path=str(output), experiment_to_runs=self._RUNS)
         table = pq.read_table(output)
         df = table.to_pandas()
 
@@ -445,39 +472,24 @@ class TestFragPipePsmAdapter:
         assert peptidoform == "PEPTM[UNIMOD:35]IDEK"
 
 
-class TestMaxQuantPhosphoProbabilities:
-    """Test parse_phospho_probabilities from maxquant.constants."""
+class TestSiteProbabilities:
+    """parse_site_probabilities reads MaxQuant's <mod> Probabilities and PTMProphet's columns."""
 
     def test_basic_phospho(self):
-        from qpx.converters.maxquant.constants import parse_phospho_probabilities
+        assert parse_site_probabilities("_PEPS(0.95)T(0.03)Y(0.02)K_", "PEPSTYK") == {4: 0.95, 5: 0.03, 6: 0.02}
 
-        result = parse_phospho_probabilities("_PEPS(0.95)T(0.03)Y(0.02)K_")
-        assert result is not None
-        # S is at position 4, T at 5, Y at 6 (1-indexed)
-        assert 4 in result
-        assert result[4][0]["score_value"] == 0.95
-        assert result[4][0]["score_name"] == "phospho_sty_probability"
-
-    def test_zero_probabilities_excluded(self):
-        from qpx.converters.maxquant.constants import parse_phospho_probabilities
-
-        result = parse_phospho_probabilities("_PEPS(1.0)T(0)Y(0)K_")
-        assert result is not None
-        assert 4 in result  # S(1.0) -> position 4
-        assert 5 not in result  # T(0) excluded
-        assert 6 not in result  # Y(0) excluded
+    def test_ptmprophet_termini(self):
+        assert parse_site_probabilities("n(0.75)PEPTK(0.2)c(0.05)", "PEPTK") == {0: 0.75, 5: 0.2, 6: 0.05}
 
     def test_empty_string(self):
-        from qpx.converters.maxquant.constants import parse_phospho_probabilities
-
-        assert parse_phospho_probabilities("") is None
-        assert parse_phospho_probabilities(None) is None
+        assert parse_site_probabilities("", "PEPK") == {}
+        assert parse_site_probabilities(None, "PEPK") == {}
 
     def test_no_probabilities(self):
-        from qpx.converters.maxquant.constants import parse_phospho_probabilities
+        assert parse_site_probabilities("_PEPTIDEK_", "PEPTIDEK") == {}
 
-        # No parenthetical probabilities -> None
-        assert parse_phospho_probabilities("_PEPTIDEK_") is None
+    def test_other_sequence(self):
+        assert parse_site_probabilities("S(1.0)PEP", "PEPS") == {}
 
     def test_unknown_name_keeps_psm_peptidoform_and_phospho_site(self):
         """A name with parentheses stays one tag in the PSM peptidoform; later positions do not shift.
@@ -487,67 +499,59 @@ class TestMaxQuantPhosphoProbabilities:
         and every later position one residue too far (the phosphate on S5
         reported on T6, and T6 marked as the assigned candidate).
         """
-        from qpx.converters.maxquant.constants import parse_phospho_probabilities, phospho_candidates, to_proforma
+        from qpx.converters.localization import localize_modifications
+        from qpx.converters.maxquant.constants import localization_sites, to_proforma
         from qpx.converters.ptm import from_proforma
 
         sequence = "AAKPSTK"
         feature_peptidoform = to_proforma("_AAK(RGG (K))PS(Phospho (STY))TK_")
-        site_scores = parse_phospho_probabilities("_AAKPS(0.9)T(0.1)K_")
-        psm_peptidoform, modifications = from_proforma(feature_peptidoform, sequence, site_scores=site_scores)
+        row = {"Phospho (STY) Probabilities": "_AAKPS(0.9)T(0.1)K_"}
+        sites = localization_sites(row, [("Phospho (STY) Probabilities", "Phospho (STY)")], sequence)
+        psm_peptidoform, modifications = from_proforma(feature_peptidoform, sequence)
+        modifications, candidates = localize_modifications(modifications, sequence, sites)
 
         assert feature_peptidoform == psm_peptidoform == "AAK[RGG (K)]PS[UNIMOD:21]TK"
-        sites = {mod["name"]: [(p["position"], p["amino_acid"]) for p in mod["positions"]] for mod in modifications}
-        assert sites == {"RGG (K)": [(3, "K")], "UNIMOD:21": [(5, "S")]}
-        assigned = [
-            (c["position"], c["amino_acid"]) for c in phospho_candidates(site_scores, sequence, modifications) if c["assigned"]
-        ]
+        placed = {mod["name"]: [(p["position"], p["amino_acid"]) for p in mod["positions"]] for mod in modifications}
+        assert placed == {"RGG (K)": [(3, "K")], "Phospho": [(5, "S")]}
+        assigned = [(c["position"], c["amino_acid"]) for c in candidates if c["assigned"]]
         assert assigned == [(5, "S")]
 
 
-class TestMzIdentMLBuildPeptidoform:
-    """Test _build_peptidoform from mzidentml.psm_records."""
+class TestMzIdentMLPeptidoform:
+    """Peptidoforms built from mzIdentML Modification elements."""
 
-    def test_no_modifications(self):
-        from qpx.converters.mzidentml.psm_records import _build_peptidoform
+    @staticmethod
+    def _parse(sequence, *modifications):
+        from xml.etree.ElementTree import fromstring
 
-        assert _build_peptidoform("PEPTIDEK", None) == "PEPTIDEK"
+        from qpx.converters.mzidentml.psm_adapter import MzIdentMLPsmAdapter
+        from qpx.converters.ptm import build_proforma
+
+        ns = "http://psidev.info/psi/pi/mzIdentML/1.2"
+        body = "".join(
+            f'<Modification location="{loc}" monoisotopicMassDelta="{mass}"><cvParam accession="{acc}" name="{name}"/></Modification>'
+            for loc, mass, acc, name in modifications
+        )
+        pep = fromstring(f'<Peptide xmlns="{ns}"><PeptideSequence>{sequence}</PeptideSequence>{body}</Peptide>')
+        mods, _, tags = MzIdentMLPsmAdapter._parse_peptide_modifications(pep, ns, sequence)
+        return build_proforma(sequence, tags), mods
 
     def test_unimod_modification(self):
-        from qpx.converters.mzidentml.psm_records import _build_peptidoform
-
-        mods = [
-            {
-                "name": "Oxidation",
-                "accession": "UNIMOD:35",
-                "positions": [{"position": 5, "amino_acid": "M", "scores": None}],
-            }
-        ]
-        assert _build_peptidoform("PEPTMIDEK", mods) == "PEPTM[UNIMOD:35]IDEK"
+        assert self._parse("PEPTMIDEK", (5, 15.994915, "UNIMOD:35", "Oxidation"))[0] == "PEPTM[UNIMOD:35]IDEK"
 
     def test_nterm_modification(self):
-        from qpx.converters.mzidentml.psm_records import _build_peptidoform
+        assert self._parse("PEPTIDEK", (0, 42.010565, "UNIMOD:1", "Acetyl"))[0] == "[UNIMOD:1]-PEPTIDEK"
 
-        mods = [
-            {
-                "name": "Acetyl",
-                "accession": "UNIMOD:1",
-                "positions": [{"position": 0, "amino_acid": None, "scores": None}],
-            }
-        ]
-        assert _build_peptidoform("PEPTIDEK", mods) == "[UNIMOD:1]-PEPTIDEK"
+    def test_psi_mod_accession_maps_to_unimod(self):
+        assert self._parse("PEPSIDEK", (4, 79.966331, "MOD:00696", "phosphorylated residue"))[0] == "PEPS[UNIMOD:21]IDEK"
 
-    def test_psi_mod_accession(self):
-        from qpx.converters.mzidentml.psm_records import _build_peptidoform
+    def test_unknown_modification_keeps_mass(self):
+        peptidoform, mods = self._parse("PEPKIDEK", (4, 54.0106, "MS:1001460", "unknown modification"))
+        assert peptidoform == "PEPK[+54.0106]IDEK"
+        assert mods[0]["name"] == "+54.0106" and mods[0]["accession"] is None
 
-        mods = [
-            {
-                "name": "Phospho",
-                "accession": "MOD:00696",
-                "positions": [{"position": 3, "amino_acid": "S", "scores": None}],
-            }
-        ]
-        result = _build_peptidoform("PEPSIDEK", mods)
-        assert "[MOD:00696]" in result
+    def test_accession_contradicting_mass_keeps_mass(self):
+        assert self._parse("PEPKIDEK", (4, 54.0106, "UNIMOD:21", "Phospho"))[0] == "PEPK[+54.0106]IDEK"
 
 
 class TestModificationParsing:
@@ -632,7 +636,7 @@ class TestTrackScoresFromModifications:
                                 "position": 3,
                                 "scores": [
                                     {
-                                        "score_name": "phospho_sty_probability",
+                                        "score_name": "localization_probability",
                                         "score_value": 0.95,
                                         "higher_better": True,
                                     },
@@ -645,7 +649,7 @@ class TestTrackScoresFromModifications:
         ]
         adapter._track_scores(records)
         assert "andromeda_score" in adapter._discovered_scores
-        assert "phospho_sty_probability" in adapter._discovered_scores
+        assert "localization_probability" in adapter._discovered_scores
 
     def test_no_modifications_still_works(self):
         from qpx.converters.base import BaseConverter
@@ -769,8 +773,8 @@ class TestFragPipePgAdapterIsDecoy:
             adapter.convert(protein_path=tsv, output_path=str(output), experiment_to_runs={"exp1": ["run_01"]})
         table = pq.read_table(str(output))
         df = table.to_pandas()
-        normal_rows = df[df["anchor_protein"] == "sp|P12345|PROT_HUMAN"]
-        decoy_rows = df[df["anchor_protein"] == "rev_sp|P12345|PROT_HUMAN"]
+        normal_rows = df[df["anchor_protein"] == "P12345"]
+        decoy_rows = df[df["anchor_protein"] == "rev_P12345"]
         assert len(normal_rows) > 0
         assert len(decoy_rows) > 0
         assert all(not v for v in normal_rows["is_decoy"].tolist())
@@ -817,9 +821,9 @@ class TestMaxQuantMassErrorPpm:
         lines = [self._EVIDENCE_HEADER]
         for i, err in enumerate(mass_errors):
             lines.append(
-                f"PEPTIDEK\t_PEPTIDEK_\t2\trun1\t\t{100 + i}\t450.25\t30.0\t"
+                f"PEPTIDEK\t_PEPTIDEK_\t2\trun1\t\t{100 + i}\t464.734729\t30.0\t"
                 f"29.5\t30.5\t0.001\tsp|P12345|TEST\tsp|P12345|TEST\tGENE1\t"
-                f"1000000.0\t150.0\t50.0\t898.5\t{err}"
+                f"1000000.0\t150.0\t50.0\t927.454904\t{err}"
             )
         ev.write_text("\n".join(lines) + "\n")
         return str(ev)

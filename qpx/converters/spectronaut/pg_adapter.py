@@ -19,12 +19,14 @@ from qpx.converters.base import resolve_columns
 from qpx.converters.mappings import get_field_mappings
 from qpx.converters.spectronaut.base_adapter import SpectronautBaseAdapter
 from qpx.converters.utils import safe_float
+from qpx.core.constants import PG
 from qpx.core.sql import sql_build, validate_identifier
 from qpx.writers.pg import PgWriter
 
 logger = logging.getLogger(__name__)
 
 _EXT_RE = re.compile(r"\.(mzML|raw|d|wiff|htrms)$", re.IGNORECASE)
+_IS_IMPUTED_COLUMN = "EG.IsImputed"
 
 
 class SpectronautPgAdapter(SpectronautBaseAdapter):
@@ -52,6 +54,7 @@ class SpectronautPgAdapter(SpectronautBaseAdapter):
         creator: str = "spectronaut",
     ) -> None:
         """Run the Spectronaut report -> pg.parquet conversion."""
+        self._require_view(spectronaut_report, PG)
         self._load_spectronaut_report(spectronaut_report)
 
         report_cols = self._get_report_columns()
@@ -59,7 +62,7 @@ class SpectronautPgAdapter(SpectronautBaseAdapter):
 
         runs = self._get_unique_runs()
 
-        with PgWriter(output_path, creator=creator, compression=self._compression) as writer:
+        with PgWriter(output_path, creator=creator) as writer:
             for i in range(0, len(runs), file_num):
                 batch_runs = runs[i : i + file_num]
                 self.logger.info("Processing PG runs %d-%d of %d", i + 1, min(i + file_num, len(runs)), len(runs))
@@ -114,6 +117,10 @@ class SpectronautPgAdapter(SpectronautBaseAdapter):
         if gg_col and gg_col in report_cols:
             parts.append(f'FIRST(r."{gg_col}") AS gg_accessions')
 
+        # A group's quantity in a run is imputed when every precursor behind it is.
+        if _IS_IMPUTED_COLUMN in report_cols:
+            parts.append(f'BOOL_AND(TRY_CAST(r."{_IS_IMPUTED_COLUMN}" AS BOOLEAN)) AS is_imputed')
+
         # Peptide counting columns
         seq_col = "PEP.StrippedSequence"
         prot_col = "PEP.IsProteotypic"
@@ -138,7 +145,7 @@ class SpectronautPgAdapter(SpectronautBaseAdapter):
         run_id = validate_identifier(r["run_file_name"])
 
         stmt = sql_build(
-            "SELECT $select FROM report r WHERE r.$run IN ($ph) AND r.$pg IS NOT NULL GROUP BY r.$pg, r.$run",
+            "SELECT $select FROM report r WHERE r.$run IN ($ph) AND r.$pg IS NOT NULL GROUP BY r.$pg, r.$run ORDER BY r.$run, r.$pg",
             select=select_clause,
             run=run_id,
             ph=placeholders,
@@ -212,10 +219,16 @@ class SpectronautPgAdapter(SpectronautBaseAdapter):
         global_qvalue, pg_qvalue, additional_scores = self._build_pg_scores(row)
 
         # Peptide counts
-        total_sequences = int(row["total_sequences"]) if "total_sequences" in row else 0
-        unique_sequences = int(row["unique_sequences"]) if "unique_sequences" in row else 0
-        peptide_count = max(total_sequences, 1)
-        peptides = [{"protein_name": acc, "peptide_count": peptide_count} for acc in pg_accessions]
+        # A protein-level report has no peptide columns.
+        peptides, peptide_counts = [], None
+        if "total_sequences" in row:
+            total_sequences = int(row["total_sequences"])
+            peptide_count = max(total_sequences, 1)
+            peptides = [{"protein_name": acc, "peptide_count": peptide_count} for acc in pg_accessions]
+            peptide_counts = {
+                "unique_sequences": int(row["unique_sequences"]) if "unique_sequences" in row else 0,
+                "total_sequences": total_sequences,
+            }
 
         # is_decoy: Spectronaut normally pre-filters decoys; infer from prefix
         is_decoy = any(acc.startswith(("DECOY_", "decoy_", "rev_", "REV_")) for acc in pg_accessions)
@@ -227,6 +240,7 @@ class SpectronautPgAdapter(SpectronautBaseAdapter):
             "gg_names": gg_accessions,
             "gg_qvalue": None,
             "anchor_protein": anchor_protein,
+            "is_imputed": row["is_imputed"] if pd.notna(row.get("is_imputed")) else None,
             "grouped_runs": [run_file_name],
             "global_qvalue": global_qvalue,
             "pg_qvalue": pg_qvalue,
@@ -235,10 +249,7 @@ class SpectronautPgAdapter(SpectronautBaseAdapter):
             "is_decoy": is_decoy,
             "contaminant": None,
             "peptides": peptides,
-            "peptide_counts": {
-                "unique_sequences": unique_sequences,
-                "total_sequences": total_sequences,
-            },
+            "peptide_counts": peptide_counts,
             "feature_counts": None,
             "sequence_coverage": None,
             "molecular_weight": None,

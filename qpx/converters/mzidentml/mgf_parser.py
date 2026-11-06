@@ -13,6 +13,7 @@ from __future__ import annotations
 import gzip
 import logging
 import re
+from array import array
 from pathlib import Path
 from typing import IO
 
@@ -24,6 +25,7 @@ _SCAN_PATTERNS = [
     re.compile(r"\bScan\s+(\d+)\b"),  # "Scan 154" (Distiller style)
 ]
 _BARE_INT = re.compile(r"^(\d+)$")
+_POSITION_TITLE = re.compile(r"index=\d+", re.IGNORECASE)
 
 
 def _extract_scan(title: str, scans_value: str | None) -> int | None:
@@ -63,6 +65,8 @@ class MgfSpectraIndex:
     ----------
     mgf_path : str or Path
         Path to an MGF file (plain-text ``.mgf`` or gzip-compressed ``.mgf.gz``).
+    keep_peaks : bool
+        Hold each spectrum's peaks; without them only its scan number and RT are kept.
 
     Examples
     --------
@@ -72,8 +76,9 @@ class MgfSpectraIndex:
     [200.123, 201.456, 202.789]
     """
 
-    def __init__(self, mgf_path: str | Path) -> None:
-        self._path = Path(mgf_path)
+    def __init__(self, mgf_path: str | Path, keep_peaks: bool = True) -> None:
+        self.path = Path(mgf_path)
+        self.keep_peaks = keep_peaks
         self._index: dict[int, dict] = {}
         self._by_position: dict[int, dict] = {}
         self._position_counter: int = 0
@@ -91,7 +96,7 @@ class MgfSpectraIndex:
         dict or None
             ``{"mz_array": list[float], "intensity_array": list[float]}``
         """
-        return self._index.get(scan)
+        return self._as_lists(self._index.get(scan))
 
     def get_spectrum_by_index(self, index: int) -> dict | None:
         """Return spectrum data by 0-based position in the MGF file.
@@ -100,7 +105,14 @@ class MgfSpectraIndex:
         mzIdentML uses ``index=N`` spectrumIDs that correspond to the
         Nth spectrum in the MGF file).
         """
-        return self._by_position.get(index)
+        return self._as_lists(self._by_position.get(index))
+
+    @staticmethod
+    def _as_lists(spectrum: dict | None) -> dict | None:
+        """The spectrum with plain lists; compact arrays hold every spectrum of the file in memory."""
+        if spectrum is None or spectrum["mz_array"] is None:
+            return spectrum
+        return {**spectrum, "mz_array": spectrum["mz_array"].tolist(), "intensity_array": spectrum["intensity_array"].tolist()}
 
     def __len__(self) -> int:
         """Number of indexed spectra."""
@@ -121,13 +133,13 @@ class MgfSpectraIndex:
 
     def _parse(self) -> None:
         """Stream-parse the MGF file and populate ``self._index``."""
-        opener = gzip.open if self._path.suffix == ".gz" else open
-        with opener(self._path, "rt", encoding="utf-8", errors="replace") as fh:
+        opener = gzip.open if self.path.suffix == ".gz" else open
+        with opener(self.path, "rt", encoding="utf-8", errors="replace") as fh:
             self._parse_stream(fh)
         logger.info(
             "Indexed %d spectra from %s",
             len(self._index),
-            self._path.name,
+            self.path.name,
         )
 
     def _parse_stream(self, fh: IO[str]) -> None:
@@ -200,17 +212,19 @@ class MgfSpectraIndex:
         pos = self._position_counter
         self._position_counter += 1
 
+        scan = _extract_scan(title or "", scans_value)
         spectrum = {
-            "mz_array": mz_list,
-            "intensity_array": int_list,
+            "mz_array": array("d", mz_list) if self.keep_peaks else None,
+            "intensity_array": array("d", int_list) if self.keep_peaks else None,
             "rt": rt_value,
+            # A TITLE with index=N names a file position, not an acquisition scan.
+            "scan": None if scans_value is None and _POSITION_TITLE.search(title or "") else scan,
         }
 
         # Always store by position
         self._by_position[pos] = spectrum
 
         # Also store by scan if parseable
-        scan = _extract_scan(title or "", scans_value)
         if scan is None:
             logger.debug("Spectrum at position %d has no parseable scan: TITLE=%s", pos, title)
             return

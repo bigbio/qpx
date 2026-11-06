@@ -16,10 +16,11 @@ import logging
 import pandas as pd
 
 from qpx.converters.base import BaseConverter, resolve_columns
-from qpx.converters.channel_labels import experiment_runs_from_sdrf
-from qpx.converters.fragpipe.constants import is_decoy_accession
+from qpx.converters.channel_labels import experiment_runs_from_sdrf, experiment_type_from_labels, read_sdrf_labels
+from qpx.converters.fragpipe.constants import is_decoy_accession, protein_accessions
+from qpx.converters.fragpipe.isobaric import TMT_REPORT_INTENSITY, channel_intensities, require_channel_columns
 from qpx.converters.mappings import get_field_mappings
-from qpx.converters.utils import safe_float
+from qpx.converters.utils import is_contaminant_accession, safe_float
 from qpx.core.files import run_file_stem
 from qpx.core.sql import escape_path, sql_build
 from qpx.writers.pg import PgWriter
@@ -29,28 +30,52 @@ logger = logging.getLogger(__name__)
 # Derive field map from central YAML mappings
 _PG_MAP = get_field_mappings("fragpipe", "pg")
 
-_SPECTRAL_COUNT_SUFFIXES = ("Spectral Count", "Unique Spectral Count", "Total Spectral Count")
+# Additional quantities of an experiment by column suffix, named as in pg.md.
+_ADDITIONAL_INTENSITIES = (
+    ("MaxLFQ Intensity", "maxlfq"),
+    ("MaxLFQ Unique Intensity", "maxlfq_unique"),
+    ("Unique Intensity", "unique_intensity"),
+)
+_SPECTRAL_COUNTS = (
+    ("Spectral Count", "spectral_count"),
+    ("Unique Spectral Count", "unique_spectral_count"),
+    ("Total Spectral Count", "total_spectral_count"),
+)
+# Per-experiment column suffixes, longest first so that "<exp> MaxLFQ Intensity"
+# is not read as an experiment "<exp> MaxLFQ".
+_EXPERIMENT_SUFFIXES = sorted(
+    {suffix for suffix, _ in _ADDITIONAL_INTENSITIES + _SPECTRAL_COUNTS}
+    | {"Intensity", "Total Intensity", "Razor Intensity", "Razor Spectral Count", "Total Peptides", "Unique Peptides"},
+    key=len,
+    reverse=True,
+)
 
 
 def _experiment_quantities(row, experiment: str) -> tuple[float | None, list[dict]] | None:
-    """Primary intensity and MaxLFQ entries of one experiment; ``None`` without evidence in it.
+    """Primary intensity and additional quantities of one experiment; ``None`` without evidence in it.
 
-    MaxLFQ-only experiments (detected from a "<exp> MaxLFQ Intensity" column) have
-    no Total Intensity; MaxLFQ is then the primary intensity rather than dropping
-    the protein group. Unit-specific identifications survive a missing quantity.
+    ``<exp> Intensity`` is the primary quantity (``Total Intensity`` in older
+    reports, else MaxLFQ). A zero intensity is FragPipe's "not quantified" and is
+    left out; spectral counts are kept as counted, zeros included. A group with
+    spectral counts but no intensity in the experiment keeps a row with a null
+    intensity.
     """
-    total_intensity = safe_float(row.get(f"{experiment} Total Intensity")) or 0.0
-    maxlfq = safe_float(row.get(f"{experiment} MaxLFQ Intensity"))
-    if total_intensity > 0:
-        primary = total_intensity
-    elif maxlfq is not None and maxlfq > 0:
-        primary = maxlfq
-    elif any((safe_float(row.get(f"{experiment} {suffix}")) or 0) > 0 for suffix in _SPECTRAL_COUNT_SUFFIXES):
-        # Without a primary quantity, MaxLFQ can only hold FragPipe's zero sentinel.
-        return None, []
-    else:
+
+    def value(suffix: str) -> float | None:
+        return safe_float(row.get(f"{experiment} {suffix}"))
+
+    def positive(suffix: str) -> float | None:
+        quantity = value(suffix)
+        return quantity if quantity is not None and quantity > 0 else None
+
+    primary = next(filter(None, map(positive, ("Intensity", "Total Intensity", "MaxLFQ Intensity"))), None)
+    quantities = [(name, positive(suffix)) for suffix, name in _ADDITIONAL_INTENSITIES]
+    counts = [(name, value(suffix)) for suffix, name in _SPECTRAL_COUNTS]
+    if primary is None and not any(count for _, count in counts):
         return None
-    return primary, [{"intensity_name": "maxlfq", "intensity_value": float(maxlfq)}] if maxlfq is not None else []
+    return primary, [
+        {"intensity_name": name, "intensity_value": quantity} for name, quantity in quantities + counts if quantity is not None
+    ]
 
 
 def normalize_run_name(value: str) -> str:
@@ -97,6 +122,55 @@ def load_experiment_annotation(path: str) -> dict[str, list[str]]:
     return normalize_experiment_mapping(mapping)
 
 
+def require_label_free(sdrf_path: str | None) -> None:
+    """Refuse an isobaric (TMT/iTRAQ) SDRF.
+
+    ``combined_ion.tsv`` and ``combined_protein.tsv`` hold MS1 intensities per
+    experiment; the reporter-ion quantities are in the channel columns of the
+    one-experiment reports, which are not converted. Writing the MS1 intensities
+    as the label-free quantity of an isobaric experiment would be wrong.
+    """
+    experiment_type = experiment_type_from_labels(read_sdrf_labels(sdrf_path))
+    if experiment_type in ("TMT", "iTRAQ"):
+        raise ValueError(
+            f"FragPipe {experiment_type} reporter-ion quantities are not converted: combined_ion.tsv and "
+            "combined_protein.tsv hold MS1 intensities, which would be written as label-free. Convert each plex's ion.tsv and protein.tsv with --annotation-file, or psm.tsv only."
+        )
+
+
+def resolve_experiment_runs(
+    experiments: list[str],
+    experiment_to_runs: dict[str, list[str]] | None,
+    experiment_annotation_path: str | None,
+    sdrf_path: str | None,
+) -> dict[str, list[str]]:
+    """Map each FragPipe experiment to its raw runs, raising when one has none.
+
+    The results mapping (``experiment_annotation.tsv`` or an explicit
+    ``experiment_to_runs``) comes first, then the SDRF ``source name`` of the same
+    name. An experiment in neither cannot be tied to run.parquet, so conversion
+    fails with the full list rather than writing the experiment as a run.
+    """
+    if experiment_to_runs is not None and experiment_annotation_path is not None:
+        raise ValueError("Provide either experiment_to_runs or experiment_annotation_path, not both")
+    if experiment_annotation_path is not None:
+        mapping = load_experiment_annotation(experiment_annotation_path)
+    else:
+        mapping = normalize_experiment_mapping(experiment_to_runs or {})
+    sdrf_mapping = experiment_runs_from_sdrf(sdrf_path) or {}
+    runs = {experiment: mapping.get(experiment) or sdrf_mapping.get(experiment) for experiment in experiments}
+    missing = sorted(experiment for experiment, members in runs.items() if not members)
+    if missing:
+        raise ValueError(
+            "No raw runs for FragPipe experiment(s) "
+            + ", ".join(missing)
+            + ": no experiment->runs mapping. Provide experiment_annotation.tsv "
+            "(experiment_annotation_path), an explicit experiment_to_runs mapping, "
+            "or an SDRF (sdrf_path) whose 'source name' matches the experiment(s)."
+        )
+    return runs
+
+
 class FragPipePgAdapter(BaseConverter):
     """Convert FragPipe ``combined_protein.tsv`` to ``pg.parquet``.
 
@@ -111,8 +185,17 @@ class FragPipePgAdapter(BaseConverter):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self._experiment_to_runs: dict[str, list[str]] = {}
-        self._sdrf_experiment_to_runs: dict[str, list[str]] | None = None
+        self._experiment_runs: dict[str, list[str]] = {}
+        self._channels: dict[str, str] = {}
+        self._tmt_report: dict[str, dict[str, float]] = {}
+
+    def load_channels(self, channels: dict[str, str], tmt_report: dict[str, dict[str, float]] | None = None) -> None:
+        """Read reporter-ion quantities from these columns of a one-plex protein.tsv.
+
+        *tmt_report* holds the TMT-Integrator log2 abundance of each protein and label.
+        """
+        self._channels = channels
+        self._tmt_report = tmt_report or {}
 
     def convert(
         self,
@@ -129,17 +212,15 @@ class FragPipePgAdapter(BaseConverter):
         Args:
             protein_path: Path to FragPipe ``combined_protein.tsv``.
             output_path: Destination Parquet path.
-            chunksize: Rows per batch.
+            chunksize: Records per batch; a row gives one record per
+                experiment, so ``chunksize // experiments`` rows are read at a time.
             creator: Creator tag in Parquet metadata.
             experiment_to_runs: Optional mapping of each FragPipe *experiment* (the
                 token that names the per-experiment intensity columns in
                 ``combined_protein.tsv``) to its member ``run_file_name`` values.
                 A FragPipe experiment can aggregate several raw files (fractions),
                 whereas run.parquet is keyed by raw file, so ``grouped_runs`` must
-                be expanded to those files to survive the sample join. When the
-                mapping is absent, ``grouped_runs`` falls back to the single
-                experiment token, which is correct only when experiment equals the
-                raw-file name (no fractions).
+                be expanded to those files to survive the sample join.
             experiment_annotation_path: Optional FragPipe
                 ``experiment_annotation.tsv``. Its ``sample`` column names the
                 experiment and ``file`` lists the member raw files.
@@ -151,13 +232,8 @@ class FragPipePgAdapter(BaseConverter):
                 SDRF resolves an experiment, conversion raises rather than emitting
                 a dangling experiment token.
         """
-        if experiment_to_runs is not None and experiment_annotation_path is not None:
-            raise ValueError("Provide either experiment_to_runs or experiment_annotation_path, not both")
-        if experiment_annotation_path is not None:
-            self._experiment_to_runs = load_experiment_annotation(experiment_annotation_path)
-        else:
-            self._experiment_to_runs = normalize_experiment_mapping(experiment_to_runs or {})
-        self._sdrf_experiment_to_runs = experiment_runs_from_sdrf(sdrf_path)
+        if not self._channels:
+            require_label_free(sdrf_path)
 
         # Step 1: Load protein file into DuckDB
         self._load_protein_file(protein_path)
@@ -171,25 +247,20 @@ class FragPipePgAdapter(BaseConverter):
         }
         self._resolved = resolve_columns(_PG_MAP, actual_cols)
 
-        # Step 3: Detect per-experiment intensity columns and require every one to
-        # resolve to raw files (results mapping first, then SDRF) — fail early with
-        # the full list rather than emitting a dangling experiment token.
-        experiment_cols = self._detect_experiment_columns()
-        missing = sorted(exp for exp in experiment_cols if self._lookup_grouped_runs(exp) is None)
-        if missing:
-            raise ValueError(
-                "Cannot build grouped_runs for FragPipe experiment(s) "
-                + ", ".join(missing)
-                + ": no experiment->runs mapping. Provide experiment_annotation.tsv "
-                "(experiment_annotation_path), an explicit experiment_to_runs mapping, "
-                "or an SDRF (sdrf_path) whose 'source name' matches the experiment(s)."
-            )
+        # Step 3: Detect per-experiment intensity columns and resolve each one to
+        # its raw files before writing anything.
+        if self._channels:
+            require_channel_columns(self._channels, actual_cols, protein_path)
+        experiment_cols = list(experiment_to_runs) if self._channels else self._detect_experiment_columns()
+        self._experiment_runs = resolve_experiment_runs(
+            experiment_cols, experiment_to_runs, experiment_annotation_path, sdrf_path
+        )
 
         # Step 4: Stream and transform
         self.logger.info("Transforming FragPipe protein groups ...")
 
-        with PgWriter(output_path, creator=creator, compression=self._compression) as writer:
-            for batch in self._query_batched("SELECT * FROM fragpipe_proteins", chunksize):
+        with PgWriter(output_path, creator=creator) as writer:
+            for batch in self._query_batched("SELECT * FROM fragpipe_proteins", max(1, chunksize // len(experiment_cols))):
                 df = batch.to_pandas()
                 records = self._transform_batch(df, experiment_cols)
                 if records:
@@ -201,33 +272,6 @@ class FragPipePgAdapter(BaseConverter):
     # ------------------------------------------------------------------
     # Data loading
     # ------------------------------------------------------------------
-
-    def _lookup_grouped_runs(self, experiment: str) -> list[str] | None:
-        """Resolve an experiment to its raw files, or None if unmapped.
-
-        Results mapping (experiment_annotation.tsv / experiment_to_runs) first,
-        then the SDRF ``source name`` fallback. No dangling experiment token.
-        """
-        runs = self._experiment_to_runs.get(experiment)
-        if runs:
-            return runs
-        if self._sdrf_experiment_to_runs:
-            runs = self._sdrf_experiment_to_runs.get(experiment)
-            if runs:
-                return runs
-        return None
-
-    def _resolve_grouped_runs(self, experiment: str) -> list[str]:
-        """Like :meth:`_lookup_grouped_runs` but raises when unmapped."""
-        runs = self._lookup_grouped_runs(experiment)
-        if runs is None:
-            raise ValueError(
-                f"Cannot build grouped_runs for FragPipe experiment {experiment!r}: no "
-                "experiment->runs mapping. Provide experiment_annotation.tsv, an explicit "
-                "experiment_to_runs mapping, or an SDRF (sdrf_path) whose 'source name' "
-                "matches the experiment."
-            )
-        return runs
 
     def _load_protein_file(self, path: str) -> None:
         """Load combined_protein.tsv into DuckDB."""
@@ -243,28 +287,29 @@ class FragPipePgAdapter(BaseConverter):
         self.logger.info(f"Loaded {count:,} FragPipe protein group rows")
 
     def _detect_experiment_columns(self) -> list[str]:
-        """Detect per-experiment intensity columns.
+        """Detect the experiments from any per-experiment column.
 
-        FragPipe ``combined_protein.tsv`` has columns like:
-            ``<experiment> Total Intensity``
-            ``<experiment> Spectral Count``
-            ``<experiment> Unique Spectral Count``
+        FragPipe ``combined_protein.tsv`` has columns like ``<experiment> Intensity``,
+        ``<experiment> MaxLFQ Intensity`` and ``<experiment> Spectral Count``; a
+        spectral-count-only report has just the counts. ``Combined *`` columns
+        cover all experiments.
         """
         cols = self._conn.execute(
             "SELECT column_name FROM information_schema.columns WHERE table_name='fragpipe_proteins'"
         ).fetchall()
-        col_names = [c[0] for c in cols]
-
-        # Find columns ending with " Total Intensity" or " MaxLFQ Intensity"
-        intensity_cols = [c for c in col_names if c.endswith(" Total Intensity") or c.endswith(" MaxLFQ Intensity")]
-
-        # Extract experiment names
         experiments = set()
-        for col in intensity_cols:
-            for suffix in [" Total Intensity", " MaxLFQ Intensity"]:
-                if col.endswith(suffix):
-                    experiments.add(col[: -len(suffix)])
-
+        for (col,) in cols:
+            # Unprefixed columns of a one-experiment protein.tsv name no experiment.
+            if col in _EXPERIMENT_SUFFIXES or col.startswith("Combined "):
+                continue
+            suffix = next((suffix for suffix in _EXPERIMENT_SUFFIXES if col.endswith(f" {suffix}")), None)
+            if suffix:
+                experiments.add(col[: -len(suffix) - 1])
+        if not experiments:
+            raise ValueError(
+                "FragPipe combined_protein.tsv has no per-experiment columns such as '<experiment> Intensity'; "
+                "a one-plex protein.tsv holds its reporter quantities in channel columns, which --annotation-file names"
+            )
         return sorted(experiments)
 
     # ------------------------------------------------------------------
@@ -282,13 +327,12 @@ class FragPipePgAdapter(BaseConverter):
         Expands into one record per experiment (run).
         """
         records: list[dict] = []
-        common_fields, total_peptides, unique_peptides = self._pg_common_fields(row)
+        common_fields = self._pg_common_fields(row)
+        if self._channels:
+            return self._channel_records(row, common_fields, experiments[0])
 
         # Expand per experiment
         for experiment in experiments:
-            spec_count_col = f"{experiment} Spectral Count"
-            unique_spec_col = f"{experiment} Unique Spectral Count"
-
             quantities = _experiment_quantities(row, experiment)
             if quantities is None:
                 continue
@@ -298,45 +342,65 @@ class FragPipePgAdapter(BaseConverter):
             label = "LFQ"
             intensities = [{"label": label, "intensity": primary_intensity}]
 
-            # Additional intensities pre-computed by FragPipe (MaxLFQ)
+            # Additional intensities: MaxLFQ, unique intensities and spectral counts
             additional_intensities = [{"label": label, "intensities": extra_vals}] if extra_vals else []
 
-            # Additional scores
-            additional_scores = []
-            spec_val = safe_float(row.get(spec_count_col))
-            if spec_val is not None:
-                additional_scores.append(
-                    {
-                        "score_name": "spectral_count",
-                        "score_value": spec_val,
-                        "higher_better": True,
-                    }
-                )
-
-            # Per-experiment peptide/feature counts
-            exp_unique = safe_float(row.get(unique_spec_col)) or 0
-            exp_total = safe_float(row.get(spec_count_col)) or 0
+            # Per-experiment peptide counts; FragPipe reports no feature counts
+            unique_peptides = safe_float(row.get(f"{experiment} Unique Peptides"))
+            total_peptides = safe_float(row.get(f"{experiment} Total Peptides"))
 
             rec = {
                 **common_fields,
                 # Expand the FragPipe experiment to its member run files (results
                 # mapping, else SDRF); the tool-reported per-experiment intensity
                 # is kept as-is (FragPipe already aggregated across the fractions).
-                "grouped_runs": self._resolve_grouped_runs(experiment),
+                "grouped_runs": self._experiment_runs[experiment],
                 "intensities": intensities,
                 "additional_intensities": additional_intensities or None,
-                "peptide_counts": {
-                    "unique_sequences": unique_peptides,
-                    "total_sequences": total_peptides,
-                },
-                "feature_counts": {
-                    "unique_features": int(exp_unique),
-                    "total_features": int(exp_total),
-                },
-                "additional_scores": additional_scores or None,
+                "peptide_counts": (
+                    None
+                    if unique_peptides is None or total_peptides is None
+                    else {"unique_sequences": int(unique_peptides), "total_sequences": int(total_peptides)}
+                ),
+                "feature_counts": None,
             }
             records.append(rec)
 
+        return records
+
+    def _channel_records(self, row, common_fields: dict, plex: str) -> list[dict]:
+        """One record per quantified channel of a one-plex protein.tsv."""
+        unique_peptides, total_peptides = safe_float(row.get("Unique Peptides")), safe_float(row.get("Total Peptides"))
+        peptide_counts = (
+            None
+            if unique_peptides is None or total_peptides is None
+            else {"unique_sequences": int(unique_peptides), "total_sequences": int(total_peptides)}
+        )
+        report = self._tmt_report.get(row.get("Protein ID"), {})
+        records = []
+        for entry in channel_intensities(row, self._channels) or []:
+            if entry["intensity"] is None:
+                continue
+            abundance = report.get(entry["label"])
+            records.append(
+                {
+                    **common_fields,
+                    "grouped_runs": self._experiment_runs[plex],
+                    "intensities": [entry],
+                    "additional_intensities": (
+                        None
+                        if abundance is None
+                        else [
+                            {
+                                "label": entry["label"],
+                                "intensities": [{"intensity_name": TMT_REPORT_INTENSITY, "intensity_value": abundance}],
+                            }
+                        ]
+                    ),
+                    "peptide_counts": peptide_counts,
+                    "feature_counts": None,
+                }
+            )
         return records
 
     def _pg_qvalue(self, row: dict) -> float | None:
@@ -356,12 +420,12 @@ class FragPipePgAdapter(BaseConverter):
             pg_qvalue = pg_qvalue_raw
         return pg_qvalue
 
-    def _pg_common_fields(self, row: dict) -> tuple:
+    def _pg_common_fields(self, row: dict) -> dict:
         """Build protein-group fields shared across experiments."""
         r = self._resolved
         # Protein group identity
-        protein_raw = str(row.get(r.get("pg_accessions", "Protein"), ""))
-        pg_accessions = protein_raw.split(",") if protein_raw else []
+        protein_raw = row.get(r.get("pg_accessions", "Protein"))
+        pg_accessions = protein_accessions(protein_raw, row.get("Indistinguishable Proteins"))
 
         gene_raw = row.get(r.get("gg_accessions", "Gene"), "")
         gg_accessions = str(gene_raw).split(",") if pd.notna(gene_raw) and gene_raw else None
@@ -377,9 +441,8 @@ class FragPipePgAdapter(BaseConverter):
         # Is decoy: detected from a decoy prefix on any RAW accession
         is_decoy = is_decoy_accession(protein_raw)
 
-        # Combined counts
+        # Combined count, the same for every member of an indistinguishable group
         total_peptides = int(row.get(r.get("peptide_count_total", "Combined Total Peptides"), 0) or 0)
-        unique_peptides = int(row.get(r.get("peptide_count_unique", "Combined Unique Peptides"), 0) or 0)
 
         # Sequence coverage
         seq_coverage = safe_float(row.get(r.get("sequence_coverage", "Percent Coverage")))
@@ -393,23 +456,40 @@ class FragPipePgAdapter(BaseConverter):
 
         # Peptides per protein
         peptides = [{"protein_name": acc, "peptide_count": total_peptides} for acc in pg_accessions]
-        return (
-            {
-                "pg_accessions": pg_accessions,
-                "pg_names": pg_names,
-                "gg_accessions": gg_accessions,
-                "gg_names": gg_accessions,
-                "gg_qvalue": None,
-                "anchor_protein": anchor_protein,
-                "global_qvalue": None,
-                "pg_qvalue": pg_qvalue,
-                "is_decoy": is_decoy,
-                "contaminant": None,
-                "peptides": peptides,
-                "sequence_coverage": seq_coverage,
-                "molecular_weight": mol_weight,
-                "cv_params": None,
-            },
-            total_peptides,
-            unique_peptides,
-        )
+        return {
+            "pg_accessions": pg_accessions,
+            "pg_names": pg_names,
+            "gg_accessions": gg_accessions,
+            "gg_names": gg_accessions,
+            "gg_qvalue": None,
+            "anchor_protein": anchor_protein,
+            "global_qvalue": None,
+            "pg_qvalue": pg_qvalue,
+            "is_decoy": is_decoy,
+            "contaminant": is_contaminant_accession(protein_raw),
+            "peptides": peptides,
+            "sequence_coverage": seq_coverage,
+            "molecular_weight": mol_weight,
+            **self._pg_annotations(row),
+        }
+
+    @staticmethod
+    def _pg_annotations(row: dict) -> dict:
+        """Protein length and existence as cv_params, and the ProteinProphet probabilities as scores."""
+        cv_params = []
+        length = safe_float(row.get("Protein Length", row.get("Length")))
+        if length is not None:
+            cv_params.append({"cv_name": "sequence_length", "cv_value": str(int(length))})
+        existence = row.get("Protein Existence")
+        if pd.notna(existence) and str(existence).strip():
+            # "1:Experimental evidence at protein level" -> "1"
+            cv_params.append({"cv_name": "protein_existence", "cv_value": str(existence).split(":", 1)[0].strip()})
+        scores = [
+            {"score_name": name, "score_value": score, "higher_better": True}
+            for column, name in (
+                ("Protein Probability", "protein_probability"),
+                ("Top Peptide Probability", "top_peptide_probability"),
+            )
+            if (score := safe_float(row.get(column))) is not None
+        ]
+        return {"cv_params": cv_params or None, "additional_scores": scores or None}

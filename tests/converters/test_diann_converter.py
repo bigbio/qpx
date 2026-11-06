@@ -7,7 +7,6 @@ correct schemas and plausible values.
 
 import re
 from pathlib import Path
-from unittest.mock import Mock
 
 import pandas as pd
 import pyarrow as pa
@@ -242,6 +241,13 @@ class TestDiaNNFeatureConversion:
         cv_names = {entry["cv_name"] for row in feature_table.column("cv_params").to_pylist() for entry in row or []}
         assert cv_names.isdisjoint({"iim", "predicted_im", "predicted_iim"})
 
+    def test_quantity_quality_is_written_once_as_a_score(self, feature_table):
+        """Quantity.Quality is the score diann_quantity_quality, not also a cv_params string."""
+        scores = {entry["score_name"] for row in feature_table.column("additional_scores").to_pylist() for entry in row or []}
+        cv_names = {entry["cv_name"] for row in feature_table.column("cv_params").to_pylist() for entry in row or []}
+        assert "diann_quantity_quality" in scores
+        assert "precursor_quantification_score" not in cv_names
+
     def test_mass_error_ppm_is_null_without_a_measured_mz(self, feature_table):
         """Null only when there is nothing to measure (bigbio/qpx#298).
 
@@ -277,6 +283,22 @@ class TestDiaNNFeatureConversion:
             assert 0.0 <= value <= 1.0, f"q-value out of range: {value}"
 
 
+def test_plexdia_channel_details_prefer_the_channel_q_value(tmp_path):
+    from qpx.converters.diann.feature_adapter import DiannFeatureAdapter
+
+    report_path, _, sdrf_path = _write_plexdia_inputs(tmp_path)
+    report = pd.read_csv(report_path, sep="\t")
+    report["Channel.Q.Value"] = [0.2, 0.3]
+    report["Channel.Evidence"] = [1.5, 2.5]
+    report.to_csv(report_path, sep="\t", index=False)
+    output_path = tmp_path / "plexdia.feature.parquet"
+    with DiannFeatureAdapter() as adapter:
+        adapter.convert(diann_report=str(report_path), output_path=str(output_path), sdrf_path=str(sdrf_path))
+
+    [row] = pq.read_table(output_path).to_pylist()
+    assert [(e["label"], e["qvalue"], e["evidence"]) for e in row["channel_details"]] == [("H", 0.3, 2.5), ("L", 0.2, 1.5)]
+
+
 def test_plexdia_feature_collapses_channels_into_one_row(tmp_path):
     """Channel rows for one precursor become one feature with two intensities."""
     from qpx.converters.diann.feature_adapter import DiannFeatureAdapter
@@ -298,6 +320,9 @@ def test_plexdia_feature_collapses_channels_into_one_row(tmp_path):
     assert rows[0]["peptide_qvalue"] is None
     scores = {entry["score_name"]: entry["score_value"] for entry in rows[0]["additional_scores"]}
     assert scores["precursor_qvalue"] == pytest.approx(0.002)
+    assert rows[0]["representative_label"] == "L"
+    assert [(entry["label"], entry["qvalue"]) for entry in rows[0]["channel_details"]] == [("H", 0.003), ("L", 0.002)]
+    assert rows[0]["channel_details"][0]["rt"] == rows[0]["rt"]
 
 
 # ---------------------------------------------------------------------------
@@ -1089,109 +1114,44 @@ class TestDiaNNOntologyConversion:
 
 
 class TestDiannReportLoading:
-    """Adaptive TABLE-vs-VIEW report loading (bigbio/qpx#221 — @Shen-YuFei)."""
+    """Report loading and run batching (bigbio/qpx#221 — @Shen-YuFei)."""
 
     @staticmethod
-    def _adapter(conn):
+    def _features(report, output_path, caplog, **kwargs):
         import logging
 
-        from qpx.converters.diann.base_adapter import DiaNNBaseAdapter
+        from qpx.converters.diann.feature_adapter import DiannFeatureAdapter
 
-        class _A(DiaNNBaseAdapter):
-            def convert(self, *args, **kwargs):
-                pass
+        with caplog.at_level(logging.INFO), DiannFeatureAdapter() as adapter:
+            adapter.convert(diann_report=str(report), output_path=str(output_path), **kwargs)
+        return pq.read_table(output_path).sort_by("feature_id")
 
-        adapter = _A.__new__(_A)  # bypass BaseConverter.__init__; we only need _conn + logger
-        adapter._conn = conn
-        adapter.logger = logging.getLogger("test")
-        return adapter
-
-    @staticmethod
-    def _relation_type(conn):
-        return conn.execute("SELECT table_type FROM information_schema.tables WHERE table_name='report'").fetchone()[0]
-
-    def test_parse_duckdb_size(self):
-        from qpx.converters.diann.base_adapter import _parse_duckdb_size
-
-        assert _parse_duckdb_size("14.3 GiB") == int(14.3 * 1024**3)
-        assert _parse_duckdb_size("8192MB") == 8192 * 1000**2
-        assert _parse_duckdb_size("200 MiB") == 200 * 1024**2
-        assert _parse_duckdb_size("-1") is None
-        assert _parse_duckdb_size("garbage") is None
-
-    def test_should_materialize_decision(self, tmp_path, monkeypatch):
+    def test_text_report_is_read_through_a_temporary_parquet_copy(self, tmp_path, caplog):
+        """A gzipped report is parsed once into a Parquet copy in the temp directory, removed on close."""
         import gzip
-        import os
 
-        from qpx.core.engine import DuckDBEngine
+        from qpx.core.engine import duckdb_defaults
 
-        report = tmp_path / "r.tsv"
-        report.write_text("Run\tX\nr1\t1\n", encoding="utf-8")
-        compressed_report = tmp_path / "r.tsv.gz"
-        with gzip.open(compressed_report, "wt", encoding="utf-8") as handle:
-            handle.write("Run\tX\nr1\t1\n")
-        with DuckDBEngine() as engine:
-            adapter = self._adapter(engine.connection)
-            should_materialize = getattr(adapter, "_should_materialize_report")
+        report = tmp_path / "report.tsv.gz"
+        report.write_bytes(gzip.compress(_REPORT.read_bytes()))
+        spill = tmp_path / "spill"
+        with duckdb_defaults(temp_directory=spill):
+            from_gz = self._features(report, tmp_path / "gz.feature.parquet", caplog)
+        copies = [Path(record.args[0]) for record in caplog.records if record.msg == "DIA-NN report copied to %s"]
+        assert [copy.parent for copy in copies] == [spill]
+        assert not copies[0].exists()
+        assert from_gz.equals(self._features(_REPORT, tmp_path / "tsv.feature.parquet", caplog))
 
-            monkeypatch.setattr(adapter, "_duckdb_memory_limit_bytes", lambda: 8 * 1024**3)
-            assert should_materialize(str(report)) is True  # tiny file, big limit
-            assert should_materialize(str(compressed_report)) is False
-
-            monkeypatch.setattr(os.path, "getsize", lambda _p: 5 * 1024**3)  # 5 GB file
-            assert should_materialize(str(report)) is False  # over 0.5*limit -> VIEW
-
-            monkeypatch.setattr(adapter, "_duckdb_memory_limit_bytes", lambda: None)
-            assert should_materialize(str(report)) is False  # unknown limit, big file
-
-    def test_small_report_materializes_table(self, tmp_path):
-        from qpx.core.engine import DuckDBEngine
-
+    def test_runs_are_batched_by_report_rows(self, tmp_path, caplog):
+        rows = pd.read_csv(_REPORT, sep="\t")
         report = tmp_path / "report.tsv"
-        report.write_text("Run\tX\n" + "\n".join(f"r1\t{i}" for i in range(20)) + "\n", encoding="utf-8")
-        engine = DuckDBEngine()
-        self._adapter(engine._conn)._load_diann_report(str(report))
-        assert self._relation_type(engine._conn) == "BASE TABLE"
-
-    def test_falls_back_to_view_when_over_budget(self, tmp_path, monkeypatch):
-        from qpx.core.engine import DuckDBEngine
-
-        report = tmp_path / "report.tsv"
-        report.write_text("Run\tX\n" + "\n".join(f"r1\t{i}" for i in range(20)) + "\n", encoding="utf-8")
-        engine = DuckDBEngine()
-        adapter = self._adapter(engine._conn)
-        monkeypatch.setattr(adapter, "_should_materialize_report", lambda _p: False)
-        adapter._load_diann_report(str(report))
-        assert self._relation_type(engine._conn) == "VIEW"
-
-    def test_materialization_oom_falls_back_without_scanning_view(self, tmp_path, monkeypatch):
-        """OOM fallback creates a VIEW without immediately scanning it."""
-        import duckdb
-
-        from qpx.core.engine import DuckDBEngine
-
-        report = tmp_path / "report.tsv"
-        report.write_text("Run\tX\nr1\t1\n", encoding="utf-8")
-        with DuckDBEngine() as engine:
-            statements = []
-            real_execute = engine.connection.execute
-
-            def execute(statement, *args, **kwargs):
-                """Force materialization to fail while preserving other queries."""
-                statements.append(statement)
-                if statement.startswith("CREATE TABLE report"):
-                    raise duckdb.OutOfMemoryException("forced materialization failure")
-                return real_execute(statement, *args, **kwargs)
-
-            conn = Mock(wraps=engine.connection)
-            conn.execute.side_effect = execute
-            adapter = self._adapter(conn)
-            monkeypatch.setattr(adapter, "_should_materialize_report", lambda _p: True)
-
-            getattr(adapter, "_load_diann_report")(str(report))
-
-            assert self._relation_type(engine.connection) == "VIEW"
-            assert not any(statement.startswith("SELECT COUNT(*)") for statement in statements)
+        pd.concat([rows, rows.assign(Run=rows["Run"] + "_B")]).to_csv(report, sep="\t", index=False)
+        one_batch = self._features(report, tmp_path / "one.feature.parquet", caplog)
+        caplog.clear()
+        per_run = self._features(report, tmp_path / "runs.feature.parquet", caplog, batch_rows=len(rows))
+        batches = [record.getMessage() for record in caplog.records if record.getMessage().startswith("Processing runs")]
+        assert batches == ["Processing runs 1-1 of 2", "Processing runs 2-2 of 2"]
+        assert per_run.equals(one_batch)
 
 
 # ---------------------------------------------------------------------------
@@ -1507,8 +1467,8 @@ def test_diann_feature_zero_quantities_are_not_measured_zeros(tmp_path, missing_
     """PXD036609 has 18 features with Precursor.Quantity = 0 and 20,450 with Ms1.Area = 0.
 
     They were written as measured 0.0 values, and a NaN Precursor.Quantity as 0.0
-    too. The intensity struct cannot hold a null, so the identified feature keeps
-    its row with ``intensities = null``, and a zero additional intensity is left out.
+    too. The identified feature keeps its label with a null intensity, and a zero
+    additional intensity is left out.
     """
     quantified, unquantified = _two_precursor_report_rows()
     quantified.update({"Precursor.Normalised": 110.0, "Ms1.Area": 0.0, "PG.MaxLFQ": 0.0})
@@ -1518,22 +1478,22 @@ def test_diann_feature_zero_quantities_are_not_measured_zeros(tmp_path, missing_
 
     assert rows["PEPTIDEK"]["intensities"] == [{"label": "LFQ", "intensity": 100.0}]
     assert rows["PEPTIDEK"]["additional_intensities"] == [
-        {"label": "LFQ", "intensities": [{"intensity_name": "precursor_normalised", "intensity_value": 110.0}]}
+        {"label": "LFQ", "intensities": [{"intensity_name": "normalize_intensity", "intensity_value": 110.0}]}
     ]
-    assert rows["PEPTIDER"]["intensities"] is None
+    assert rows["PEPTIDER"]["intensities"] == [{"label": "LFQ", "intensity": None}]
     assert rows["PEPTIDER"]["additional_intensities"] == [
         {
             "label": "LFQ",
             "intensities": [
-                {"intensity_name": "maxlfq", "intensity_value": 900.0},
+                {"intensity_name": "pg_maxlfq", "intensity_value": 900.0},
                 {"intensity_name": "ms1_area", "intensity_value": 50.0},
             ],
         }
     ]
 
 
-@pytest.mark.parametrize(("zero_channels", "expected"), [(["H"], {"L": 100.0}), (["L", "H"], None)])
-def test_plexdia_feature_unquantified_channel_has_no_intensity_entry(tmp_path, zero_channels, expected):
+@pytest.mark.parametrize(("zero_channels", "expected"), [(["H"], {"L": 100.0, "H": None}), (["L", "H"], {"L": None, "H": None})])
+def test_plexdia_feature_unquantified_channel_keeps_its_label(tmp_path, zero_channels, expected):
     """MSV000093870 (plexDIA) reports Precursor.Quantity = 0 on 13.2 % of its channel rows."""
     from qpx.converters.diann.feature_adapter import DiannFeatureAdapter
 
@@ -1547,9 +1507,7 @@ def test_plexdia_feature_unquantified_channel_has_no_intensity_entry(tmp_path, z
 
     rows = pq.read_table(output_path).to_pylist()
     assert len(rows) == 1
-    intensities = rows[0]["intensities"]
-    by_label = None if intensities is None else {entry["label"]: entry["intensity"] for entry in intensities}
-    assert by_label == expected
+    assert {entry["label"]: entry["intensity"] for entry in rows[0]["intensities"]} == expected
 
 
 def test_protein_properties_from_fasta_on_bare_diann_accessions(converted_output, tmp_path):
@@ -1667,16 +1625,17 @@ def test_nearest_ms2_picks_the_precursor_window_among_spectra_sharing_a_time():
             "_matched_mz": [412.5, 437.5, 462.5, 437.5],
         }
     )
-    left = pd.DataFrame({"_merge_row": [0, 1, 2], "rt": [100.0, 100.0, 100.02], "observed_mz": [440.1, 410.0, None]})
+    left = pd.DataFrame({"_merge_row": [0, 1, 2], "rt": [100.0, 100.0, 100.02], "precursor_mz": [440.1, 410.0, None]})
 
     nearest = _nearest_ms2(left, right).set_index("_merge_row")["_matched_scan"]
 
     assert nearest.to_dict() == {0: 2.0, 1: 1.0, 2: 1.0}
 
 
+@pytest.mark.parametrize("scan_column", ["MS2.Scan", "Ms2.Scan"])
 @pytest.mark.parametrize("with_ms_info", [False, True])
-def test_diann_ms2_scan_position_becomes_a_scan_only_through_ms_info(tmp_path, with_ms_info):
-    """DIA-NN 1.8 MS2.Scan counts the run's MS2 spectra from 0. Without MS info it
+def test_diann_ms2_scan_position_becomes_a_scan_only_through_ms_info(tmp_path, with_ms_info, scan_column):
+    """DIA-NN 1.8 MS2.Scan and 2.x Ms2.Scan count the run's MS2 spectra from 0. Without MS info it
     names no native scan, so feature.scan stays empty; with it, the position selects
     the scan. The MS-info precursor m/z is a DIA window centre and never fills
     observed_mz."""
@@ -1695,7 +1654,7 @@ def test_diann_ms2_scan_position_becomes_a_scan_only_through_ms_info(tmp_path, w
                 "Q.Value": 0.002,
                 "Precursor.Quantity": 100.0,
                 "RT": 10.0,
-                "MS2.Scan": 2,
+                scan_column: 2,
             }
         ]
     ).to_csv(report_path, sep="\t", index=False)

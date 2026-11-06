@@ -7,6 +7,7 @@ of the library.
 
 from __future__ import annotations
 
+import functools
 import re
 from pathlib import Path
 
@@ -58,6 +59,26 @@ def _build_struct_type(fields_def: dict, custom_types: dict[str, pa.DataType]) -
         arrow_type = _resolve_type(fdef["type"], custom_types)
         arrow_fields.append(pa.field(fname, arrow_type, nullable=nullable))
     return pa.struct(arrow_fields)
+
+
+def _value_range(fdef: dict) -> tuple[float | None, float | None] | None:
+    """The ``minimum`` and ``maximum`` a YAML field declares, or None when it declares neither."""
+    if "minimum" not in fdef and "maximum" not in fdef:
+        return None
+    return fdef.get("minimum"), fdef.get("maximum")
+
+
+@functools.cache
+def _custom_type_ranges() -> dict[str, dict[str, tuple[float | None, float | None]]]:
+    """The declared value ranges of the custom struct types, by type and field name."""
+    with open(SPECS_DIR / "types.yaml", encoding="utf-8") as f:
+        raw = yaml.safe_load(f)
+    ranges = {}
+    for type_name, type_def in raw.items():
+        declared = {fname: _value_range(fdef) for fname, fdef in type_def["fields"].items()}
+        if any(declared.values()):
+            ranges[type_name] = {fname: bounds for fname, bounds in declared.items() if bounds}
+    return ranges
 
 
 def _resolve_type(type_str: str, custom_types: dict[str, pa.DataType]) -> pa.DataType:
@@ -128,7 +149,11 @@ def load_schema(name: str) -> ViewSchema:
         optional = fdef.get("optional", False)
         nullable = fdef.get("nullable", not required)
         doc = fdef.get("doc", "")
-        fields[fname] = FieldDef(fname, arrow_type, nullable=nullable, optional=optional, doc=doc)
+        element_type = re.sub(r"^list<(.+)>$", r"\1", fdef["type"])
+        value_ranges = {(sub,): bounds for sub, bounds in _custom_type_ranges().get(element_type, {}).items()}
+        if bounds := _value_range(fdef):
+            value_ranges[()] = bounds
+        fields[fname] = FieldDef(fname, arrow_type, nullable=nullable, optional=optional, doc=doc, value_ranges=value_ranges)
 
     return ViewSchema(
         view_name=spec["name"],

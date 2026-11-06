@@ -10,6 +10,7 @@ from qpx._version import __version__
 from qpx.converters.cdap.feature_adapter import CdapFeatureAdapter
 from qpx.converters.cdap.pg_adapter import CdapPgAdapter
 from qpx.converters.cdap.psm_adapter import CdapPsmAdapter
+from qpx.converters.channel_labels import fraction_groups_from_sdrf
 from qpx.converters.mappings import get_tool_meta
 from qpx.converters.orchestrator import BaseOrchestrator
 from qpx.core.constants import FEATURE, ONTOLOGY, PG, PSM
@@ -38,11 +39,9 @@ class CdapConverter(BaseOrchestrator):  # pylint: disable=too-few-public-methods
         self,
         max_memory: str | None = None,
         max_cpus: int | None = None,
-        compression: str = "zstd",
     ):
         self._max_memory = max_memory
         self._max_cpus = max_cpus
-        self._compression = compression
         self._resolved_mappings_by_view: dict[str, dict] = {}
 
     # ------------------------------------------------------------------
@@ -56,6 +55,8 @@ class CdapConverter(BaseOrchestrator):  # pylint: disable=too-few-public-methods
         output_prefix: str = "cdap",
         structures: Optional[Iterable[str]] = None,
         project_accession: Optional[str] = None,
+        sdrf_path: Optional[str | Path] = None,
+        run_units: Optional[dict[str, list[str]]] = None,
     ) -> None:
         """Convert a single CDAP study directory to QPX Parquet files.
 
@@ -67,6 +68,10 @@ class CdapConverter(BaseOrchestrator):  # pylint: disable=too-few-public-methods
                 ``{psm, feature, pg}``). When ``None`` all three are produced.
             project_accession: PDC study accession written into
                 ``dataset.parquet``.
+            sdrf_path: SDRF defining the ``grouped_runs`` quantification units.
+            run_units: Run -> runs of its quantification unit, as PDC metadata
+                gives them; takes precedence over ``sdrf_path``. Runs named by
+                neither are grouped by their ``_fNN`` suffix.
         """
         output_folder = Path(output_folder)
         output_folder.mkdir(parents=True, exist_ok=True)
@@ -81,7 +86,13 @@ class CdapConverter(BaseOrchestrator):  # pylint: disable=too-few-public-methods
         pg_path = output_folder / f"{prefix}.pg.parquet"
 
         self._convert_psm_and_feature(requested, psm_dir, psm_path, feature_path, ontology_entries)
-        self._convert_pg(requested, feature_path, pg_path, ontology_entries)
+        self._convert_pg(
+            requested,
+            feature_path,
+            pg_path,
+            ontology_entries,
+            run_units or fraction_groups_from_sdrf(sdrf_path and str(sdrf_path)),
+        )
         self._write_metadata(output_folder, prefix, requested, ontology_entries, project_accession)
 
     # ------------------------------------------------------------------
@@ -97,7 +108,6 @@ class CdapConverter(BaseOrchestrator):  # pylint: disable=too-few-public-methods
                 with CdapPsmAdapter(
                     duckdb_memory=self._max_memory,
                     duckdb_threads=self._max_cpus,
-                    compression=self._compression,
                     conn=shared_conn,
                 ) as adapter:
                     adapter.convert(psm_dir=str(psm_dir), output_path=str(psm_path), chunksize=_BATCH_SIZE)
@@ -109,7 +119,6 @@ class CdapConverter(BaseOrchestrator):  # pylint: disable=too-few-public-methods
                 with CdapFeatureAdapter(
                     duckdb_memory=self._max_memory,
                     duckdb_threads=self._max_cpus,
-                    compression=self._compression,
                     conn=shared_conn,
                 ) as adapter:
                     adapter.convert(psm_dir=str(psm_dir), output_path=str(feature_path), chunksize=_BATCH_SIZE)
@@ -120,7 +129,7 @@ class CdapConverter(BaseOrchestrator):  # pylint: disable=too-few-public-methods
             if shared_conn is not None:
                 shared_conn.close()
 
-    def _convert_pg(self, requested, feature_path, pg_path, ontology_entries):
+    def _convert_pg(self, requested, feature_path, pg_path, ontology_entries, run_units=None):
         """Run PG adapter using existing feature.parquet."""
         if PG not in requested:
             return
@@ -134,9 +143,8 @@ class CdapConverter(BaseOrchestrator):  # pylint: disable=too-few-public-methods
         with CdapPgAdapter(
             duckdb_memory=self._max_memory,
             duckdb_threads=self._max_cpus,
-            compression=self._compression,
         ) as adapter:
-            adapter.convert(feature_path=str(feature_path), output_path=str(pg_path), chunksize=_BATCH_SIZE)
+            adapter.convert(feature_path=str(feature_path), output_path=str(pg_path), chunksize=_BATCH_SIZE, run_units=run_units)
             ontology_entries.extend(score_ontology_entries(adapter.get_discovered_scores(), view=PG))
         logger.info("CDAP PG conversion complete")
 

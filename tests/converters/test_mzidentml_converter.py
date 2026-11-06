@@ -8,6 +8,7 @@ import pytest
 from qpx.converters.mzidentml.crosslinks import _group_siis
 from qpx.converters.mzidentml.psm_adapter import MzIdentMLPsmAdapter
 from qpx.converters.mzidentml.psm_records import _build_psm_records, _parse_native_id
+from qpx.converters.mzidentml.scores import _attach_site_localization_scores
 
 lxml = pytest.importorskip("lxml", reason="lxml required for mzIdentML tests")
 
@@ -425,9 +426,9 @@ class TestMzIdentMLPgAdapter:
             adapter.convert(mzid_path=str(PXD054720_MZID), output_path=str(output))
         table = pq.read_table(str(output))
         df = table.to_pandas()
-        anchor_row = df[df["anchor_protein"] == "sp|P0A6Y8|DNAK_ECOLI"]
+        anchor_row = df[df["anchor_protein"] == "P0A6Y8"]
         assert len(anchor_row) > 0, (
-            f"Expected sp|P0A6Y8|DNAK_ECOLI as anchor protein in first PAG. Got anchors: {df['anchor_protein'].tolist()[:5]}"
+            f"Expected P0A6Y8 as anchor protein in first PAG. Got anchors: {df['anchor_protein'].tolist()[:5]}"
         )
 
     def test_pg_accessions_not_empty(self, tmp_path):
@@ -576,12 +577,14 @@ class TestSharedModificationsNoCrossContamination:
             "peptides": {
                 "SharedPep": {
                     "sequence": "PEPTIDE",
+                    "peptidoform": "PEPT[UNIMOD:21]IDE",
                     "modifications": self._phospho_mod(),
                     "xl_mods": {},
                 }
             },
             "peptide_evidence": {},
             "linker_info": {},
+            "modification_tags": {},
             "spectrum_results": [
                 {
                     "spectrum_id": "index=1",
@@ -621,3 +624,121 @@ class TestSharedModificationsNoCrossContamination:
         # The Peptide's shared modification list must remain pristine — scoring
         # happened on per-PSM copies, not on this source object.
         assert shared[0]["positions"][0]["scores"] is None
+
+
+class TestSiteLocalizationScores:
+    """MS:1002505 scores: every scored residue is kept, under the modification its index names."""
+
+    @staticmethod
+    def _peptide_mods():
+        return [
+            {
+                "name": "Carbamidomethyl",
+                "accession": "UNIMOD:4",
+                "positions": [{"position": 1, "amino_acid": "C", "scores": None}],
+            },
+            {"name": "Phospho", "accession": "UNIMOD:21", "positions": [{"position": 3, "amino_acid": "S", "scores": None}]},
+        ]
+
+    def test_probabilities_cover_every_residue_of_the_indexed_modification(self):
+        params = [
+            {"accession": "MS:1001971", "name": "phosphoRS site probability", "value": "2:0.9:3:true"},
+            {"accession": "MS:1001971", "name": "phosphoRS site probability", "value": "2:0.1:4:false"},
+        ]
+        mods, candidates = _attach_site_localization_scores(self._peptide_mods(), "CPSTK", params, {2: "UNIMOD:21"})
+        assert [(c["position"], c["probability"], c["assigned"], c["alternative_group"]) for c in candidates] == [
+            (3, 0.9, True, 1),
+            (4, 0.1, False, 1),
+        ]
+        assert mods[0]["positions"][0]["scores"] is None
+        assert mods[1]["positions"][0]["scores"][0]["score_name"] == "localization_probability"
+
+    def test_tied_positions_and_non_probability_scores_become_candidate_scores(self):
+        params = [{"accession": "MS:1001985", "name": "Ascore", "value": "2:0.8:3|4:true"}]
+        mods, candidates = _attach_site_localization_scores(self._peptide_mods(), "CPSTK", params, {2: "UNIMOD:21"})
+        assert [(c["position"], c["probability"], c["assigned"], c["scores"][0]["score_value"]) for c in candidates] == [
+            (3, None, True, 0.8),
+            (4, None, False, 0.8),
+        ]
+        assert mods[1]["positions"][0]["scores"][0]["score_value"] == 0.8
+
+    def test_scalar_value_is_not_put_on_the_first_modification(self):
+        params = [{"accession": "MS:1001985", "name": "Ascore", "value": "12.5"}]
+        mods, candidates = _attach_site_localization_scores(self._peptide_mods(), "CPSTK", params, {})
+        assert candidates is None
+        assert all(pos["scores"] is None for mod in mods for pos in mod["positions"])
+
+    def test_unknown_index_still_scores_the_placed_site(self):
+        params = [{"accession": "MS:1001971", "name": "phosphoRS site probability", "value": "9:0.9:3:true"}]
+        mods, candidates = _attach_site_localization_scores(self._peptide_mods(), "CPSTK", params, {})
+        assert candidates is None
+        assert mods[1]["positions"][0]["scores"][0]["score_value"] == 0.9
+
+
+class TestCrossLinkFields:
+    """Battle test M90: sites per peptide, the partner's modifications, unknown m/z, no fake positions."""
+
+    def test_positions_are_per_peptide_when_the_alpha_is_the_acceptor(self, tmp_path):
+        table = _convert("scores_and_thresholds_1_3_0_draft.mzid.gz", tmp_path)
+        rows = {row["sequence"]: row["cross_links"][0] for row in table.to_pylist()}
+        link = rows["GAEDEEEEEDVGFEQNFEEMLESVTR"]
+        assert (link["donor_position"], link["acceptor_position"]) == (9, 4)
+        assert link["linker_mass"] == pytest.approx(82.04186)
+
+    def test_partner_peptidoform_carries_its_modifications(self, tmp_path):
+        table = _convert("scores_and_thresholds_1_3_0_draft.mzid.gz", tmp_path)
+        rows = {row["sequence"]: row["cross_links"][0] for row in table.to_pylist()}
+        assert rows["SCKDLQILQASK"]["partner_peptidoform"] == "TAAPTVC[UNIMOD:4]LLVLGQADKVLEEVDWLIKR"
+
+    def test_search_modification_ref_is_not_the_identity(self, tmp_path):
+        table = _convert("multiple_spectra_per_id_1_3_0_draft.mzid.gz", tmp_path)
+        names = {mod["name"] for row in table.to_pylist() for mod in row["modifications"] or []}
+        assert names == {"Xlink:DSSO"}
+
+    def test_missing_calculated_mz_is_null(self, tmp_path):
+        table = _convert("multiple_spectra_per_id_1_3_0_draft.mzid.gz", tmp_path)
+        assert table.column("calculated_mz").null_count == table.num_rows
+
+    def test_multi_spectra_identification_is_kept(self, tmp_path):
+        table = _convert("multiple_spectra_per_id_1_3_0_draft.mzid.gz", tmp_path)
+        params = {cv["cv_name"]: cv["cv_value"] for cv in table.to_pylist()[0]["cv_params"]}
+        assert params["identification_based_on_multiple_spectra"] == "1234:P"
+
+    def test_noncovalent_has_no_position(self, tmp_path):
+        table = _convert("noncovalently_assoc_1_3_0_draft.mzid.gz", tmp_path)
+        link = table.column("cross_links")[0].as_py()[0]
+        assert link["donor_position"] is None and link["acceptor_position"] is None
+
+    def test_two_pairs_in_one_group_pair_across_peptides(self):
+        alpha_light, beta_light, alpha_heavy, beta_heavy = (
+            {"id": name, "peptide_ref": name[0], "cv_params": [{"accession": "MS:1002511", "name": "xl", "value": "1"}]}
+            for name in ("a1", "b1", "a2", "b2")
+        )
+        groups = _group_siis([alpha_light, beta_light, alpha_heavy, beta_heavy])
+        assert [(g["alpha"]["id"], g["beta"]["id"]) for g in groups] == [("a1", "b1"), ("a2", "b2")]
+
+
+class TestRankAndThreshold:
+    """Battle test M63: rank is a score and every PSM says whether it passed."""
+
+    def test_rank_score_and_pass_threshold(self, tmp_path):
+        rows = _convert("scores_and_thresholds_1_3_0_draft.mzid.gz", tmp_path).to_pylist()
+        assert {row["pass_threshold"] for row in rows} == {True, False}
+        for row in rows:
+            rank = next(score for score in row["additional_scores"] if score["score_name"] == "rank")
+            assert rank["score_value"] == 1.0 and rank["higher_better"] is False
+
+    def test_rank1_only(self):
+        sii = {"id": "x", "peptide_ref": "p", "rank": 2, "pass_threshold": True, "cv_params": [], "peptide_evidence_refs": []}
+        parsed = {
+            "spectra_data": {"sd": "run"},
+            "spectrum_results": [{"spectrum_id": "scan=1", "spectra_data_ref": "sd", "siis": [sii]}],
+            "peptides": {"p": {"sequence": "PEPK", "peptidoform": "PEPK", "modifications": None}},
+            "peptide_evidence": {},
+            "db_sequences": {},
+            "linker_info": {},
+            "modification_tags": {},
+        }
+        sii.update(charge=2, exp_mz=500.0, calc_mz=500.0)
+        assert len(_build_psm_records(parsed)) == 1
+        assert _build_psm_records(parsed, rank1_only=True) == []

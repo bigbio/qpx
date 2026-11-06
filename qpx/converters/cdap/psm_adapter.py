@@ -15,6 +15,8 @@ import pandas as pd
 from qpx.converters.base import resolve_columns
 from qpx.converters.cdap.base_adapter import CdapBaseAdapter
 from qpx.converters.mappings import get_field_mappings
+from qpx.converters.utils import safe_float
+from qpx.core.files import RUN_FILE_SUFFIX_PATTERN
 from qpx.writers.psm import PsmWriter
 
 _PSM_MAP = get_field_mappings("cdap", "psm")
@@ -39,6 +41,14 @@ _SCORE_COLUMNS: tuple[tuple[str, str, bool], ...] = (
     ("Qvalue", "psm_level_qvalue", False),
     ("PepQvalue", "peptide_level_qvalue", False),
 )
+
+
+def _parent_ion_fraction(purity) -> float | None:
+    """The fraction from a ``PrecursorPurity`` cell: percentages as ``first,second``, of which the first is the PSM's."""
+    if purity is None or purity == "":
+        return None
+    first = safe_float(str(purity).split(",", maxsplit=1)[0])
+    return None if first is None else first / 100.0
 
 
 class CdapPsmAdapter(CdapBaseAdapter):
@@ -85,7 +95,7 @@ class CdapPsmAdapter(CdapBaseAdapter):
 
         # Step 4: stream batches and transform.
         self.logger.info("Transforming CDAP PSMs ...")
-        with PsmWriter(output_path, creator=creator, compression=self._compression) as writer:
+        with PsmWriter(output_path, creator=creator) as writer:
             self._stream_transform_write(sql, writer, chunksize)
 
         self.logger.info("CDAP PSM conversion complete -> %s", output_path)
@@ -98,8 +108,7 @@ class CdapPsmAdapter(CdapBaseAdapter):
         cols: list[str] = [
             f'"{r.get("peptide_raw", "PeptideSequence")}" AS peptide_raw',
             f'CAST("{r.get("charge", "QueryCharge")}" AS INTEGER) AS charge',
-            # Pre-clean run file name: strip .raw/.mzML/.mgf extensions
-            f"regexp_replace(\"{r.get('run_file_name', 'FileName')}\", '\\.(raw|RAW|mzML|mzml|mgf)$', '') AS run_file_name",
+            f"regexp_replace(\"{r.get('run_file_name', 'FileName')}\", '{RUN_FILE_SUFFIX_PATTERN}', '') AS run_file_name",
             # Scan as integer
             f'TRY_CAST("{r.get("scan", "ScanNum")}" AS INTEGER) AS scan_num',
             # All numeric fields pre-cast to DOUBLE
@@ -151,7 +160,7 @@ class CdapPsmAdapter(CdapBaseAdapter):
 
         observed_mz = self._finite_float(row.get("observed_mz"))
         # ``calculated_mz`` is a THEORETICAL mass. When the peptidoform carries
-        # an unparseable token (e.g. a CHEMMOD unknown-mass tag), keep it NULL
+        # an unparseable token (e.g. a name without a known mass), keep it NULL
         # rather than falling back to a measured precursor m/z, which would
         # silently corrupt the theoretical-mass semantics (bigbio/qpx#250).
         calculated_mz = self._calculated_mz(peptidoform, charge)
@@ -163,6 +172,9 @@ class CdapPsmAdapter(CdapBaseAdapter):
         protein_accessions = [rec["accession"] for rec in protein_records] or None
 
         additional_scores = self._extract_scores(row)
+        purity = _parent_ion_fraction(row.get("PrecursorPurity"))
+        if purity is not None:
+            additional_scores.append({"score_name": "parent_ion_fraction", "score_value": purity, "higher_better": True})
         cv_params = self._extract_cv_params(row)
 
         rec = self._common_record_fields(

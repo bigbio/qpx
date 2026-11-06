@@ -1,8 +1,8 @@
 """Orchestrate consensusXML (+ SDRF) -> a QPX dataset (feature/psm/pg [+ run/sample]).
 
-Interim quantms path while OpenMS ``-out_qpx`` is pre-1.1. pg carries an interim
-unnormalized unique-peptide-sum intensity (until ``-out_qpx`` provides the real
-quant). run/sample come from the SDRF (reusing :class:`SdrfConverter`) when an
+Interim quantms path while OpenMS ``-out_qpx`` is pre-1.1. pg carries the protein
+abundance OpenMS recorded in the file, else an unnormalized unique-peptide sum.
+run/sample come from the SDRF (reusing :class:`SdrfConverter`) when an
 SDRF is provided; when it is, the consensusXML channels are also checked against
 the SDRF ``comment[label]`` and mismatches are logged as warnings.
 """
@@ -44,9 +44,9 @@ def _as_paths(consensusxml_path) -> list[str]:
 
 
 # Above this decompressed consensusXML size, auto-select the streaming reader. A whole
-# in-memory conversion peaks at ~6-7x the file in RAM (~27 GB at this size); streaming
-# about halves that but takes about twice as long.
-_STREAM_THRESHOLD_BYTES = 4 * 1024**3
+# in-memory conversion peaks at ~7x the file in RAM (~7 GB at this size); streaming
+# peaks at ~2.3x and takes ~1.7x as long.
+_STREAM_THRESHOLD_BYTES = 1024**3
 
 
 def _should_stream(path: str) -> bool:
@@ -85,7 +85,6 @@ def _write_sdrf_metadata(
     output_prefix: str,
     sdrf_path: str,
     requested: set[str],
-    compression: str = "zstd",
 ) -> tuple[dict[str, Path], list[dict]]:
     """Write the requested SDRF-backed run/sample structures.
 
@@ -103,7 +102,7 @@ def _write_sdrf_metadata(
         "sample": output_folder / f"{output_prefix}.sample.parquet",
         "run": output_folder / f"{output_prefix}.run.parquet",
     }
-    with SdrfConverter(compression=compression) as sdrf_converter:
+    with SdrfConverter() as sdrf_converter:
         sdrf_converter.convert(
             sdrf_path=sdrf_path,
             sample_output=str(paths["sample"]) if "sample" in metadata else None,
@@ -136,10 +135,8 @@ class OpenMSConsensusConverter(BaseOrchestrator):  # pylint: disable=too-few-pub
         sdrf_path: Optional[str] = None,
         structures: tuple[str, ...] = _STRUCTURE_ALL,
         creator: str = "openms-consensus",
-        pg_top: int = 0,
         streaming: Optional[bool] = None,
         project_accession: Optional[str] = None,
-        compression: str = "zstd",
         include_unassigned_psms: bool = True,
     ) -> dict[str, Path]:
         """Write the requested QPX views and return ``{structure: parquet path}``.
@@ -173,19 +170,17 @@ class OpenMSConsensusConverter(BaseOrchestrator):  # pylint: disable=too-few-pub
         option.
 
         ``structures`` selects which of feature/psm/pg/run/sample to emit. pg
-        carries an interim unnormalized unique-peptide-sum intensity; ``pg_top``
-        bounds the peptides used (0 = all; 3 mirrors ProteomicsLFQ/IsobaricWorkflow).
+        carries the protein abundance OpenMS recorded in the file, else an
+        unnormalized unique-peptide sum. The sum stays an additional intensity
+        beside OpenMS' value.
 
         ``streaming`` picks the consensusXML reader: ``None`` (default) auto-selects
         — the low-memory streaming reader when any input is above ``_STREAM_THRESHOLD_BYTES``
-        (where an in-memory conversion peaks at ~6-7x the file in RAM), else the
-        faster in-memory pyopenms load. ``True``/``False`` forces the choice.
+        (an in-memory conversion peaks at ~7x the file in RAM, streaming at ~2.3x), else
+        the faster in-memory pyopenms load. ``True``/``False`` forces the choice.
 
         ``project_accession`` (e.g. ``PXD001819``) is stamped into dataset.parquet.
-
-        ``compression`` is the Parquet codec for every written view (default zstd).
         """
-        self._compression = compression
         _validate_structures(structures, sdrf_path)
         consensusxml_paths = _as_paths(consensusxml_path)
         requested = set(structures)
@@ -194,9 +189,7 @@ class OpenMSConsensusConverter(BaseOrchestrator):  # pylint: disable=too-few-pub
         out.mkdir(parents=True, exist_ok=True)
         written: dict[str, Path] = {}
 
-        config = _ConversionConfig(
-            _OutputConfig(out, output_prefix, creator, compression), structures, sdrf_path, pg_top, include_unassigned_psms
-        )
+        config = _ConversionConfig(_OutputConfig(out, output_prefix, creator), structures, sdrf_path, include_unassigned_psms)
 
         if {"feature", "psm", "pg"}.intersection(structures):
             use_stream = streaming if streaming is not None else any(_should_stream(p) for p in consensusxml_paths)
@@ -215,7 +208,7 @@ class OpenMSConsensusConverter(BaseOrchestrator):  # pylint: disable=too-few-pub
                 (out / f"{output_prefix}.{view}.parquet").unlink(missing_ok=True)
                 _log.warning("No exportable %s records; skipping %s Parquet output.", view.upper(), view.upper())
 
-        sdrf_paths, run_ontology = _write_sdrf_metadata(out, output_prefix, sdrf_path, requested, compression)
+        sdrf_paths, run_ontology = _write_sdrf_metadata(out, output_prefix, sdrf_path, requested)
         written.update(sdrf_paths)
 
         # Metadata tables (ontology / provenance / dataset) — written when the

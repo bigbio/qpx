@@ -71,18 +71,18 @@ def test_tmt10_builds_sample_run_with_channel_mapping(tmp_path):
     rows = {r["run_file_name"]: r for r in run_tbl.to_pylist()}
     samples = rows["run_f01"]["samples"]
     labels = [s["label"] for s in samples]
-    # CDAP TMT10 label format, all 10 channels, mass-ascending
+    # Canonical TMT10 labels, all 10 channels, mass-ascending
     assert labels == [
-        "TMT10-126",
-        "TMT10-127N",
-        "TMT10-127C",
-        "TMT10-128N",
-        "TMT10-128C",
-        "TMT10-129N",
-        "TMT10-129C",
-        "TMT10-130N",
-        "TMT10-130C",
-        "TMT10-131",
+        "TMT126",
+        "TMT127N",
+        "TMT127C",
+        "TMT128N",
+        "TMT128C",
+        "TMT129N",
+        "TMT129C",
+        "TMT130N",
+        "TMT130C",
+        "TMT131",
     ]
     # 131 channel maps to the pooled reference
     assert samples[-1]["sample_accession"] == "Internal Reference - Pooled Sample"
@@ -182,8 +182,9 @@ def test_tmt11_with_tmtxx_extra_channels_maps_all(tmp_path):
     result = _build(tmp_path, design, _biospecimen(aliquots), run_to_plex)
     labels = [s["label"] for s in pq.read_table(str(result["run"])).to_pylist()[0]["samples"]]
     assert len(labels) == 13
-    assert labels[0] == "TMT11-126C"
-    assert labels[-2:] == ["TMTXX-132N", "TMTXX-132C"]
+    assert labels[0] == "TMT126"
+    assert labels[10] == "TMT131C"
+    assert labels[-2:] == ["TMT132N", "TMT132C"]
 
 
 def test_build_failure_preserves_existing_outputs(tmp_path):
@@ -210,13 +211,11 @@ def test_build_failure_preserves_existing_outputs(tmp_path):
 
 
 def test_strip_raw_extension_matches_cdap():
-    """metadata._strip_raw_extension must strip the exact same set as CDAP, so a
-    PDC-derived run_file_name matches the CDAP stem (else run<->feature joins break)."""
+    """A PDC-derived run_file_name matches the CDAP stem (else run<->feature joins break)."""
     from qpx.converters.cdap.base_adapter import CdapBaseAdapter
     from qpx.pdc.metadata import _strip_raw_extension
 
     for name in ("run_f01.raw", "run_f01.mzML", "run_f01.mgf", "run_f01.mzML.gz", "run_f01.d", "run_f01"):
         assert _strip_raw_extension(name) == CdapBaseAdapter.strip_run_extension(name)
-    # .mzML.gz / .d are intentionally left intact (CDAP does not strip them either)
-    assert _strip_raw_extension("run_f01.mzML.gz") == "run_f01.mzML.gz"
-    assert _strip_raw_extension("run_f01.d") == "run_f01.d"
+    assert _strip_raw_extension("run_f01.mzML.gz") == "run_f01"
+    assert _strip_raw_extension("run_f01.d") == "run_f01"

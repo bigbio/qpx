@@ -7,30 +7,19 @@ Provides common data-loading helpers used by
 from __future__ import annotations
 
 import re
-from typing import Optional
+from pathlib import Path
+from typing import Iterable, Optional
 
 import pandas as pd
 
 from qpx.converters.base import BaseConverter
-from qpx.converters.maxquant.channels import channel_label, reporter_channels
-from qpx.converters.maxquant.constants import FixedModification
-from qpx.converters.ptm import name_to_unimod, unimod_names
-from qpx.converters.utils import strip_uniprot_prefix
+from qpx.converters.channel_labels import label_unimod, normalize_label, plex_for_columns, read_sdrf_labels
+from qpx.converters.maxquant.constants import FixedMods, parameters_fixed_mods, sdrf_fixed_mods, summary_fixed_mods
+from qpx.converters.maxquant.protein_fields import parse_genes
+from qpx.converters.utils import canonical_accession, safe_float
+from qpx.core.files import run_file_stem
 
-# SDRF ``PP`` values a fixed modification can be placed for from the peptide
-# alone; protein termini need the peptide's protein position, which
-# evidence.txt and msms.txt do not give.
-_TERMINUS = {"anywhere": "", "any n-term": "N", "any c-term": "C"}
-
-# Unimod names of quantification labels, which MaxQuant configures as labels,
-# not as fixed modifications: isobaric tags (TMT, iTRAQ) and the isotopic
-# ``Label:`` modifications of SILAC.
-_LABEL_NAME = re.compile(r"(?i)tmt|itraq|^label:")
-
-_NO_FIXED_MODS = (
-    "Peptidoforms carry no fixed modification because %s; MaxQuant leaves fixed modifications "
-    "out of 'Modified sequence' although calculated_mz includes them"
-)
+_REPORTER_COLUMN = re.compile(r"Reporter intensity (\d+)(?: .+)?")
 
 
 class MaxQuantBaseAdapter(BaseConverter):
@@ -40,20 +29,22 @@ class MaxQuantBaseAdapter(BaseConverter):
     defined once rather than duplicated across the feature and PG adapters.
     """
 
-    # Fixed modifications added to peptidoforms (see _load_fixed_modifications).
-    _fixed_mods: tuple[FixedModification, ...] = ()
+    # Fixed modifications written into peptidoforms; set by ``convert``.
+    _fixed: FixedMods = ()
+    # SILAC multiplet letter -> label, lightest first; set by ``convert``.
+    _multiplet: dict[str, str] = {}
 
     @staticmethod
     def _norm_uniprot_id(pid: str) -> str:
         """Normalise a MaxQuant UniProt protein ID to its bare accession.
 
-        Thin wrapper over :func:`qpx.converters.utils.strip_uniprot_prefix`::
+        Thin wrapper over :func:`qpx.converters.utils.canonical_accession`::
 
             sp|P55011|S12A2_HUMAN  →  P55011
             tr|A0A3B3IS91|..._HUMAN  →  A0A3B3IS91
             P55011  →  P55011  (returned as-is)
         """
-        return strip_uniprot_prefix(pid)
+        return canonical_accession(pid)
 
     @classmethod
     def _protein_list(cls, cell) -> list[str]:
@@ -74,118 +65,184 @@ class MaxQuantBaseAdapter(BaseConverter):
             return cls._norm_uniprot_id(str(majority_cell).split(";", maxsplit=1)[0])
         return accessions[0] if accessions else ""
 
-    def _load_sdrf(self, sdrf_path: Optional[str], reporter_columns: int = 0) -> tuple[dict, str, dict[str, int]]:
-        """Load SDRF and return ``(sample_map, experiment_type, channels)``.
+    def _build_protein_group_maps(self, protein_groups_path: Optional[str]) -> dict:
+        """Build protein-group lookup maps from proteinGroups.txt.
 
-        When *sdrf_path* is ``None`` the method returns LFQ defaults, and warns
-        when the MaxQuant table has reporter columns that nothing maps.
+        Every map value is ``{"accessions", "anchor", "qvalue", "genes"}``,
+        where ``accessions`` and ``anchor`` are exactly what the pg view writes
+        for the group. Returns a dict with three sub-maps, and ``columns``,
+        the proteinGroups.txt columns ``accessions`` and ``anchor`` come from:
+            ``by_id``: proteinGroups ``id`` -> value. evidence.txt names each
+                row's groups in ``Protein group IDs``, so this is the primary,
+                exact key.
+            ``by_group``: full protein-group membership (a ``frozenset`` of
+                normalised accessions) -> value. Used, like ``by_accession``,
+                only for rows without usable ``Protein group IDs``.
+            ``by_accession``: single accession -> value, but *only* for
+                accessions that belong to exactly one protein group.
+                Ambiguous razor accessions (shared across groups) are excluded
+                so a feature cannot inherit another group's q-value/genes via
+                its leader.
+        """
+        empty = {"by_id": {}, "by_group": {}, "by_accession": {}, "columns": {}}
+        if not protein_groups_path:
+            return empty
+        df = self._conn.execute(
+            "SELECT * FROM read_csv_auto($1, delim='\t', header=true, auto_detect=true, null_padding=true)",
+            [protein_groups_path],
+        ).df()
+        acc_col, qval_col, gene_col = self._detect_pg_columns(df)
+        if not acc_col:
+            raise ValueError(f"{protein_groups_path} has no 'Protein IDs' or 'Majority protein IDs' column")
+        maps = self._build_pg_lookup(df, acc_col, qval_col, gene_col)
+        anchor_col = "Majority protein IDs" if "Majority protein IDs" in df.columns else acc_col
+        maps["columns"] = {"pg_accessions": acc_col, "anchor_protein": anchor_col}
+        self.logger.info(
+            "Built protein group maps: %d group(s), %d group id(s), %d unambiguous accession(s)",
+            len(maps["by_group"]),
+            len(maps["by_id"]),
+            len(maps["by_accession"]),
+        )
+        return maps
+
+    @staticmethod
+    def _detect_pg_columns(df: pd.DataFrame) -> tuple:
+        """Detect accession, q-value, and gene name columns in proteinGroups."""
+        acc_col = next(
+            (c for c in ["Protein IDs", "Majority protein IDs"] if c in df.columns),
+            None,
+        )
+        qval_col = next((c for c in ["Q-value", "q-value", "Q.value"] if c in df.columns), None)
+        gene_col = next((c for c in ["Gene names", "Gene Names"] if c in df.columns), None)
+        return acc_col, qval_col, gene_col
+
+    @staticmethod
+    def _canonical_group_key(accessions) -> frozenset:
+        """Order-independent key for a protein-group membership."""
+        return frozenset(a.strip() for a in accessions if a and a.strip())
+
+    def _build_pg_lookup(self, df: pd.DataFrame, acc_col: str, qval_col: Optional[str], gene_col: Optional[str]) -> dict:
+        """Build the ``by_id``/``by_group``/``by_accession`` lookup maps (see caller)."""
+        by_id: dict[int, dict] = {}
+        by_group: dict[frozenset, dict] = {}
+        acc_to_groups: dict[str, set] = {}
+        acc_value: dict[str, dict] = {}
+
+        def values(column: Optional[str]) -> list:
+            return df[column].tolist() if column and column in df.columns else [None] * len(df)
+
+        qval_vals = pd.to_numeric(df[qval_col], errors="coerce").tolist() if qval_col else [None] * len(df)
+        columns = zip(
+            values(acc_col), qval_vals, values(gene_col), values("Fasta headers"), values("Majority protein IDs"), values("id")
+        )
+        for acc_raw, qval, gene_raw, fasta_raw, majority_raw, group_id in columns:
+            accs = self._protein_list(acc_raw)
+            if not accs:
+                continue
+            value = {
+                "accessions": accs,
+                "anchor": self._group_anchor(majority_raw, accs),
+                "qvalue": safe_float(qval),
+                "genes": parse_genes(gene_raw, fasta_raw),
+            }
+            if pd.notna(group_id):
+                by_id[int(group_id)] = value
+            key = self._canonical_group_key(accs)
+            by_group.setdefault(key, value)
+            for acc in value["accessions"]:
+                acc_to_groups.setdefault(acc, set()).add(key)
+                acc_value.setdefault(acc, value)
+
+        # Keep only accessions that map to a single protein group for the
+        # leader fallback; ambiguous accessions would otherwise collide.
+        by_accession = {acc: acc_value[acc] for acc, keys in acc_to_groups.items() if len(keys) == 1}
+        return {"by_id": by_id, "by_group": by_group, "by_accession": by_accession}
+
+    def _lookup_pg_metadata(self, pg_maps: Optional[dict], pg_acc_list: list[str], anchor_protein: str) -> tuple:
+        """Resolve ``(pg_global_qvalue, genes)`` for a feature's protein group.
+
+        Keyed on the full protein-group membership first; only falls back to the
+        leader accession when that leader is unambiguous (belongs to one group).
+        """
+        if not pg_maps:
+            return None, None
+        entry = pg_maps.get("by_group", {}).get(self._canonical_group_key(pg_acc_list))
+        if entry is None and anchor_protein:
+            entry = pg_maps.get("by_accession", {}).get(anchor_protein)
+        if entry is None:
+            return None, None
+        return entry.get("qvalue"), entry.get("genes")
+
+    def _fixed_mods(self, sdrf_path: Optional[str], source_path: str) -> FixedMods:
+        """Fixed modifications as ``(accession, residues, terminus)``, as :func:`to_proforma` takes them.
+
+        MaxQuant leaves fixed modifications and isobaric labels out of
+        ``Modified sequence`` while ``Mass`` and ``m/z`` include the fixed ones.
+        They are read from the SDRF ``MT=fixed`` entries, else from the
+        ``parameters.txt`` or ``summary.txt`` MaxQuant writes next to
+        *source_path*; an isobaric label none lists is added from the SDRF
+        channel labels.
+        """
+        fixed: FixedMods = ()
+        if sdrf_path:
+            from qpx.core.sdrf import SDRFHandler
+
+            fixed = sdrf_fixed_mods(SDRFHandler(sdrf_path).get_modification_parameters())
+        folder = Path(source_path)
+        fixed = (
+            fixed
+            or parameters_fixed_mods(folder.with_name("parameters.txt"))
+            or summary_fixed_mods(folder.with_name("summary.txt"))
+        )
+        if not fixed:
+            self.logger.warning(
+                "Neither the SDRF nor MaxQuant's parameters.txt or summary.txt declares a fixed modification that can "
+                "be placed, so peptidoforms carry none; MaxQuant leaves fixed modifications out of 'Modified sequence' "
+                "although calculated_mz includes them"
+            )
+        label = label_unimod(read_sdrf_labels(sdrf_path))
+        if label is not None and all(accession != f"UNIMOD:{label}" for accession, _, _ in fixed):
+            fixed += ((f"UNIMOD:{label}", "", "N"), (f"UNIMOD:{label}", "K", ""))
+        return fixed
+
+    @staticmethod
+    def _load_sdrf(
+        sdrf_path: Optional[str], columns: Iterable[str] = ()
+    ) -> tuple[dict[str, set[str]], str, list[tuple[str, int]]]:
+        """Load SDRF and return ``(run_labels, experiment_type, channels)``.
+
+        When *sdrf_path* is ``None`` the method returns LFQ defaults.
 
         Args:
             sdrf_path: Filesystem path to the SDRF file, or ``None``.
-            reporter_columns: Number of reporter channels in the MaxQuant table
-                (:func:`~qpx.converters.maxquant.channels.reporter_column_count`).
+            columns: Columns of the MaxQuant table; its reporter columns size the plex.
 
         Returns:
             A 3-tuple of:
-              - *sample_map*: ``{"<run stem>-<label>" -> sample_accession}``, with
-                the label spelled as the *channels* keys (``{run stem -> ...}`` for LFQ)
+              - *run_labels*: ``{run file stem -> canonical labels the SDRF assigns a sample}``
               - *experiment_type*: e.g. ``"LFQ"``, ``"TMT11"``
-              - *channels*: ``{label: 0-based reporter column}`` in column
-                order (empty for LFQ); see
-                :func:`~qpx.converters.maxquant.channels.reporter_channels`
+              - *channels*: ``(canonical label, 0-based reporter index)`` per declared
+                isobaric channel, in plex order (empty for LFQ)
         """
         if not sdrf_path:
-            if reporter_columns:
-                self.logger.warning(
-                    "The MaxQuant table has %d reporter intensity columns, but without an SDRF no channel maps "
-                    "to them; they are not converted and the MS1 intensity is written as LFQ",
-                    reporter_columns,
-                )
-            return {}, "LFQ", {}
+            return {}, "LFQ", []
 
         from qpx.core.sdrf import SDRFHandler
 
         handler = SDRFHandler(sdrf_path)
-        experiment_type, channels = reporter_channels(handler.sdrf_table.get("comment[label]"), reporter_columns)
-        return handler.get_sample_map_run(label_key=channel_label), experiment_type, channels
+        experiment_type = handler.get_experiment_type_from_sdrf()
+        table = handler.sdrf_table
+        run_labels: dict[str, set[str]] = {}
+        for data_file, label in zip(table["comment[data file]"], table["comment[label]"]):
+            if pd.notna(data_file) and pd.notna(label):
+                run_labels.setdefault(run_file_stem(str(data_file)), set()).add(normalize_label(str(label)))
 
-    def _load_fixed_modifications(self, sdrf_path: Optional[str]) -> tuple[FixedModification, ...]:
-        """The SDRF's fixed modifications (``MT=fixed``), as :func:`to_proforma` takes them.
-
-        MaxQuant leaves fixed modifications out of ``Modified sequence`` while
-        ``Mass`` and ``m/z`` include them, so the peptidoform needs them to match
-        ``calculated_mz``. Each one is taken by its SDRF accession (``AC=UNIMOD:n``;
-        without one, the Unimod accession pyopenms has for its ``NT`` name), on
-        its target residues (``TA``, comma-separated) or peptide terminus (``PP``).
-        Quantification labels (TMT, iTRAQ, SILAC) are left out: MaxQuant
-        quantifies them as labels, reports ``Mass`` and ``m/z`` without the
-        isobaric ones, and carries a SILAC label on the labelled rows only.
-        """
-        if not sdrf_path:
-            self.logger.warning(_NO_FIXED_MODS, "no SDRF was given")
-            return ()
-
-        from qpx.core.sdrf import SDRFHandler
-
-        params = SDRFHandler(sdrf_path).get_modification_parameters() or []
-        fixed_mods = tuple(mod for mod in map(self._fixed_modification, filter(lambda p: p["fixed"], params)) if mod)
-        if not fixed_mods:
-            self.logger.warning(_NO_FIXED_MODS, "the SDRF declares none that can be placed")
-        return fixed_mods
-
-    def _fixed_modification(self, param: dict) -> Optional[FixedModification]:
-        """One SDRF fixed modification as ``(accession, residues, terminus)``, or ``None`` to skip it.
-
-        Quantification labels are skipped, whether the SDRF names them (``NT``)
-        or only gives their accession: MaxQuant reports ``Mass`` and ``m/z``
-        without isobaric tags, and a SILAC label is carried by the labelled
-        rows only.
-        """
-        unimod = _sdrf_unimod(param)
-        if _is_quantification_label(param.get("name"), unimod):
-            self.logger.info(
-                "SDRF fixed modification %s is a quantification label (TMT, iTRAQ or SILAC), which MaxQuant does "
-                "not report as a modification; peptidoforms omit it",
-                param.get("name") or unimod,
-            )
-            return None
-        target = _fixed_modification_target(param)
-        if unimod is None or target is None:
-            self.logger.warning("Cannot place SDRF fixed modification %r on MaxQuant peptides; peptidoforms omit it", param)
-            return None
-        return (unimod, *target)
-
-
-def _sdrf_unimod(param: dict) -> Optional[str]:
-    """The ``UNIMOD:n`` accession of an SDRF modification: its ``AC``, else the Unimod accession of its ``NT``."""
-    accession = re.fullmatch(r"(?i)\s*unimod:(\d+)\s*", param.get("accession") or "")
-    if accession:
-        return f"UNIMOD:{accession.group(1)}"
-    name = (param.get("name") or "").strip()
-    found = name_to_unimod(name) if name else None
-    return f"UNIMOD:{found}" if found is not None else None
-
-
-def _is_quantification_label(name: Optional[str], unimod: Optional[str]) -> bool:
-    """Whether an SDRF modification is a TMT, iTRAQ or SILAC label, by its ``NT`` or its Unimod names."""
-    if name and _LABEL_NAME.search(name):
-        return True
-    accession = re.fullmatch(r"UNIMOD:(\d+)", unimod or "")
-    return accession is not None and any(_LABEL_NAME.search(known) for known in unimod_names(int(accession.group(1))))
-
-
-_RESIDUES = frozenset("ACDEFGHIKLMNPQRSTUVWY")
-
-
-def _fixed_modification_target(param: dict) -> Optional[tuple[str, str]]:
-    """``(residues, terminus)`` of an SDRF fixed modification, or ``None`` when it cannot be placed.
-
-    ``TA`` lists the target residues (comma-separated); a terminal ``PP``
-    without a residue (``TA=N-term``, ``TA=X``) applies to any terminal residue.
-    """
-    terminus = _TERMINUS.get(str(param.get("position") or "Anywhere").strip().lower())
-    tokens = str(param.get("target_amino_acid") or "").upper().replace(" ", "").split(",")
-    residues = "".join(token for token in tokens if token in _RESIDUES)
-    if terminus is None or (terminus == "" and not residues):
-        return None
-    return residues, terminus
+        channels: list[tuple[str, int]] = []
+        family = {"TMT": "TMT", "ITRAQ": "iTRAQ"}.get(re.sub(r"\d+", "", experiment_type))
+        if family:
+            labels = set().union(*run_labels.values())
+            # MaxQuant numbers reporter columns by plex position, N-isomer before C-isomer.
+            n_columns = len({match.group(1) for column in columns if (match := _REPORTER_COLUMN.fullmatch(column))})
+            index = {label: position - 1 for position, label in plex_for_columns(family, labels, n_columns).items()}
+            channels = sorted(((label, index[label]) for label in labels), key=lambda channel: channel[1])
+        return run_labels, experiment_type, channels

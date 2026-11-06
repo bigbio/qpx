@@ -26,7 +26,7 @@ separate the same precursor by FAIMS voltage, instead declares
 OpenMS consensusXML declares `[peptidoform, charge, run_file_name, rt, scan,
 observed_mz, consensus_rt]`, where `scan` contains every spectrum reference for
 the run. Identity is meaningful within a file only; distinct QPX files must not
-be joined on `feature_id` alone.
+be joined on `feature_id` alone ([Row Identity](identity.md)).
 
 ## Use Cases
 
@@ -55,17 +55,22 @@ These fields are shared with the PSM view and describe the peptide identificatio
 | `charge` | Charge of the quantified analyte | int16 | yes |
 | `posterior_error_probability` | Posterior error probability (PEP) for the peptide match | float64, null | no |
 | `peptide_qvalue` | Peptide-level q-value; null when the search engine does not provide one | float64, null | optional |
+| `precursor_qvalue` | Run-level precursor q-value, filled from `additional_scores` ([typed q-values](scores.md#typed-q-value-columns)); specification 1.3 | float64, null | No |
+| `global_qvalue` | Experiment-level precursor q-value, filled from `additional_scores`; specification 1.3 | float64, null | No |
 | `is_decoy` | Whether the peptide is a decoy match (`true`) or a target match (`false`); use `false` when no target-decoy search was used. A peptide that matches both target and decoy proteins (OpenMS `target_decoy = target+decoy`) is a target match | bool | yes |
 | `calculated_mz` | Theoretical peptide mass-to-charge ratio based on identified sequence and modifications; null when it cannot be calculated | float32, null | yes |
-| `observed_mz` | Experimental observed peptide mass-to-charge ratio | float32 | yes |
+| `observed_mz` | Experimental observed peptide mass-to-charge ratio; null when the producer reports no measured precursor m/z | float32, null | yes |
 | `mass_error_ppm` | Mass error in ppm: 1e6 × (observed_mz − calculated_mz) / calculated_mz | float32, null | no |
 | `missed_cleavages` | Number of missed enzymatic cleavages | int16, null | no |
 | `rt` | Precursor retention time (in seconds) | float32, null | no |
+| `rt_aligned` | Retention time after the tool's alignment between runs, in seconds; `rt` is the time on this run's own clock. MaxQuant `Calibrated retention time`; specification 1.3 | float32, null | No |
+| `irt` | Indexed retention time on the tool's scale, filled from the `irt` or `empirical_irt` entry of `cv_params`; specification 1.3 | float32, null | No |
 | `consensus_rt` | Parent OpenMS `ConsensusFeature` retention time | float32, null | optional |
 | `rt_start` | Start of the retention time window for the feature | float32, null | no |
 | `rt_stop` | End of the retention time window for the feature | float32, null | no |
 | `predicted_rt` | Predicted retention time of the peptide (in seconds) | float32, null | no |
 | `ion_mobility` | Ion mobility value for the precursor ion | float32, null | no |
+| `ccs` | Collisional cross section in square angstroms (MS:1002954), when the producer reports one | float32, null | no |
 | `ion_mobility_start` | Start ion mobility value for the precursor ion | float32, null | no |
 | `ion_mobility_stop` | Stop ion mobility value for the precursor ion | float32, null | no |
 | `compensation_voltage` | FAIMS compensation voltage; `0` for non-FAIMS FragPipe units | float32, null | optional |
@@ -78,6 +83,9 @@ These fields are shared with the PSM view and describe the peptide identificatio
 |-------|-------------|------|----------|
 | `intensities` | Primary intensity-based abundance of the feature across labels | array[struct], null | no |
 | `additional_intensities` | Pre-computed intensity values from the upstream tool (e.g., normalized, LFQ, iBAQ) as named key-value pairs per label | array[struct], null | no |
+| `channel_details` | MS1-label multiplets: `{label, mz, rt, qvalue, evidence}` of each partner ([MS1 labels](intensities.md#ms1-labels-silac-dimethyl-mtraq)); specification 1.3 | array[struct], null | optional |
+| `representative_label` | The channel whose report row gave the row's scalars, where a tool reports one row per channel; specification 1.3 | string, null | optional |
+| `identified_labels` | MS1-label multiplets: the labels whose partner was identified by MS/MS ([MS1 labels](intensities.md#ms1-labels-silac-dimethyl-mtraq)) | array[string], null | optional |
 | `run_file_name` | The run file name that contains the feature | string | yes |
 | `quantification_unit_id` | Quantification unit represented by the quantity when it may aggregate multiple raw runs | string, null | optional |
 
@@ -88,10 +96,11 @@ These fields are shared with the PSM view and describe the peptide identificatio
 
 | Field | Description | Type | Required |
 |-------|-------------|------|----------|
-| `pg_accessions` | Full membership of the peptide's protein group, the same accessions as the group's `pg.pg_accessions`; null under the same conditions as `anchor_protein` | array[string], null | no |
+| `pg_accessions` | Full membership of the peptide's protein group, the same accessions as the group's `pg.pg_accessions`; for a peptide shared by several groups, the group the producer assigned it to (e.g. MaxQuant's razor group); null under the same conditions as `anchor_protein` | array[struct], null | no |
 | `anchor_protein` | One protein accession that represents the protein group; null when no protein mapping was performed (converters normalize blank/whitespace to null) | string, null | yes |
-| `unique` | True when the peptide resolves to a protein group of exactly one protein; false when that group has several members, or when the peptide is shared and the producer assigned it to one of its groups (MaxQuant's razor group); null when the group is unresolved | bool, null | no |
+| `unique` | Peptide specificity (SQL: quote it, see below). True when the peptide resolves to a protein group of exactly one protein; false when that group has several members, or when the peptide is shared and the producer assigned it to one of its groups (MaxQuant's razor group); null when the group is unresolved | bool, null | no |
 | `pg_positions` | Peptide start and end positions within each protein in the protein group | array[struct], null | optional |
+| `pg_group_id` | Hash of the sorted `pg_accessions`, equal to `pg.pg_group_id`, to group and join without comparing lists; specification 1.3 | int64, null | No |
 | `pg_global_qvalue` | Global q-value of the protein group at the experiment level | float64, null | optional |
 | `gg_accessions` | Gene accessions associated with the protein group | array[string], null | optional |
 | `gg_names` | Gene names associated with the protein group | array[string], null | optional |
@@ -103,6 +112,9 @@ Each entry in `pg_positions` contains:
 | `protein_accession` | Protein accession within the protein group | `string` |
 | `start` | 1-based start position of the peptide in the protein sequence | `int` |
 | `end` | 1-based end position of the peptide in the protein sequence (inclusive) | `int` |
+
+!!! warning "`unique` is a reserved SQL word"
+    DuckDB and SQLite stop with a parser error on a bare `unique`. Quote or qualify it: `SELECT "unique" FROM feature` or `SELECT f.unique FROM feature f`. It becomes `is_unique` at the next breaking release.
 
 !!! note "Gene and protein inference data"
     Gene accessions, gene names, and unique peptide indicators are optionally included in the feature file for convenience. Protein-level scores are stored in the [Protein Group View](pg.md). When `pg_ids` is populated, join it directly to `pg.pg_id`. Otherwise use the computed softlink `Dataset.link_feature_pg()`, which matches the canonical `pg_accessions` membership (not `anchor_protein`, which several groups can share), requires `feature.run_file_name` to be a member of `pg.grouped_runs`, and matches a label the feature carries (see [Protein group semantics](pg.md#protein-group-semantics)).
@@ -125,6 +137,23 @@ Each entry in `pg_positions` contains:
 |-------|-------------|------|----------|
 | `id_run_file_name` | The run file containing the best PSM that identified the feature (may differ from `run_file_name`) | string, null | no |
 | `scan` | Scan identifier of the best PSM that identified the feature, as an array of integer components (e.g., `[43920]` for single-scan instruments, `[10, 1, 345]` for Waters function/process/scan) | array[int32] | yes |
+
+### Identification Origin
+
+| Field | Description | Type | Required |
+|-------|-------------|------|----------|
+| `identification_type` | How the tool identified the feature in this run: `direct` (its own MS/MS), `transferred` (matched from another run), `secondary` (a co-fragmenting peptide of a chimeric spectrum). Null when the tool does not say; `id_run_file_name` is null for a transferred row and can be null for other reasons, so filter on this field. | string, null | No |
+| `match_score`, `match_qvalue` | The tool's score and q-value for the match of a transferred identification | float, null | No |
+| `match_rt_delta`, `match_mz_delta` | Difference of a transferred identification from its donor, in seconds and Th | float, null | No |
+| `imputed_labels` | Labels of `intensities` entries whose value the tool imputed instead of measuring. Null when none are or the tool does not say. | array[string], null | No |
+
+### Isobaric Quantification Scan
+
+| Field | Description | Type | Required |
+|-------|-------------|------|----------|
+| `parent_ion_fraction` | Fraction of the isolation window's signal from the target precursor, 0-1. Isolation interference is one minus this. | float, null | No |
+| `quant_scan` | Scan the reporter intensities were read from, as the integer components `scan` uses. Differs from `scan` under SPS-MS3. | array[int32], null | No |
+| `quant_ms_level` | MS level of that scan, 2 or 3, when the producer records it | int32, null | No |
 
 ### Optional Cross-References
 
@@ -211,11 +240,11 @@ Several fields in the feature view use structures shared across other QPX views:
 {
   "feature_id": -5948337580339590069,
   "sequence": "VLHPLEGAVVIIFK",
-  "peptidoform": "[UniMod:1]-VLHPLEGAVVIIFK",
+  "peptidoform": "[UNIMOD:1]-VLHPLEGAVVIIFK",
   "modifications": [
     {
       "name": "Acetyl",
-      "accession": "UniMod:1",
+      "accession": "UNIMOD:1",
       "positions": [
         {"position": 0, "amino_acid": null, "scores": null}
       ]
@@ -247,9 +276,9 @@ Feature Parquet files store file-level metadata as key-value pairs in the Parque
 | Field | Description |
 |-------|-------------|
 | `qpx_version` | Version of the QPX format used to generate the file |
-| `software_provider` | Name and version of the software that generated the data |
+| `software_provider` | Software that wrote the file (`qpx` for the qpx writers) |
 | `scan_format` | Format of scan identifiers: `scan`, `index`, or `nativeId` |
-| `creator` | Name of the tool or person who created the file |
+| `creator` | Tool whose output the data was converted from (e.g. `maxquant`, `diann`) |
 | `file_type` | Type of the file (value: `feature_file`) |
 | `creation_date` | Date when the file was created |
 | `compression_format` | Compression algorithm used: `zstd` (default), `snappy`, `gzip`, `lzo`, or `none` |

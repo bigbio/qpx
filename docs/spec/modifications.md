@@ -12,22 +12,26 @@ The inline representation is compact and human-readable. The structured represen
 Modifications are written inside square brackets in the peptidoform string, immediately after the residue they modify.
 
 ```text
-PEPT[Phospho]IDM[Oxidation]K
+PEPT[UNIMOD:21]IDM[UNIMOD:35]K
 ```
 
-Conventions for inline modification names:
+Inline modifications follow the [canonical form](peptidoform.md#canonical-form):
 
-| Convention | Example | When to use |
-| ---------- | ------- | ----------- |
-| UNIMOD accession (recommended) | `PEPT[UNIMOD:21]IDM[UNIMOD:35]K` | Always preferred -- accessions are unambiguous |
-| Common name | `PEPT[Phospho]IDM[Oxidation]K` | Acceptable when UNIMOD accession exists |
-| Mass shift (unknown PTMs) | `PEPT[+79.9663]IDK` | For modifications without a UNIMOD entry; value in Daltons with sign |
-
-!!! tip
-    Always prefer UNIMOD accessions over common names. Names can be ambiguous across tools, but accessions are globally unique.
+| Modification | Written as | Example |
+| ------------ | ---------- | ------- |
+| Has a Unimod entry | `UNIMOD:n`, upper case | `PEPT[UNIMOD:21]IDM[UNIMOD:35]K` |
+| No Unimod entry | Signed mass shift in Daltons, four decimals | `PEPT[+79.9663]IDK` |
+| Fixed modification or label | Inline like any other | `[UNIMOD:737]-PEPC[UNIMOD:4]K[UNIMOD:737]` |
 
 !!! note "Unknown modifications"
-    When a modification cannot be mapped to a UNIMOD or other ontology entry, the ProForma notation uses the mass delta with sign directly (e.g., `[+79.9663]` or `[-17.027]`). In the structured representation, the `name` field carries the mass with sign (e.g., `"+79.9663"`) and the `accession` field is `null`.
+    In the structured representation of a modification without a Unimod
+    entry, the `name` field carries the mass with sign (e.g., `"+79.9663"`)
+    and the `accession` field is `null`. The exception is a glycan whose
+    composition the producer reports, named by its ProForma composition
+    (e.g., `"Glycan:HexNAc2Hex9"`). A modification of
+    [unknown position](peptidoform.md#canonical-form) has an empty `positions`
+    list; candidate sites go in `modification_candidates`, with `assigned`
+    false and `probability` null when the producer only names them.
 
 ## Structured representation
 
@@ -100,6 +104,8 @@ Each position can carry one or more scores that describe the confidence in placi
 - **localization_probability**: The probability that this modification is correctly assigned to this specific residue. A value of 0.99 means 99% confidence.
 - **higher_better**: Indicates score direction. For localization probability, this is `true` (higher is better).
 
+The [site localization table](converter-coverage.md#site-localization) lists where each converter takes these values from.
+
 Multiple scores can be attached to a single position -- for example, both a localization probability and a tool-specific confidence metric.
 
 ## Competing interpretations
@@ -126,7 +132,7 @@ modification_candidates: array[struct{
 }]
 ```
 
-Example: `PEPS[Phospho]TK[Label:13C(6)15N(2)][Acetyl]R` from a SILAC heavy channel, where the phosphate could also be on T5 and the +42 Da on K6 could be trimethyl. The heavy label on K6 is certain and co-occurs with the +42 Da, so it is in no group:
+Example: the PSM `PEPS[UNIMOD:21]TK[UNIMOD:259][UNIMOD:1]R` of a SILAC heavy partner (the feature of its multiplet carries the light partner's peptidoform, see [MS1 labels](intensities.md#ms1-labels-silac-dimethyl-mtraq)), where the phosphate could also be on T5 and the +42 Da on K6 could be trimethyl. The heavy label on K6 is certain and co-occurs with the +42 Da, so it is in no group:
 
 ```json
 [
@@ -146,6 +152,7 @@ The probabilities are marginals of one posterior over the peptide's interpretati
 - Probabilities are not summed across groups or over ungrouped candidates: modifications in different groups can occur together, so the sum over all candidates at a position is not the probability that the position is modified.
 - `assigned` rows agree with `modifications` and the peptidoform; the others are alternatives they cannot hold.
 - `alternative_group` ids are scoped to one row: group 1 of one PSM has nothing to do with group 1 of another.
+- **k of n sites.** A group holds one event, so k modifications of one kind spread over n candidate sites (two phosphates over five residues) cannot be one group: their per-site probabilities sum to k, not 1. Such candidates are left ungrouped, each with its marginal probability, and k is the number of `assigned` candidates of that modification (MaxQuant writes doubly phosphorylated peptides this way).
 
 In the PSM view the probabilities are given this one identification. In the feature view they are combined over the feature's identifications. The recommended rule is a mixture: the probability of a candidate is the average of its probabilities in the feature's PSMs, weighted by the confidence of each identification (1 − PEP where PEP is available, equal weights otherwise). A mixture of marginals is a marginal, so the sums within an alternative group stay at most 1; summing over PSMs does not. A producer that combines differently (best PSM, maximum) records its rule in [provenance](provenance.md), so the psm → feature → [site](site.md) chain can be reproduced. The site view combines the feature values at the protein level. A substitution that spans more than one residue cannot be a candidate at one position; it is a [sequence edit](sequence-edits.md).
 
@@ -168,7 +175,7 @@ Consider the peptide `PEPTSDMK` with a phosphorylation on Ser at position 5 (hig
 **Peptidoform string:**
 
 ```text
-PEPTS[Phospho]DM[Oxidation]K
+PEPTS[UNIMOD:21]DM[UNIMOD:35]K
 ```
 
 **Structured `modifications` field (JSON):**

@@ -11,12 +11,13 @@ from qpx.converters.ptm import (
     _text,
     build_proforma,
     compute_precursor_mz,
-    format_mass_delta,
+    format_mass_shift,
     from_proforma,
     mass_tag,
     mass_to_unimod,
     modification_tag,
     name_to_unimod,
+    normalize_peptidoform,
     unimod_names,
 )
 
@@ -131,7 +132,7 @@ class TestMassToUnimod:
     def test_open_isobaric_tie_is_unresolved(self, mass, residue, terminus):
         """A tie without a preferred modification gives no accession, so the mass is written."""
         assert mass_to_unimod(mass, residue, terminus) is None
-        assert mass_tag(mass, residue, terminus) == format_mass_delta(mass)
+        assert mass_tag(mass, residue, terminus) == format_mass_shift(mass)
 
     def test_openms_custom_entries_are_not_unimod(self):
         """OpenMS' own ModificationsDB entries (CUSTOM0-9, PhosphoDecoy; record id 99900 and up) are left out."""
@@ -199,7 +200,14 @@ class TestUnimodNames:
 
     @pytest.mark.parametrize(
         ("accession", "name"),
-        [(4, "carbamidomethyl"), (737, "tmt6plex"), (2016, "tmtpro"), (214, "itraq4plex"), (259, "label:13c(6)15n(2)")],
+        [
+            (4, "carbamidomethyl"),
+            (737, "tmt6plex"),
+            (737, "sixplex tandem mass tag®"),
+            (2016, "tmtpro"),
+            (214, "itraq4plex"),
+            (259, "label:13c(6)15n(2)"),
+        ],
     )
     def test_names_of_accession(self, accession, name):
         assert name in unimod_names(accession)
@@ -479,3 +487,123 @@ class TestComputePrecursorMz:
     def test_empty(self):
         assert compute_precursor_mz("", 2) is None
         assert compute_precursor_mz("PEPTIDE", 0) is None
+
+
+class TestUnimodRegistry:
+    """The curated Unimod table, the site-aware mass lookup and the name lookup."""
+
+    @pytest.mark.parametrize(
+        ("mass", "residue", "terminus", "expected"),
+        [
+            (229.1629, "K", None, 737),
+            (304.2071, "K", None, 2016),
+            (304.2054, "K", None, 730),
+            (144.1021, None, "N", 214),
+            (-17.0265, "Q", "N", 28),
+            (-17.0265, "C", "N", 385),
+            (-17.0265, None, None, None),
+            (-18.0106, "E", "N", 27),
+            (15.9949, "M", None, 35),
+            (500.0, None, None, None),
+        ],
+    )
+    def test_mass_to_unimod(self, mass, residue, terminus, expected):
+        from qpx.converters.ptm import mass_to_unimod
+
+        assert mass_to_unimod(mass, residue, terminus) == expected
+
+    @pytest.mark.parametrize(
+        ("name", "expected"),
+        [
+            ("GlyGly (K)", 121),
+            ("Acetyl (Protein N-term)", 1),
+            ("Deamidation (NQ)", 7),
+            ("TMTpro (K)", 2016),
+            ("iTRAQ8plex (N-term)", 730),
+            ("Glu->pyro-Glu", 27),
+            ("Label:13C(6)15N(2)", 259),
+            ("Custom (K)", None),
+        ],
+    )
+    def test_name_to_unimod(self, name, expected):
+        from qpx.converters.ptm import name_to_unimod
+
+        assert name_to_unimod(name) == expected
+
+    def test_canonical_mod_tag(self):
+        from qpx.converters.ptm import canonical_mod_tag
+
+        assert canonical_mod_tag("UNIMOD:35", "Oxidation", 15.994915) == "UNIMOD:35"
+        assert canonical_mod_tag("UNIMOD:35", "Oxidation", 54.0106) == "+54.0106"
+        assert canonical_mod_tag("UNIMOD:99999", None, 54.0106) == "UNIMOD:99999|+54.0106"
+        assert canonical_mod_tag("MS:1001460", "unknown modification", 79.96633, "S") == "UNIMOD:21"
+        assert canonical_mod_tag(None, None, 1234.5678) == "+1234.5678"
+
+
+class TestBracketedTagsKeepParentheses:
+    """Parentheses inside a bracketed tag belong to the tag (no nested brackets)."""
+
+    @pytest.mark.parametrize("peptidoform", ["PEPK[GlyGly (K)]R", "PEPK[Label:13C(6)15N(2)]R"])
+    def test_inner_parentheses_untouched(self, peptidoform):
+        assert _normalize_peptidoform(peptidoform) == peptidoform
+
+    def test_positions_after_named_tag(self):
+        from qpx.converters.ptm import from_proforma
+
+        _, mods = from_proforma("AK[Acetyl (K)]PS[UNIMOD:21]TR", "AKPSTR")
+        assert [(m["name"], m["positions"][0]["position"]) for m in mods] == [("Acetyl (K)", 2), ("Phospho", 4)]
+
+
+@pytest.mark.parametrize(
+    ("raw", "canonical"),
+    [
+        ("PEPTM[Oxidation]K", "PEPTM[UNIMOD:35]K"),
+        ("[Acetyl]-PEPTIDE", "[UNIMOD:1]-PEPTIDE"),
+        ("PEPTC(Carbamidomethyl)K", "PEPTC[UNIMOD:4]K"),
+        ("PEPS[CHEMMOD:+79.966331]K", "PEPS[UNIMOD:21]K"),
+        ("PEPK[+54.01062]R", "PEPK[+54.0106]R"),
+        ("PEPK[UniMod:737]R", "PEPK[UNIMOD:737]R"),
+        ("[-17.0265]-QPEPK", "[UNIMOD:28]-QPEPK"),
+        ("PEPK[Custom (K)]R", "PEPK[Custom (K)]R"),
+    ],
+)
+def test_normalize_peptidoform(raw, canonical):
+    from qpx.converters.ptm import normalize_peptidoform
+
+    assert normalize_peptidoform(raw) == canonical
+
+
+def test_modification_of_unknown_position():
+    """ProForma ``[mod]?SEQ``: the mass counts, the modification lists no position, and the tag survives normalisation."""
+    from qpx.converters.ptm import normalize_peptidoform
+
+    peptidoform = "[+129.0804]?[UNIMOD:1]-PEPTM[UNIMOD:35]IDEK"
+    _, modifications = from_proforma(peptidoform, "PEPTMIDEK")
+    assert [(mod["name"], [pos["position"] for pos in mod["positions"]]) for mod in modifications] == [
+        ("+129.0804", []),
+        ("Acetyl", [0]),
+        ("Oxidation", [5]),
+    ]
+    bare = compute_precursor_mz("[UNIMOD:1]-PEPTM[UNIMOD:35]IDEK", 2)
+    assert compute_precursor_mz(peptidoform, 2) == pytest.approx(bare + 129.0804 / 2)
+    assert normalize_peptidoform(peptidoform) == peptidoform
+
+
+@pytest.mark.parametrize(
+    "peptidoform, sequence",
+    [
+        ("EMEVTK[XLMOD:02001#XL1]SESPEK//EMEVTK[#XL1]SESPEK", "EMEVTKSESPEK"),
+        ("PEPTIDE/2+SEQUENCE/3", "PEPTIDE"),
+        ("<[UNIMOD:4]@C>ACDEK", "ACDEK"),
+        ("{Glycan:Hex}PEPTIDE", "PEPTIDE"),
+        ("PEPT[Phospho#g1(0.9)]IDES[#g1(0.1)]K", "PEPTIDESK"),
+        ("PRT(ES)[+79.97]EM", "PRTESEM"),
+    ],
+)
+def test_constructs_outside_the_declared_subset_pass_through(peptidoform, sequence):
+    assert from_proforma(peptidoform, sequence) == (peptidoform, None)
+
+
+def test_mztab_parentheses_are_still_converted_next_to_a_range_lookalike():
+    assert normalize_peptidoform("C(Carbamidomethyl)R").startswith("C[UNIMOD:4]")
+    assert normalize_peptidoform("PRT(ES)[+79.97]EM") == "PRT(ES)[UNIMOD:21]EM"

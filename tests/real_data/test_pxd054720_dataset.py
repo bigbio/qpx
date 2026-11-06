@@ -250,10 +250,10 @@ class TestOntologyQuerying:
         assert "field_name" in df.columns
         assert "ontology_name" in df.columns
 
-    def test_ontology_view_is_psm(self, dataset):
-        """All ontology entries should reference the 'psm' view."""
+    def test_ontology_describes_the_written_views(self, dataset):
+        """Ontology entries cover the views this mzIdentML conversion wrote."""
         df = dataset.ontology.to_df()
-        assert (df["view"] == "psm").all()
+        assert {"psm", "pg"} <= set(df["view"])
 
 
 # ---------------------------------------------------------------------------

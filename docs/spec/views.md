@@ -34,13 +34,18 @@ API views are computed by joining and aggregating the primary QPX data. For exam
 **Protein-level data** can be derived from the PG view by:
 
 1. Joining `pg.parquet` with `run.parquet` to resolve sample-channel mappings.
-2. Selecting the `anchor_protein` as the representative for each protein group.
+2. Keying each row by its group membership (`pg_accessions`, sorted); `anchor_protein` is only a display label, since one protein can lead several groups.
 3. Reading the per-label intensity directly from the flattened scalar `pg.intensity` (since QPX 1.1 the PG view has one row per label — there is no `intensities` list).
 4. Optionally aggregating peptide/PSM counts, scores, or gene annotations.
 
 ```sql
 -- Example: deriving protein abundance per sample from pg + run
-SELECT DISTINCT
+WITH run_samples AS (
+    SELECT r.run_file_name, sc.label, sc.sample_accession
+    FROM 'PXD014414.run.parquet' r
+    CROSS JOIN UNNEST(r.samples) AS samples(sc)
+)
+SELECT array_to_string(list_sort(pg.pg_accessions), ';') AS protein_group,
        pg.anchor_protein AS protein_accession,
        rs.sample_accession,
        pg.label,
@@ -48,15 +53,14 @@ SELECT DISTINCT
        pg.global_qvalue,
        pg.gg_names
 FROM 'PXD014414.pg.parquet' pg
-CROSS JOIN UNNEST(pg.grouped_runs) AS grouped(run_file_name)
-JOIN 'PXD014414.run.parquet' r USING (run_file_name)
-CROSS JOIN UNNEST(r.samples) AS samples(rs)
-WHERE pg.label = rs.label;   -- flattened: scalar pg.label/pg.intensity, no intensities list
+JOIN run_samples rs
+  ON rs.run_file_name = pg.grouped_runs[1]
+ AND rs.label = pg.label;   -- flattened: scalar pg.label/pg.intensity, no intensities list
 ```
 
-`DISTINCT` is required because several member runs can be fractions of the
-same sample. The protein-group quantity is already aggregated across those
-fractions and must be returned only once per sample and label.
+Any member run of `grouped_runs` resolves the label to the unit's sample, so
+joining on the first one returns the protein-group quantity once per sample and
+label, without unnesting every fraction against every channel.
 
 **Peptide-level data** can be derived from the Feature view by:
 
@@ -66,21 +70,33 @@ fractions and must be returned only once per sample and label.
 
 ```sql
 -- Example: deriving peptide abundance per sample from feature + run
-SELECT f.sequence,
-       f.peptidoform,
+WITH run_samples AS (
+    SELECT r.run_file_name, sc.label, sc.sample_accession
+    FROM 'PXD014414.run.parquet' r
+    CROSS JOIN UNNEST(r.samples) AS s(sc)
+),
+feature_intensities AS (
+    SELECT f.sequence, f.peptidoform, f.run_file_name, i.label, i.intensity
+    FROM 'PXD014414.feature.parquet' f
+    CROSS JOIN UNNEST(f.intensities) AS _i(i)
+)
+SELECT fi.sequence,
+       fi.peptidoform,
        rs.sample_accession,
-       i.intensity AS abundance,
-       pg.gg_names
-FROM 'PXD014414.feature.parquet' f,
-     'PXD014414.run.parquet' r,
-     UNNEST(r.samples) AS rs,
-     UNNEST(f.intensities) AS i,
-     'PXD014414.pg.parquet' pg
-WHERE f.run_file_name = r.run_file_name
-  AND i.label = rs.label
-  AND f.anchor_protein = pg.anchor_protein
-  AND list_contains(pg.grouped_runs, f.run_file_name);
+       fi.intensity AS abundance
+FROM feature_intensities fi
+JOIN run_samples rs
+  ON rs.run_file_name = fi.run_file_name
+ AND rs.label = fi.label;
 ```
+
+Both lists are flattened before the join, so the sample is matched on
+`(run_file_name, label)`. Unnesting `run.samples` and `intensities` in the same
+`FROM` clause as the join instead plans a product of features and samples. In a
+single-sample run the API views also take a feature label that matches no sample,
+such as DIA-NN's `raw`, as that sample. For gene annotations, join `pg` through the
+feature-to-pg softlink (`Dataset.link_feature_pg()`: membership, run and label), not
+on `anchor_protein`, which can lead several groups.
 
 ## Relationship to primary views
 
@@ -109,16 +125,62 @@ The Python API provides several pre-built views accessible as properties on the 
 
 | View | Property | Data Method | Description |
 |------|----------|-------------|-------------|
-| Identification Summary | `ds.identification_summary` | `.summary()` | Per-run protein, peptide, and feature counts |
-| Run Summary | `ds.run_summary` | `.summary()` | Per-run statistics (cached) |
+| Identification Summary | `ds.identification_summary` | `.summary()` | Per-run protein group, peptide, and feature counts |
+| Run Summary | `ds.run_summary` | `.summary()` | The same per-run counts, cached |
 | Modification View | `ds.modification_view` | `.frequency()` | Modification frequency across PSMs |
 | QC View | `ds.qc_view` | `.metrics()` | Dataset-wide quality control metrics |
-| Protein View | `ds.protein_view` | `.intensity()` | Protein abundance per sample (joins PG + Run) |
+| Sample Summary | `ds.sample_summary` | `.peptides_per_run()`, `.peptides_per_sample()`, `.proteins_per_sample()` | Peptide and protein group counts per run and sample |
+| Protein View | `ds.protein_view` | `.intensity(q_value_threshold=None)` | Protein group abundance per sample (joins PG + Run) |
 | Peptide View | `ds.peptide_view` | `.intensity()` | Peptide abundance per sample (joins Feature + Run) |
+
+All of them leave decoys out and count protein groups by their membership, not by
+`anchor_protein`. A sample is resolved through the label of each quantity, so in a
+multiplexed run a peptide counts for the channels that carry it, not for every
+sample of the run. `protein_view.intensity()` applies no q-value filter unless
+`q_value_threshold` is given. A view over a structure the dataset lacks raises a
+`ValueError` naming it.
+
+`.intensity()` returns a lazy result. `.filter("protein_group = 'P1;P2'")` narrows it
+in SQL, which DuckDB pushes into the scans, so a lookup does not read the whole view
+first; iterating a result, or `fetchone()`, streams its rows in batches.
+
+### Abundance matrices
+
+`Dataset.intensity(level)` returns the long-form abundance (`sample_accession`,
+`label`, `unit`, `feature_id`, `intensity`) and `Dataset.design_matrix(level)`
+pivots it into samples by analytes. Decoys are left out.
+
+- **Analyte.** A protein is its group: `feature_id` is the sorted membership joined
+  by `;`, so two groups led by the same protein stay two columns. A peptide is its
+  `peptidoform` by default; `key="precursor"` adds the charge and `key="sequence"`
+  merges the modified forms.
+- **Unit.** The runs that hold the same samples (accession, label and technical
+  replicate) are the fractions of one quantification unit, named after its first
+  run, and their quantities are summed. Technical replicates, and a bridge sample in
+  several plexes, are separate units.
+- **Rows.** `by="sample"` (the default) gives one row per sample, combining its units
+  with `agg` (`"mean"` by default; also `"median"`, `"sum"`, `"min"`, `"max"`). It logs
+  a warning when a unit carries one sample under several labels, such as the light
+  and heavy channels of pulsed SILAC, since those are combined too. `by="unit"` gives
+  one row per (`sample_accession`, `label`, `unit`) and keeps them apart.
+- **Missing cells** stay NaN unless `fillna` is given.
+- **Quantity.** `value_col="intensity"` (the default) pivots the primary quantity;
+  the `intensity_name` of an additional intensity, such as `"lfq"`, pivots that one.
+
+```python
+proteins = ds.design_matrix("protein")                        # samples x groups
+units = ds.design_matrix("peptide", key="precursor", by="unit")
+ds.design_matrix("protein", output_path="matrix.parquet")     # out-of-core pivot
+```
+
+`ds.protein_view.intensity()` reports the same group key as `protein_group` next to
+the anchor `protein_accession`. To select one group, use `ds.pg.by_group([...])` or
+`ds.feature.by_group([...])`; `by_protein()` matches the anchor and so returns every
+group the protein leads.
 
 ### Plotting
 
-Each summary view has a `.plot()` method that returns a `matplotlib.Figure` for quick visualization. Matplotlib is imported lazily -- it is only required when `.plot()` is called.
+Each summary view has a `.plot()` method that returns a `plotly` `Figure` for quick visualization. Plotly is imported lazily -- it is only required when `.plot()` is called (`pip install qpx[plotting]`).
 
 ```python
 import qpx
@@ -127,23 +189,23 @@ ds = qpx.open_dataset("PXD014414/")
 
 # Identification summary bar chart
 fig = ds.identification_summary.plot()
-fig.savefig("identifications.png")
+fig.write_html("identifications.html")
 
 # Run summary grouped bar chart
-fig = ds.run_summary.plot(figsize=(14, 7))
-fig.savefig("run_summary.png")
+fig = ds.run_summary.plot()
 
 # QC metrics overview
 fig = ds.qc_view.plot()
-fig.savefig("qc_overview.png")
 
 # Modification frequency (top 20 by PSM count)
 fig = ds.modification_view.plot(top_n=20)
-fig.savefig("modifications.png")
+
+# Peptides or protein groups per sample
+fig = ds.sample_summary.plot(metric="proteins_per_sample")
 ```
 
 !!! tip "Customization"
-    Each `.plot()` method accepts a `figsize` tuple. The `ModificationView.plot()` also accepts `top_n` to control how many modifications are shown. For more advanced customization, retrieve the data with `.summary().to_df()` and build your own plots.
+    `ModificationView.plot()` takes `top_n`, the number of modifications shown, and `SampleSummaryView.plot()` takes `metric`. Change the returned figure with plotly's own API (`fig.update_layout(width=1400)`), or retrieve the data with `.summary().to_df()` and build your own plots. Saving as an image (`fig.write_image`) needs the `kaleido` package.
 
 ### Abundance matrices
 
@@ -171,12 +233,8 @@ ds2 = qpx.open_dataset("PXD016999/")
 
 coll = qpx.DatasetCollection([ds1, ds2])
 
-# Query across datasets using indexed table names
-result = coll.sql("""
-    SELECT 'PXD014414' AS dataset, COUNT(*) AS n_features FROM feature_0
-    UNION ALL
-    SELECT 'PXD016999' AS dataset, COUNT(*) AS n_features FROM feature_1
-""")
+# Query across datasets; feature_0 and feature_1 read one dataset each
+result = coll.sql("SELECT source_dataset, COUNT(*) AS n_features FROM feature GROUP BY source_dataset")
 print(result.to_df())
 
 # See what structures are available per dataset
@@ -186,7 +244,9 @@ print(coll.structure_names)
 
 ### Physical Merge
 
-Merge matching structures from multiple datasets into a new directory. A `source_dataset` column is added to distinguish origins.
+Merge matching structures from multiple datasets into a new directory. The rows
+are streamed through the QPX writers, so the output has QPX footers and row
+groups and respects the collection's memory limit.
 
 ```python
 coll.merge("merged_output/", structures=["feature", "pg"])
@@ -197,5 +257,28 @@ df = merged.feature.to_df()
 print(df["source_dataset"].value_counts())
 ```
 
+Datasets that share a run, a sample or a primary key would count those rows
+twice, so `on_collision` decides what happens:
+
+| `on_collision` | Behaviour |
+| --- | --- |
+| `"error"` (default) | Refuses before writing, and names what the datasets share. |
+| `"namespace"` | Keeps both. Run names, sample accessions and the other names that link rows become `<source>:<name>`, and ids are rewritten per source, so links between views still resolve. |
+| `"dedupe-identical"` | For copies of the same data: a row whose key is already written is dropped if identical. A key with different values raises, and so do rows that are not identical in a run another dataset also has, which are two analyses of it. |
+
+Each view has its own merge rule:
+
+| View | Result |
+| --- | --- |
+| `psm`, `feature`, `pg`, `mz`, `site`, `proteoform`, `sample`, `run` | The rows of every dataset, with a `source_dataset` column: the project accession, else the directory name. |
+| `dataset` | One row. `project_accession` joins the accessions with `;`. |
+| `provenance` | The steps of every dataset, numbered through, with `source_dataset`, then a `merge_datasets` step. |
+| `ontology` | One row per field and view, joining the source tools and columns. A field with different terms keeps the first, with a warning. |
+| `pepmap` | One row per peptidoform, with the proteins of every dataset. |
+
+Footers keep the identity composite of the sources. Datasets with different
+composites give one file per composite (`merged-1.feature.parquet`, ...), which
+are read as one view, because a footer declares one composite.
+
 !!! note "Common structures only"
-    When no `structures` argument is passed to `merge()`, only structures present in **all** datasets are merged.
+    When no `structures` argument is passed to `merge()`, only structures present in **all** datasets are merged, and a warning names the others.

@@ -7,6 +7,7 @@ correct schemas and plausible values.
 
 from pathlib import Path
 
+import pandas as pd
 import pyarrow.parquet as pq
 import pytest
 
@@ -121,11 +122,10 @@ def test_feature_dedup_does_not_degrade_without_type_column(tmp_path):
     assert len(rows) == 1, f"identity duplicates must collapse even without Type, got {len(rows)}"
 
 
-def test_feature_without_ms1_quantity_has_no_intensity(tmp_path):
+def test_feature_without_ms1_quantity_has_a_null_intensity(tmp_path):
     """MaxQuant's blank or 0 ``Intensity`` (MS/MS-only evidence) is not a measured 0.0.
 
-    The intensity struct cannot hold a null, so the feature carries no intensity
-    entry, as an empty TMT channel does; the identified feature is kept.
+    The identified feature is kept, its label with a null intensity.
     """
     from qpx.converters.maxquant.feature_adapter import MaxQuantFeatureAdapter
 
@@ -142,8 +142,8 @@ def test_feature_without_ms1_quantity_has_no_intensity(tmp_path):
 
     intensities = {r["sequence"]: r["intensities"] for r in pq.read_table(output).to_pylist()}
     assert intensities == {
-        "PEPTIDEA": None,
-        "PEPTIDEB": None,
+        "PEPTIDEA": [{"label": "LFQ", "intensity": None}],
+        "PEPTIDEB": [{"label": "LFQ", "intensity": None}],
         "PEPTIDEC": [{"label": "LFQ", "intensity": 1000.0}],
     }
 
@@ -282,7 +282,7 @@ def test_fixed_modifications_read_from_sdrf(tmp_path, caplog):
         "NT=Acetyl;AC=UNIMOD:1;PP=Protein N-term;MT=fixed",
     )
     with MaxQuantFeatureAdapter() as adapter, caplog.at_level("WARNING"):
-        assert adapter._load_fixed_modifications(str(sdrf)) == (("UNIMOD:4", "C", ""),)
+        assert adapter._fixed_mods(str(sdrf), str(tmp_path / "msms.txt")) == (("UNIMOD:4", "C", ""),)
     assert "Protein N-term" in caplog.text
 
 
@@ -303,7 +303,7 @@ def test_fixed_modification_without_accession_uses_its_unimod_name(tmp_path):
         "NT=CUSTOM0;TA=K;MT=fixed",
     )
     with MaxQuantFeatureAdapter() as adapter:
-        assert adapter._load_fixed_modifications(str(sdrf)) == (("UNIMOD:4", "C", ""), ("UNIMOD:39", "CM", ""))
+        assert adapter._fixed_mods(str(sdrf), str(tmp_path / "msms.txt")) == (("UNIMOD:4", "C", ""), ("UNIMOD:39", "CM", ""))
 
 
 @pytest.mark.parametrize(
@@ -328,7 +328,7 @@ def test_quantification_labels_are_not_fixed_modifications(tmp_path, label):
 
     sdrf = _write_mod_sdrf(tmp_path, _CARBAMIDOMETHYL, label)
     with MaxQuantPsmAdapter() as adapter:
-        assert adapter._load_fixed_modifications(str(sdrf)) == (("UNIMOD:4", "C", ""),)
+        assert adapter._fixed_mods(str(sdrf), str(tmp_path / "msms.txt")) == (("UNIMOD:4", "C", ""),)
 
 
 def test_feature_and_psm_peptidoforms_carry_sdrf_fixed_modifications(tmp_path):
@@ -363,7 +363,7 @@ def test_feature_and_psm_peptidoforms_carry_sdrf_fixed_modifications(tmp_path):
         assert row["peptidoform"] == "PEPC[UNIMOD:4]K"
         assert row["modifications"] == [
             {
-                "name": "UNIMOD:4",
+                "name": "Carbamidomethyl",
                 "accession": "UNIMOD:4",
                 "positions": [{"position": 4, "amino_acid": "C", "scores": None}],
             }
@@ -454,25 +454,108 @@ def test_feature_pg_qvalue_and_genes_keyed_on_full_membership(tmp_path):
 
 def test_feature_warns_on_dropped_tmt_channels(caplog):
     """Bug #248 (M): channels with no reporter column must warn, not vanish silently."""
-    from qpx.converters.maxquant.channels import reporter_channels
     from qpx.converters.maxquant.feature_adapter import MaxQuantFeatureAdapter
 
     # evidence has only Reporter intensity 0-7; a 10-plex SDRF adds TMT130C (col 8)
     # and TMT131 (col 9), which have no column and would otherwise be dropped.
     columns = [f"Reporter intensity {i}" for i in range(8)]
-    _, channels = reporter_channels(
-        ["TMT126", "TMT127N", "TMT127C", "TMT128N", "TMT128C", "TMT129N", "TMT129C", "TMT130N", "TMT130C", "TMT131"]
-    )
+    labels = ["TMT126", "TMT127N", "TMT127C", "TMT128N", "TMT128C", "TMT129N", "TMT129C", "TMT130N", "TMT130C", "TMT131"]
+    channels = [(label, index) for index, label in enumerate(labels)]
     with MaxQuantFeatureAdapter() as adapter:
         with caplog.at_level("WARNING"):
-            adapter._warn_dropped_tmt_channels(columns, "TMT10", channels, ri_offset=0)
+            adapter._warn_dropped_tmt_channels(columns, channels, ri_offset=0)
             # Second call with the same dropped set must not re-warn.
-            adapter._warn_dropped_tmt_channels(columns, "TMT10", channels, ri_offset=0)
+            adapter._warn_dropped_tmt_channels(columns, channels, ri_offset=0)
 
     warnings = [r for r in caplog.records if r.levelname == "WARNING" and "dropped" in r.message.lower()]
     assert len(warnings) == 1, "dropped-channel warning must be emitted exactly once"
     assert "TMT130C" in caplog.text
     assert "TMT131" in caplog.text
+
+
+def _reporter_features(tmp_path, labels, n_columns):
+    """Convert one evidence row whose ``Reporter intensity i`` is ``100 * (i + 1)``."""
+    from qpx.converters.maxquant.feature_adapter import MaxQuantFeatureAdapter
+
+    reporter = "\t".join(f"Reporter intensity {i}" for i in range(n_columns))
+    values = "\t".join(str(100 * (i + 1)) for i in range(n_columns))
+    evidence = tmp_path / "evidence.txt"
+    evidence.write_text(
+        _EVIDENCE_HEADER.rstrip("\n") + f"\t{reporter}\n"
+        f"PEPTIDEK\t_PEPTIDEK_\t2\trun1\tMULTI-MSMS\t10\t500.0\t10.0\t9.9\t10.1\t0.01\tP1\tP1\t1000\t998.0\t0\t{values}\n"
+    )
+    sdrf = tmp_path / "sdrf.tsv"
+    sdrf.write_text(
+        "source name\tcomment[data file]\tcomment[label]\n"
+        + "".join(f"S{i}\trun1.raw\t{label}\n" for i, label in enumerate(labels))
+    )
+    output = tmp_path / "feature.parquet"
+    with MaxQuantFeatureAdapter() as adapter:
+        adapter.convert(str(evidence), str(output), sdrf_path=str(sdrf))
+    (row,) = pq.read_table(output).to_pylist()
+    return {entry["label"]: entry["intensity"] for entry in row["intensities"]}
+
+
+@pytest.mark.parametrize(
+    ("labels", "n_columns", "expected"),
+    [
+        # TMT6: TMT131 is the sixth reporter, not TMT10's tenth.
+        (["TMT131", "TMT126", "TMT129", "TMT127", "TMT130", "TMT128"], 6, {"TMT126": 100, "TMT127": 200, "TMT131": 600}),
+        # iTRAQ channels follow the plex position whatever the SDRF row order.
+        (["itraq117", "ITRAQ114", "iTRAQ116", "ITRAQ115"], 4, {"ITRAQ114": 100, "ITRAQ115": 200, "ITRAQ117": 400}),
+        (["ITRAQ121", "ITRAQ113", "ITRAQ119"], 8, {"ITRAQ113": 100, "ITRAQ119": 700, "ITRAQ121": 800}),
+        # A partial TMTpro-18 plex resolves to its 18-channel positions.
+        (["TMT126", "TMT134C", "TMT135N"], 18, {"TMT126": 100, "TMT134C": 1700, "TMT135N": 1800}),
+    ],
+)
+def test_feature_reads_reporter_columns_by_plex_position(tmp_path, labels, n_columns, expected):
+    """Each SDRF label reads the MaxQuant reporter column of its plex position."""
+    intensities = _reporter_features(tmp_path, labels, n_columns)
+    assert len(intensities) == len(labels)
+    for label, value in expected.items():
+        assert intensities[label] == value
+
+
+@pytest.mark.parametrize("spelling", ["ITRAQ{}", "iTRAQ reagent {}", "iTRAQ4plex-{}"])
+def test_itraq4_labels_read_the_columns_of_an_8_column_table(tmp_path, spelling):
+    """ITRAQ114 is the first channel of iTRAQ4 but the second of the 8-plex the table has."""
+    labels = [spelling.format(channel) for channel in (114, 115, 116, 117)]
+    assert _reporter_features(tmp_path, labels, 8) == {
+        "ITRAQ114": 200.0,
+        "ITRAQ115": 300.0,
+        "ITRAQ116": 400.0,
+        "ITRAQ117": 500.0,
+    }
+    assert _reporter_features(tmp_path, labels, 4)["ITRAQ114"] == 100.0
+
+
+def test_lfq_feature_spectral_count_and_pepmap_from_evidence(tmp_path):
+    from qpx.converters.maxquant.feature_adapter import MaxQuantFeatureAdapter
+
+    evidence = tmp_path / "evidence.txt"
+    evidence.write_text(
+        _EVIDENCE_HEADER.rstrip("\n") + "\tMS/MS count\tProteins\tReverse\n"
+        "PEPTIDEK\t_PEPTIDEK_\t2\trun1\tMULTI-MSMS\t10\t500.0\t10.0\t9.9\t10.1\t0.01\tP1\tP1\t1000\t998.0\t0\t3\tsp|P12345|A_HUMAN;P2\t\n"
+        "PEPTIDER\t_PEPTIDER_\t2\trun1\tMULTI-MSMS\t11\t510.0\t11.0\t10.9\t11.1\t0.01\tP3\tP3\t1000\t998.0\t0\t0\tP3\t\n"
+        "REDITPEK\t_REDITPEK_\t2\trun1\tMULTI-MSMS\t12\t520.0\t12.0\t11.9\t12.1\t0.01\tREV__P1\tREV__P1\t1000\t998.0\t0\t1\tREV__P1\t+\n"
+    )
+    output, pepmap = tmp_path / "feature.parquet", tmp_path / "pepmap.parquet"
+    with MaxQuantFeatureAdapter() as adapter:
+        adapter.convert(str(evidence), str(output))
+        assert adapter.write_pepmap(str(pepmap))
+    counts = {row["sequence"]: row["additional_intensities"][0]["intensities"][0] for row in pq.read_table(output).to_pylist()}
+    assert counts["PEPTIDEK"] == {"intensity_name": "spectral_count", "intensity_value": 3.0}
+    assert counts["PEPTIDER"]["intensity_value"] == 0.0
+    mapped = {row["sequence"]: row for row in pq.read_table(pepmap).to_pylist()}
+    assert set(mapped) == {"PEPTIDEK", "PEPTIDER"}
+    assert [entry["accession"] for entry in mapped["PEPTIDEK"]["pg_accessions"]] == ["P12345", "P2"]
+    assert mapped["PEPTIDEK"]["is_unique"] is False
+    assert mapped["PEPTIDER"]["is_unique"] is True
+
+
+def test_feature_rejects_labels_outside_any_plex(tmp_path):
+    with pytest.raises(ValueError, match="match no TMT plex"):
+        _reporter_features(tmp_path, ["TMT126", "TMT10plex-127"], 10)
 
 
 def test_pg_warns_on_dropped_tmt_channels(caplog):
@@ -643,7 +726,7 @@ class TestMaxQuantFeatureConversion:
             if row_intensities is None:
                 continue
             for entry in row_intensities:
-                if entry["intensity"] < 0:
+                if entry["intensity"] is not None and entry["intensity"] < 0:
                     raise AssertionError(f"Negative intensity: {entry['intensity']}")
 
     def test_run_file_names_are_nonempty(self, feature_table):
@@ -676,7 +759,7 @@ class TestMaxQuantFeatureConversion:
         for row_intensities in rows:
             if not row_intensities:
                 continue
-            by_label = {e["label"]: e["intensity"] for e in row_intensities if e["intensity"] > 0}
+            by_label = {e["label"]: e["intensity"] for e in row_intensities if e["intensity"]}
             n_val = by_label.get("TMT127N")
             c_val = by_label.get("TMT127C")
             if n_val is not None and c_val is not None:
@@ -738,244 +821,70 @@ class TestMaxQuantOntologyConversion:
             raise AssertionError(f"Schema validation errors: {errors}")
 
 
-# ---------------------------------------------------------------------------
-# feature<->pg softlink round-trip (bigbio/qpx#269)
-# ---------------------------------------------------------------------------
+def test_every_mod_probabilities_column_reaches_psm_and_feature(tmp_path):
+    """Oxidation (M) Probabilities in msms.txt and evidence.txt, not only Phospho (STY) in msms.txt."""
+    from qpx.converters.maxquant.feature_adapter import MaxQuantFeatureAdapter
+    from qpx.converters.maxquant.psm_adapter import MaxQuantPsmAdapter
 
-from tests.converters.pg_ids_roundtrip import assert_softlink_valid, open_converted, pg_ids_by_sequence  # noqa: E402
+    psm_path = tmp_path / "t.psm.parquet"
+    feature_path = tmp_path / "t.feature.parquet"
+    with MaxQuantPsmAdapter() as adapter:
+        adapter.convert(str(EXAMPLES_DIR / "msms.txt"), str(psm_path))
+    with MaxQuantFeatureAdapter() as adapter:
+        adapter.convert(str(EXAMPLES_DIR / "evidence.txt"), str(feature_path))
 
-
-def _write_pg_link_inputs(tmp_path):
-    """Minimal LFQ MaxQuant inputs exercising shared-leader + a no-pg-row case.
-
-    PEPTIDEA -> group P1;P2, PEPTIDEB -> P1;P3 (distinct groups, shared leader P1),
-    PEPTIDEC -> P9 which is absent from proteinGroups (so its feature has no pg row).
-    All three features share Experiment exp1 / Raw file run1.
-    """
-    evidence = tmp_path / "evidence.txt"
-    header = (
-        "Sequence\tModified sequence\tCharge\tRaw file\tExperiment\tType\tMS/MS scan number\tm/z\t"
-        "Calibrated retention time\tCalibrated retention time start\tCalibrated retention time finish\t"
-        "PEP\tLeading razor protein\tLeading proteins\tGene names\tIntensity\tMass\tid\n"
-    )
-    rows = (
-        "PEPTIDEA\t_PEPTIDEA_\t2\trun1\texp1\tMULTI-MSMS\t100\t450.25\t30.0\t29.5\t30.5\t0.01\tP1\tP1;P2\t\t1000\t500\t1\n"
-        "PEPTIDEB\t_PEPTIDEB_\t2\trun1\texp1\tMULTI-MSMS\t200\t460.25\t31.0\t30.5\t31.5\t0.02\tP1\tP1;P3\t\t2000\t520\t2\n"
-        "PEPTIDEC\t_PEPTIDEC_\t2\trun1\texp1\tMULTI-MSMS\t300\t470.25\t32.0\t31.5\t32.5\t0.03\tP9\tP9\t\t3000\t540\t3\n"
-    )
-    evidence.write_text(header + rows)
-
-    protein_groups = tmp_path / "proteinGroups.txt"
-    protein_groups.write_text(
-        "Protein IDs\tMajority protein IDs\tQ-value\tGene names\tIntensity exp1\n"
-        "P1;P2\tP1;P2\t0.001\tGENEA\t1000\n"
-        "P1;P3\tP1;P3\t0.002\tGENEB\t2000\n"
-    )
-    return evidence, protein_groups
+    for path in (psm_path, feature_path):
+        rows = pq.read_table(path, columns=["peptidoform", "modifications", "modification_candidates"]).to_pylist()
+        localized = [row for row in rows if row["modification_candidates"]]
+        assert localized, path.name
+        for row in localized:
+            assigned = [c for c in row["modification_candidates"] if c["assigned"]]
+            assert all(c["name"] == "Oxidation" and c["accession"] == "UNIMOD:35" for c in row["modification_candidates"])
+            assert assigned and "M[UNIMOD:35]" in row["peptidoform"]
+        placed = next(
+            pos
+            for row in localized
+            for mod in row["modifications"]
+            if mod["accession"] == "UNIMOD:35"
+            for pos in mod["positions"]
+        )
+        assert placed["scores"][0]["score_name"] == "localization_probability"
 
 
-def test_feature_pg_softlink_shared_leader_and_no_pg_row(tmp_path):
-    """Full pg+feature conversion: the computed softlink links each feature to a
-    real pg row with matching membership + run + carried label; shared-leader
-    groups stay distinct; a feature whose group has no pg row produces no link."""
-    from qpx.converters.maxquant.converter import MaxQuantConverter
-    from qpx.core.constants import FEATURE, PG
+def test_msms_matches_annotate_the_peaks_of_spectral_arrays(tmp_path):
+    from qpx.converters.maxquant.psm_adapter import MaxQuantPsmAdapter
 
-    evidence, protein_groups = _write_pg_link_inputs(tmp_path)
-    out = tmp_path / "out"
-    MaxQuantConverter().convert(
-        output_folder=str(out),
-        evidence_file=str(evidence),
-        protein_groups_file=str(protein_groups),
-        output_prefix="mq",
-        structures=[FEATURE, PG],
-    )
+    output = tmp_path / "x.psm.parquet"
+    with MaxQuantPsmAdapter() as adapter:
+        adapter.convert(str(_MSMS), str(output), spectral_data=True)
 
-    with open_converted(out, prefix="mq") as ds:
-        feat, pg, link = assert_softlink_valid(ds)
-
-    pg_id_by_membership = {tuple(sorted(memb)): pg_id for pg_id, memb, *_ in pg}
-    ids_by_seq = pg_ids_by_sequence(feat, link)
-    assert ids_by_seq["PEPTIDEA"] == [pg_id_by_membership[("P1", "P2")]]
-    assert ids_by_seq["PEPTIDEB"] == [pg_id_by_membership[("P1", "P3")]]
-    assert set(ids_by_seq["PEPTIDEA"]).isdisjoint(ids_by_seq["PEPTIDEB"])
-    assert ids_by_seq["PEPTIDEC"] == []  # group P9 absent from pg -> no link
+    table = pq.read_table(output, columns=["mz_array", "ion_type_array", "charge_array"]).to_pylist()
+    annotated = [row for row in table if row["ion_type_array"]]
+    assert annotated
+    assert all(len(row["ion_type_array"]) == len(row["charge_array"]) == len(row["mz_array"]) for row in annotated)
+    assert pq.read_metadata(output).metadata[b"spectrum_content"] == b"matched_peaks"
 
 
-@pytest.mark.integration
-def test_feature_pg_softlink_real_full_dataset(tmp_path_factory):
-    """Real MaxQuant example (maxquant_full): the computed softlink links features
-    to real pg rows with matching membership + run + carried label (bigbio/qpx#269)."""
-    from qpx.converters.maxquant.converter import MaxQuantConverter
-    from qpx.core.constants import FEATURE, PG
+def test_peak_annotations_split_charge_from_ion_type():
+    from qpx.converters.maxquant.evidence_fields import peak_annotations
 
-    full = Path(__file__).resolve().parent.parent / "examples" / "maxquant" / "maxquant_full"
-    evidence = full / "evidence.txt.gz"
-    protein_groups = full / "proteinGroups.txt"
-    if not evidence.exists() or not protein_groups.exists():
-        pytest.skip("maxquant_full fixture not found")
-
-    out = tmp_path_factory.mktemp("mq_pg_ids")
-    MaxQuantConverter().convert(
-        output_folder=str(out),
-        evidence_file=str(evidence),
-        protein_groups_file=str(protein_groups),
-        sdrf_file=str(full / "PXD001819.sdrf.tsv"),
-        output_prefix="mq",
-        structures=[FEATURE, PG],
-    )
-
-    with open_converted(out, prefix="mq") as ds:
-        _feat, _pg, link = assert_softlink_valid(ds)
-        unlinked = ds.features_without_pg_link().fetchall()
-        unquantified = ds.sql("SELECT feature_id FROM feature WHERE intensities IS NULL ORDER BY feature_id").fetchall()
-    assert link, "expected at least some computed feature->pg softlink edges"
-    # Every evidence row names its groups in "Protein group IDs", so the only
-    # features without a link are those with no quantity (MS/MS-only evidence),
-    # which carry no label to link through.
-    assert unlinked == unquantified
+    assert peak_annotations("y3;b4(2+);y5-H2O;a2-NH3(3+)", 4) == (["y3", "b4", "y5-H2O", "a2-NH3"], [1, 2, 1, 3])
+    # Tokens that do not line up with the peaks cannot annotate them.
+    assert peak_annotations("y3;b4", 3) == (None, None)
+    assert peak_annotations(None, 0) == (None, None)
 
 
-# ---------------------------------------------------------------------------
-# Feature protein group from evidence "Protein group IDs"
-# ---------------------------------------------------------------------------
+def test_collisional_cross_section_is_read_when_present(tmp_path):
+    source = Path(__file__).parents[1] / "examples" / "maxquant" / "maxquant_simple"
+    evidence = pd.read_csv(source / "evidence.txt", sep="\t", nrows=5, low_memory=False)
+    evidence["CCS"] = 412.5
+    path = tmp_path / "evidence.txt"
+    evidence.to_csv(path, sep="\t", index=False)
+    output = tmp_path / "feature.parquet"
 
-_GROUP_IDS_HEADER = (
-    "Sequence\tModified sequence\tCharge\tRaw file\tExperiment\tType\tMS/MS scan number\tm/z\t"
-    "Calibrated retention time\tCalibrated retention time start\tCalibrated retention time finish\t"
-    "PEP\tLeading razor protein\tLeading proteins\tProtein group IDs\tIntensity\tMass\tid\n"
-)
-
-
-def _group_id_evidence_row(index, sequence, razor, leading, group_ids):
-    return (
-        f"{sequence}\t_{sequence}_\t2\trun1\texp1\tMULTI-MSMS\t{100 + index}\t450.25\t30.0\t29.5\t30.5\t0.01\t"
-        f"{razor}\t{leading}\t{group_ids}\t1000\t898.5\t{index}\n"
-    )
-
-
-def _write_group_id_inputs(tmp_path, rows=None):
-    """evidence rows naming their groups by proteinGroups ``id``, as MaxQuant writes them.
-
-    Group 0 is P1;P2 (two proteins), group 1 is P3 alone, group 2 is P4;P5.
-    ``Leading proteins`` holds one leader per group, so it never equals a
-    multi-protein group's membership.
-    """
-    if rows is None:
-        rows = [
-            ("PEPTIDEA", "P1", "P1", "0"),  # one group of two proteins
-            ("PEPTIDEB", "P3", "P3", "1"),  # one group of one protein
-            ("PEPTIDEC", "P4", "P3;P4", "1;2"),  # shared by groups 1 and 2, razor group 2
-            ("PEPTIDED", "P3", "P3;P4", "1;2"),  # shared, razor group 1 (a single protein)
-        ]
-    evidence = tmp_path / "evidence.txt"
-    evidence.write_text(_GROUP_IDS_HEADER + "".join(_group_id_evidence_row(i, *row) for i, row in enumerate(rows)))
-    protein_groups = tmp_path / "proteinGroups.txt"
-    protein_groups.write_text(
-        "Protein IDs\tMajority protein IDs\tQ-value\tIntensity exp1\tid\n"
-        "P1;P2\tP1;P2\t0.001\t1000\t0\n"
-        "P3\tP3\t0.002\t2000\t1\n"
-        "P4;P5\tP4\t0.003\t3000\t2\n"
-    )
-    return evidence, protein_groups
-
-
-def test_feature_group_resolved_from_protein_group_ids(tmp_path):
-    """Feature membership is the group ``Protein group IDs`` names, not ``Leading proteins``.
-
-    ``Leading proteins`` lists one leader per group, so a multi-protein group's
-    feature carried only its leader and a shared peptide carried the leaders of
-    every group: neither matched any pg row's membership. The group must come
-    from ``Protein group IDs`` (the razor group for a shared peptide), with
-    ``unique`` true only for a peptide in one single-protein group.
-    """
     from qpx.converters.maxquant.feature_adapter import MaxQuantFeatureAdapter
 
-    evidence, protein_groups = _write_group_id_inputs(tmp_path)
-    output = tmp_path / "feature.parquet"
     with MaxQuantFeatureAdapter() as adapter:
-        adapter.convert(str(evidence), str(output), protein_groups_path=str(protein_groups))
+        adapter.convert(str(path), str(output))
 
-    observed = {
-        r["sequence"]: ([p["accession"] for p in r["pg_accessions"]], r["anchor_protein"], r["unique"], r["pg_global_qvalue"])
-        for r in pq.read_table(output).to_pylist()
-    }
-    assert observed == {
-        "PEPTIDEA": (["P1", "P2"], "P1", False, pytest.approx(0.001)),
-        "PEPTIDEB": (["P3"], "P3", True, pytest.approx(0.002)),
-        "PEPTIDEC": (["P4", "P5"], "P4", False, pytest.approx(0.003)),
-        "PEPTIDED": (["P3"], "P3", False, pytest.approx(0.002)),
-    }
-
-
-def test_feature_shared_peptide_without_razor_group_is_unresolved(tmp_path):
-    """A shared peptide whose razor protein is in none of its groups gets no group."""
-    from qpx.converters.maxquant.feature_adapter import MaxQuantFeatureAdapter
-
-    evidence, protein_groups = _write_group_id_inputs(tmp_path, rows=[("PEPTIDEC", "P9", "P3;P4", "1;2")])
-    output = tmp_path / "feature.parquet"
-    with MaxQuantFeatureAdapter() as adapter:
-        adapter.convert(str(evidence), str(output), protein_groups_path=str(protein_groups))
-
-    (row,) = pq.read_table(output).to_pylist()
-    assert (row["pg_accessions"], row["anchor_protein"], row["unique"]) == (None, None, None)
-
-
-def test_feature_pg_softlink_covers_every_group_id_feature(tmp_path):
-    """With ``Protein group IDs`` every feature links to its group's pg row."""
-    from qpx.converters.maxquant.converter import MaxQuantConverter
-    from qpx.core.constants import FEATURE, PG
-
-    evidence, protein_groups = _write_group_id_inputs(tmp_path)
-    out = tmp_path / "out"
-    MaxQuantConverter().convert(
-        output_folder=str(out),
-        evidence_file=str(evidence),
-        protein_groups_file=str(protein_groups),
-        output_prefix="mq",
-        structures=[FEATURE, PG],
-    )
-
-    with open_converted(out, prefix="mq") as ds:
-        feat, pg, link = assert_softlink_valid(ds)
-        assert ds.features_without_pg_link().fetchall() == []
-    pg_id_by_membership = {tuple(sorted(memb)): pg_id for pg_id, memb, *_ in pg}
-    assert pg_ids_by_sequence(feat, link) == {
-        "PEPTIDEA": [pg_id_by_membership[("P1", "P2")]],
-        "PEPTIDEB": [pg_id_by_membership[("P3",)]],
-        "PEPTIDEC": [pg_id_by_membership[("P4", "P5")]],
-        "PEPTIDED": [pg_id_by_membership[("P3",)]],
-    }
-
-
-@pytest.mark.parametrize(
-    ("with_protein_groups", "expected"),
-    [
-        (True, {"pg_accessions": "Protein IDs", "anchor_protein": "Majority protein IDs"}),
-        (False, {"pg_accessions": "Leading proteins", "anchor_protein": "Leading razor protein"}),
-    ],
-    ids=["protein_group_ids", "leading_proteins"],
-)
-def test_feature_group_source_columns_in_ontology(tmp_path, with_protein_groups, expected):
-    """ontology.parquet names the column the feature's group fields are read from.
-
-    With ``Protein group IDs`` resolved through proteinGroups.txt the group is
-    its ``Protein IDs`` and first ``Majority protein IDs`` entry, not
-    ``Leading proteins`` / ``Leading razor protein``.
-    """
-    from qpx.converters.maxquant.converter import MaxQuantConverter
-    from qpx.core.constants import FEATURE
-
-    evidence, protein_groups = _write_group_id_inputs(tmp_path)
-    out = tmp_path / "out"
-    MaxQuantConverter().convert(
-        output_folder=str(out),
-        evidence_file=str(evidence),
-        protein_groups_file=str(protein_groups) if with_protein_groups else None,
-        output_prefix="mq",
-        structures=[FEATURE],
-    )
-
-    entries = pq.read_table(out / "mq.ontology.parquet").to_pylist()
-    observed = {e["field_name"]: e["source_column_name"] for e in entries if e["view"] == "feature"}
-    assert {field: observed.get(field) for field in expected} == expected
+    assert set(pq.read_table(output, columns=["ccs"]).column("ccs").to_pylist()) == {412.5}

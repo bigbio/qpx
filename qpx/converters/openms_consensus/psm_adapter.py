@@ -2,7 +2,7 @@
 
 Each ``PeptideIdentification`` (assigned to a consensus feature or unassigned) is
 one spectrum match. We emit one psm record per hit with PK
-``[peptidoform, charge, run_file_name, scan]``. The run is resolved from the
+``[run_file_name, scan, peptidoform, charge]``. The run is resolved from the
 identification's global ``map_index`` (→ the map's file) unless it is a copy of
 merged identifications whose ``id_merge_index`` places the spectrum in another
 map run, the parent consensus feature's element runs, or — for an unassigned ID
@@ -19,8 +19,8 @@ import math
 from collections import Counter
 from typing import NamedTuple
 
+from qpx.converters.openms_consensus.channels import column_labels, label_state_params, matched_sequence
 from qpx.converters.openms_consensus.feature_adapter import (
-    _map_label,
     column_runs,
     is_decoy_hit,
     localization_scores,
@@ -29,16 +29,14 @@ from qpx.converters.openms_consensus.feature_adapter import (
     to_proforma,
 )
 from qpx.converters.openms_consensus.feature_adapter import (
-    mass_error_ppm as _mass_error_ppm,
-)
-from qpx.converters.openms_consensus.feature_adapter import (
     pep_of as _pep_of,
 )
 from qpx.converters.openms_consensus.feature_adapter import (
     qvalue_meta_of as _qvalue_meta_of,
 )
 from qpx.converters.openms_consensus.protein_groups import identification_identifier
-from qpx.converters.utils import safe_float
+from qpx.converters.utils import canonical_accession, safe_float
+from qpx.converters.utils import mass_error_ppm as _mass_error_ppm
 from qpx.core.cleavage import count_missed_cleavages
 from qpx.core.scan import scan_format_from_native_id, scan_from_native_id
 
@@ -78,7 +76,7 @@ def _protein_accessions(hits) -> list[str] | None:
     for hit in hits:
         for evidence in hit.getPeptideEvidences():
             raw = evidence.getProteinAccession()
-            accession = raw.decode() if isinstance(raw, (bytes, bytearray)) else str(raw or "")
+            accession = canonical_accession(raw.decode() if isinstance(raw, (bytes, bytearray)) else str(raw or ""))
             if accession and accession not in seen:
                 seen.add(accession)
                 accessions.append(accession)
@@ -163,10 +161,9 @@ def _run_resolver(cm):
     pass ``cf_runs`` (the runs its positive-intensity elements map to); with
     exactly one such run it is authoritative for that feature's PIDs.
     """
-    headers = cm.getColumnHeaders()
     map_run = column_runs(cm)
     map_runs = set(map_run.values())
-    label_free_maps = {idx for idx in headers if _map_label(getattr(headers[idx], "label", "")) == "LFQ"}
+    label_free_maps = {idx for idx, label in column_labels(cm).items() if label == "LFQ"}
     sole_run = next(iter(map_runs)) if len(map_runs) == 1 else None
     runs_by_identifier = _merge_index_runs(cm)
     run_lists = [primary_run_stems(prot) for prot in cm.getProteinIdentifications()]
@@ -257,6 +254,7 @@ class _PsmContext(NamedTuple):
     score_type: str
     score_is_qvalue: bool
     higher_better: bool
+    ms1: object = None
 
 
 def _psm_hit_groups(pid, run, scan) -> tuple[dict, list]:
@@ -264,7 +262,7 @@ def _psm_hit_groups(pid, run, scan) -> tuple[dict, list]:
     groups: dict[tuple, list] = {}
     order: list[tuple] = []
     for hit in pid.getHits():
-        peptidoform = to_proforma(hit.getSequence())
+        peptidoform = to_proforma(matched_sequence(hit))
         charge = int(hit.getCharge() or 0)
         key = (peptidoform, charge, run, tuple(scan))
         if key not in groups:
@@ -296,14 +294,16 @@ def _psm_record(pid, hits, context, enzyme, confidence) -> dict:
     # stable, so ties (and the common single-hit case) keep the first hit,
     # preserving existing output exactly.
     primary = min(hits, key=lambda h: _pep_of(h) if _pep_of(h) is not None else math.inf)
-    seq_obj = primary.getSequence()
+    # An MS1-labelled PSM is the partner the spectrum was matched with; confidence
+    # belongs to the peptide identity, which is the hit's own sequence.
+    seq_obj = matched_sequence(primary)
     peptidoform = to_proforma(seq_obj)
     charge = int(primary.getCharge() or 0)
     calc_mz = float(seq_obj.getMZ(charge)) if charge > 0 else None
     is_decoy = is_decoy_hit(primary)
-    pep, additional_scores, site_scores = _psm_confidence_scores(pid, primary, hits, context, confidence, seq_obj)
+    pep, additional_scores, site_scores = _psm_confidence_scores(pid, primary, hits, context, confidence, primary.getSequence())
     modifications = to_modifications(seq_obj, site_scores)
-    return {
+    record = {
         "sequence": seq_obj.toUnmodifiedString(),
         "peptidoform": peptidoform,
         "modifications": modifications,
@@ -320,10 +320,14 @@ def _psm_record(pid, hits, context, enzyme, confidence) -> dict:
         "is_decoy": is_decoy,
         "protein_accessions": _protein_accessions(hits),
     }
+    if context.ms1:
+        record["label"] = context.ms1.identified_label(pid, primary, context.run)
+        record["cv_params"] = label_state_params(primary)
+    return record
 
 
 def psm_records_for_pid(
-    pid, resolve_run, seen: set[tuple], cf_runs=None, enzyme=None, duplicates=None, confidence=None
+    pid, resolve_run, seen: set[tuple], cf_runs=None, enzyme=None, duplicates=None, confidence=None, ms1=None
 ) -> list[dict]:
     """PSM records for one PeptideIdentification (deduped via the shared ``seen`` set).
 
@@ -337,6 +341,9 @@ def psm_records_for_pid(
     ``cf_runs`` is the consensus feature's element-run set (passed for assigned
     PIDs); it lets :func:`_run_resolver` attribute a PID whose ``id_merge_index``
     is only a local per-run channel index to the correct run.
+
+    ``ms1`` (:class:`~qpx.converters.openms_consensus.channels.Ms1Channels`) names the
+    channel of an MS1-labelled PSM.
     """
     run = resolve_run(pid, cf_runs=cf_runs)
     if run is None:
@@ -364,7 +371,7 @@ def psm_records_for_pid(
 
     records: list[dict] = []
     higher_better = bool(pid.isHigherScoreBetter())
-    context = _PsmContext(run, scan, obs_mz, score_type, score_is_qvalue, higher_better)
+    context = _PsmContext(run, scan, obs_mz, score_type, score_is_qvalue, higher_better, ms1)
     for key in order:
         if key in seen:
             if duplicates is not None:

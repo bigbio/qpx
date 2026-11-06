@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -10,6 +11,11 @@ from typing import Optional
 from qpx.converters.openms_consensus.feature_dedup import feature_ids as _feature_ids
 
 _NO_LINK = (0,)
+
+
+def _key_digest(key: tuple) -> bytes:
+    """128-bit digest of a PSM identity key: a tenth of the memory of the tuple itself."""
+    return hashlib.blake2b(repr(key).encode(), digest_size=16).digest()
 
 
 def _link_rank(peptidoform, charge, rt, mz, feature: Optional[dict], feature_id: Optional[int], quality: float) -> tuple:
@@ -97,32 +103,35 @@ class _PsmKeys:  # pylint: disable=too-many-instance-attributes
         self.before_features = True
 
     def __contains__(self, key) -> bool:
-        if key not in self._keys:
+        digest = _key_digest(key)
+        if digest not in self._keys:
             return False
-        if not self.unassigned and key in self._claimable:
-            self.dropped_rows.add(self._claimable.pop(key))
+        if not self.unassigned and digest in self._claimable:
+            self.dropped_rows.add(self._claimable.pop(digest))
             return False
         return True
 
     def add(self, key) -> None:
         """Register an emitted key at the next output row."""
+        digest = _key_digest(key)
         if self.unassigned and self.before_features:
-            self._claimable[key] = self.rows
+            self._claimable[digest] = self.rows
         elif not self.unassigned:
-            self._links[key] = (None, self.rows)
-        self._keys.add(key)
+            self._links[digest] = (None, self.rows)
+        self._keys.add(digest)
         self.rows += 1
 
     def offer(self, key, rank: tuple, feature_id: Optional[int]) -> None:
         """Record a candidate link for an emitted key; keep it when it outranks the current one."""
-        entry = self._links.get(key)
+        digest = _key_digest(key)
+        entry = self._links.get(digest)
         if entry is None:
             return
         current, row = entry
         if current is None:
-            self._links[key] = (rank, row)
+            self._links[digest] = (rank, row)
         elif rank > current:
-            self._links[key] = (rank, row)
+            self._links[digest] = (rank, row)
             self.feature_id_patch[row] = feature_id
 
     def start_file(self) -> None:
@@ -139,23 +148,25 @@ class _RecordContext:
     """Run, protein and identity state shared by one input map's records."""
 
     map_info: dict
-    group_map: object
+    protein_groups: tuple
     resolve_run: object
     seen: object
     enzyme: object
-    group_meta: object
     dedup: object
+    ms1: object = None
 
     @classmethod
     def from_map(cls, cm, structures, seen, dedup, sdrf_path):
         """Resolve one input's map columns, groups, runs and search enzyme."""
-        from qpx.converters.openms_consensus.feature_adapter import feature_map_info, resolve_enzyme
+        from qpx.converters.openms_consensus.channels import Ms1Channels
+        from qpx.converters.openms_consensus.feature_adapter import column_runs, feature_map_info, resolve_enzyme
         from qpx.converters.openms_consensus.pg_adapter import protein_group_maps
         from qpx.converters.openms_consensus.psm_adapter import _run_resolver
 
         map_info = feature_map_info(cm)
-        group_map, group_meta = protein_group_maps(cm) if "feature" in structures or "pg" in structures else (None, None)
-        return cls(map_info, group_map, _run_resolver(cm), seen, resolve_enzyme(cm, sdrf_path), group_meta, dedup)
+        protein_groups = protein_group_maps(cm) if "feature" in structures or "pg" in structures else (None, None)
+        ms1 = Ms1Channels(cm, column_runs(cm))
+        return cls(map_info, protein_groups, _run_resolver(cm), seen, resolve_enzyme(cm, sdrf_path), dedup, ms1)
 
 
 def _cf_psm_records(cf, context, removed, include_unassigned_psms, duplicates, confidence):
@@ -179,6 +190,7 @@ def _cf_psm_records(cf, context, removed, include_unassigned_psms, duplicates, c
                 cf_runs=cf_runs,
                 duplicates=duplicates,
                 confidence=confidence,
+                ms1=context.ms1,
             )
         )
     return records
@@ -214,12 +226,13 @@ def _cf_feature_psm_records(cf, context, structures, *, removed_index=None, conf
         feature_records_for_cf(
             cf,
             context.map_info,
-            context.group_map,
+            context.protein_groups[0],
             enzyme=context.enzyme,
-            group_meta=context.group_meta,
+            group_meta=context.protein_groups[1],
             resolve_run=context.resolve_run,
             removed_pids=removed,
             confidence=confidence,
+            ms1=context.ms1,
         )
         if want_feature or want_pg
         else []

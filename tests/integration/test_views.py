@@ -343,7 +343,7 @@ class TestMultiRunGroupedRuns:
 
         assert len(abundance) == 1
         assert abundance.iloc[0]["intensity"] == 5000.0
-        assert matrix.loc["SAMPLE_A", "PROT1"] == 5000.0
+        assert matrix.loc["SAMPLE_A", "P12346;PROT1"] == 5000.0
 
     def test_mudata_proteins_observe_the_quantification_unit(self, multi_run_dataset_dir):
         """The muData proteins modality has one observation per grouped_runs set.
@@ -357,11 +357,12 @@ class TestMultiRunGroupedRuns:
             mdata = build_mudata(ds, modalities=["proteins"])
 
         proteins = mdata.mod["proteins"]
-        assert list(proteins.var.index) == ["PROT1"]
+        assert list(proteins.var.index) == ["P12346;PROT1"]
+        assert proteins.var.loc["P12346;PROT1", "anchor_protein"] == "PROT1"
         assert list(proteins.obs.index) == ["run_A;run_B"]
         assert list(proteins.obs["sample_accession"]) == ["SAMPLE_A"]
         assert list(proteins.obs["run_accession"]) == ["assay_A;assay_B"]
-        assert proteins.X.toarray().sum() == 5000.0
+        assert proteins.X.toarray().tolist() == [[5000.0]]
 
     def test_invariant_check_passes(self, multi_run_dataset_dir):
         """Both grouped_runs values resolve to the same sample without errors."""

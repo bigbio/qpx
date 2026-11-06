@@ -66,6 +66,8 @@ graph LR
 | `pg`           | `{PREFIX}.pg.parquet`           | Parquet   | Protein groups with quantification across runs and channels                 |
 | `pepmap` | `{PREFIX}.pepmap.parquet` | Parquet | Deduplicated peptide-to-protein mapping with gene names and uniqueness flags |
 | `site` | `{PREFIX}.site.parquet` | Parquet | Protein modification-site claims with a q-value over the claims, the probability that the residue is modified and the evidence fraction of each candidate modification |
+| `fragment` | `{PREFIX}.fragment.parquet` | Parquet | Fragment-level quantities of DIA features |
+| `protein` | `{PREFIX}.protein.parquet` | Parquet | Name, organism and sequence of each protein the dataset names |
 | `proteoform` | `{PREFIX}.proteoform.parquet` | Parquet | Canonical, isoform, variant and chain members of protein families with member-level q-values (sequence entries, not modification combinations) |
 | `xic` | `{PREFIX}.xic.parquet` | Parquet | Extracted-ion chromatograms: one trace per precursor or fragment ion per run, stored as aligned RT/intensity arrays |
 
@@ -129,4 +131,4 @@ Several data structures are reused across multiple views. Each concept has its o
 
 ## Current status
 
-The QPX format is at **version 1.2**, primarily implemented in the [quantms workflow](https://github.com/bigbio/quantms). The format is open and can be adopted by any software tool. During the pre-2.0 stabilisation period, minor versions may include documented breaking changes; readers must check each file's `qpx_version` and the [versioning changelog](versioning.md). Every view file includes a `qpx_version` metadata field to identify which specification version produced it.
+The QPX format is at **version 1.3**, primarily implemented in the [quantms workflow](https://github.com/bigbio/quantms). The format is open and can be adopted by any software tool. During the pre-2.0 stabilisation period, minor versions may include documented breaking changes; readers must check each file's `qpx_version` and the [versioning changelog](versioning.md). Every view file includes a `qpx_version` metadata field to identify which specification version produced it.

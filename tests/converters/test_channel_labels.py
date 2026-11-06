@@ -5,6 +5,7 @@ consensusXML and ``-out_qpx`` paths. Labels come from the shared sdrf-pipelines
 channel_map and are plex-aware.
 """
 
+import random
 import sys
 
 import pyarrow as pa
@@ -88,6 +89,28 @@ def test_multi_dot_run_names_match_sdrf_conversion(tmp_path):
     with SdrfConverter(duckdb_threads=24) as converter:
         converter.convert(str(sdrf), run_output=str(run_output))
     assert pq.read_table(run_output).column("run_file_name").to_pylist() == grouped
+
+
+@pytest.mark.parametrize(
+    ("labels", "expected"),
+    [
+        (["TMT126", "TMT134C", "TMT135N"], "TMT18"),
+        (["TMT126", "TMT127N", "TMT131"], "TMT10"),
+        (["ITRAQ114", "ITRAQ117"], "ITRAQ4"),
+        (["SILAC light", "SILAC heavy"], "SILAC"),
+        (["label free sample"], "LFQ"),
+    ],
+)
+def test_sdrf_experiment_type_follows_the_plex_not_the_label_count(tmp_path, labels, expected):
+    """Partial plexes and TMTpro-18 resolve to their plex instead of failing a label-count gate."""
+    from qpx.core.sdrf import SDRFHandler
+
+    sdrf = tmp_path / "design.sdrf.tsv"
+    sdrf.write_text(
+        "source name\tcomment[data file]\tcomment[label]\n"
+        + "".join(f"S{i}\trun1.raw\t{label}\n" for i, label in enumerate(labels))
+    )
+    assert SDRFHandler(sdrf).get_experiment_type_from_sdrf() == expected
 
 
 @pytest.mark.parametrize("data_file", ["", "   "], ids=["missing", "blank"])
@@ -204,8 +227,9 @@ def test_relabel_preserves_qpx_compression_and_float_encoding(tmp_path):
     """Relabeling must not silently rewrite ZSTD/BYTE_STREAM_SPLIT as Snappy."""
     src = tmp_path / "feature_in.parquet"
     dst = tmp_path / "feature_out.parquet"
+    rng = random.Random(0)
     with FeatureWriter(src, compression="zstd") as writer:
-        writer.write_batch([make_feature_record()])
+        writer.write_batch([{**make_feature_record(), "rt": rng.uniform(0, 7200)} for _ in range(5000)])
 
     relabel_intensities_parquet(
         str(src),
@@ -225,13 +249,10 @@ def test_relabel_preserves_qpx_compression_and_float_encoding(tmp_path):
         )
 
     # ZSTD compression is preserved (not silently downgraded to Snappy).
-    intensity_column = _col("intensities.list.element.intensity")
-    assert intensity_column.compression == "ZSTD"
-    # Selective BYTE_STREAM_SPLIT is preserved through relabeling: rt (a BSS
-    # leaf) keeps it; the intensity leaves were deliberately dropped from BSS
-    # (they regress TMT reporter columns), so intensity no longer carries it.
+    assert _col("intensities.list.element.intensity").compression == "ZSTD"
+    # The rewrite measures encodings like every QPX writer: continuous retention
+    # times are smallest byte-stream-split, where pyarrow would use a dictionary.
     assert "BYTE_STREAM_SPLIT" in _col("rt").encodings
-    assert "BYTE_STREAM_SPLIT" not in intensity_column.encodings
 
 
 def test_run_label_is_canonical_join_key(tmp_path):
@@ -499,3 +520,12 @@ def test_sdrf_labels_override_channel_count():
 def test_unresolvable_sdrf_labels_fall_back_to_count():
     labels = _resolve("TMT", list(range(1, 11)), sdrf_labels={"garbage", "nonsense"})
     assert labels[10] == "TMT131"  # fell back to count-based tmt10plex
+
+
+@pytest.mark.parametrize(
+    "raw, canonical",
+    [("126", "TMT126"), ("127N", "TMT127N"), ("TMT10plex_126", "TMT126"), ("114", "ITRAQ114"), ("121", "ITRAQ121")],
+)
+def test_sdrf_reporter_spellings_resolve_to_the_canonical_label(raw, canonical):
+    """iTRAQ reporters stop at 121 and TMT starts at 126, so a bare mass names one family."""
+    assert normalize_label(raw) == canonical

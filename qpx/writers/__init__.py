@@ -3,17 +3,19 @@
 from qpx.writers.base import BaseWriter
 from qpx.writers.dataset import DatasetWriter
 from qpx.writers.feature import FeatureWriter
+from qpx.writers.fragment import FragmentWriter
 from qpx.writers.mz import MzWriter
 from qpx.writers.ontology import OntologyWriter
 from qpx.writers.pepmap import PepMapWriter
 from qpx.writers.pg import PgWriter
+from qpx.writers.protein import ProteinWriter
 from qpx.writers.proteoform import ProteoformWriter
 from qpx.writers.provenance import ProvenanceWriter
 from qpx.writers.psm import PsmWriter
 from qpx.writers.run import RunWriter
 from qpx.writers.sample import SampleWriter
 from qpx.writers.site import SiteWriter
-from qpx.writers.xic import XicWriter
+from qpx.writers.xic import XicExtraction, XicWriter
 
 __all__ = [
     "BaseWriter",
@@ -28,6 +30,9 @@ __all__ = [
     "ProvenanceWriter",
     "PepMapWriter",
     "SiteWriter",
+    "FragmentWriter",
+    "ProteinWriter",
     "ProteoformWriter",
+    "XicExtraction",
     "XicWriter",
 ]

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Optional
 
 import pyarrow as pa
@@ -62,24 +63,31 @@ def is_contaminant_accession(accession) -> bool:
     return "CONTAM" in accession or accession.startswith(("CONT_", "SP|CONT_", "TR|CONT_"))
 
 
-def strip_uniprot_prefix(accession: str) -> str:
-    """Strip a leading ``sp|``/``tr|`` UniProt db prefix, returning the accession.
+_UNIPROT_ID = re.compile(r"^(?P<marker>[A-Za-z]+_{1,2})?(?:sp|tr)\|(?P<accession>[^|]+)(?:\|.*)?$")
+# A UniProtKB accession, optionally an isoform, behind the decoy, contaminant or entrapment marker of its
+# database; quantms writes ``Cont_`` in any case, as is_contaminant_accession reads it.
+_UNIPROT_ACCESSION = re.compile(
+    r"^(?:DECOY_|REV__|rev_)?(?:CONTAM_|ENTRAP_|(?i:CONT_))?"
+    r"(?:[OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9](?:[A-Z][A-Z0-9]{2}[0-9]){1,2})(?:-\d+)?$"
+)
 
-    ``sp|P55011|S12A2_HUMAN`` -> ``P55011``; ``tr|A0A..|..._HUMAN`` -> ``A0A..``;
-    ids without that prefix (bare accessions, ``CON__``/``REV__`` decoys) are
-    returned unchanged. Used by the MaxQuant adapters, whose FASTA prefixing is
-    the only case that should be stripped.
+
+def canonical_accession(accession: str) -> str:
+    """Return the accession of a UniProt ``db|ACCESSION|NAME`` id, keeping a decoy or contaminant marker.
+
+    ``sp|P55011|S12A2_HUMAN`` -> ``P55011``; ``REV__sp|Q00402|NUM1_YEAST`` ->
+    ``REV__Q00402``; ``CONTAM_sp|CONTAM_P02768|ALBU_HUMAN`` -> ``CONTAM_P02768``.
+    Any other id, including a ``sp|``/``tr|`` header whose accession is not a
+    UniProtKB accession, is returned unchanged. The marker stays so that a decoy
+    never shares an accession with its target; ``is_decoy`` and ``contaminant``
+    state the status.
     """
-    if accession and accession.startswith(("sp|", "tr|")):
-        parts = accession.split("|")
-        if len(parts) >= 2:
-            return parts[1]
-    return accession
-
-
-# ------------------------------------------------------------------
-# MaxQuant helpers
-# ------------------------------------------------------------------
+    match = _UNIPROT_ID.match(accession) if accession else None
+    if match is None:
+        return accession
+    marker, bare = match.group("marker") or "", match.group("accession")
+    canonical = bare if bare.startswith(marker) else marker + bare
+    return canonical if _UNIPROT_ACCESSION.match(canonical) else accession
 
 
 def mq_flag_to_bool(val) -> bool:
@@ -104,3 +112,17 @@ def pg_accessions_array(pg_groups: pa.ChunkedArray, pg_acc_type: pa.ListType) ->
         fields=list(struct_type),
     )
     return pa.ListArray.from_arrays(split.offsets, structs, type=pg_acc_type, mask=split.is_null())
+
+
+def mass_error_ppm(calculated_mz, observed_mz) -> float | None:
+    """Relative precursor mass error in ppm, or ``None`` when it is not measurable.
+
+    Both m/z values must be positive: a producer that writes 0.0 for a missing
+    m/z would otherwise report roughly -1e6 ppm instead of "not measured". An
+    exact match returns ``0.0``, a genuine result.
+    """
+    if calculated_mz is None or observed_mz is None:
+        return None
+    if calculated_mz <= 0 or observed_mz <= 0:
+        return None
+    return float((observed_mz - calculated_mz) / calculated_mz * 1e6)

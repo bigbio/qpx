@@ -39,7 +39,7 @@ def test_streaming_declares_format_after_flushing_batches(tmp_path, monkeypatch)
         """Force multiple real Parquet batches from a small fixture."""
 
         def __init__(self, *args, **kwargs):
-            super().__init__(*args, batch_size=1, **kwargs)
+            super().__init__(*args, **{**kwargs, "batch_size": 1})
 
     passes = []
     original = StreamingConsensusMap.iter_all

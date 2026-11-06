@@ -94,9 +94,9 @@ QPX data views have formal schema definitions in YAML format. These schemas defi
     You can load and inspect any schema in Python using the QPX loader:
 
     ```python
-    from qpx.core.models.loader import load_schema
+    from qpx.core.data.loader import load_schema
 
     schema = load_schema("feature")
-    for field in schema._iter_fields():
-        print(f"{field.name}: {field.arrow_type} (nullable={field.nullable})")
+    for field in schema.get_arrow_schema():
+        print(f"{field.name}: {field.type} (nullable={field.nullable})")
     ```

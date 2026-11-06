@@ -58,7 +58,7 @@ print(f"Unique peptides: {unique.count()}")
 
 ## Relationship to Other Views
 
-The `pepmap` complements the `pg_accessions` field on Feature views:
+The `pepmap` complements the `pg_accessions` field on Feature views. `pepmap` holds the **evidence proteins**, all the proteins the peptide maps to; `pg_accessions` holds the **assigned group**, which for a razor assignment names fewer proteins than the evidence:
 
 - **Feature `pg_accessions`**: A nested list of `pg_protein` structs on each row. Simple but duplicates strings at scale.
 - **`pepmap.parquet`**: A deduplicated lookup table with positional info and uniqueness flags. More space-efficient for large datasets.

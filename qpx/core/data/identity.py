@@ -19,6 +19,15 @@ from __future__ import annotations
 import hashlib
 import json
 
+# Stamped in the footer of every file with derived ids. It moves when the bytes or
+# the hash below change; a change of composite shows in ``identity_composite``.
+IDENTITY_HASH_VERSION = "1"
+# Composite list fields whose element order is not meaningful: grouped_runs is a
+# set of raw files, and pg_accessions is a set of group members (the anchor/leader
+# is carried separately). Hashing them as sets keeps the id stable across producers
+# that emit the same membership in a different order.
+SET_VALUED_FIELDS = ("grouped_runs", "pg_accessions")
+
 # One encoder for every row: json.dumps with these options builds a new encoder per
 # call. JSON encodes a tuple exactly like a list, so values need no conversion.
 _CANONICAL_JSON = json.JSONEncoder(separators=(",", ":"), sort_keys=True, ensure_ascii=True)
@@ -55,3 +64,9 @@ def derive_id(values: list, *, unordered_list_indices: tuple[int, ...] = ()) -> 
     """
     encoded = canonical(values, unordered_list_indices=unordered_list_indices)
     return int.from_bytes(hashlib.blake2b(encoded, digest_size=8).digest(), "big", signed=True)
+
+
+def derive_composite_id(row: dict, composite: tuple[str, ...]) -> int:
+    """Derive the id of a row from its persisted values of the *composite* fields, in that order."""
+    unordered = tuple(index for index, field in enumerate(composite) if field in SET_VALUED_FIELDS)
+    return derive_id([row[field] for field in composite], unordered_list_indices=unordered)

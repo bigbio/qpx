@@ -124,7 +124,7 @@ def test_decoys_are_left_out_by_default(tmp_path):
     _fractionated_tmt(tmp_path)
     mdata = _build(tmp_path, modalities=["proteins"])
 
-    assert list(mdata.mod["proteins"].var_names) == ["P1"]
+    assert list(mdata.mod["proteins"].var_names) == ["P1;P12346"]
     assert "is_decoy" not in mdata.mod["proteins"].var.columns
     assert mdata.uns["qpx_include_decoys"] is False
 
@@ -133,7 +133,7 @@ def test_include_decoys_flags_them_in_var(tmp_path):
     _fractionated_tmt(tmp_path)
     proteins = _build(tmp_path, modalities=["proteins"], include_decoys=True).mod["proteins"]
 
-    assert list(proteins.var_names) == ["DECOY_P1", "P1"]
+    assert list(proteins.var_names) == ["DECOY_P1;P12346", "P1;P12346"]
     assert list(proteins.var["is_decoy"]) == [True, False]
 
 
@@ -178,13 +178,13 @@ def test_unknown_duplicate_aggregation_is_rejected(tmp_path):
         _build(tmp_path, modalities=["precursors"], duplicates="max")
 
 
-@pytest.mark.parametrize(("duplicates", "expected"), [("sum", [100.0, 400.0]), ("mean", [100.0, 200.0])])
-def test_null_intensities_are_not_combined_into_a_cell(tmp_path, duplicates, expected):
-    """A pg row identified but not quantified (intensity null) adds no value to its cell.
+@pytest.mark.parametrize("duplicates", ["sum", "mean"])
+def test_null_intensities_are_not_combined_into_a_cell(tmp_path, duplicates):
+    """A pg row identified but not quantified (intensity null) stores no cell.
 
-    Groups that share an anchor protein land in one cell. A null among them made
-    the cell NaN under sum and mean, and counted as a second intensity. A cell
-    with no measured value stays NaN.
+    Groups that share an anchor protein stay separate variables (bigbio/qpx#369),
+    so a null group neither turns another group's cell NaN nor counts as a second
+    intensity, and a group with no measured value has no variable (bigbio/qpx#370).
     """
     groups = [("P1", ["P1"], 100.0), ("P1", ["P1", "P9"], None)]
     groups += [("P2", ["P2"], 100.0), ("P2", ["P2", "P8"], 300.0), ("P2", ["P2", "P9"], None)]
@@ -200,9 +200,11 @@ def test_null_intensities_are_not_combined_into_a_cell(tmp_path, duplicates, exp
 
     proteins = _build(tmp_path, modalities=["proteins"], intensity_label="TMT126", duplicates=duplicates).mod["proteins"]
 
-    assert list(proteins.var_names) == ["P1", "P2", "P3"]
-    np.testing.assert_allclose(proteins.X.toarray(), [[*expected, np.nan]])
-    assert proteins.uns["qpx_duplicates"] == {"aggregation": duplicates, "cells": 1}
+    assert list(proteins.var_names) == ["P1", "P2", "P2;P8"]
+    assert proteins.var["anchor_protein"].tolist() == ["P1", "P2", "P2"]
+    assert proteins.X.nnz == 3
+    np.testing.assert_allclose(proteins.X.toarray(), [[100.0, 100.0, 300.0]])
+    assert proteins.uns["qpx_duplicates"] == {"aggregation": duplicates, "cells": 0}
 
 
 def test_unit_observations_survive_the_h5mu_round_trip(tmp_path):
@@ -231,6 +233,6 @@ def test_pg_rows_without_grouped_runs_are_not_an_observation(tmp_path):
     expanded = _build(tmp_path, modalities=["proteins"], all_intensity_labels=True).mod["proteins"]
 
     assert list(single.obs_names) == ["run_01"]
-    assert list(single.var_names) == ["P12345"]
+    assert list(single.var_names) == ["P12345;P12346"]
     assert list(expanded.obs_names) == ["run_01|TMT126"]
     assert list(expanded.obs["grouped_runs"]) == ["run_01"]

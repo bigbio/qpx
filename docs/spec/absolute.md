@@ -22,7 +22,7 @@ For general AnnData concepts and conventions shared with the differential expres
 AnnData (n_obs x n_vars = samples x proteins)
     obs:    sample metadata (organism, tissue, disease, ...)
     var:    protein metadata (gene_name, ...)
-    X:      ibaq_log (primary quantification matrix)
+    X:      ibaq_log (log2 of ibaq_raw, the primary quantification matrix)
     layers: ibaq_raw, ibaq_ppb, copies_per_cell, concentration_nm
     uns:    file-level metadata (qpx_version, project_accession, ...)
 ```
@@ -31,7 +31,7 @@ AnnData (n_obs x n_vars = samples x proteins)
 
 | AnnData slot | Content | Description |
 |-------------|---------|-------------|
-| `X` | `ibaq_log` | **Primary data matrix** -- log-transformed iBAQ values (samples x proteins) |
+| `X` | `ibaq_log` | **Primary data matrix** -- the logarithm of `ibaq_raw` in the base of `uns["log_base"]`, normally 2 (samples x proteins); NaN for a protein not detected in a sample |
 | `obs` | Sample metadata | One row per sample with experimental annotations |
 | `var` | Protein metadata | One row per protein with gene names |
 | `layers["ibaq_raw"]` | Raw iBAQ | Untransformed iBAQ values |
@@ -61,11 +61,16 @@ Additional SDRF factor values may be included as extra columns in `obs`.
 
 ### var (protein metadata)
 
-Each row in `var` represents one protein. The index is the protein accession.
+Each row in `var` is one protein group, and the index is unique. `uns["var_key"]` states what it holds:
+
+- `pg_accessions`: the group's sorted members joined by `;`, as in the `proteins` modality of the [MuData view](anndata.md). This is the key to use, since it names one group.
+- `anchor_protein`: the group's leading protein. Groups that share a leader are one row, with their peptides pooled. `qpxc transform quantify` writes this, because it computes iBAQ per protein.
+
+`pg_id` is not a key here: it depends on the run and label ([Row Identity](identity.md)).
 
 | Field | Description | Type | Required |
 |-------|-------------|------|----------|
-| `protein` | Protein accession (UniProt), used as index | `string` | Yes |
+| `protein` | The key above, used as index | `string` | Yes |
 | `gene_name` | Gene symbol | `string` | No |
 
 ### uns (file-level metadata)
@@ -79,6 +84,15 @@ Each row in `var` represents one protein. The index is the protein accession.
 | `factor_value` | Factor value from SDRF | `string` |
 | `creation_date` | Date when the file was created | `string` |
 | `creator` | Name of the tool that created the file | `string` |
+| `log_base` | Base of the logarithm in `X` | `int` |
+| `var_key` | What the `var` index holds: `pg_accessions` or `anchor_protein` | `string` |
+| `aggregation` | How a sample's value combines its runs and fractions, as the tool states it; `qpxc transform quantify` writes `mokume_peptides_to_protein_per_sample` | `string` |
+| `quantification_parameters` | JSON object of the method and its settings, such as enzyme, peptide length, ploidy and cell protein concentration | `string` |
+| `standards` | Spike-in standards behind absolute amounts: a table with one row per standard and the columns `protein`, `amount` and `unit`, for example `fmol` | table |
+
+## Producing and checking the file
+
+`qpxc transform quantify --method ibaq --fasta ... -o PXD000000.ae.h5ad` writes this layout, and `qpxc validate --dataset-path` checks an `.ae.h5ad` file it finds in the dataset: unique indexes, no negative layer, `X` as the declared logarithm of `ibaq_raw`, the `standards` columns, and a warning when `log_base`, `var_key` or `aggregation` is missing.
 
 ## Example
 
@@ -111,8 +125,8 @@ var = pd.DataFrame(
 # Primary matrix: ibaq_log (samples x proteins)
 X = np.array(
     [
-        [8.48, 6.23, 7.91],  # Sample-1
-        [7.12, 9.45, 8.03],  # Sample-2
+        [12.4714, 7.8734, 11.1957],  # Sample-1
+        [10.2697, 12.7290, 11.7552],  # Sample-2
     ]
 )
 
@@ -128,9 +142,12 @@ adata.layers["ibaq_raw"] = np.array(
 )
 
 # Add file-level metadata
-adata.uns["qpx_version"] = "1.2"
+adata.uns["qpx_version"] = "1.3"
 adata.uns["file_type"] = "absolute_expression"
 adata.uns["project_accession"] = "PXD000000"
+adata.uns["log_base"] = 2
+adata.uns["var_key"] = "pg_accessions"
+adata.uns["aggregation"] = "mokume_peptides_to_protein_per_sample"
 
 # Save
 adata.write("PXD000000.ae.h5ad")
@@ -178,4 +195,4 @@ Example: `PXD000000.ae.h5ad`
     The AE view derives from the [Protein Group View](pg.md), which provides per-file protein quantification. AE aggregates across files and computes iBAQ-based absolute quantities. For differential comparisons between conditions, see the [Differential Expression View](differential.md).
 
 !!! warning "Protein group encoding"
-    Protein groups in the `var` index are written as a single representative protein accession. The full protein group membership is available in the [Protein Group View](pg.md).
+    With `var_key` `anchor_protein`, the `var` index is a single representative protein accession. The full protein group membership is available in the [Protein Group View](pg.md).

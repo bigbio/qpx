@@ -40,19 +40,6 @@ def _build_looplink(
     return links or None
 
 
-def _interlink_sites(a_mods, b_mods) -> tuple:
-    """Resolve donor and acceptor in either peptide orientation."""
-    donor = next((m for m in a_mods if m["role"] == "donor"), None)
-    acceptor = next((m for m in b_mods if m["role"] == "acceptor"), None)
-
-    # If donor not in alpha, check if donor is in beta (swapped orientation)
-    if not donor:
-        donor = next((m for m in b_mods if m["role"] == "donor"), None)
-        acceptor = next((m for m in a_mods if m["role"] == "acceptor"), None)
-
-    return donor, acceptor
-
-
 def _build_interlink(
     alpha_pep: dict,
     beta_sii: Optional[dict],
@@ -66,22 +53,20 @@ def _build_interlink(
 
     beta_pep = peptides.get(beta_sii["peptide_ref"], {})
     beta_sequence = beta_pep.get("sequence", "")
+    beta_peptidoform = beta_pep.get("peptidoform") or beta_sequence
 
     # Find donor/acceptor positions from xl_mods
     alpha_xl = alpha_pep.get("xl_mods", {})
     beta_xl = beta_pep.get("xl_mods", {})
 
-    # Match by shared xl_value — handle both orientations:
-    # alpha=donor/beta=acceptor OR alpha=acceptor/beta=donor
+    # ``donor_position`` is the site on the alpha peptide and ``acceptor_position`` the one on
+    # its partner, whichever of the two the file names donor; the linker mass sits on the donor.
     links = []
-    all_xl_values = set(alpha_xl.keys()) | set(beta_xl.keys())
-    for xl_value in all_xl_values:
+    for xl_value in sorted(alpha_xl.keys() | beta_xl.keys()):
         a_mods = alpha_xl.get(xl_value, [])
         b_mods = beta_xl.get(xl_value, [])
-
-        donor, acceptor = _interlink_sites(a_mods, b_mods)
-
-        if not donor:
+        donor = next((m for m in a_mods + b_mods if m["role"] == "donor"), None)
+        if not a_mods or donor is None:
             continue
 
         linker = linker_info.get(xl_value, linker_info.get("_default", {}))
@@ -90,23 +75,23 @@ def _build_interlink(
             {
                 "xl_type": xl_type,
                 "partner_sequence": beta_sequence,
-                "partner_peptidoform": beta_sequence,
-                "donor_position": donor["position"],
-                "acceptor_position": acceptor["position"] if acceptor else None,
+                "partner_peptidoform": beta_peptidoform,
+                "donor_position": a_mods[0]["position"],
+                "acceptor_position": b_mods[0]["position"] if b_mods else None,
                 "linker_name": linker.get("name", "unknown"),
                 "linker_accession": linker.get("accession"),
                 "linker_mass": donor["mass_delta"],
             }
         )
 
-    # If no xl_mods found (e.g., noncovalent without mods), create a minimal link
+    # Noncovalently associated peptides share no linked site.
     if not links and xl_type == "noncovalent":
         links.append(
             {
                 "xl_type": "noncovalent",
                 "partner_sequence": beta_sequence,
-                "partner_peptidoform": beta_sequence,
-                "donor_position": 0,
+                "partner_peptidoform": beta_peptidoform,
+                "donor_position": None,
                 "acceptor_position": None,
                 "linker_name": "noncovalent",
                 "linker_accession": None,
@@ -115,6 +100,78 @@ def _build_interlink(
         )
 
     return links or None
+
+
+def _tag_residue(peptidoform: str, position: int, tag: str) -> str:
+    """Put ``[tag]`` after a residue of a ProForma string; position 0 is the N-terminus."""
+    if position == 0:
+        return f"[{tag}]{peptidoform}" if peptidoform.startswith("[") else f"[{tag}]-{peptidoform}"
+    residues = depth = 0
+    for index, char in enumerate(peptidoform):
+        depth += (char == "[") - (char == "]")
+        if char.isalpha() and depth == 0:
+            residues += 1
+            if residues == position:
+                insert_at = index + 1
+                # A residue's own modifications stay next to it.
+                while peptidoform[insert_at : insert_at + 1] == "[":
+                    insert_at = peptidoform.index("]", insert_at) + 1
+                return f"{peptidoform[:insert_at]}[{tag}]{peptidoform[insert_at:]}"
+    # Past the last residue is the C-terminus.
+    return f"{peptidoform}-[{tag}]"
+
+
+def crosslinked_peptidoform(peptidoform: str, cross_links: Optional[list[dict]]) -> Optional[str]:
+    """The linked species in ProForma 2.0: ``PEPK[XLMOD:02001#XL1]R//SEK[#XL1]R``."""
+    if not cross_links:
+        return None
+    alpha = peptidoform
+    partner = cross_links[0]["partner_peptidoform"]
+    for number, link in enumerate(cross_links, start=1):
+        if link["donor_position"] is None:
+            continue
+        name = link["linker_accession"] or f"{link['linker_mass']:+.4f}"
+        alpha = _tag_residue(alpha, link["donor_position"], f"{name}#XL{number}")
+        if link["acceptor_position"] is None:
+            continue
+        if partner is None:
+            alpha = _tag_residue(alpha, link["acceptor_position"], f"#XL{number}")
+        else:
+            partner = _tag_residue(partner, link["acceptor_position"], f"#XL{number}")
+    return f"{alpha}//{partner}" if partner is not None else alpha
+
+
+def _evidence_proteins(sii: dict, parsed: dict) -> tuple[list[str], list[Optional[int]]]:
+    """The proteins of an identification item, each with the peptide's first residue in it."""
+    accessions: list[str] = []
+    starts: list[Optional[int]] = []
+    for reference in sii["peptide_evidence_refs"]:
+        entry = parsed["peptide_evidence"].get(reference, {})
+        accession = parsed["db_sequences"].get(entry.get("db_ref", ""), "")
+        if accession and accession not in accessions:
+            accessions.append(accession)
+            starts.append(entry.get("start"))
+    return accessions, starts
+
+
+def _is_decoy(sii: dict, parsed: dict) -> bool:
+    return any(parsed["peptide_evidence"].get(ref, {}).get("is_decoy", False) for ref in sii["peptide_evidence_refs"])
+
+
+def partner_fields(alpha_sii: dict, beta_sii: Optional[dict], parsed: dict) -> dict:
+    """Where the linked peptides sit in their proteins, and their target or decoy origin."""
+    _, alpha_starts = _evidence_proteins(alpha_sii, parsed)
+    if beta_sii is None:
+        return {"protein_starts": alpha_starts or None}
+    accessions, starts = _evidence_proteins(beta_sii, parsed)
+    decoys = _is_decoy(alpha_sii, parsed) + _is_decoy(beta_sii, parsed)
+    return {
+        "protein_starts": alpha_starts or None,
+        "partner_protein_accessions": accessions or None,
+        "partner_protein_starts": starts or None,
+        "crosslink_decoy_class": ("target_target", "target_decoy", "decoy_decoy")[decoys],
+        "is_decoy": decoys > 0,
+    }
 
 
 def _sii_link_group(sii) -> tuple:
@@ -136,15 +193,23 @@ def _sii_link_group(sii) -> tuple:
 
 
 def _paired_sii_groups(paired_groups, xl_type) -> list[dict]:
-    """Pair the first two SIIs, retaining orphan items as regular PSMs."""
+    """Pair the SIIs of each group across peptides, retaining orphan items as regular PSMs.
+
+    A group can hold more than one pair (OpenPepXL writes alpha and beta for the light
+    and the heavy spectrum), so the items of one peptide pair up with those of the other.
+    Items of a single peptide are a homodimer and pair up in file order.
+    """
     groups = []
-    for _group_val, paired in paired_groups.items():
-        if len(paired) >= 2:
-            # First SII is alpha (donor), second is beta (acceptor)
-            groups.append({"xl_type": xl_type, "alpha": paired[0], "beta": paired[1]})
-        else:
-            # Orphan SII — treat as regular
-            groups.append({"xl_type": "none", "alpha": paired[0]})
+    for paired in paired_groups.values():
+        by_peptide: dict[str, list[dict]] = {}
+        for sii in paired:
+            by_peptide.setdefault(sii["peptide_ref"], []).append(sii)
+        sides = list(by_peptide.values())
+        alphas, betas = (sides[0], sides[1]) if len(sides) == 2 else (paired[0::2], paired[1::2])
+        groups.extend({"xl_type": xl_type, "alpha": alpha, "beta": beta} for alpha, beta in zip(alphas, betas))
+        # Orphan SII -- treat as regular
+        unpaired = alphas[len(betas) :] + betas[len(alphas) :]
+        groups.extend({"xl_type": "none", "alpha": sii} for sii in unpaired)
     return groups
 
 

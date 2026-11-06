@@ -14,6 +14,7 @@ Convert various mass spectrometry data formats to the QPX standard format:
 - **DIA-NN Conversion**: Convert DIA-NN reports to feature and protein group formats
 - **MaxQuant Conversion**: Convert MaxQuant PSM, feature, and protein group data
 - **FragPipe Conversion**: Convert FragPipe PSM data to QPX format
+- **Proteome Discoverer Conversion**: Convert PD PSM and protein exports to QPX format
 - **mzIdentML Conversion**: Convert mzIdentML format PSM data
 - **SDRF Conversion**: Convert SDRF metadata to QPX sample/run format
 
@@ -54,6 +55,10 @@ Validate QPX data against schemas:
 - Validate required fields and data types
 - Verify referential integrity
 - Generate validation reports
+
+### Migrate Command
+
+`qpxc migrate --dataset-path OLD --output-folder NEW` rewrites a dataset under the current specification when the source files are gone. See [Versioning](../spec/versioning.md#migrating-without-re-converting).
 
 ## Python API
 
@@ -132,7 +137,7 @@ qpxc convert maxquant \
 
 # 2. Protein quantification (DirectLFQ)
 qpxc transform quantify \
-    --feature-path ./output/feature.parquet \
+    --feature-path ./output/diann.feature.parquet \
     --method directlfq \
     -o ./output/proteins.parquet
 

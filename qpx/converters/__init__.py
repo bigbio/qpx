@@ -26,6 +26,7 @@ from qpx.converters.maxquant.psm_adapter import MaxQuantPsmAdapter
 from qpx.converters.mzidentml.psm_adapter import MzIdentMLPsmAdapter
 from qpx.converters.openms.converter import OpenMSConverter
 from qpx.converters.orchestrator import BaseOrchestrator, build_dataset_record
+from qpx.converters.proteome_discoverer import ProteomeDiscovererConverter
 from qpx.converters.quantms_msstats.converter import QuantmsMsstatsConverter
 from qpx.converters.quantms_msstats.feature_adapter import QuantmsMsstatsFeatureAdapter
 from qpx.converters.sdrf import SdrfConverter
@@ -59,6 +60,8 @@ __all__ = [
     "FragPipeFeatureAdapter",
     "FragPipePgAdapter",
     "FragPipeConverter",
+    # Proteome Discoverer
+    "ProteomeDiscovererConverter",
     # mzIdentML
     "MzIdentMLPsmAdapter",
     # OpenMS

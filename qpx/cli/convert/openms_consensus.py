@@ -7,8 +7,9 @@ from pathlib import Path
 
 import click
 
+from qpx.cli.resources import convert_resource_options
+
 from .options import (
-    _compression_option,
     _dataset_metadata_options,
     _fasta_option,
     _mudata_option,
@@ -62,22 +63,12 @@ def _consensusxml_list(ctx, param, value) -> tuple[Path, ...]:
     help="Comma-separated views to write (run/sample require --sdrf-file).",
 )
 @click.option(
-    "--pg-top",
-    default=0,
-    show_default=True,
-    type=int,
-    help=(
-        "Peptides used for the interim pg intensity (unnormalized unique-peptide sum): "
-        "0 = all; 3 mirrors the quantms ProteomicsLFQ/IsobaricWorkflow default."
-    ),
-)
-@click.option(
     "--streaming/--no-streaming",
     default=None,
     help=(
         "Force the low-memory streaming reader on/off. Default: auto (streaming for "
-        "consensusXML files > 4 GB). The in-memory reader peaks at ~6-7x the file "
-        "size in RAM; streaming uses about half that and takes about twice as long."
+        "consensusXML files > 1 GB). The in-memory reader peaks at ~7x the file "
+        "size in RAM; streaming peaks at ~2.3x and takes ~1.7x as long."
     ),
 )
 @click.option("--verbose", is_flag=True, help="Enable verbose logging.")
@@ -94,7 +85,7 @@ def _consensusxml_list(ctx, param, value) -> tuple[Path, ...]:
         "identification either way."
     ),
 )
-@_compression_option
+@convert_resource_options
 @_fasta_option
 @_mudata_option
 @_dataset_metadata_options
@@ -112,12 +103,10 @@ def convert_openms_consensus_cmd(**kwargs):
     output_folder = kwargs["output_folder"]
     output_prefix = kwargs["output_prefix"]
     structures = kwargs["structures"]
-    pg_top = kwargs["pg_top"]
     streaming = kwargs["streaming"]
     verbose = kwargs["verbose"]
     project_accession = kwargs["project_accession"]
     include_unassigned_psms = kwargs["include_unassigned_psms"]
-    compression = kwargs["compression"]
     fasta = kwargs["fasta"]
     mudata = kwargs["mudata"]
     metadata = kwargs["metadata"]
@@ -135,10 +124,8 @@ def convert_openms_consensus_cmd(**kwargs):
             include_unassigned_psms=include_unassigned_psms,
             sdrf_path=str(sdrf_path) if sdrf_path else None,
             structures=structs,
-            pg_top=pg_top,
             streaming=streaming,
             project_accession=project_accession,
-            compression=compression,
         )
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc

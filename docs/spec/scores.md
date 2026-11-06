@@ -18,8 +18,10 @@ additional_scores: array[struct{
 
 The `higher_better` field makes the data self-describing so that downstream consumers can interpret scores without looking up external ontology definitions.
 
+A producer writes `null` when it does not know the direction; it never defaults to `true`. Most PSI-MS score terms declare no order, so QPX converters take the direction from the term when it has one, treat e-values, q-values, p-values, PEP and FDR as lower-is-better and engine match scores and probabilities as higher-is-better, and leave anything else `null`. A consumer ranking PSMs by a score whose `higher_better` is `null` must decide the direction itself.
+
 !!! important "snake_case naming convention"
-    All score names in QPX use `snake_case` -- no colons, dots, spaces, or mixed case. This ensures score names are valid identifiers in SQL, Python, R, and any query language without quoting. The [Ontology Mapping](ontology.md) maps each snake_case name to its proper ontology term and accession.
+    All score names in QPX use `snake_case` -- no colons, dots, spaces, or mixed case. This ensures score names are valid identifiers in SQL, Python, R, and any query language without quoting. The [Ontology Mapping](ontology.md) maps each snake_case name to its proper ontology term and accession. `qpxc validate` warns on other `additional_scores` names.
 
 ### Example
 
@@ -30,6 +32,19 @@ The `higher_better` field makes the data self-describing so that downstream cons
   {"score_name": "rank",           "score_value": 1.0,    "higher_better": false}
 ]
 ```
+
+### Typed q-value columns
+
+Filtering on a nested score reads about 100 times the data of a flat column, and a filter on one name misses other producers. Writers therefore copy q-values from `additional_scores` to flat columns (specification 1.3), which is the portable way to filter: `psm.confident()` and `feature.confident()` use them. Score names are compared in `snake_case`, and the first match of a row wins.
+
+| Column | Level and scope | Filled from |
+| ------ | --------------- | ----------- |
+| `psm.qvalue` | PSM, as computed by the source | `qvalue`, `q_value`, `psm_qvalue`, `psm_level_qvalue`, `<engine>_qvalue`, `<engine>_q_value`; not names of a higher level (`peptide`, `peptidoform`, `protein`, `pg`, `gg`, `global`, `precursor`) |
+| `feature.peptide_qvalue` | Peptide, as computed by the source | `peptide_qvalue`, `peptide_level_qvalue` |
+| `feature.precursor_qvalue` | Precursor, per run | `precursor_qvalue`, `qvalue`, `q_value`, `psm_level_qvalue` |
+| `feature.global_qvalue` | Precursor, per experiment | `global_qvalue` |
+
+A column stays null when the source has no such score, and the score stays in `additional_scores`.
 
 ### Recommended score names
 
@@ -47,6 +62,7 @@ The following score names are commonly used across QPX views. All names are `sna
 | `msgf_raw_score` | PSM | higher is better | Raw score from MS-GF+ |
 | `msgf_spec_evalue` | PSM | lower is better | Spectral E-value from MS-GF+ |
 | `sage_hyperscore` | PSM | higher is better | Hyperscore from Sage search engine |
+| `parent_ion_fraction` | PSM | higher is better | Fraction of the isolation window's signal from the target precursor, 0-1 (MaxQuant `PIF`, FragPipe `Purity`, CDAP `PrecursorPurity`); on a feature it is the column of that name |
 | `precursor_qvalue` | Feature | lower is better | Run-level precursor q-value (`Q.Value`), as emitted by the DIA-NN converter |
 | `pg_qvalue` | Feature | lower is better | Run-level protein-group q-value, as emitted by the DIA-NN converter |
 | `pg_pep` | PG | lower is better | Protein-group posterior error probability (`PG.PEP`), as emitted by the DIA-NN converter |

@@ -169,7 +169,21 @@ def test_run_with_only_required_columns_is_valid():
 def test_mz_and_psm_with_optional_columns_absent():
     """Mz and PSM columns may be absent in both validation modes (bigbio/qpx#356)."""
     cases = [
-        (MzSchema, {"run_file_name", "scan", "inverse_ion_mobility", "ion_injection_time", "precursors", "cv_params"}),
+        (
+            MzSchema,
+            {
+                "run_file_name",
+                "scan",
+                "inverse_ion_mobility",
+                "drift_time",
+                "compensation_voltage",
+                "ion_injection_time",
+                "precursors",
+                "ion_mobility_array",
+                "ion_mobility_array_unit",
+                "cv_params",
+            },
+        ),
         (
             PsmSchema,
             {
@@ -284,3 +298,32 @@ def test_feature_schema_peptide_qvalue():
     qval = schema.field("peptide_qvalue")
     assert qval.type == pa.float64()
     assert qval.nullable is True
+
+
+def test_missing_nullable_column_says_it_must_be_present():
+    kept = [field for field in FeatureSchema.get_arrow_schema() if field.name != "modifications"]
+    table = pa.table({field.name: pa.nulls(1, type=field.type) for field in kept}, schema=pa.schema(kept))
+    messages = [issue.message for issue in FeatureSchema.validate_full(table).issues if issue.check == "missing_column"]
+    assert messages == ["Missing column: modifications (its values may be null, but the column must be present)"]
+
+
+def test_run_samples_without_the_later_nullable_members_stay_valid():
+    """A 1.1 or 1.2 run view has no samples[].channel_role or mixture; a required member stays required."""
+    written = pa.struct(
+        [
+            ("sample_accession", pa.string()),
+            ("label", pa.string()),
+            ("biological_replicate", pa.int32()),
+            ("technical_replicate", pa.int32()),
+        ]
+    )
+    expected = RunSchema.get_arrow_schema().field("samples").type
+
+    def type_issues(samples_type):
+        table = pa.table({"run_accession": ["r"], "run_file_name": ["r"], "samples": pa.nulls(1, type=pa.list_(samples_type))})
+        return [issue for issue in RunSchema.validate_full(table).issues if issue.check == "type_mismatch"]
+
+    assert expected.value_type.num_fields > written.num_fields
+    assert type_issues(written) == []
+    assert type_issues(pa.struct(list(written)[1:])) != []
+    assert type_issues(pa.struct([*written, ("unknown", pa.string()), ("other", pa.string()), ("more", pa.string())])) != []

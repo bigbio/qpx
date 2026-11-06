@@ -8,6 +8,7 @@ consolidates the common writing logic.
 from __future__ import annotations
 
 import logging
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -40,6 +41,7 @@ def build_dataset_record(
         "pubmed_id": None,
         "software_name": software_name,
         "software_version": software_version,
+        "analysis_id": str(uuid.uuid4()),
         "creation_date": datetime.now().isoformat(),
         "file_checksums": None,
         "file_row_counts": None,
@@ -82,25 +84,23 @@ class BaseOrchestrator:
     Parquet files. Subclasses implement tool-specific conversion logic.
     """
 
-    # Default compression; subclasses may override via __init__.
-    _compression: str = "zstd"
-
     def _write_ontology(
         self,
         output_folder: Path,
         prefix: str,
         ontology_entries: list[dict],
     ) -> Path | None:
-        """Write combined ontology.parquet. Returns path if written, else None."""
-        if not ontology_entries:
-            return None
-        from qpx.converters.ontology_util import dedupe_ontology_entries
+        """Write ontology.parquet for the views already written. Returns path if written, else None."""
+        from qpx.converters.ontology_util import dedupe_ontology_entries, reconcile_ontology_entries
         from qpx.writers.ontology import OntologyWriter
 
-        entries = dedupe_ontology_entries(ontology_entries)
-        dropped = len(ontology_entries) - len(entries)
+        deduped = dedupe_ontology_entries(ontology_entries)
+        dropped = len(ontology_entries) - len(deduped)
+        entries = reconcile_ontology_entries(deduped, output_folder, prefix)
+        if not entries:
+            return None
         onto_path = output_folder / f"{prefix}.ontology.parquet"
-        with OntologyWriter(onto_path, creator="qpx", compression=self._compression) as writer:
+        with OntologyWriter(onto_path, creator="qpx") as writer:
             writer.write_batch(entries)
         if dropped:
             logger.info("Collapsed %d duplicate (field_name, view) ontology entries", dropped)
@@ -119,7 +119,7 @@ class BaseOrchestrator:
         from qpx.writers.provenance import ProvenanceWriter
 
         prov_path = output_folder / f"{prefix}.provenance.parquet"
-        with ProvenanceWriter(prov_path, creator="qpx", compression=self._compression) as writer:
+        with ProvenanceWriter(prov_path, creator="qpx") as writer:
             writer.write_batch(records)
         logger.info("Wrote %d provenance steps to %s", len(records), prov_path)
         return prov_path
@@ -144,7 +144,7 @@ class BaseOrchestrator:
             provenance_records=provenance_records,
         )
         ds_path = output_folder / f"{prefix}.dataset.parquet"
-        with DatasetWriter(ds_path, creator="qpx", compression=self._compression) as writer:
+        with DatasetWriter(ds_path, creator="qpx") as writer:
             writer.write_batch([record])
         logger.info("Wrote dataset metadata to %s", ds_path)
         return ds_path

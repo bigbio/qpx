@@ -197,7 +197,7 @@ print(generate_example(query_head_cmd, "Quick preview of data structure contents
 
 ## Best Practices
 
-- Use `--duckdb-threads` and `--duckdb-memory` to control resource usage for large datasets
+- Use `--duckdb-threads` and `--duckdb-memory` to control resource usage for large datasets, and `--temp-dir` to move DuckDB's spill files off a small or read-only working directory
 - Use `query head` to preview data before running complex SQL queries
 - Use `query filter` for simple conditions; use `query sql` for joins and aggregations
 - Export large results to Parquet format with `--output-format parquet` to preserve types

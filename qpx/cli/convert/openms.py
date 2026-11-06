@@ -9,8 +9,8 @@ import click
 
 from qpx.converters.openms import OpenMSConverter
 
-from .options import _compression_option, _openms_project_accession_option, _verbose_option
-from .postprocess import _maybe_enrich_pride
+from .options import _openms_project_accession_option, _verbose_option
+from .postprocess import _maybe_enrich_pride, _preserve_sdrf, _record_conversion_options
 
 
 @click.command("openms", deprecated=True)
@@ -54,10 +54,9 @@ from .postprocess import _maybe_enrich_pride
     is_flag=True,
     default=False,
 )
-@_compression_option
 @_verbose_option
 def convert_openms_cmd(**kwargs):
-    r"""[DEPRECATED] Enrich OpenMS ProteomicsLFQ -out_qpx output into a full QPX dataset.
+    """[DEPRECATED] Enrich OpenMS ProteomicsLFQ -out_qpx output into a full QPX dataset.
 
     DEPRECATED: Some OpenMS exporters assign PSMs to the first run or emit
     conflicting identities (OpenMS#9872, OpenMS#9871). Prefer
@@ -81,6 +80,7 @@ def convert_openms_cmd(**kwargs):
             --sdrf-file metadata.sdrf.tsv \\
             --output-folder ./qpx_full
 
+    \b
         # With project accession
         qpxc convert openms \\
             --qpx-dir ./openms_qpx_output \\
@@ -94,7 +94,6 @@ def convert_openms_cmd(**kwargs):
     output_prefix = kwargs["output_prefix"]
     project_accession = kwargs["project_accession"]
     enrich_pride = kwargs["enrich_pride"]
-    compression = kwargs["compression"]
     verbose = kwargs["verbose"]
 
     if verbose:
@@ -104,7 +103,6 @@ def convert_openms_cmd(**kwargs):
         qpx_dir=qpx_dir,
         sdrf_path=sdrf_file,
         consensusxml_path=kwargs.get("consensusxml_path"),
-        compression=compression,
     )
     try:
         converter.convert(
@@ -115,6 +113,8 @@ def convert_openms_cmd(**kwargs):
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
 
+    _preserve_sdrf(output_folder, output_prefix)
+    _record_conversion_options(output_folder, output_prefix)
     _maybe_enrich_pride(output_folder, project_accession, enrich_pride, output_prefix)
 
     click.echo(f"OpenMS QPX enrichment complete. Output: {output_folder}")

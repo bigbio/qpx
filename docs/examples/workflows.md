@@ -32,7 +32,7 @@ qpxc convert maxquant \
 # Step 2: Protein quantification (DirectLFQ)
 echo "Running protein quantification..."
 qpxc transform quantify \
-    --feature-path $OUTPUT_DIR/feature.parquet \
+    --feature-path $OUTPUT_DIR/diann.feature.parquet \
     --method directlfq \
     -o $OUTPUT_DIR/proteins_directlfq.parquet
 
@@ -62,14 +62,14 @@ Compute protein-level quantification from QPX feature data.
 
 # iBAQ quantification (requires FASTA database)
 qpxc transform quantify \
-    --feature-path ./output/feature.parquet \
+    --feature-path ./output/diann.feature.parquet \
     --method ibaq \
     --fasta proteome.fasta \
     -o ./output/proteins_ibaq.tsv
 
 # MaxLFQ quantification with 8 threads
 qpxc transform quantify \
-    --feature-path ./output/feature.parquet \
+    --feature-path ./output/diann.feature.parquet \
     --method maxlfq \
     --threads 8 \
     -o ./output/proteins_maxlfq.parquet

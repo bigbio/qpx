@@ -63,7 +63,7 @@ def test_adapter_dedups_by_run_and_scan(tmp_path):
     _write_ms2_info(stats_dir / "run_a_ms2_info.parquet", spectra)
 
     out = tmp_path / "out.mz.parquet"
-    written = DiannMzAdapter(compression="zstd").convert(str(stats_dir), str(out))
+    written = DiannMzAdapter().convert(str(stats_dir), str(out))
     assert written == 2  # duplicate scan collapsed
 
     table = pq.read_table(str(out))
@@ -79,7 +79,7 @@ def test_adapter_stores_float32_peak_arrays(tmp_path):
     _write_ms2_info(stats_dir / "run_a_ms2_info.parquet", [(1, 2, mz, it)])
 
     out = tmp_path / "out.mz.parquet"
-    DiannMzAdapter(compression="zstd").convert(str(stats_dir), str(out))
+    DiannMzAdapter().convert(str(stats_dir), str(out))
 
     table = pq.read_table(str(out))
     assert pa.types.is_list(table.schema.field("mz").type)
@@ -97,7 +97,7 @@ def test_adapter_roundtrip_preserves_peaks(tmp_path):
     _write_ms2_info(stats_dir / "run_a_ms2_info.parquet", [(1, 2, mz, it)])
 
     out = tmp_path / "out.mz.parquet"
-    DiannMzAdapter(compression="zstd").convert(str(stats_dir), str(out))
+    DiannMzAdapter().convert(str(stats_dir), str(out))
 
     table = pq.read_table(str(out))
     mz_out = np.asarray(table.column("mz").to_pylist()[0])
@@ -115,7 +115,7 @@ def test_adapter_matched_scans_filter(tmp_path):
 
     out = tmp_path / "out.mz.parquet"
     matched = {("run_a", 1), ("run_a", 3)}
-    written = DiannMzAdapter(compression="zstd").convert(str(stats_dir), str(out), matched_scans=matched)
+    written = DiannMzAdapter().convert(str(stats_dir), str(out), matched_scans=matched)
     assert written == 2
 
     table = pq.read_table(str(out))
@@ -130,7 +130,7 @@ def test_adapter_fills_scan_start_time_from_ms_info(tmp_path):
     _write_ms_info(stats_dir / "run_a_ms_info.parquet", [(1, 301.2)])  # 301.2 s -> 5.02 min
 
     out = tmp_path / "out.mz.parquet"
-    DiannMzAdapter(compression="zstd").convert(str(stats_dir), str(out))
+    DiannMzAdapter().convert(str(stats_dir), str(out))
 
     table = pq.read_table(str(out))
     rt = table.column("scan_start_time").to_pylist()[0]

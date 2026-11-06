@@ -13,7 +13,7 @@ This view is analogous to outputs from tools such as MaxQuant (`proteinGroups.tx
 
 ## Schema
 
-`pg_id` is the non-null primary key. The schema-default `identity_composite` is
+`pg_id` is the non-null primary key, meaningful within one file ([Row Identity](identity.md)). The schema-default `identity_composite` is
 `[pg_accessions, grouped_runs, label]`; `label` is null only for
 identification-only protein groups with no label context. A known label is
 retained even when its intensity is null. Fields marked with
@@ -31,12 +31,33 @@ retained even when its intensity is null. Fields marked with
 | Field | Description | Type | Required |
 |-------|-------------|------|----------|
 | `pg_accessions` | Protein accessions of all proteins within this group, as bare accessions (`P04217`, isoform `P04217-2`, contaminant `CONTAM_P05787`), never the UniProt FASTA header form `sp\|P04217\|A1BG_HUMAN`; identifiers from other databases are kept as written | `array[string]` | Yes |
+| `pg_group_id` | Hash of the sorted `pg_accessions`; the same for all rows of a group and on `feature` (specification 1.3) | `int64`, null | No |
 | `pg_names` | UniProt entry names of the proteins in the group, aligned with `pg_accessions` (`A1BG_HUMAN`) | `array[string]` | No |
 | `gg_accessions` | Gene group accessions as a string array | `array[string]` | No |
 | `gg_names` | Gene names corresponding to the proteins in the group | `array[string]` | No |
 | `gg_qvalue` | Gene group q-value (e.g., DIA-NN GG.Q.Value) | `float64`, null | No |
 | `anchor_protein` | Representative protein of the group (leading protein), as a bare accession; descriptive and not part of the default identity composite | `string` | Yes |
 | `grouped_runs` | The group of raw files aggregated into one quantification unit (fractions aggregated together; single-element for unfractionated/DIA). The sample is resolved downstream via `(any file in grouped_runs, label) -> run.samples[].sample_accession`; part of the default identity composite | `array[string]` | Yes |
+
+### Accession convention
+
+Every converter writes a UniProt id as its bare accession: `P04114`, not
+`sp|P04114|APOB_HUMAN`. The entry name goes to `pg_names` when the source has one.
+A decoy or contaminant marker from the search database stays on the accession
+(`DECOY_P04114`, `REV__P04114`, `CONTAM_P02768`), so that a decoy never shares an
+accession with its target, but `is_decoy` and `contaminant` state the status; do
+not parse it from the prefix. Non-UniProt accessions, such as RefSeq, are written
+as the source reports them.
+
+### What `intensity` holds
+
+`intensity` is the primary quantity of the producer, and differs between tools
+and tool versions: DIA-NN 1.8 reports `PG.Quantity` and DIA-NN 2.x `PG.MaxLFQ`,
+which differ by an order of magnitude on the same samples, and QPX versions before
+1.1 wrote MaxLFQ for most DIA-NN rows without marking it. Where a converter knows
+the method, the row's `cv_params` has a `quantification_method` entry. Compare
+`intensity` across datasets only when that entry agrees; merging datasets warns
+when it does not.
 
 ### Protein group semantics
 
@@ -51,7 +72,7 @@ A `pg` row is an **analyte**: the quantified unit is the protein group *as a who
   - `feature.run_file_name ∈ pg.grouped_runs`; **AND**
   - a label in `feature.intensities` `IS NOT DISTINCT FROM pg.label`, so a feature links **only** to pg rows for the channels/labels it actually carries (LFQ: one `LFQ` row; TMT/plexDIA: one row per channel the feature has, never the missing ones).
   `pg_id` is read straight from the matched pg row (never re-derived); never join on `anchor_protein` alone. **No match means no matching PG link** in that channel/fraction — the feature simply produces no link (not an error). Link presence does not establish whether a quantity exists; inspect the matched PG row's `intensity`. `feature.pg_ids` remains an **optional producer hardlink** (a slot a producer MAY populate); qpx's own converters do **not** materialize it, and when it is absent consumers use the computed softlink above.
-- **Integrity check:** a row with a non-null `anchor_protein` MUST also carry `pg_accessions` (its full group membership). Since the group is the analyte and the join key, a protein-mapped feature that lacked membership would be an orphan. QPX validates this (a warning on the write/convert path, an error under `qpxc validate --strict`). Blank/whitespace `anchor_protein` is treated as unset (not a membership violation).
+- **Integrity check:** a row with a non-null `anchor_protein` MUST also carry `pg_accessions` (its full group membership). Since the group is the analyte and the join key, a protein-mapped feature that lacked membership would be an orphan. QPX validates this (a warning on the write/convert path and from `Dataset.validate()`, an error from `qpxc validate`, which always validates strictly, and from `Dataset.validate(strict=True)`). Blank/whitespace `anchor_protein` is treated as unset (not a membership violation).
 
 ### Counts
 
@@ -148,6 +169,7 @@ Each entry in `peptides` contains:
 
 | Field | Description | Type | Required |
 |-------|-------------|------|----------|
+| `is_imputed` | Whether the tool imputed this quantity instead of measuring it; null when the tool does not say | `bool`, null | No |
 | `cv_params` | Optional list of controlled vocabulary parameters for additional metadata | `array[struct{cv_name, cv_value}]` | No |
 
 ## Example
@@ -213,10 +235,13 @@ The following names are commonly used in `additional_intensities` for the PG vie
 | `total_spectral_count` | FragPipe | Number of PSMs for all peptides (razor + shared) |
 | `genes_maxlfq` | DIA-NN | Gene-group level MaxLFQ quantity |
 | `genes_maxlfq_unique` | DIA-NN | Gene-group MaxLFQ using only proteotypic peptides |
-| `ratio_h_l` | MaxQuant (SILAC) | Heavy-to-light protein ratio |
-| `ratio_h_l_normalized` | MaxQuant (SILAC) | Normalised heavy-to-light ratio |
+| `ratio_h_l` | MaxQuant, OpenMS (SILAC) | Heavy-to-light protein ratio, on the `SILAC heavy` row |
+| `ratio_h_l_normalized` | MaxQuant, OpenMS (SILAC) | Normalised heavy-to-light ratio, on the `SILAC heavy` row |
+| `unnormalized_unique_peptide_sum` | OpenMS consensusXML | Sum of the group's unique peptides, beside OpenMS' own protein abundance |
 | `reporter_intensity` | MaxQuant (TMT/iTRAQ) | Raw reporter-ion intensity |
 | `reporter_intensity_corrected` | MaxQuant (TMT/iTRAQ) | Isotope-purity-corrected reporter intensity |
+| `normalized_abundance`, `scaled_abundance` | Proteome Discoverer | `Abundances (Normalized)` and `Abundances (Scaled)` of the file group and channel |
+| `tmt_integrator_log2_abundance` | FragPipe `--tmt-report` | TMT-Integrator's normalized log2 abundance of the protein in the channel |
 
 !!! tip "Spectral counts as intensities"
     Spectral counts are quantitative measures that vary per run and per label, so they fit naturally in `additional_intensities`. Store them as float values (e.g., `3.0` instead of `3`) since the struct uses `float32`.
@@ -258,7 +283,7 @@ This section shows how output columns from common search engines and pipelines m
     | `Majority protein IDs` | `anchor_protein` | First accession of majority IDs |
     | `Protein names` | `pg_names` | Semicolon-separated → array |
     | `Gene names` | `gg_names` | Semicolon-separated → array |
-    | `Sequence coverage [%]` | `sequence_coverage` | |
+    | `Sequence coverage [exp] [%]` | `sequence_coverage` | Coverage in the experiment |
     | `Mol. weight [kDa]` | `molecular_weight` | |
     | `Reverse` | `is_decoy` | `"+"` → `true`, else `false` |
     | `Potential contaminant` | `contaminant` | `"+"` → `true`, else `false` |
@@ -269,9 +294,10 @@ This section shows how output columns from common search engines and pipelines m
 
     | MaxQuant column | QPX field | Notes |
     |---|---|---|
-    | `Unique peptides` | `peptide_counts.unique_sequences` | Peptides exclusive to this PG |
-    | `Peptides` or `Razor + unique peptides` | `peptide_counts.total_sequences` | Total assigned peptides |
-    | `Peptide counts (all)` | `peptides` | Per-protein peptide counts |
+    | `Unique peptides [exp]` | `peptide_counts.unique_sequences` | Peptides exclusive to this PG in the experiment |
+    | `Peptides [exp]` | `peptide_counts.total_sequences` | Peptides of this PG identified in the experiment |
+    | `Peptide counts (all)` | `peptides` | Per-protein peptide counts, aligned with `Protein IDs` |
+    | --- | `feature_counts` | Not reported by MaxQuant; null |
 
 === "Quantification"
 
@@ -280,11 +306,12 @@ This section shows how output columns from common search engines and pipelines m
     | `Intensity [exp]` | `intensity` | Primary raw intensity; scalar per row (one row per label) |
     | `LFQ intensity [exp]` | `additional_intensities` → `lfq` | MaxLFQ normalised |
     | `iBAQ [exp]` | `additional_intensities` → `ibaq` | Intensity-based absolute quantification |
-    | `MS/MS count [exp]` | `additional_intensities` → `spectral_count` | PSM count as float |
+    | `MS/MS count [exp]` | `additional_intensities` → `spectral_count` | PSM count as float; the plex's count on every channel row |
     | `Reporter intensity [channel]` | `intensity` | For TMT/iTRAQ, one **row** per channel (`label` = channel) |
     | `Reporter intensity corrected [channel]` | `additional_intensities` → `reporter_intensity_corrected` | |
-    | `Ratio H/L [exp]` | `additional_intensities` → `ratio_h_l` | SILAC ratio |
-    | `Ratio H/L normalized [exp]` | `additional_intensities` → `ratio_h_l_normalized` | Normalised SILAC ratio |
+    | `Intensity L [exp]`, `Intensity M [exp]`, `Intensity H [exp]` | `intensity` | For SILAC, one **row** per label (`label` = `SILAC light`/`medium`/`heavy`) |
+    | `Ratio H/L [exp]` | `additional_intensities` → `ratio_h_l` | SILAC ratio, on the numerator (`SILAC heavy`) row |
+    | `Ratio H/L normalized [exp]` | `additional_intensities` → `ratio_h_l_normalized` | Normalised SILAC ratio, on the numerator row |
 
 === "Quality"
 
@@ -296,7 +323,7 @@ This section shows how output columns from common search engines and pipelines m
 
 ### DIA-NN (main report)
 
-DIA-NN's main report is precursor-level. PG-level columns (`PG.*`, `Genes.*`) are repeated for every precursor in the group within a run. Deduplicate by `Protein.Group` + `Run` to produce one `pg.parquet` row. `Global.PG.Q.Value`, `PG.Q.Value` and `PG.PEP` are carried for every protein group and never used as a cutoff; `--qvalue-threshold` filters precursors on `Q.Value`.
+DIA-NN's main report is precursor-level. PG-level columns (`PG.*`, `Genes.*`) are repeated for every precursor in the group within a run. Deduplicate by `Protein.Group` + `Run`, and `Channel` in a plexDIA report, to produce one `pg.parquet` row per label; each channel keeps its own quantities and scores. The `pg_matrix` is optional and only fills a label-free MaxLFQ the report lacks; DIA-NN writes none for a plexDIA report. A quantity of `0` is DIA-NN's mark for a group it identified but did not quantify, written as a null `intensity` (or no `additional_intensities` entry). `Global.PG.Q.Value`, `PG.Q.Value` and `PG.PEP` are carried for every protein group and never used as a cutoff; `--qvalue-threshold` filters precursors on `Q.Value`.
 
 === "Identity"
 
@@ -312,8 +339,8 @@ DIA-NN's main report is precursor-level. PG-level columns (`PG.*`, `Genes.*`) ar
 
     | DIA-NN column | QPX field | Notes |
     |---|---|---|
-    | `PG.Quantity` | `intensity` | Non-normalised protein group quantity (scalar; DIA `label` = `LFQ`). Without a positive value, `PG.MaxLFQ` (then the PG matrix value) is the intensity. A 0 is DIA-NN's value for a quantity it did not compute: an identified group without a positive quantity keeps its `label` with `intensity` = null |
-    | `PG.MaxLFQ` | `additional_intensities` → `maxlfq` | QuantUMS/MaxLFQ normalised. QuantUMS writes 0 for a group it did not quantify (and leaves its `pg_matrix` cell empty); a 0 is left out |
+    | `PG.Quantity` | `intensity` | Non-normalised protein group quantity (scalar; `label` = `LFQ`, or the plexDIA channel's label). Without a positive value, `PG.MaxLFQ` (then the PG matrix value) is the intensity. A 0 is DIA-NN's value for a quantity it did not compute: an identified group without a positive quantity keeps its `label` with `intensity` = null |
+    | `PG.MaxLFQ` | `additional_intensities` → `maxlfq` | QuantUMS/MaxLFQ normalised; the `intensity` itself when the report has no `PG.Quantity` (DIA-NN 2.x). QuantUMS writes 0 for a group it did not quantify (and leaves its `pg_matrix` cell empty); a 0 is left out |
     | `PG.Normalised` | `additional_intensities` → `normalize_intensity` | Normalised PG quantity |
     | `PG.TopN` | `additional_intensities` → `topn` | Top-N normalised quantity |
     | `Genes.MaxLFQ` | `additional_intensities` → `genes_maxlfq` | Gene-group MaxLFQ |
@@ -328,14 +355,14 @@ DIA-NN's main report is precursor-level. PG-level columns (`PG.*`, `Genes.*`) ar
     | `PG.Q.Value` | `pg_qvalue` | Run-level PG FDR |
     | `PG.PEP` | `additional_scores` → `pg_pep` | |
     | `PG.MaxLFQ.Quality` | `additional_scores` → `pg_maxlfq_quality` | QuantUMS quality metric |
-    | `GG.Q.Value` | `additional_scores` → `gg_qvalue` | Gene group q-value |
+    | `GG.Q.Value` | `gg_qvalue` | Gene group q-value |
     | `Lib.PG.Q.Value` | `additional_scores` → `lib_pg_qvalue` | Library PG q-value |
     | `Protein.Q.Value` | `additional_scores` → `protein_qvalue` | Unique protein q-value |
     | `Genes.MaxLFQ.Quality` | `additional_scores` → `genes_maxlfq_quality` | |
 
 ### FragPipe (`combined_protein.tsv`)
 
-FragPipe outputs are pre-filtered (no decoys or contaminants). Per-experiment columns are prefixed with the experiment name.
+Decoys are filtered out before FragPipe writes the report; contaminants (`contam_` accessions) are kept. Per-experiment columns are prefixed with the experiment name, and any of them names an experiment, so a spectral-count-only report still gives one row per experiment.
 
 === "Identity & Metadata"
 
@@ -353,13 +380,14 @@ FragPipe outputs are pre-filtered (no decoys or contaminants). Per-experiment co
 
     | FragPipe column | QPX field | Notes |
     |---|---|---|
-    | `[exp] Total Peptides` | `peptide_counts.total_sequences` | Per-experiment peptide count |
+    | `[exp] Total Peptides` | `peptide_counts.total_sequences` | Per-experiment peptide count, with `[exp] Unique Peptides` |
+    | `[exp] Unique Peptides` | `peptide_counts.unique_sequences` | `peptide_counts` is null unless both are reported |
 
 === "Quantification"
 
     | FragPipe column | QPX field | Notes |
     |---|---|---|
-    | `[exp] Intensity` | `intensity` | Primary razor peptide intensity (scalar per row) |
+    | `[exp] Intensity` | `intensity` | Primary razor peptide intensity (scalar per row); `[exp] Total Intensity` in older reports |
     | `[exp] MaxLFQ Intensity` | `additional_intensities` → `maxlfq` | MaxLFQ normalised |
     | `[exp] MaxLFQ Unique Intensity` | `additional_intensities` → `maxlfq_unique` | MaxLFQ using only unique peptides |
     | `[exp] Unique Intensity` | `additional_intensities` → `unique_intensity` | Intensity from unique peptides only |

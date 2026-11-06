@@ -1,5 +1,6 @@
 """Spectral annotation resolves complete native IDs without guessing components."""
 
+import pyarrow.parquet as pq
 import pytest
 
 from qpx import Dataset
@@ -48,3 +49,23 @@ def test_ambiguous_components_do_not_attach_a_spectrum(tmp_path, caplog):
     assert count == 0
     assert mz.size == intensity.size == 0
     assert "No unique spectrum" in caplog.text
+
+
+def test_declared_index_scans_are_file_positions(tmp_path):
+    """scan_format index reads the Nth spectrum, whatever scan number that spectrum has."""
+    _write_spectra(tmp_path / "run_01.mzML", ["scan=5", "scan=0", "scan=1"])
+    with PsmWriter(tmp_path / "index.psm.parquet", scan_format="index") as writer:
+        writer.write_batch([make_psm_record(scan=scan) for scan in ([0], [1], [9])])
+
+    with Dataset(tmp_path, structures=["psm"]) as dataset, SpectraMappingTransform(tmp_path) as transform:
+        annotated = transform.annotate_dataset_psms(dataset)
+
+    assert {row.scan[0]: row.mz_array for row in annotated.itertuples()} == {0: [100.0], 1: [101.0], 9: []}
+
+
+def test_mz_view_declares_the_format_of_its_scans(tmp_path):
+    _write_spectra(tmp_path / "run_01.mzML", ["index=0", "index=1"])
+    output = tmp_path / "out.mz.parquet"
+    with SpectraMappingTransform(tmp_path) as transform:
+        transform.write_mz_parquet_from_dir(output)
+    assert pq.read_metadata(output).metadata[b"scan_format"] == b"index"

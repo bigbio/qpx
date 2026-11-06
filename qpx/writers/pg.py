@@ -21,6 +21,7 @@ import pyarrow.compute as pc
 
 from qpx.core.data import PgSchema
 from qpx.writers.base import BaseWriter
+from qpx.writers.derived import fill_group_ids
 
 
 def _field(values: pa.Array, name: str) -> pa.Array:
@@ -108,6 +109,10 @@ def _explode_pg_table(records: list[dict], schema: pa.Schema) -> pa.Table:
 
 class PgWriter(BaseWriter):
     _schema_class = PgSchema
+    _record_only_keys = ("intensities",)
+
+    def _derive_columns(self, table: pa.Table) -> pa.Table:
+        return fill_group_ids(table)
 
     def _write_batch(self, records: list[dict]):
         """Explode ``intensities`` into one row per label, then buffer/flush.
