@@ -34,11 +34,6 @@ _FULL_RE = re.compile(
 
 _DECOY_MARKER = re.compile(r"^(?:DECOY_|REV__|rev_)")
 
-# A UniProtKB accession (optionally an isoform); to_bare only strips headers whose accession matches.
-_UNIPROT_ACCESSION_RE = re.compile(
-    r"^(?:CONTAM_|ENTRAP_)?(?:[OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9](?:[A-Z][A-Z0-9]{2}[0-9]){1,2})(?:-\d+)?$"
-)
-
 _SCALAR_ACCESSION_COLUMNS = ("anchor_protein", "protein_accession", "accession", "family")
 # List column -> the struct field holding the protein (a list<string> column uses its values).
 # sequence_edits[].accession is a variant id, not a protein, so it is left alone.
@@ -59,12 +54,7 @@ def to_bare(accession: str) -> str:
     DECOY_sp|P04114|APOB_HUMAN     → DECOY_P04114
     P04114                         → P04114  (no-op)
     """
-    if accession is None:
-        return accession
-    bare = canonical_accession(accession)
-    if bare != accession and _UNIPROT_ACCESSION_RE.match(_DECOY_MARKER.sub("", bare, count=1)):
-        return bare
-    return accession
+    return canonical_accession(accession)
 
 
 def to_full(accession: str, lookup: dict[str, str]) -> str:

@@ -64,21 +64,30 @@ def is_contaminant_accession(accession) -> bool:
 
 
 _UNIPROT_ID = re.compile(r"^(?P<marker>[A-Za-z]+_{1,2})?(?:sp|tr)\|(?P<accession>[^|]+)(?:\|.*)?$")
+# A UniProtKB accession, optionally an isoform, behind the decoy, contaminant or entrapment marker of its
+# database; quantms writes ``Cont_`` in any case, as is_contaminant_accession reads it.
+_UNIPROT_ACCESSION = re.compile(
+    r"^(?:DECOY_|REV__|rev_)?(?:CONTAM_|ENTRAP_|(?i:CONT_))?"
+    r"(?:[OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9](?:[A-Z][A-Z0-9]{2}[0-9]){1,2})(?:-\d+)?$"
+)
 
 
 def canonical_accession(accession: str) -> str:
     """Return the accession of a UniProt ``db|ACCESSION|NAME`` id, keeping a decoy or contaminant marker.
 
     ``sp|P55011|S12A2_HUMAN`` -> ``P55011``; ``REV__sp|Q00402|NUM1_YEAST`` ->
-    ``REV__Q00402``; ``CONTAM_sp|CONTAM_P1|X`` -> ``CONTAM_P1``. Any other id is
-    returned unchanged. The marker stays so that a decoy never shares an
-    accession with its target; ``is_decoy`` and ``contaminant`` state the status.
+    ``REV__Q00402``; ``CONTAM_sp|CONTAM_P02768|ALBU_HUMAN`` -> ``CONTAM_P02768``.
+    Any other id, including a ``sp|``/``tr|`` header whose accession is not a
+    UniProtKB accession, is returned unchanged. The marker stays so that a decoy
+    never shares an accession with its target; ``is_decoy`` and ``contaminant``
+    state the status.
     """
     match = _UNIPROT_ID.match(accession) if accession else None
     if match is None:
         return accession
     marker, bare = match.group("marker") or "", match.group("accession")
-    return bare if bare.startswith(marker) else marker + bare
+    canonical = bare if bare.startswith(marker) else marker + bare
+    return canonical if _UNIPROT_ACCESSION.match(canonical) else accession
 
 
 def mq_flag_to_bool(val) -> bool:

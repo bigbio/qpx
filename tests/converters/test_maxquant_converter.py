@@ -535,7 +535,7 @@ def test_lfq_feature_spectral_count_and_pepmap_from_evidence(tmp_path):
     evidence = tmp_path / "evidence.txt"
     evidence.write_text(
         _EVIDENCE_HEADER.rstrip("\n") + "\tMS/MS count\tProteins\tReverse\n"
-        "PEPTIDEK\t_PEPTIDEK_\t2\trun1\tMULTI-MSMS\t10\t500.0\t10.0\t9.9\t10.1\t0.01\tP1\tP1\t1000\t998.0\t0\t3\tsp|P1|A_HUMAN;P2\t\n"
+        "PEPTIDEK\t_PEPTIDEK_\t2\trun1\tMULTI-MSMS\t10\t500.0\t10.0\t9.9\t10.1\t0.01\tP1\tP1\t1000\t998.0\t0\t3\tsp|P12345|A_HUMAN;P2\t\n"
         "PEPTIDER\t_PEPTIDER_\t2\trun1\tMULTI-MSMS\t11\t510.0\t11.0\t10.9\t11.1\t0.01\tP3\tP3\t1000\t998.0\t0\t0\tP3\t\n"
         "REDITPEK\t_REDITPEK_\t2\trun1\tMULTI-MSMS\t12\t520.0\t12.0\t11.9\t12.1\t0.01\tREV__P1\tREV__P1\t1000\t998.0\t0\t1\tREV__P1\t+\n"
     )
@@ -548,7 +548,7 @@ def test_lfq_feature_spectral_count_and_pepmap_from_evidence(tmp_path):
     assert counts["PEPTIDER"]["intensity_value"] == 0.0
     mapped = {row["sequence"]: row for row in pq.read_table(pepmap).to_pylist()}
     assert set(mapped) == {"PEPTIDEK", "PEPTIDER"}
-    assert [entry["accession"] for entry in mapped["PEPTIDEK"]["pg_accessions"]] == ["P1", "P2"]
+    assert [entry["accession"] for entry in mapped["PEPTIDEK"]["pg_accessions"]] == ["P12345", "P2"]
     assert mapped["PEPTIDEK"]["is_unique"] is False
     assert mapped["PEPTIDER"]["is_unique"] is True
 

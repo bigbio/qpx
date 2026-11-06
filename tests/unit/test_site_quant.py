@@ -33,12 +33,12 @@ def test_lfq_sites_are_per_experiment(tmp_path):
     path = _write_sites(
         tmp_path,
         [*_BASE, "Intensity Mix1", "Intensity Mix2", "Localization prob Mix1"],
-        ["sp|P1|A_HUMAN", "12", "S", "0.9", "", "", "1;2;3", "100", "0", "0.5"],
+        ["sp|P12345|A_HUMAN", "12", "S", "0.9", "", "", "1;2;3", "100", "0", "0.5"],
     )
 
     [row] = _convert(path, tmp_path)
 
-    assert (row["protein_accession"], row["position"], row["amino_acid"]) == ("P1", 12, "S")
+    assert (row["protein_accession"], row["position"], row["amino_acid"]) == ("P12345", 12, "S")
     assert (row["modification_name"], row["modification_accession"]) == ("Phospho", "UNIMOD:21")
     assert row["mass_delta"] == pytest.approx(79.966331)
     assert (row["label"], row["intensity"], row["grouped_runs"]) == ("LFQ", 100.0, ["r1", "r2"])
