@@ -132,6 +132,8 @@ def _pivot_arrow_combining_duplicates(
     quantified by an MS/MS and a match-between-runs feature in one run. They are
     combined with *duplicates* (``"sum"`` or ``"mean"``) and the number of such
     cells is returned, so the caller can report it instead of summing silently.
+    A null value (a pg row identified but not quantified) is not combined or
+    counted; a cell with no other value stays NaN.
     """
     row_index, col_index = axes
     row_pos = _dictionary_positions(table.column(row_col), row_index)
@@ -148,10 +150,15 @@ def _pivot_arrow_combining_duplicates(
     matrix = sparse.coo_matrix((data, positions), shape=shape).tocsr()
     if matrix.nnz == len(data):
         return matrix, 0
-    # Same coordinates, so the counts line up with matrix.data cell for cell.
-    counts = sparse.coo_matrix((np.ones(len(data), dtype=np.float32), positions), shape=shape).tocsr()
+    # Nulls arrive as NaN, which would make the whole cell NaN: combine and count
+    # the measured values only. Same coordinates, so the counts line up with
+    # matrix.data cell for cell (tocsr() keeps a cell whose values sum to 0).
+    measured = ~np.isnan(data)
+    matrix = sparse.coo_matrix((np.where(measured, data, np.float32(0)), positions), shape=shape).tocsr()
+    counts = sparse.coo_matrix((measured.astype(np.float32), positions), shape=shape).tocsr()
     if duplicates == "mean":
-        matrix.data /= counts.data
+        matrix.data /= np.maximum(counts.data, 1)
+    matrix.data[counts.data == 0] = np.nan
     return matrix, int(np.count_nonzero(counts.data > 1))
 
 
