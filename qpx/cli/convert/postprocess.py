@@ -95,6 +95,16 @@ def _annotate_protein_properties(output_folder: Path, fasta: Optional[Path], pre
         _warn(f"protein properties from FASTA skipped: {exc.format_message()}")
 
 
+def _normalize_accessions(output_folder: Path, prefix: str) -> None:
+    """Store every protein as its bare accession (``sp|P04114|APOB_HUMAN`` -> ``P04114``); entry
+    names stay in ``pg_names``."""
+    from qpx.transforms.accession_normalizer import normalize_dataset_accessions
+
+    rewritten = normalize_dataset_accessions(Path(output_folder), prefix)
+    if rewritten:
+        click.echo(f"Protein accessions stored as bare accessions in {rewritten} view file(s)")
+
+
 def _maybe_enrich_pride(output_folder, project_accession: str | None, enrich: bool, prefix: str) -> None:
     """Optionally enrich a converted dataset with PRIDE metadata."""
     if not enrich:
@@ -270,6 +280,7 @@ def _finish_conversion(
         _preserve_sdrf(output_folder, prefix)
         _record_conversion_options(output_folder, prefix)
         _annotate_protein_properties(output_folder, fasta, prefix)
+        _normalize_accessions(output_folder, prefix)
         _apply_software(output_folder, prefix, metadata.software_name, metadata.software_version, metadata.config_json)
         _maybe_enrich_pride(output_folder, project_accession, metadata.enrich_pride, prefix)
     if mudata is not None:

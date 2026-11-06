@@ -285,7 +285,7 @@ class TestTransformNormalizeAccessionsCLI:
 
         def fake_normalize(**kwargs):
             normalized.append(kwargs["parquet_path"].name)
-            return {"rows": 1, "accessions_changed": 0}
+            return {"rows": 1, "accessions_changed": 0, "distinct_changed": 0}
 
         monkeypatch.setattr("qpx.transforms.accession_normalizer.normalize_parquet", fake_normalize)
 

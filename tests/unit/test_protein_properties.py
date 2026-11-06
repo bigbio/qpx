@@ -211,7 +211,7 @@ def test_coverage_counts_shared_peptides_named_by_psm_evidence(dataset_dir, tmp_
 
 @pytest.mark.parametrize("direction", ["forward", "reverse"])
 def test_coverage_keeps_psm_evidence_after_accession_normalization(dataset_dir, tmp_path, direction):
-    """Normalizing PG/feature identifiers must retain shared-peptide PSM evidence."""
+    """Normalizing identifiers, the PSM view's included, must retain shared-peptide PSM evidence."""
     from qpx.writers import PsmWriter
     from tests.conftest import make_psm_record
 

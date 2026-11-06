@@ -8,7 +8,8 @@ import click
 
 
 def _accession_target_files(dataset: Path) -> list[str]:
-    """Return the accession-bearing view files for a QPX dataset."""
+    """Return the accession-bearing view files of a QPX dataset, relative to it."""
+    from qpx.transforms.accession_normalizer import accession_view_files
     from qpx.transforms.utils import discover_qpx_file_prefix
 
     try:
@@ -16,17 +17,9 @@ def _accession_target_files(dataset: Path) -> list[str]:
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
 
-    target_files = [
-        name for name in (f"{file_prefix}.feature.parquet", f"{file_prefix}.pg.parquet") if (dataset / name).is_file()
-    ]
-    if not target_files:
+    if not any((dataset / f"{file_prefix}.{view}.parquet").is_file() for view in ("feature", "pg")):
         raise click.ClickException(f"No feature or protein-group Parquet file found in {dataset}")
-    target_files.extend(
-        name
-        for name in (f"{file_prefix}.{view}.parquet" for view in ("site", "proteoform", "psm", "pepmap"))
-        if (dataset / name).is_file()
-    )
-    return target_files
+    return [str(path.relative_to(dataset)) for path in accession_view_files(dataset, file_prefix)]
 
 
 def _copy_unchanged_accession_files(dataset: Path, out_dir: Path, target_files: list[str]) -> None:
@@ -36,6 +29,23 @@ def _copy_unchanged_accession_files(dataset: Path, out_dir: Path, target_files: 
     for f in dataset.iterdir():
         if f.name not in target_files and f.is_file():
             shutil.copy2(f, out_dir / f.name)
+
+
+def _refresh_derived_files(out_dir: Path) -> None:
+    """Rebuild the MuData view and the integrity record, when the dataset has them, from the rewritten views."""
+    from qpx.cli.convert.postprocess import _maybe_compute_integrity
+    from qpx.dataset import Dataset
+    from qpx.transforms.utils import discover_qpx_file_prefix
+
+    from .dataset import _refresh_dataset_mudata
+
+    prefix = discover_qpx_file_prefix(out_dir)
+    _refresh_dataset_mudata(out_dir, prefix)
+    with Dataset(str(out_dir), file_prefix=prefix) as ds:
+        meta = ds.dataset_meta.to_df() if ds.dataset_meta is not None else None
+    record = meta.iloc[0].to_dict() if meta is not None and not meta.empty else {}
+    if any(isinstance(record.get(field), dict) for field in ("file_checksums", "file_row_counts", "file_sizes_bytes")):
+        _maybe_compute_integrity(out_dir, prefix, True)
 
 
 @click.command("normalize-accessions")
@@ -86,10 +96,11 @@ def transform_normalize_accessions_cmd(
     Reverse: converts bare accessions back to full UniProt format.
     Requires a FASTA database to look up the full identifiers.
 
-    Normalizes protein accessions in feature.parquet, pg.parquet, site.parquet,
-    proteoform.parquet, psm.parquet and pepmap.parquet files. Ids stay as they
-    are, so links survive: a file whose identity composite holds an accession
-    (pg_id) is then marked identity_source=provided.
+    Normalizes protein accessions in the feature, pg, psm, pepmap, site and
+    proteoform views. Every convert command already writes bare accessions;
+    use this for datasets converted by an earlier qpx, or to restore full
+    identifiers. Ids stay as they are, so links survive: a file whose identity
+    composite holds an accession (pg_id) is then marked identity_source=provided.
 
     \b
     Examples:
@@ -136,6 +147,7 @@ def transform_normalize_accessions_cmd(
 
     target_files = _accession_target_files(dataset)
     total_changed = 0
+    files_changed = 0
 
     # Copy non-target files to output dir (once, outside the loop)
     if not in_place and out_dir != dataset:
@@ -144,6 +156,7 @@ def transform_normalize_accessions_cmd(
     for fname in target_files:
         src = dataset / fname
         dst = out_dir / fname
+        dst.parent.mkdir(parents=True, exist_ok=True)
         result = normalize_parquet(
             parquet_path=src,
             output_path=dst,
@@ -151,7 +164,11 @@ def transform_normalize_accessions_cmd(
             fasta_lookup=fasta_lookup,
         )
         total_changed += result["accessions_changed"]
+        files_changed += bool(result["distinct_changed"])
         click.echo(f"  {fname}: {result['rows']:,} rows, {result['accessions_changed']:,} accessions normalized")
+
+    if files_changed:
+        _refresh_derived_files(out_dir)
 
     label = "stripped to bare" if direction == "forward" else "restored to full"
     click.echo(f"\nDone — {total_changed:,} accessions {label} in {out_dir}")

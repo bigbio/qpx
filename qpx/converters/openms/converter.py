@@ -429,6 +429,10 @@ class OpenMSConverter(BaseOrchestrator):
             software_version=None,
             provenance_records=provenance_records,
         )
+        # Imported here: accession_normalizer imports qpx.converters, whose package init imports this module.
+        from qpx.transforms.accession_normalizer import normalize_dataset_accessions
+
+        normalize_dataset_accessions(Path(output_folder), output_prefix)
         self._write_mudata(output_folder, output_prefix)
         logger.info("OpenMS QPX enrichment complete -> %s", output_folder)
 

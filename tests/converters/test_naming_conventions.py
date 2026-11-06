@@ -60,9 +60,13 @@ def test_normalizer_moves_entry_names_to_pg_names(tmp_path):
     pq.write_table(
         pa.table(
             {
-                "pg_accessions": [["sp|P1|A_HUMAN", "sp|P2|B_HUMAN"], ["sp|P3|C_HUMAN", "P4"], ["sp|P5|E_HUMAN"]],
+                "pg_accessions": [
+                    ["sp|P04114|A_HUMAN", "sp|P02768|B_HUMAN"],
+                    ["sp|P68871|C_HUMAN", "P69905"],
+                    ["sp|P01308|E_HUMAN"],
+                ],
                 "pg_names": [None, None, ["kept"]],
-                "anchor_protein": ["sp|P1|A_HUMAN", "sp|P3|C_HUMAN", "sp|P5|E_HUMAN"],
+                "anchor_protein": ["sp|P04114|A_HUMAN", "sp|P68871|C_HUMAN", "sp|P01308|E_HUMAN"],
             }
         ),
         source,
@@ -70,7 +74,7 @@ def test_normalizer_moves_entry_names_to_pg_names(tmp_path):
     output = tmp_path / "out.pg.parquet"
     normalize_parquet(source, output, direction="forward")
     table = pq.read_table(output)
-    assert table.column("pg_accessions").to_pylist() == [["P1", "P2"], ["P3", "P4"], ["P5"]]
+    assert table.column("pg_accessions").to_pylist() == [["P04114", "P02768"], ["P68871", "P69905"], ["P01308"]]
     # Names align with accessions, so a group with an unnamed member has none.
     assert table.column("pg_names").to_pylist() == [["A_HUMAN", "B_HUMAN"], None, ["kept"]]
 
