@@ -260,7 +260,6 @@ def convert_diann_cmd(**kwargs):
 )
 @_output_folder_option
 @_output_prefix_option
-@_compression_option
 @_verbose_option
 def convert_diann_xic_cmd(
     xic_folder,
@@ -271,7 +270,6 @@ def convert_diann_xic_cmd(
     xic_qvalue_threshold,
     output_folder,
     output_prefix,
-    compression,
     verbose,
 ):
     """Merge DIA-NN XIC exports into one QPX xic view.
@@ -303,7 +301,6 @@ def convert_diann_xic_cmd(
         xic_files,
         output_folder / f"{prefix}.xic.parquet",
         label=label,
-        compression=compression,
         selection=xic_selection,
         window=xic_window,
         extraction_window_seconds=xic_extraction_window_seconds,

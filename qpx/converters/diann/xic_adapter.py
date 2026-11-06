@@ -95,7 +95,6 @@ def convert_diann_xic(
     output_path: str | Path,
     *,
     label: str = "LFQ",
-    compression: str = "zstd",
     selection: str = "targets",
     window: str = "apex",
     extraction_window_seconds: float | None = None,
@@ -115,8 +114,6 @@ def convert_diann_xic(
     label:
         Channel label written for every trace. DIA-NN XIC exports are
         label-free, so the default is ``"LFQ"``.
-    compression:
-        Parquet compression codec passed to :class:`~qpx.writers.xic.XicWriter`.
     selection:
         What the export contains: ``targets``, ``targets_and_decoys`` or ``all``.
         Written to the file footer as ``xic_selection``.
@@ -162,7 +159,6 @@ def convert_diann_xic(
     try:
         with XicWriter(
             output_path,
-            compression=compression,
             selection=selection,
             window=window,
             extraction_window_seconds=extraction_window_seconds,
