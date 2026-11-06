@@ -205,7 +205,7 @@ qpxc pdc2qpx -a cptac_lfq.csv --download-dir ./downloads --output-folder ./qpx
 ### Convert
 
 ```bash
-qpxc convert [openms | openms-consensus | diann | maxquant | spectronaut | fragpipe | mzidentml | cdap | mz | sdrf] [OPTIONS]
+qpxc convert [openms | openms-consensus | diann | diann-xic | maxquant | spectronaut | fragpipe | mzidentml | cdap | mz | sdrf] [OPTIONS]
 ```
 
 ### Transform

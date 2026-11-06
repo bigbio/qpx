@@ -17,6 +17,7 @@ from qpx.core.data.run import Run, RunSchema
 from qpx.core.data.sample import Sample, SampleSchema
 from qpx.core.data.schema import FieldDef, ValidationIssue, ValidationResult, ViewSchema
 from qpx.core.data.site import Site, SiteSchema
+from qpx.core.data.xic import Xic, XicSchema
 
 __all__ = [
     # Schema infrastructure
@@ -39,6 +40,7 @@ __all__ = [
     "PepMap",
     "Site",
     "Proteoform",
+    "Xic",
     # Schemas
     "FeatureSchema",
     "PsmSchema",
@@ -52,4 +54,5 @@ __all__ = [
     "PepMapSchema",
     "SiteSchema",
     "ProteoformSchema",
+    "XicSchema",
 ]

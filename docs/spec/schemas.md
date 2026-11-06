@@ -46,6 +46,12 @@ QPX data views have formal schema definitions in YAML format. These schemas defi
     --8<-- "docs/spec/schemas/mz.yaml"
     ```
 
+=== "Extracted-Ion Chromatograms"
+
+    ```yaml title="xic.yaml"
+    --8<-- "docs/spec/schemas/xic.yaml"
+    ```
+
 ### Metadata Views
 
 === "Dataset"
