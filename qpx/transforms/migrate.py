@@ -173,7 +173,8 @@ def _migrate_ontology(source: Path, target: Path) -> int:
 def _followed(value, new_ids: dict[int, int], field: str):
     """*value* with the new ids: one id, a list of them, or a list of structs whose *field* holds one."""
     if field:
-        return [{**item, field: new_ids.get(item[field])} for item in value]
+        # The field cannot be null, so an id the map lacks stays.
+        return [{**item, field: new_ids.get(item[field], item[field])} for item in value]
     if isinstance(value, list):
         return [new_ids.get(item) for item in value]
     return new_ids.get(value)

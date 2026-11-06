@@ -136,6 +136,17 @@ def test_a_trace_follows_the_new_feature_id(old_dataset, tmp_path):
     assert [score["feature_id"] for score in row["feature_scores"]] == [new_id]
 
 
+def test_a_trace_score_keeps_the_id_of_a_feature_the_view_lacks(old_dataset, tmp_path):
+    """feature_scores[].feature_id cannot be null, so it keeps an id that no feature has; feature_ids drops it."""
+    _write(old_dataset / "old.xic.parquet", [make_xic_record(7, run_file_name=RUN)])
+    out = tmp_path / "new"
+    migrate_dataset(old_dataset, out)
+
+    row = pq.read_table(out / "old.xic.parquet").to_pylist()[0]
+    assert row["feature_ids"] == [None]
+    assert [score["feature_id"] for score in row["feature_scores"]] == [7]
+
+
 def test_a_site_follows_the_new_pg_and_psm_ids(old_dataset, tmp_path):
     """relayout numbers ids 1, 2, ...; migrate derives them again, and the site's links follow."""
     feature = pq.read_table(old_dataset / "old.feature.parquet").to_pylist()[0]
