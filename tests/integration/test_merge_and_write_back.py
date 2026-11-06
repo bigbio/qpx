@@ -9,7 +9,7 @@ import pyarrow.parquet as pq
 import pytest
 
 import qpx
-from qpx.writers import FeatureWriter, PgWriter, PsmWriter, XicWriter
+from qpx.writers import FeatureWriter, PgWriter, PsmWriter, XicExtraction, XicWriter
 from tests.conftest import make_feature_record, make_psm_record, make_xic_record
 
 
@@ -22,6 +22,22 @@ def _copy(dataset_dir, tmp_path, name, accession):
     table = table.set_column(0, "project_accession", pa.array([accession] * table.num_rows, type=pa.string()))
     pq.write_table(table, path)
     return target
+
+
+def _merge_with_traces(dataset_dir, tmp_path, extractions):
+    """Merge two copies under namespaces, each with one trace of its first feature extracted as *extractions* say."""
+    sources = []
+    for (name, accession), extraction in zip((("one", "PXD000001"), ("two", "PXD000002")), extractions):
+        target = _copy(dataset_dir, tmp_path, name, accession)
+        feature_id = pq.read_table(target / "exp.feature.parquet", columns=["feature_id"]).column(0)[0].as_py()
+        with XicWriter(target / "exp.xic.parquet", extraction=extraction) as writer:
+            writer.write_batch([make_xic_record(feature_id)])
+        sources.append(qpx.open_dataset(str(target)))
+    collection = qpx.DatasetCollection(sources)
+    collection.merge(tmp_path / "merged", on_collision="namespace")
+    collection.close()
+    for source in sources:
+        source.close()
 
 
 @pytest.fixture
@@ -105,18 +121,7 @@ class TestMergeCollisions:
 
     def test_namespace_rewrites_the_trace_references(self, dataset_dir, tmp_path):
         """xic.feature_ids and feature_scores follow the feature ids into each source's namespace, and xic_id its runs."""
-        sources = []
-        for name, accession in (("one", "PXD000001"), ("two", "PXD000002")):
-            target = _copy(dataset_dir, tmp_path, name, accession)
-            feature_id = pq.read_table(target / "exp.feature.parquet", columns=["feature_id"]).column(0)[0].as_py()
-            with XicWriter(target / "exp.xic.parquet") as writer:
-                writer.write_batch([make_xic_record(feature_id)])
-            sources.append(qpx.open_dataset(str(target)))
-        collection = qpx.DatasetCollection(sources)
-        collection.merge(tmp_path / "merged", on_collision="namespace")
-        collection.close()
-        for source in sources:
-            source.close()
+        _merge_with_traces(dataset_dir, tmp_path, [XicExtraction(), XicExtraction()])
 
         features = pq.read_table(next((tmp_path / "merged").glob("*.feature.parquet")), columns=["feature_id", "source_dataset"])
         feature_source = dict(zip(*(column.to_pylist() for column in features.columns)))
@@ -125,6 +130,22 @@ class TestMergeCollisions:
         for row in traces:
             assert [feature_source.get(feature_id) for feature_id in row["feature_ids"]] == [row["source_dataset"]]
             assert [feature_source.get(score["feature_id"]) for score in row["feature_scores"]] == [row["source_dataset"]]
+
+    def test_traces_keep_the_selection_their_sources_share(self, dataset_dir, tmp_path):
+        """A footer key of the trace selection stays when every source states the same value."""
+        _merge_with_traces(
+            dataset_dir,
+            tmp_path,
+            [
+                XicExtraction(selection="targets", qvalue_threshold=0.01),
+                XicExtraction(selection="targets", qvalue_threshold=0.05),
+            ],
+        )
+
+        footer = pq.read_schema(next((tmp_path / "merged").glob("*.xic.parquet"))).metadata
+        assert footer[b"xic_selection"] == b"targets"
+        assert b"xic_qvalue_threshold" not in footer
+        assert footer[b"xic_rt_unit"] == b"seconds"
 
     def test_dedupe_identical_drops_copies(self, two_copies, tmp_path):
         first, _, collection = two_copies

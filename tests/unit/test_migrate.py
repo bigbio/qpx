@@ -147,6 +147,17 @@ def test_a_trace_score_keeps_the_id_of_a_feature_the_view_lacks(old_dataset, tmp
     assert [score["feature_id"] for score in row["feature_scores"]] == [7]
 
 
+def test_traces_keep_their_selection(old_dataset, tmp_path):
+    """The footer keys of the trace selection are copied with the traces."""
+    selection = {b"xic_selection": b"all", b"xic_window": b"full", b"transition_format": b"mzPAF"}
+    _write(old_dataset / "old.xic.parquet", [make_xic_record(7, run_file_name=RUN)], extra_metadata=selection)
+    out = tmp_path / "new"
+    migrate_dataset(old_dataset, out)
+
+    footer = pq.read_schema(out / "old.xic.parquet").metadata
+    assert {key: footer.get(key) for key in selection} == selection
+
+
 def test_a_site_follows_the_new_pg_and_psm_ids(old_dataset, tmp_path):
     """relayout numbers ids 1, 2, ...; migrate derives them again, and the site's links follow."""
     feature = pq.read_table(old_dataset / "old.feature.parquet").to_pylist()[0]

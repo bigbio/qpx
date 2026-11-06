@@ -15,6 +15,7 @@ import pyarrow.parquet as pq
 from qpx._version import __version__
 from qpx.core.data.schema import SOURCE_DATASET_COLUMN
 from qpx.core.sql import validate_identifier
+from qpx.writers.xic import XIC_FOOTER_KEYS
 
 if TYPE_CHECKING:
     from qpx.collection import DatasetCollection
@@ -231,19 +232,35 @@ class _Merge:
 
     # --- Data views ---
 
+    def _footer(self, name: str, index: int) -> dict[bytes, bytes]:
+        """The footer of a source's view when it is one local file, else nothing."""
+        struct = getattr(self._datasets[index], name)
+        first = str(struct.file_paths[0]) if struct.file_paths else ""
+        if first.endswith(".parquet") and not first.startswith("s3://") and "*" not in first:
+            return pq.read_schema(first).metadata or {}
+        return {}
+
     def _composite_groups(self, name: str, sources: list[int]) -> dict[tuple[str, ...] | None, list[int]]:
         """Sources by the identity composite their footers declare; only one composite fits one file's footer."""
         groups: dict[tuple[str, ...] | None, list[int]] = {}
         for index in sources:
-            struct = getattr(self._datasets[index], name)
-            composite = None
-            first = str(struct.file_paths[0]) if struct.file_paths else ""
-            if first.endswith(".parquet") and not first.startswith("s3://") and "*" not in first:
-                metadata = pq.read_schema(first).metadata or {}
-                if b"identity_composite" in metadata:
-                    composite = tuple(metadata[b"identity_composite"].decode().split(","))
+            declared = self._footer(name, index).get(b"identity_composite")
+            composite = tuple(declared.decode().split(",")) if declared else None
             groups.setdefault(composite, []).append(index)
         return groups
+
+    def _keep_trace_selection(self, writer, name: str, members: list[int]) -> None:
+        """Keep the xic footer keys that every source of *members* states with one value; call before any row."""
+        if name != "xic":
+            return
+        footers = [self._footer(name, index) for index in members]
+        shared = {
+            key: footers[0][key]
+            for key in XIC_FOOTER_KEYS
+            if key in footers[0] and all(footer.get(key) == footers[0][key] for footer in footers)
+        }
+        if shared:
+            writer.add_footer_metadata(shared)
 
     def _writer(self, name: str, path: Path, composite, extra: list[str]):
         """The view's writer with the merge's columns, keeping every provided id."""
@@ -297,6 +314,7 @@ class _Merge:
         for number, (composite, members) in enumerate(groups.items()):
             file_prefix = self._prefix if len(groups) == 1 else f"{self._prefix}-{number + 1}"
             with self._writer(name, self._output_dir / f"{file_prefix}{suffix}", composite, extra) as writer:
+                self._keep_trace_selection(writer, name, members)
                 for index in members:
                     sql = self._deduplicated_rows(name, index, first_source) if dedupe else self._rows_sql(name, index)
                     self._write_batches(writer, sql)

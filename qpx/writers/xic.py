@@ -29,6 +29,8 @@ _FOOTER_KEYS = {
     "smoothed": b"xic_smoothed",
     "zero_points": b"xic_zero_points",
 }
+# They describe the traces, so a copy of the view keeps them.
+XIC_FOOTER_KEYS = tuple(_FOOTER_KEYS.values())
 
 
 class XicWriter(BaseWriter):

@@ -19,6 +19,7 @@ from qpx.dataset import Dataset
 from qpx.transforms.mantissa import MANTISSA_BITS_FOOTER_KEY
 from qpx.transforms.relayout import ID_REFERENCES, ORDINAL_IDS
 from qpx.version import QPX_SPEC_VERSION
+from qpx.writers.xic import XIC_FOOTER_KEYS
 
 logger = logging.getLogger(__name__)
 
@@ -191,6 +192,11 @@ def _follow_ids(pairs: list[tuple[dict, dict]], references: dict[str, dict[int, 
                 row[column] = _followed(row[column], new_ids, field)
 
 
+def _kept_footer(footer: dict[bytes, bytes]) -> dict[bytes, bytes]:
+    """The footer keys that still hold: the values stay rounded, and the traces keep their selection."""
+    return {key: footer[key] for key in (MANTISSA_BITS_FOOTER_KEY, *XIC_FOOTER_KEYS) if key in footer}
+
+
 def _migrate_view(view: str, source: Path, target: Path, ids: dict[str, dict[int, int]], *, track: bool) -> int:
     """Migrate the rows of *source* to *target*, following the views already in *ids*.
 
@@ -207,6 +213,9 @@ def _migrate_view(view: str, source: Path, target: Path, ids: dict[str, dict[int
     old_ids = []
     rows = 0
     with writer_class(target, **_writer_options(view, footer)) as writer:
+        # Added before the rows, the keys are in the Arrow schema too.
+        if kept := _kept_footer(footer):
+            writer.add_footer_metadata(kept)
         for records in _batches(source):
             pairs = [(record, row) for record in records for row in migrate_row(record)]
             _follow_ids(pairs, references, keep_ids)
@@ -214,9 +223,6 @@ def _migrate_view(view: str, source: Path, target: Path, ids: dict[str, dict[int
                 old_ids.extend(record.get(ORDINAL_IDS[view]) for record, _ in pairs)
             writer.write_batch(_keep_schema_fields(writer, [row for _, row in pairs]))
             rows += len(pairs)
-        # The values stay rounded, so the footer keeps saying so.
-        if MANTISSA_BITS_FOOTER_KEY in footer:
-            writer.add_footer_metadata({MANTISSA_BITS_FOOTER_KEY: footer[MANTISSA_BITS_FOOTER_KEY]})
     if track:
         new_ids = pq.read_table(target, columns=[ORDINAL_IDS[view]]).column(0).to_pylist()
         ids.setdefault(view, {}).update((old, new) for old, new in zip(old_ids, new_ids) if old is not None)
