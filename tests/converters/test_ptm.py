@@ -8,6 +8,7 @@ from qpx.converters.ptm import (
     UNIMOD_MASS,
     _modification_names,
     _normalize_peptidoform,
+    _text,
     build_proforma,
     compute_precursor_mz,
     format_mass_delta,
@@ -190,6 +191,12 @@ class TestNameToUnimod:
 
 
 class TestUnimodNames:
+    def test_pyopenms_bytes_are_decoded(self):
+        assert _text("TMT10plex") == "TMT10plex"
+        assert _text(b"TMT10plex") == "TMT10plex"
+        # Some pyopenms builds hand back Latin-1 C++ strings.
+        assert _text(b"TMT10plex\xae") == "TMT10plex®"
+
     @pytest.mark.parametrize(
         ("accession", "name"),
         [(4, "carbamidomethyl"), (737, "tmt6plex"), (2016, "tmtpro"), (214, "itraq4plex"), (259, "label:13c(6)15n(2)")],

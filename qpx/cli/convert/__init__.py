@@ -3,7 +3,7 @@
 import click
 
 from .cdap import convert_cdap_cmd
-from .diann import convert_diann_cmd
+from .diann import convert_diann_cmd, convert_diann_xic_cmd
 from .fragpipe import convert_fragpipe_cmd
 from .maxquant import convert_maxquant_cmd
 from .mz import convert_mz_cmd
@@ -18,6 +18,7 @@ __all__ = [
     "convert",
     "convert_cdap_cmd",
     "convert_diann_cmd",
+    "convert_diann_xic_cmd",
     "convert_fragpipe_cmd",
     "convert_maxquant_cmd",
     "convert_mz_cmd",
@@ -37,6 +38,7 @@ def convert():
 
 for _command in (
     convert_diann_cmd,
+    convert_diann_xic_cmd,
     convert_maxquant_cmd,
     convert_fragpipe_cmd,
     convert_mzidentml_cmd,

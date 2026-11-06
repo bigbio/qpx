@@ -71,25 +71,22 @@ class _UnimodSite(NamedTuple):
     terminus: Optional[str]
 
 
-def _text(value: str | bytes) -> str:
-    """A pyopenms string as ``str``.
-
-    pyopenms 3.5 (the last release for Python 3.10) returns synonyms, and full
-    names with non-ASCII characters, as bytes in Latin-1 rather than UTF-8
-    (``b"Sixplex Tandem Mass Tag\\xae"``).
-    """
+def _text(value) -> str:
+    """Decode a pyopenms string that some builds return as bytes."""
     if not isinstance(value, bytes):
         return value
     try:
         return value.decode("utf-8")
     except UnicodeDecodeError:
+        # pyopenms passes C++ strings through as Latin-1 bytes.
         return value.decode("latin-1")
 
 
 def _modification_names(mod) -> set[str]:
     """Lower-cased names of a ``ResidueModification``: Unimod title, full id, full name and synonyms."""
-    names = {mod.getId(), mod.getFullId(), mod.getFullName(), *mod.getSynonyms()}
-    return {_text(name).lower() for name in names if name}
+    names = {_text(name) for name in (mod.getId(), mod.getFullId(), mod.getFullName())}
+    names.update(_text(name) for name in mod.getSynonyms())
+    return {name.lower() for name in names if name}
 
 
 class _UnimodIndex(NamedTuple):

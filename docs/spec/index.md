@@ -16,6 +16,7 @@ graph LR
     MZ[mz<br/>Mass Spectra] --> PSM[psm<br/>Peptide Spectrum Matches]
     PSM --> FEAT[feature<br/>Peptide Features]
     FEAT --> PG[pg<br/>Protein Groups]
+    FEAT -.-> XIC[xic<br/>Extracted-Ion<br/>Chromatograms]
     FEAT --> API["API Views<br/>(on demand)"]
     PG --> API
     PG --> AE[ae<br/>Absolute Expression]
@@ -31,6 +32,7 @@ graph LR
     SAMPLE -.-> AE
     RUN[run<br/>Run Metadata] -.-> FEAT
     RUN -.-> PG
+    RUN -.-> XIC
     RUN -.-> API
     DATASET[dataset<br/>Dataset Metadata] -.-> MZ
     DATASET -.-> PSM
@@ -43,6 +45,7 @@ graph LR
     style PPM fill:#e8f5e9
     style SITE fill:#fff3e0
     style PF fill:#fff3e0
+    style XIC fill:#e8f5e9
     style API fill:#e8f5e9,stroke-dasharray: 5 5
     style AE fill:#fce4ec
     style DE fill:#fce4ec
@@ -64,6 +67,7 @@ graph LR
 | `pepmap` | `{PREFIX}.pepmap.parquet` | Parquet | Deduplicated peptide-to-protein mapping with gene names and uniqueness flags |
 | `site` | `{PREFIX}.site.parquet` | Parquet | Protein modification-site claims with a q-value over the claims, the probability that the residue is modified and the evidence fraction of each candidate modification |
 | `proteoform` | `{PREFIX}.proteoform.parquet` | Parquet | Canonical, isoform, variant and chain members of protein families with member-level q-values (sequence entries, not modification combinations) |
+| `xic` | `{PREFIX}.xic.parquet` | Parquet | Extracted-ion chromatograms: one trace per precursor or fragment ion per run, stored as aligned RT/intensity arrays |
 
 ### API Views
 
@@ -98,6 +102,7 @@ Use the decision guide below to find the right starting point for your use case.
 | ------------------------------------------------- | ------------------------------------ |
 | Train an ML model on PSM-level spectral features  | `psm` (with spectral arrays) + `mz` |
 | Retrieve peptide intensities per sample            | `feature`                            |
+| Inspect or plot chromatograms for a precursor      | `xic`                                |
 | Build a volcano plot                               | `de`                                 |
 | Compare protein abundance across conditions        | `ae` or `pg`                         |
 | Look up which proteins a peptide maps to           | [`pepmap`](pepmap.md), `feature`, or `psm` |
@@ -108,7 +113,7 @@ Use the decision guide below to find the right starting point for your use case.
 | List all files in a QPX project                    | `dataset` or glob `{PREFIX}-*.parquet` |
 
 !!! note
-    Some views are better suited for specific acquisition methods. The `psm` view is primarily intended for DDA experiments. The `feature` view covers both DDA and DIA workflows.
+    Some views are better suited for specific acquisition methods. The `psm` view is primarily intended for DDA experiments. The `feature` view covers both DDA and DIA workflows, and the `xic` view stores the extracted-ion chromatograms behind DIA features.
 
 ## Shared concepts
 
@@ -116,9 +121,9 @@ Several data structures are reused across multiple views. Each concept has its o
 
 | Concept                                | Used in views                      | Description                                                        |
 | -------------------------------------- | ---------------------------------- | ------------------------------------------------------------------ |
-| [Peptidoform](peptidoform.md)          | PSM, Feature                       | Peptide sequence with modifications in ProForma notation           |
+| [Peptidoform](peptidoform.md)          | PSM, Feature, XIC                  | Peptide sequence with modifications in ProForma notation           |
 | [Modifications](modifications.md)      | PSM, Feature                       | Structured modification representation with localization scores    |
-| [Intensities](intensities.md)          | Feature, Protein Group             | Primary and additional intensity measurements across channels      |
+| [Intensities](intensities.md)          | Feature, Protein Group, XIC       | Primary and additional intensity measurements across channels      |
 | [Scores & CV Terms](scores.md)         | PSM, Feature, Protein Group        | Search engine scores and controlled vocabulary parameters          |
 | [Scan Numbers](scan.md)               | PSM, Feature, MZ                   | Instrument-specific scan identifiers and format conventions        |
 

@@ -56,7 +56,7 @@ def conversion_summary(dataset: Dataset | str | Path) -> dict:
     dict
         Keys (any may be ``None`` when the backing view/column is absent):
         ``accession``, ``n_psms``, ``n_features``, ``n_protein_groups``,
-        ``n_peptidoforms``, ``n_proteins``, ``n_genes``; only when BOTH the
+        ``n_peptidoforms``, ``n_proteins``, ``n_genes``, ``n_xic_traces``; only when BOTH the
         ``feature`` and ``pg`` views exist — ``n_feature_pg_links``,
         ``n_features_linked`` and ``n_features_without_pg``; and only when BOTH
         the ``feature`` and ``psm`` views exist — ``n_features_with_psm`` and
@@ -88,6 +88,7 @@ def _collect(ds: Dataset) -> dict:
         "n_peptidoforms": None,
         "n_proteins": None,
         "n_genes": None,
+        "n_xic_traces": None,
         "n_feature_pg_links": None,
         "n_features_linked": None,
         "n_features_without_pg": None,
@@ -110,6 +111,8 @@ def _collect(ds: Dataset) -> dict:
         summary["n_features"] = _scalar(ds, "SELECT COUNT(*) FROM feature")
     if ds.pg is not None:
         summary["n_protein_groups"] = _scalar(ds, "SELECT COUNT(*) FROM pg")
+    if ds.xic is not None:
+        summary["n_xic_traces"] = _scalar(ds, "SELECT COUNT(*) FROM xic")
 
     # Peptidoforms: distinct across feature, falling back to psm.
     if ds.feature is not None:
@@ -182,6 +185,7 @@ def format_conversion_summary(summary: dict) -> str:
     add("peptidoforms", summary.get("n_peptidoforms"))
     add("proteins", summary.get("n_proteins"))
     add("genes", summary.get("n_genes"))
+    add("xic traces", summary.get("n_xic_traces"))
 
     n_links = summary.get("n_feature_pg_links")
     if n_links is not None:

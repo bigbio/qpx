@@ -21,6 +21,7 @@ from qpx.core.data import (
     Run,
     Sample,
     Site,
+    Xic,
 )
 from qpx.core.dataset_queries import _DatasetQueryMixin
 from qpx.core.dataset_validation import _DatasetValidationMixin
@@ -68,6 +69,7 @@ class Dataset(_DatasetValidationMixin, _DatasetQueryMixin, _DatasetWriteMixin):
         "pepmap": (PepMap, ".pepmap.parquet"),
         "site": (Site, ".site.parquet"),
         "proteoform": (Proteoform, ".proteoform.parquet"),
+        "xic": (Xic, ".xic.parquet"),
     }
 
     @classmethod
@@ -263,6 +265,11 @@ class Dataset(_DatasetValidationMixin, _DatasetQueryMixin, _DatasetWriteMixin):
     def proteoform(self) -> Proteoform | None:
         """The proteoform view, or None when the dataset has no proteoform.parquet."""
         return self._structures.get("proteoform")
+
+    @property
+    def xic(self) -> Xic | None:
+        """The XIC view, or None when the dataset has no xic.parquet."""
+        return self._structures.get("xic")
 
     @property
     def available_structures(self) -> list[str]:
