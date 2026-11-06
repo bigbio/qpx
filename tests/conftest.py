@@ -249,6 +249,24 @@ def make_pg_record(
     }
 
 
+def make_xic_record(feature_id, peptidoform="PEPTIDEK", run_file_name="run_01"):
+    """Create a minimal valid ms1 trace record dict that supports the feature *feature_id*."""
+    return {
+        "xic_id": f"{run_file_name}|{peptidoform}2|ms1",
+        "run_file_name": run_file_name,
+        "label": "LFQ",
+        "feature_ids": [feature_id],
+        "feature_scores": [{"feature_id": feature_id, "scores": None}],
+        "precursor_id": f"{peptidoform}2",
+        "peptidoform": peptidoform,
+        "charge": 2,
+        "transition": "ms1",
+        "transition_type": "ms1",
+        "rt": [60.0, 60.1, 60.2],
+        "intensity": [100.0, 200.0, 150.0],
+    }
+
+
 def make_sample_record(sample_accession="SAMPLE_01"):
     """Create a minimal valid sample record dict."""
     return {

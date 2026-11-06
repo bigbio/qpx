@@ -16,7 +16,8 @@ from qpx.writers.feature import FeatureWriter
 from qpx.writers.ontology import OntologyWriter
 from qpx.writers.pg import PgWriter
 from qpx.writers.psm import PsmWriter
-from tests.conftest import make_feature_record, make_pg_record, make_psm_record, without_rounded_cv_values
+from qpx.writers.xic import XicWriter
+from tests.conftest import make_feature_record, make_pg_record, make_psm_record, make_xic_record, without_rounded_cv_values
 
 REPORT = "tests/examples/spectronaut/small/spectronaut_report.tsv"
 
@@ -270,3 +271,22 @@ def test_relayout_of_one_view_rewrites_the_references_in_the_others(tmp_path):
     assert [row["psm_ids"] for row in feature] == [
         [row["psm_id"]] for row in sorted(before.to_pylist()[:3], key=lambda row: row["peptidoform"])
     ]
+
+
+def test_relayout_rewrites_the_feature_ids_of_the_traces(tmp_path):
+    """xic.feature_ids and feature_scores[].feature_id follow the renumbered features."""
+    source = _linked_dataset(tmp_path / "ds")
+    old_ids = {row["peptidoform"]: row["feature_id"] for row in pq.read_table(source / "ds.feature.parquet").to_pylist()}
+    with XicWriter(source / "ds.xic.parquet") as writer:
+        writer.write_batch(
+            [make_xic_record(old_ids[peptide], peptidoform=peptide) for peptide in ("CCCK", "AAAK")]
+            + [make_xic_record(12345, peptidoform="DDDK")]
+        )
+
+    _relayout(source, tmp_path / "sorted")
+
+    traces = pq.read_table(tmp_path / "sorted" / "ds.xic.parquet").to_pylist()
+    # A reference to a feature the view lacks keeps its value.
+    expected = {"AAAK": [1], "CCCK": [3], "DDDK": [12345]}
+    assert {row["peptidoform"]: row["feature_ids"] for row in traces} == expected
+    assert {row["peptidoform"]: [score["feature_id"] for score in row["feature_scores"]] for row in traces} == expected

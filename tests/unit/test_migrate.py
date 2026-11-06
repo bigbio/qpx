@@ -9,6 +9,7 @@ from qpx.cli.main import qpx_main
 from qpx.core.data.identity import derive_composite_id
 from qpx.transforms.migrate import migrate_dataset
 from qpx.version import QPX_SPEC_VERSION
+from tests.conftest import make_xic_record
 
 RUN = "run_01"
 PROTEIN = "P12345"
@@ -118,6 +119,21 @@ def test_a_psm_follows_the_new_feature_id(old_dataset, tmp_path):
     assert new_id != 7
     assert row["feature_id"] == new_id
     assert row["psm_id"] != 1
+
+
+def test_a_trace_follows_the_new_feature_id(old_dataset, tmp_path):
+    """xic.feature_ids and feature_scores[].feature_id take the new feature_id."""
+    feature = pq.read_table(old_dataset / "old.feature.parquet").to_pylist()[0]
+    _write(old_dataset / "old.feature.parquet", [{**feature, "feature_id": 7}])
+    _write(old_dataset / "old.xic.parquet", [make_xic_record(7, peptidoform=feature["peptidoform"], run_file_name=RUN)])
+    out = tmp_path / "new"
+    migrate_dataset(old_dataset, out)
+
+    new_id = pq.read_table(out / "old.feature.parquet").to_pylist()[0]["feature_id"]
+    row = pq.read_table(out / "old.xic.parquet").to_pylist()[0]
+    assert new_id != 7
+    assert row["feature_ids"] == [new_id]
+    assert [score["feature_id"] for score in row["feature_scores"]] == [new_id]
 
 
 def test_a_site_follows_the_new_pg_and_psm_ids(old_dataset, tmp_path):

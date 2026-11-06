@@ -170,14 +170,24 @@ def _migrate_ontology(source: Path, target: Path) -> int:
     return len(entries)
 
 
+def _followed(value, new_ids: dict[int, int], field: str):
+    """*value* with the new ids: one id, a list of them, or a list of structs whose *field* holds one."""
+    if field:
+        return [{**item, field: new_ids.get(item[field])} for item in value]
+    if isinstance(value, list):
+        return [new_ids.get(item) for item in value]
+    return new_ids.get(value)
+
+
 def _follow_ids(pairs: list[tuple[dict, dict]], references: dict[str, dict[int, int]], keep_psm_ids: bool) -> None:
     """Give each migrated row the new ids its references hold; a provided psm_id stays."""
     for record, row in pairs:
         if keep_psm_ids:
             row["psm_id"] = record["psm_id"]
-        for column, new_ids in references.items():
+        for reference, new_ids in references.items():
+            column, _, field = reference.partition(".")
             if row.get(column) is not None:
-                row[column] = new_ids.get(row[column])
+                row[column] = _followed(row[column], new_ids, field)
 
 
 def _migrate_view(view: str, source: Path, target: Path, ids: dict[str, dict[int, int]], *, track: bool) -> int:

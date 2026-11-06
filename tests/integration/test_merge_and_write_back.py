@@ -9,8 +9,8 @@ import pyarrow.parquet as pq
 import pytest
 
 import qpx
-from qpx.writers import FeatureWriter, PgWriter, PsmWriter
-from tests.conftest import make_feature_record, make_psm_record
+from qpx.writers import FeatureWriter, PgWriter, PsmWriter, XicWriter
+from tests.conftest import make_feature_record, make_psm_record, make_xic_record
 
 
 def _copy(dataset_dir, tmp_path, name, accession):
@@ -102,6 +102,29 @@ class TestMergeCollisions:
         assert {row["run_file_name"].split(":")[0] for row in features} == {"PXD000001", "PXD000002"}
         for row in features:
             assert [pg_source.get(pg_id) for pg_id in row["pg_ids"]] == [row["run_file_name"].split(":")[0]]
+
+    def test_namespace_rewrites_the_trace_references(self, dataset_dir, tmp_path):
+        """xic.feature_ids and feature_scores follow the feature ids into each source's namespace, and xic_id its runs."""
+        sources = []
+        for name, accession in (("one", "PXD000001"), ("two", "PXD000002")):
+            target = _copy(dataset_dir, tmp_path, name, accession)
+            feature_id = pq.read_table(target / "exp.feature.parquet", columns=["feature_id"]).column(0)[0].as_py()
+            with XicWriter(target / "exp.xic.parquet") as writer:
+                writer.write_batch([make_xic_record(feature_id)])
+            sources.append(qpx.open_dataset(str(target)))
+        collection = qpx.DatasetCollection(sources)
+        collection.merge(tmp_path / "merged", on_collision="namespace")
+        collection.close()
+        for source in sources:
+            source.close()
+
+        features = pq.read_table(next((tmp_path / "merged").glob("*.feature.parquet")), columns=["feature_id", "source_dataset"])
+        feature_source = dict(zip(*(column.to_pylist() for column in features.columns)))
+        traces = pq.read_table(next((tmp_path / "merged").glob("*.xic.parquet"))).to_pylist()
+        assert sorted(row["xic_id"] for row in traces) == ["PXD000001:run_01|PEPTIDEK2|ms1", "PXD000002:run_01|PEPTIDEK2|ms1"]
+        for row in traces:
+            assert [feature_source.get(feature_id) for feature_id in row["feature_ids"]] == [row["source_dataset"]]
+            assert [feature_source.get(score["feature_id"]) for score in row["feature_scores"]] == [row["source_dataset"]]
 
     def test_dedupe_identical_drops_copies(self, two_copies, tmp_path):
         first, _, collection = two_copies

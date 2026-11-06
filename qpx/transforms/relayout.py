@@ -37,13 +37,15 @@ SORT_ORDER_FOOTER_KEY = b"qpx.sort_order"
 # is sorted.
 ORDINAL_IDS = {"pg": "pg_id", "feature": "feature_id", "psm": "psm_id"}
 
-# The columns of each view that hold the ids of another view.
+# The columns of each view that hold the ids of another view. A dotted name is
+# a field of the structs in a list column.
 ID_REFERENCES = {
     "feature": {"pg_ids": "pg", "psm_ids": "psm"},
     "psm": {"feature_id": "feature"},
     "fragment": {"feature_id": "feature"},
     "site": {"pg_id": "pg", "best_psm_id": "psm"},
     "proteoform": {"pg_id": "pg", "best_psm_id": "psm"},
+    "xic": {"feature_ids": "feature", "feature_scores.feature_id": "feature"},
 }
 
 
@@ -70,25 +72,44 @@ def _holds_values(con, source: Path, column: str, is_list: bool) -> bool:
 
 
 _LIST_REMAP_JOIN = (
-    "LEFT JOIN (SELECT e.row_number, list(coalesce(m.new, e.old) ORDER BY e.position) AS ids FROM ("
+    "LEFT JOIN (SELECT e.row_number, list($new ORDER BY e.position) AS ids FROM ("
     "SELECT file_row_number AS row_number, unnest($column) AS old, unnest(range(1, len($column) + 1)) AS position "
     "FROM read_parquet($source, file_row_number=true)"
-    ") AS e LEFT JOIN read_parquet($ids) AS m ON e.old = m.old GROUP BY e.row_number) AS $alias "
+    ") AS e LEFT JOIN read_parquet($ids) AS m ON $old = m.old GROUP BY e.row_number) AS $alias "
     "ON v.file_row_number = $alias.row_number"
 )
 
 
+def _list_remap_join(column: str, field: str, source: Path, id_map: Path, alias: str) -> str:
+    """The join giving each row of *source* its list *column* with new ids, in its elements or their *field*."""
+    if field:
+        old = f"e.old.{validate_identifier(field)}"
+        new = f"struct_update(e.old, {validate_identifier(field)} := coalesce(m.new, {old}))"
+    else:
+        old, new = "e.old", "coalesce(m.new, e.old)"
+    return sql_build(
+        _LIST_REMAP_JOIN,
+        new=new,
+        old=old,
+        column=validate_identifier(column),
+        source=_quoted(source),
+        ids=_quoted(id_map),
+        alias=alias,
+    )
+
+
 def _select_sql(source: Path, schema: pa.Schema, remaps: dict[str, Path], order_by: str, items: list[str]) -> str:
-    """The rows of *source* in *order_by*, each column of *remaps* holding the new ids its map gives.
+    """The rows of *source* in *order_by*, each reference of *remaps* holding the new ids its map gives.
 
     A reference that its map does not name keeps its value. *items* replace
     further columns.
     """
     joins, replace = [], list(items)
-    for index, (column, id_map) in enumerate(sorted(remaps.items())):
+    for index, (reference, id_map) in enumerate(sorted(remaps.items())):
+        column, _, field = reference.partition(".")
         name, alias = validate_identifier(column), f"m{index}"
         if pa.types.is_list(schema.field(column).type):
-            joins.append(sql_build(_LIST_REMAP_JOIN, column=name, source=_quoted(source), ids=_quoted(id_map), alias=alias))
+            joins.append(_list_remap_join(column, field, source, id_map, alias))
             replace.append(
                 sql_build("CASE WHEN len(v.$column) > 0 THEN $alias.ids ELSE v.$column END AS $column", column=name, alias=alias)
             )
@@ -245,14 +266,14 @@ def relayout_dataset(
 
         def pending(view: str, source: Path) -> dict[str, Path]:
             schema = pq.read_schema(source)
-            return {
-                column: id_maps[target]
-                for column, target in ID_REFERENCES.get(view, {}).items()
-                if target in id_maps
-                and column in schema.names
-                and column not in remapped.get(view, set())
-                and _holds_values(con, source, column, pa.types.is_list(schema.field(column).type))
-            }
+            found = {}
+            for reference, target in ID_REFERENCES.get(view, {}).items():
+                column = reference.partition(".")[0]
+                if target not in id_maps or column not in schema.names or reference in remapped.get(view, set()):
+                    continue
+                if _holds_values(con, source, column, pa.types.is_list(schema.field(column).type)):
+                    found[reference] = id_maps[target]
+            return found
 
         order = [view for view in ORDINAL_IDS if view in sort_keys] + [view for view in sort_keys if view not in ORDINAL_IDS]
         for view in order:
