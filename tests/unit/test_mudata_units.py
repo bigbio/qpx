@@ -178,6 +178,35 @@ def test_unknown_duplicate_aggregation_is_rejected(tmp_path):
         _build(tmp_path, modalities=["precursors"], duplicates="max")
 
 
+@pytest.mark.parametrize("duplicates", ["sum", "mean"])
+def test_null_intensities_are_not_combined_into_a_cell(tmp_path, duplicates):
+    """A pg row identified but not quantified (intensity null) stores no cell.
+
+    Groups that share an anchor protein stay separate variables (bigbio/qpx#369),
+    so a null group neither turns another group's cell NaN nor counts as a second
+    intensity, and a group with no measured value has no variable (bigbio/qpx#370).
+    """
+    groups = [("P1", ["P1"], 100.0), ("P1", ["P1", "P9"], None)]
+    groups += [("P2", ["P2"], 100.0), ("P2", ["P2", "P8"], 300.0), ("P2", ["P2", "P9"], None)]
+    groups += [("P3", ["P3"], None)]
+    records = [
+        make_pg_record(anchor_protein=anchor, pg_accessions=members, intensities=[{"label": "TMT126", "intensity": value}])
+        for anchor, members, value in groups
+    ]
+    with RunWriter(tmp_path / "t.run.parquet") as writer:
+        writer.write_batch([make_run_record()])
+    with PgWriter(tmp_path / "t.pg.parquet") as writer:
+        writer.write_batch(records)
+
+    proteins = _build(tmp_path, modalities=["proteins"], intensity_label="TMT126", duplicates=duplicates).mod["proteins"]
+
+    assert list(proteins.var_names) == ["P1", "P2", "P2;P8"]
+    assert proteins.var["anchor_protein"].tolist() == ["P1", "P2", "P2"]
+    assert proteins.X.nnz == 3
+    np.testing.assert_allclose(proteins.X.toarray(), [[100.0, 100.0, 300.0]])
+    assert proteins.uns["qpx_duplicates"] == {"aggregation": duplicates, "cells": 0}
+
+
 def test_unit_observations_survive_the_h5mu_round_trip(tmp_path):
     import mudata as mu
 

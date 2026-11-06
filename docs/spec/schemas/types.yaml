@@ -7,6 +7,11 @@ score:
     score_value: {type: float64}
     higher_better: {type: bool, nullable: true}
 
+feature_score:
+  fields:
+    feature_id: {type: int64}
+    scores: {type: "list<score>"}
+
 cv_param:
   fields:
     cv_name: {type: string}

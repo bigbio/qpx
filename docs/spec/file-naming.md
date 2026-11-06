@@ -13,7 +13,7 @@ All QPX files follow a single naming pattern:
 Where:
 
 - **`{PREFIX}`** -- A short, unique identifier for the dataset. See [Choosing a prefix](#choosing-a-prefix) below.
-- **`{view}`** -- One of the QPX spec-defined views (e.g., `psm`, `feature`, `pg`, `mz`, `ae`, `de`, `dataset`, `sample`, `run`, `ontology`, `provenance`).
+- **`{view}`** -- One of the QPX spec-defined views (e.g., `psm`, `feature`, `pg`, `mz`, `xic`, `ae`, `de`, `dataset`, `sample`, `run`, `ontology`, `provenance`).
 - **`{format}`** -- The serialization format extension (`parquet`, `h5ad`, `h5mu`, `tsv`).
 
 ### Choosing a prefix
@@ -39,6 +39,7 @@ The only requirement is that the prefix is consistent across all files in the sa
 | `PXD014414.feature.parquet` | Feature | Parquet |
 | `PXD014414.pg.parquet` | Protein Group | Parquet |
 | `PXD014414.mz.parquet` | Mass Spectra | Parquet |
+| `PXD014414.xic.parquet` | Extracted-Ion Chromatograms | Parquet |
 | `PXD014414.ae.h5ad` | Absolute Expression | AnnData |
 | `PXD014414.de.h5ad` | Differential Expression | AnnData |
 | `PXD014414.h5mu` | Combined expression (MuData) | MuData |
@@ -57,6 +58,7 @@ The only requirement is that the prefix is consistent across all files in the sa
 | `my_phospho_study.feature.parquet` | Feature | Parquet |
 | `my_phospho_study.pg.parquet` | Protein Group | Parquet |
 | `my_phospho_study.mz.parquet` | Mass Spectra | Parquet |
+| `my_phospho_study.xic.parquet` | Extracted-Ion Chromatograms | Parquet |
 | `my_phospho_study.ae.h5ad` | Absolute Expression | AnnData |
 | `my_phospho_study.de.h5ad` | Differential Expression | AnnData |
 | `my_phospho_study.dataset.parquet` | Dataset Metadata | Parquet |
@@ -89,6 +91,7 @@ A typical QPX project directory contains:
       PXD014414.feature.parquet          # Quantified peptide features
       PXD014414.pg.parquet               # Protein groups
       PXD014414.mz.parquet               # Mass spectra
+      PXD014414.xic.parquet              # Extracted-ion chromatograms
 
       # Expression views
       PXD014414.ae.h5ad                  # Absolute expression (AnnData)
@@ -111,6 +114,7 @@ A typical QPX project directory contains:
       my_phospho_study.feature.parquet   # Quantified peptide features
       my_phospho_study.pg.parquet        # Protein groups
       my_phospho_study.mz.parquet        # Mass spectra
+      my_phospho_study.xic.parquet       # Extracted-ion chromatograms
 
       # Expression views
       my_phospho_study.ae.h5ad           # Absolute expression (AnnData)

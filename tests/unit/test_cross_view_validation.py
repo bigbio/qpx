@@ -460,6 +460,30 @@ def test_feature_label_matching_several_samples_is_an_error(tmp_path, strict):
 
 
 @pytest.mark.parametrize("strict", [False, True])
+def test_feature_label_of_a_repeated_sample_channel_is_an_error(tmp_path, strict):
+    """A run that lists a sample channel twice joins each of its quantities to the sample twice.
+
+    The label names one sample, so counting distinct samples passed it, while
+    the peptide intensity of R1 came out as 200 instead of 100. The entries
+    may also differ in a replicate number.
+    """
+    runs = _lfq_runs({"R1": ["LFQ"], "R2": ["TMT126", "TMT127N"]})
+    runs[0]["samples"].append(dict(runs[0]["samples"][0]))
+    runs[1]["samples"].append({**runs[1]["samples"][0], "technical_replicate": 2})
+    ds_dir = _write_feature_dataset(tmp_path / "repeated", runs, [("R1", ["LFQ"]), ("R2", ["TMT126", "TMT127N"])])
+    with Dataset(ds_dir) as ds:
+        feature = ds.validate(structures=["feature"], strict=strict)["feature"]
+
+    (issue,) = _issues(feature, "ambiguous_label_sample")
+    assert issue.severity == "error"
+    assert issue.message.startswith(
+        "2 feature intensities in 2 (run_file_name, label) pair(s) match a sample channel listed more than once "
+        "in the samples of their run (('R1', 'LFQ') -> ['R1_LFQ'], ('R2', 'TMT126') -> ['R2_TMT126'])"
+    )
+    assert not feature.is_valid
+
+
+@pytest.mark.parametrize("strict", [False, True])
 def test_feature_row_listing_a_label_twice_is_an_error(tmp_path, strict):
     """Each label is one sample's quantity; listing it three times triples that sample's value."""
     run = _run_name(0, 0)

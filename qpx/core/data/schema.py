@@ -21,6 +21,7 @@ from qpx.core.data.validation import (
     _anchor_outside_membership,
     _anchor_without_membership,
     _bad_score_names,
+    _chromatogram_length_issues,
     _evidence_fraction_counts,
     _evidence_fraction_issues,
     _issue,
@@ -31,11 +32,13 @@ from qpx.core.data.validation import (
     _out_of_range_count,
     _range_issues,
     _range_values,
+    _rt_monotonic_issues,
     _score_name_issues,
     _sequence_edit_counts,
     _sequence_edit_issues,
     _vocabulary_count,
     _vocabulary_issues,
+    _xic_counts,
 )
 from qpx.core.sql import sql_build
 
@@ -356,6 +359,7 @@ _ROW_CHECK_COLUMNS = (
     "evidence_fraction",
     "alternatives",
     "scan",
+    "mz",
     *(column for column, _ in _SEQUENCE_EDIT_COLUMNS.values()),
 )
 
@@ -380,6 +384,8 @@ class _RowCounts:
             "edits": (0, 0),
             "scan": 0,
             "scores": (0, None),
+            "chromatogram": 0,
+            "rt_monotonic": 0,
         }
 
     def add(self, batch: pa.Table | pa.RecordBatch, scan_format: str | None) -> None:
@@ -400,6 +406,9 @@ class _RowCounts:
             totals["fractions"] = tuple(a + b for a, b in zip(totals["fractions"], _evidence_fraction_counts(batch)))
         totals["candidates"] = tuple(a + b for a, b in zip(totals["candidates"], _modification_candidate_counts(batch)))
         totals["edits"] = tuple(a + b for a, b in zip(totals["edits"], _sequence_edit_counts(batch, self.structure)))
+        chromatogram, rt_monotonic = _xic_counts(batch, self.structure)
+        totals["chromatogram"] += chromatogram
+        totals["rt_monotonic"] += rt_monotonic
         for name in self.vocabulary:
             self.vocabulary[name] += _vocabulary_count(batch.column(name), _VOCABULARIES[self.structure][name])
         if scan_format is not None:
@@ -432,6 +441,8 @@ class _RowCounts:
             *_modification_candidate_issues(self.totals["candidates"], self.structure, severity),
             *_sequence_edit_issues(self.totals["edits"], self.structure, severity),
             *_score_name_issues(*self.totals["scores"], self.structure),
+            *_chromatogram_length_issues(self.totals["chromatogram"], self.structure, severity),
+            *_rt_monotonic_issues(self.totals["rt_monotonic"], self.structure, severity),
         ]
 
 

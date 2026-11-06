@@ -75,13 +75,13 @@ class _UnimodSite(NamedTuple):
 
 
 def _text(value) -> str:
-    """Decode pyopenms names returned as bytes."""
+    """Decode a pyopenms string that some builds return as bytes."""
     if not isinstance(value, bytes):
         return value
     try:
         return value.decode("utf-8")
     except UnicodeDecodeError:
-        # Some ModificationsDB names contain Latin-1 bytes.
+        # pyopenms passes C++ strings through as Latin-1 bytes.
         return value.decode("latin-1")
 
 

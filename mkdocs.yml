@@ -130,6 +130,7 @@ nav:
           - Feature: spec/feature.md
           - Protein Group: spec/pg.md
           - Mass Spectra: spec/mz.md
+          - Extracted-Ion Chromatograms: spec/xic.md
           - Peptide-Protein Map: spec/pepmap.md
           - Modification Sites: spec/site.md
           - Proteoforms: spec/proteoform.md

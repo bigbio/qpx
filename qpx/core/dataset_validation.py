@@ -274,12 +274,13 @@ class _DatasetValidationMixin:
         )
 
     def _check_feature_label_samples(self, result: ValidationResult, *, strict: bool) -> None:
-        """Require each feature label to name exactly one sample of its run, once per row.
+        """Require each feature label to name exactly one sample channel of its run, once per row.
 
         ``run.samples[].label`` is the canonical channel name and must match
-        ``feature.intensities[].label`` exactly (see the data-model spec). Each
-        distinct (run_file_name, label) pair is resolved once; rows of a run that
-        is not in the run view are left to :meth:`_check_run_file_names`.
+        ``feature.intensities[].label`` exactly (see the data-model spec), and
+        the run must list that channel once. Each distinct (run_file_name,
+        label) pair is resolved once; rows of a run that is not in the run view
+        are left to :meth:`_check_run_file_names`.
         """
         try:
             duplicated = self._engine.execute(_DUPLICATE_FEATURE_LABEL_SQL).fetchall()[0][0]

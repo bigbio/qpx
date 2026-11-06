@@ -232,7 +232,7 @@ qpxc pdc2qpx -a cptac_lfq.csv --download-dir ./downloads --output-folder ./qpx
 
 ```bash
 qpxc convert COMMAND [OPTIONS]
-# openms, openms-consensus, quantms-msstats, diann, maxquant, spectronaut,
+# openms, openms-consensus, quantms-msstats, diann, diann-xic, maxquant, spectronaut,
 # fragpipe, proteome-discoverer, mzidentml, cdap, mz, sdrf
 ```
 

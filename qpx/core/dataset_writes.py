@@ -88,6 +88,7 @@ class _DatasetWriteMixin:
         "proteoform": ("ProteoformWriter", ".proteoform.parquet"),
         "protein": ("ProteinWriter", ".protein.parquet"),
         "fragment": ("FragmentWriter", ".fragment.parquet"),
+        "xic": ("XicWriter", ".xic.parquet"),
     }
 
     def _existing_files(self, structure: str) -> list[tuple[str, Path]]:

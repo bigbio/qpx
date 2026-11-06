@@ -23,6 +23,7 @@ from qpx.core.data import (
     Run,
     Sample,
     Site,
+    Xic,
 )
 from qpx.core.dataset_queries import _DatasetQueryMixin
 from qpx.core.dataset_validation import _DatasetValidationMixin
@@ -76,6 +77,11 @@ class _OptionalViews:
         """The proteoform view, or None when the dataset has no proteoform.parquet."""
         return self._structures.get("proteoform")
 
+    @property
+    def xic(self) -> Xic | None:
+        """The XIC view, or None when the dataset has no xic.parquet."""
+        return self._structures.get("xic")
+
 
 class Dataset(_OptionalViews, _DatasetValidationMixin, _DatasetQueryMixin, _DatasetWriteMixin):
     """
@@ -106,6 +112,7 @@ class Dataset(_OptionalViews, _DatasetValidationMixin, _DatasetQueryMixin, _Data
         "proteoform": (Proteoform, ".proteoform.parquet"),
         "protein": (Protein, ".protein.parquet"),
         "fragment": (Fragment, ".fragment.parquet"),
+        "xic": (Xic, ".xic.parquet"),
     }
 
     @classmethod

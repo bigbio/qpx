@@ -14,6 +14,7 @@ from qpx.core.data import (
     RunSchema,
     SampleSchema,
     ViewSchema,
+    XicSchema,
 )
 from tests.conftest import _placeholder
 
@@ -27,6 +28,7 @@ ALL_SCHEMAS = [
     DatasetSchema,
     OntologySchema,
     ProvenanceSchema,
+    XicSchema,
 ]
 
 
