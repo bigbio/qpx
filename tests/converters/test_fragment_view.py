@@ -62,6 +62,29 @@ def test_diann_unmeasured_fragments_have_no_row_and_named_ones_are_parsed(tmp_pa
     assert rows[1]["corrected_intensity"] == 29.0
 
 
+def test_diann_2_export_quant_columns_become_rows(tmp_path):
+    """DIA-NN 2.x --export-quant writes Fr.N.Index/Id/Quantity/Score, the quantity being a peak height."""
+    frame = pd.read_csv(_DIANN, sep="\t", nrows=1).drop(
+        columns=["Fragment.Quant.Raw", "Fragment.Quant.Corrected", "Fragment.Correlations"]
+    )
+    slots = [(0, "y7^1/826.4", 10.0, 0.9), (2, "b2-H2O^2/100.1", 30.0, -0.2), (3, "y3^1/300.5", 0.0, 0.5), (-1, "", 0.0, 0.0)]
+    for n, (index, name, quantity, score) in enumerate(slots):
+        frame[f"Fr.{n}.Index"], frame[f"Fr.{n}.Id"] = index, name
+        frame[f"Fr.{n}.Quantity"], frame[f"Fr.{n}.Score"] = quantity, score
+    report = tmp_path / "report.tsv"
+    frame.to_csv(report, sep="\t", index=False)
+
+    assert _diann(report, tmp_path)
+
+    rows = pq.read_table(tmp_path / "x.fragment.parquet").sort_by("fragment_index").to_pylist()
+    assert [row["fragment_index"] for row in rows] == [1, 3]
+    assert rows[0]["ion_type"] == "y7" and rows[0]["fragment_charge"] == 1
+    assert rows[0]["mz"] == pytest.approx(826.4)
+    assert rows[0]["peak_height"] == 10.0 and rows[0]["intensity"] is None
+    assert rows[1]["neutral_loss"] == "H2O" and rows[1]["fragment_charge"] == 2
+    assert rows[1]["additional_scores"] == [{"score_name": "diann_fragment_score", "score_value": -0.2, "higher_better": True}]
+
+
 def test_a_report_without_fragments_writes_nothing(tmp_path):
     frame = pd.read_csv(_DIANN, sep="\t", nrows=2).drop(columns=["Fragment.Quant.Raw"])
     report = tmp_path / "report.tsv"
