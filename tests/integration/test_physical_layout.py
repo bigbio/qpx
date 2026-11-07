@@ -315,3 +315,16 @@ def test_relayout_sorts_the_traces_and_rounds_their_measurements(tmp_path):
     rounded = round_table(pq.read_table(source / "ds.xic.parquet"), plan).column("intensity").to_pylist()
     assert table.column("intensity").to_pylist() == rounded
     assert rounded[0] != pq.read_table(source / "ds.xic.parquet").column("intensity").to_pylist()[0]
+
+
+def test_relayout_asks_for_the_order_of_a_view_without_a_default(tmp_path):
+    source = _linked_dataset(tmp_path / "ds")
+    target = tmp_path / "sorted"
+
+    result = CliRunner().invoke(
+        qpx_main, ["transform", "relayout", "--dataset", str(source), "--output-folder", str(target), "--view", "fragment"]
+    )
+
+    assert result.exit_code != 0
+    assert "fragment has no default sort order" in result.output
+    assert not target.exists()

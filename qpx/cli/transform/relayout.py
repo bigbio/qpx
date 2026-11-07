@@ -18,7 +18,11 @@ def _sort_keys(view: str, sort_by: Optional[str]) -> tuple[str, ...]:
     """The columns a view is sorted by: ``--sort-by``, or the view's default."""
     from qpx.transforms.relayout import DEFAULT_SORT_KEYS
 
-    return tuple(column.strip() for column in sort_by.split(",")) if sort_by else DEFAULT_SORT_KEYS[view]
+    if sort_by:
+        return tuple(column.strip() for column in sort_by.split(","))
+    if view not in DEFAULT_SORT_KEYS:
+        raise click.UsageError(f"{view} has no default sort order: give it with --sort-by")
+    return DEFAULT_SORT_KEYS[view]
 
 
 def _output_folder(dataset: Path, output_folder: Optional[Path]) -> Path:
@@ -122,10 +126,10 @@ def transform_relayout_cmd(**options):
     if options["sort_by"] and len(options["views"]) != 1:
         raise click.UsageError("--sort-by needs exactly one --view")
     prefix = _gene_map_dataset_prefix(dataset, command="relayout")
-    out_dir = _output_folder(dataset, output_folder)
-
     views = options["views"] or [view for view in DEFAULT_SORT_KEYS if (dataset / f"{prefix}.{view}.parquet").is_file()]
     sort_keys = {view: _sort_keys(view, options["sort_by"]) for view in views}
+    out_dir = _output_folder(dataset, output_folder)
+
     _relayout_into(
         dataset,
         prefix,
