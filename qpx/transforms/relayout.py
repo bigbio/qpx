@@ -161,6 +161,17 @@ class _Rewrite:
     mantissa_bits: dict[str, int]
 
 
+def _identity_footer(source: Path, remaps: dict[str, Path]) -> dict[bytes, bytes]:
+    """``identity_source`` ``provided`` when a reference *remaps* rewrites is part of *source*'s identity composite.
+
+    fragment hashes its ids from feature_id, so they no longer derive from the
+    composite once the feature ids are renumbered; merge() states the same.
+    """
+    composite = (pq.read_metadata(source).metadata or {}).get(b"identity_composite", b"").decode().split(",")
+    rewritten = {reference.partition(".")[0] for reference in remaps}
+    return {b"identity_source": b"provided"} if rewritten & set(composite) else {}
+
+
 def _sorted(source: Path, sort_by: tuple[str, ...], *, remaps, renumber, mantissa_bits) -> _Rewrite:
     """*source* sorted by *sort_by*, ties broken by the old id when its ids are renumbered.
 
@@ -177,7 +188,7 @@ def _sorted(source: Path, sort_by: tuple[str, ...], *, remaps, renumber, mantiss
             break
         flat.append((column, "ascending"))
     keys = [*sort_by, renumber[0]] if renumber else list(sort_by)
-    footer = {SORT_ORDER_FOOTER_KEY: ",".join(sort_by).encode()}
+    footer = {SORT_ORDER_FOOTER_KEY: ",".join(sort_by).encode(), **_identity_footer(source, remaps)}
     if renumber:
         footer[b"identity_source"] = b"provided"
     order_by = ", ".join(f"v.{validate_identifier(column)}" for column in keys)
@@ -189,7 +200,7 @@ def _kept_order(source: Path, remaps: dict[str, Path]) -> _Rewrite:
     metadata = pq.read_metadata(source)
     sorting = metadata.row_group(0).sorting_columns if metadata.num_row_groups else ()
     keys = list(pq.SortingColumn.to_ordering(metadata.schema.to_arrow_schema(), sorting)[0]) if sorting else []
-    return _Rewrite("v.file_row_number", keys, {}, remaps, renumber=None, mantissa_bits={})
+    return _Rewrite("v.file_row_number", keys, _identity_footer(source, remaps), remaps, renumber=None, mantissa_bits={})
 
 
 def _written_schema(con, source: Path, rewrite: _Rewrite) -> tuple[pa.Schema, str, list[str], dict[str, int]]:

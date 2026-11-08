@@ -39,7 +39,7 @@ OpenMS `-out_qpx` files declare their own composite in the footer, and `qpxc con
 
 `qpxc convert mzidentml` supplies its `psm_id` values (`identity_source` `provided`): the hash of `[run_file_name, spectrum_identification_item_ids]`, because a spectrum can hold several hits of one peptidoform. Its footer still names the schema default, which does not reproduce them. On a cross-linked PSM the validator reads `crosslinked_peptidoform` in place of `peptidoform`, which names only the alpha peptide.
 
-`qpxc transform relayout` numbers the ids of a sorted psm, feature or pg view 1, 2, 3, … in its new row order and rewrites the columns of other views that hold them. Its files state `identity_source` `provided` and keep a composite that no longer reproduces their ids. The ids of two such files collide, so `merge()` needs `on_collision='namespace'` for them.
+`qpxc transform relayout` numbers the ids of a sorted psm, feature or pg view 1, 2, 3, … in its new row order and rewrites the columns of other views that hold them. Its files state `identity_source` `provided` and keep a composite that no longer reproduces their ids. So does a view whose composite holds a rewritten reference, such as fragment, whose ids are hashed from `feature_id`: its ids stay as they were, but no longer derive from its composite. The ids of two such files collide, so `merge()` needs `on_collision='namespace'` for them.
 
 ## JSON and URLs
 

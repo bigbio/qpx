@@ -13,6 +13,7 @@ from qpx.transforms.mantissa import round_table
 from qpx.writers import encoding
 from qpx.writers.encoding import ROW_GROUP_BYTES, ROW_GROUP_ROWS, SampledParquetWriter, parquet_write_options, row_group_rows
 from qpx.writers.feature import FeatureWriter
+from qpx.writers.fragment import FragmentWriter
 from qpx.writers.ontology import OntologyWriter
 from qpx.writers.pg import PgWriter
 from qpx.writers.psm import PsmWriter
@@ -290,3 +291,37 @@ def test_relayout_rewrites_the_feature_ids_of_the_traces(tmp_path):
     expected = {"AAAK": [1], "CCCK": [3], "DDDK": [12345]}
     assert {row["peptidoform"]: row["feature_ids"] for row in traces} == expected
     assert {row["peptidoform"]: [score["feature_id"] for score in row["feature_scores"]] for row in traces} == expected
+
+
+def test_relayout_states_fragment_ids_as_provided_once_their_features_are_renumbered(tmp_path):
+    """fragment ids are hashed from feature_id, so after relayout they no longer derive from the composite."""
+    source = _linked_dataset(tmp_path / "ds")
+    old_ids = {row["peptidoform"]: row["feature_id"] for row in pq.read_table(source / "ds.feature.parquet").to_pylist()}
+    with FragmentWriter(source / "ds.fragment.parquet") as writer:
+        writer.write_batch(
+            [
+                {
+                    "feature_id": old_ids[peptide],
+                    "run_file_name": "run_01",
+                    "peptidoform": peptide,
+                    "charge": 2,
+                    "label": "LFQ",
+                    "fragment_index": 1,
+                    "ion_type": "y3",
+                    "fragment_charge": 1,
+                }
+                for peptide in ("CCCK", "AAAK")
+            ]
+        )
+    before = pq.read_table(source / "ds.fragment.parquet")
+    assert pq.read_metadata(source / "ds.fragment.parquet").metadata[b"identity_source"] == b"derived"
+
+    _relayout(source, tmp_path / "sorted")
+
+    fragment = pq.read_table(tmp_path / "sorted" / "ds.fragment.parquet")
+    assert fragment.column("feature_id").to_pylist() == [3, 1]
+    assert fragment.column("fragment_id").equals(before.column("fragment_id"))
+    assert pq.read_metadata(tmp_path / "sorted" / "ds.fragment.parquet").metadata[b"identity_source"] == b"provided"
+    with Dataset(str(tmp_path / "sorted")) as dataset:
+        result = dataset.validate(["fragment"], strict=True, check_identity=True)["fragment"]
+    assert not [issue for issue in result.issues if issue.check == "stale_identity"]
