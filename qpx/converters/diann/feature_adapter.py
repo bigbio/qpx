@@ -40,10 +40,11 @@ from qpx.writers.pepmap import PepMapWriter
 logger = logging.getLogger(__name__)
 
 # Producer-specific feature identity composite (bigbio/qpx#229). DIA-NN reports one
-# feature per precursor per run, so the measured key is just peptidoform + charge +
-# run (all in feature.yaml). Passed to FeatureWriter so feature_id hashes exactly
+# feature per precursor per run, so the measured key is peptidoform + charge + run,
+# with the two decoy flags because a decoy's sequence can equal a target's or another
+# decoy's (all in feature.yaml). Passed to FeatureWriter so feature_id hashes exactly
 # these columns instead of the schema default.
-_FEATURE_IDENTITY_COMPOSITE = ("peptidoform", "charge", "run_file_name")
+_FEATURE_IDENTITY_COMPOSITE = ("peptidoform", "charge", "run_file_name", "is_decoy", "is_library_decoy")
 
 
 def _ms_info_scans(values: pd.Series) -> pd.Series:

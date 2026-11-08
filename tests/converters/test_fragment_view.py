@@ -85,6 +85,23 @@ def test_diann_2_export_quant_columns_become_rows(tmp_path):
     assert rows[1]["additional_scores"] == [{"score_name": "diann_fragment_score", "score_value": -0.2, "higher_better": True}]
 
 
+@pytest.mark.parametrize("prefix", ["^", ""])
+def test_diann_decoy_fragments_link_to_their_own_feature(tmp_path, prefix):
+    """A decoy with a target's peptidoform, a DIA-NN 2.x library decoy (^) or a generated one, is its own feature."""
+    frame = pd.read_csv(_DIANN, sep="\t", nrows=1)
+    decoy = frame.assign(**{column: prefix + frame[column] for column in ("Modified.Sequence", "Precursor.Id")})
+    report = tmp_path / "report.tsv"
+    pd.concat([frame.assign(Decoy=0), decoy.assign(Decoy=1)]).to_csv(report, sep="\t", index=False)
+
+    assert _diann(report, tmp_path)
+
+    features = pq.read_table(tmp_path / "x.feature.parquet", columns=["feature_id", "is_decoy"]).to_pylist()
+    assert sorted(feature["is_decoy"] for feature in features) == [False, True]
+    assert len({feature["feature_id"] for feature in features}) == 2
+    linked = set(pq.read_table(tmp_path / "x.fragment.parquet", columns=["feature_id"]).column(0).to_pylist())
+    assert linked == {feature["feature_id"] for feature in features}
+
+
 def test_a_report_without_fragments_writes_nothing(tmp_path):
     frame = pd.read_csv(_DIANN, sep="\t", nrows=2).drop(columns=["Fragment.Quant.Raw"])
     report = tmp_path / "report.tsv"

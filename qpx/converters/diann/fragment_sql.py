@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 
 from qpx.converters.diann.base_adapter import run_name_sql
-from qpx.converters.diann.feature_sql import _build_channel_sql_parts, _qvalue_filter_sql
+from qpx.converters.diann.feature_sql import _build_channel_sql_parts, _qvalue_filter_sql, decoy_flag_sql
 from qpx.core.sql import sql_build, validate_identifier
 
 # The report rows of the precursors a fragment view keeps.
@@ -21,12 +21,13 @@ _PRECURSORS_SQL = """
         WHERE r.$pg_col IS NOT NULL $qvalue_filter"""
 
 _LIST_SQL = """
-    SELECT run_file_name, peptidoform, charge, label, fragment_index, $annotation,
+    SELECT run_file_name, peptidoform, charge, is_decoy, is_library_decoy, label, fragment_index, $annotation,
            NULLIF(TRY_CAST(raw AS FLOAT), 0) AS intensity,
            NULLIF(TRY_CAST(corrected AS FLOAT), 0) AS corrected_intensity,
            TRY_CAST(correlations AS FLOAT) AS correlation
     FROM (
-        SELECT $run AS run_file_name, lk.peptidoform, CAST(r.$charge AS SMALLINT) AS charge, $label AS label,
+        SELECT $run AS run_file_name, lk.peptidoform, CAST(r.$charge AS SMALLINT) AS charge,
+               $decoy AS is_decoy, $library_decoy AS is_library_decoy, $label AS label,
                generate_subscripts($raw_list, 1) AS fragment_index,
                unnest($raw_list) AS raw, unnest($corrected_list) AS corrected,
                unnest($correlation_list) AS correlations, unnest($info_list) AS info
@@ -39,12 +40,14 @@ _LIST_SQL = """
 # Fr.N.Quantity is the fragment's peak height, not normalised, and Fr.N.Score the quality of
 # its extracted elution profile (DIA-NN README, --export-quant).
 _SLOT_SQL = """
-    SELECT run_file_name, peptidoform, charge, label, fr.fr_index + 1 AS fragment_index, $annotation,
+    SELECT run_file_name, peptidoform, charge, is_decoy, is_library_decoy, label, fr.fr_index + 1 AS fragment_index,
+           $annotation,
            fr.height AS peak_height,
            [STRUCT_PACK(score_name := 'diann_fragment_score', score_value := fr.score, higher_better := true)]
                AS additional_scores
     FROM (
-        SELECT $run AS run_file_name, lk.peptidoform, CAST(r.$charge AS SMALLINT) AS charge, $label AS label,
+        SELECT $run AS run_file_name, lk.peptidoform, CAST(r.$charge AS SMALLINT) AS charge,
+               $decoy AS is_decoy, $library_decoy AS is_library_decoy, $label AS label,
                unnest([$slots]) AS fr
         $precursors
     )
@@ -94,10 +97,11 @@ def build_fragment_sql(
     qvalue_col = resolved.get("qvalue") if resolved.get("qvalue") in report_cols else None
     label, _, channel_join = _build_channel_sql_parts(channel_col, qvalue_col, report_cols.__contains__)
     charge = validate_identifier(resolved["charge"])
+    modified = validate_identifier(resolved["modified_sequence"])
     precursors = sql_build(
         _PRECURSORS_SQL,
         charge=charge,
-        modified=validate_identifier(resolved["modified_sequence"]),
+        modified=modified,
         sequence=validate_identifier(resolved["sequence"]),
         channel_join=channel_join,
         pg_col=validate_identifier(resolved["pg_accessions"]),
@@ -107,6 +111,9 @@ def build_fragment_sql(
         "run": run_name_sql("r." + validate_identifier(resolved["run_file_name"])),
         "charge": charge,
         "label": label,
+        # Both flags are part of the feature identity (feature_sql).
+        "decoy": decoy_flag_sql(resolved, resolved.get("decoy") in report_cols),
+        "library_decoy": f"starts_with(r.{modified}, '^')",
         "precursors": precursors,
     }
     if "Fragment.Quant.Raw" not in report_cols:
