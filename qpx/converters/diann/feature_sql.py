@@ -215,8 +215,8 @@ def _build_ion_mobility_select_parts(resolved: dict, report_cols: set[str]) -> l
     return parts
 
 
-# The proteins each target peptidoform maps to. A DIA-NN decoy precursor has
-# its target's sequence, so decoy rows are left out.
+# The proteins each target peptidoform maps to. A DIA-NN decoy precursor carries
+# a mutated sequence under its parent's proteins, so decoy rows are left out.
 _PEPMAP_SQL = """
     SELECT lk.peptidoform,
            any_value(lk.sequence) AS sequence,

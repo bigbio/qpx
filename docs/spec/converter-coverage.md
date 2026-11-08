@@ -81,8 +81,8 @@ Further DIA-NN feature fields:
   stays in `cv_params`.
 - **Pepmap.** `feature.pg_accessions` holds the peptide's protein group
   (`Protein.Group`); the pepmap view lists every protein in `Protein.Ids` for each
-  converted target peptidoform, without positions. Decoy rows, which carry their
-  target's sequence, are left out.
+  converted target peptidoform, without positions. Decoy rows, which carry a
+  mutated sequence under their parent's proteins, are left out.
 - **Library decoys.** DIA-NN 2.x prefixes a decoy searched from the spectral
   library (a first-pass decoy kept in an empirical library) with `^` in
   `Modified.Sequence` and `Precursor.Id`; its sequence is the decoy generated
