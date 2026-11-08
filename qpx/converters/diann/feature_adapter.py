@@ -25,7 +25,13 @@ import pyarrow.parquet as pq
 from qpx.converters.base import resolve_columns
 from qpx.converters.diann.base_adapter import BATCH_ROWS, DiaNNBaseAdapter, run_name_sql
 from qpx.converters.diann.constants import occupancy_sites, to_modifications, to_proforma
-from qpx.converters.diann.feature_sql import _SCORE_MAPPINGS, _build_batch_sql, build_pepmap_sql
+from qpx.converters.diann.feature_sql import (
+    _SCORE_MAPPINGS,
+    FIRST_PASS_QVALUE,
+    _build_batch_sql,
+    build_pepmap_sql,
+    first_pass_ids_sql,
+)
 from qpx.converters.diann.fragment_sql import build_fragment_sql
 from qpx.converters.fragments import write_fragment_view
 from qpx.converters.localization import LOCALIZATION_SCORE, localize_modifications
@@ -33,7 +39,7 @@ from qpx.converters.mappings import get_field_mappings
 from qpx.converters.utils import pg_accessions_array
 from qpx.core.query import _escape_sql_string
 from qpx.core.scan import scan_from_native_id
-from qpx.core.sql import sql_build, validate_identifier
+from qpx.core.sql import escape_path, sql_build, validate_identifier
 from qpx.writers.feature import FeatureWriter
 from qpx.writers.pepmap import PepMapWriter
 
@@ -102,6 +108,7 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
         batch_rows: int = BATCH_ROWS,
         creator: str = "diann",
         mod_masses: tuple[tuple[str, float], ...] = (),
+        first_pass_report: Optional[str] = None,
     ) -> None:
         """Run the DIA-NN report -> feature.parquet conversion.
 
@@ -113,6 +120,9 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
         threshold is provided, the precursor ``Q.Value`` filter is applied.
         ``mod_masses`` holds the ``(name, mass delta)`` modifications declared in
         the DIA-NN log, which resolve modifications the report names.
+        ``first_pass_report`` is the first-pass report of an MBR search: a feature
+        that pass identified in the same run at q <= 0.01 is ``direct``, any other
+        ``transferred``; without it ``identification_type`` stays null.
         Runs are converted in batches of about ``batch_rows`` report rows.
         """
         # 1. Create VIEW over report (lazy — no data loaded into memory)
@@ -128,6 +138,8 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
         self._resolved = resolve_columns(get_field_mappings("diann", "feature"), report_cols)
         decoy_col = self._resolved.get("decoy")
         has_decoy_col = decoy_col is not None
+        if first_pass_report is not None:
+            self._register_first_pass(first_pass_report)
         channel_col = self._register_channel_labels(report_cols, sdrf_path)
         self._channel_col = channel_col
 
@@ -156,6 +168,7 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
             qvalue_threshold,
             channel_col,
             target_schema,
+            first_pass_report is not None,
         )
 
         # 8. Discover runs
@@ -172,6 +185,19 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
                 writer.write_table(table)
 
         self.logger.info(f"DIA-NN feature conversion complete -> {output_path}")
+
+    def _register_first_pass(self, path: str) -> None:
+        """Load the identifications of a DIA-NN first-pass report (Parquet or TSV) as ``first_pass_ids``."""
+        reader = sql_build(
+            "read_parquet('$path')"
+            if path.endswith(".parquet")
+            else "read_csv_auto('$path', delim='\t', header=true, auto_detect=true, null_padding=true)",
+            path=escape_path(path),
+        )
+        columns = {row[0] for row in self._conn.execute(sql_build("DESCRIBE SELECT * FROM $reader", reader=reader)).fetchall()}
+        self._conn.execute(first_pass_ids_sql(self._resolved, columns, reader))
+        count = self._conn.execute("SELECT count(*) FROM first_pass_ids").fetchone()[0]
+        self.logger.info("First-pass report: %d identifications at q <= %s", count, FIRST_PASS_QVALUE)
 
     def write_fragments(self, output_path: str, qvalue_threshold: Optional[float] = None) -> bool:
         """Write the report's fragment quantities as the fragment view; False when it has none.

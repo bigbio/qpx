@@ -50,6 +50,7 @@ def _write_diann_views(converter, options: dict, prefix: str) -> None:
         output_folder=output_folder,
         output_prefix=output_prefix,
         fragments=options["fragments"],
+        first_pass_report=options["first_pass_report"],
     )
     converter.convert_pg(
         pg_matrix_path=pg_matrix_path,
@@ -107,6 +108,15 @@ def _write_diann_views(converter, options: dict, prefix: str) -> None:
     ),
     default=None,
     type=float,
+)
+@click.option(
+    "--first-pass-report",
+    help=(
+        "The first-pass report DIA-NN writes with MBR (<report>-first-pass.parquet, or .tsv in 1.x; optional). "
+        "A feature it lists for the same run at Q.Value <= 0.01 gets identification_type 'direct', any other "
+        "'transferred' with a null id_run_file_name; without it identification_type is null."
+    ),
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
 )
 @_output_folder_option
 @click.option(
