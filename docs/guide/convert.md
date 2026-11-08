@@ -824,6 +824,8 @@ A single `mz.parquet` with one row per spectrum:
 
 Convert SDRF metadata files to QPX sample and run parquet format.
 
+`run.acquisition_start` keeps the first valid `comment[acquisition date]` per run. The optional `--mzml-dir` reads mzML `run/@startTimeStamp` headers for runs without an SDRF date. SDRF takes precedence; text, fractional seconds and timezone suffixes are preserved without parsing, timezone conversion or added time components. This mzML source is currently available only with `qpxc convert sdrf --mzml-dir`.
+
 ### Description {#sdrf-description}
 
 ```python exec="1" html="1" session="doc_utils"

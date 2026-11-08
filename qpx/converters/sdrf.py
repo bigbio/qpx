@@ -16,7 +16,7 @@ import pandas as pd
 
 from qpx.converters.base import BaseConverter
 from qpx.converters.channel_labels import is_ms1_label, normalize_label
-from qpx.core.files import run_file_stem
+from qpx.core.files import mzml_acquisition_start, resolve_mzml_path, run_file_stem
 from qpx.core.ontology import PublicOntology
 from qpx.core.scores import field_ontology_entries
 from qpx.core.sdrf import (
@@ -77,6 +77,7 @@ _COL_INSTRUMENT = "comment[instrument]"
 _COL_ENZYME = "comment[cleavage agent details]"
 _COL_DISSOC = "comment[dissociation method]"
 _COL_ACQUISITION = "comment[proteomics data acquisition method]"
+_COL_ACQUISITION_DATE = "comment[acquisition date]"
 _COL_GRADIENT = "comment[gradient length]"
 _COL_CHANNEL_ROLE = "comment[channel role]"
 _COL_REFERENCE_CHANNEL = "comment[reference channel]"
@@ -287,6 +288,29 @@ def _gradient_seconds(group: pd.DataFrame) -> float | None:
     return float(match.group(1)) * _SECONDS_PER_UNIT[(match.group(2) or "m")[0].lower()]
 
 
+def _acquisition_start(group: pd.DataFrame) -> str | None:
+    """Return the run's first valid SDRF acquisition date without changing its text."""
+    if _COL_ACQUISITION_DATE not in group.columns:
+        return None
+    return next((str(value) for value in group[_COL_ACQUISITION_DATE].dropna() if not _is_sentinel(value)), None)
+
+
+def _fill_mzml_acquisition_starts(records: list[dict], mzml_dir: str | Path) -> None:
+    """Fill missing acquisition dates from mzML headers and report missing files once."""
+    missing = []
+    for record in records:
+        if record["acquisition_start"] is not None:
+            continue
+        run_file = record["run_file_name"]
+        mzml_path = resolve_mzml_path(mzml_dir, run_file)
+        if mzml_path is None:
+            missing.append(run_file)
+        else:
+            record["acquisition_start"] = mzml_acquisition_start(mzml_path)
+    if missing:
+        logger.warning("No mzML file found for %d runs; acquisition_start left null: %s", len(missing), ", ".join(missing[:5]))
+
+
 def _channel_role(row: dict, label: str) -> str | None:
     """A channel's declared role; a label matching ``comment[reference channel]`` is the reference."""
     role = row.get(_COL_CHANNEL_ROLE)
@@ -333,6 +357,7 @@ class SdrfConverter(BaseConverter):
         sample_output: str | None = None,
         run_output: str | None = None,
         creator: str = "qpx",
+        mzml_dir: str | Path | None = None,
     ) -> None:
         """Run the full SDRF conversion.
 
@@ -341,6 +366,7 @@ class SdrfConverter(BaseConverter):
             sample_output: Optional output path for ``sample.parquet``.
             run_output: Optional output path for ``run.parquet``.
             creator: Creator tag stored in Parquet metadata.
+            mzml_dir: Optional directory for mzML acquisition starts when the SDRF has no valid date.
         """
         if sample_output is None and run_output is None:
             raise ValueError("At least one of sample_output or run_output is required")
@@ -350,7 +376,7 @@ class SdrfConverter(BaseConverter):
         if sample_output is not None:
             self._write_samples(sdrf_df, sample_output, creator)
         if run_output is not None:
-            self._write_runs(sdrf_df, run_output, creator)
+            self._write_runs(sdrf_df, run_output, creator, mzml_dir)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -437,6 +463,7 @@ class SdrfConverter(BaseConverter):
         sdrf_df: pd.DataFrame,
         output_path: str,
         creator: str,
+        mzml_dir: str | Path | None,
     ) -> None:
         """Build one row per run and write ``run.parquet``."""
 
@@ -475,6 +502,9 @@ class SdrfConverter(BaseConverter):
             }
             records.append(rec)
 
+        if mzml_dir is not None:
+            _fill_mzml_acquisition_starts(records, mzml_dir)
+
         with RunWriter(output_path, creator=creator) as writer:
             writer.write_batch(records)
 
@@ -503,6 +533,7 @@ class SdrfConverter(BaseConverter):
             "enzymes": [name for name, _ in pairs["enzymes"]] or None,
             "dissociation_method": first("dissociation_method"),
             "acquisition_method": first("acquisition_method"),
+            "acquisition_start": _acquisition_start(group),
             "additional_terms": self._additional_terms(pairs) or None,
         }
 

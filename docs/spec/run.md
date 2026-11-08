@@ -20,8 +20,11 @@ Instrument, enzyme, and dissociation method fields store **plain strings** (huma
 | ----- | ------ | ------- |
 | `label_definitions` | `comment[modification parameters]` of each label's rows | For each SILAC, dimethyl or mTRAQ label of the run, its label modifications with their masses. `SILAC heavy` alone does not say whether a plex used K4R6 or K8R10 |
 | `gradient_length` | `comment[gradient length]` | LC gradient in seconds. `120 min`, `2 h` and `7200 s` are read; a bare number is minutes |
+| `acquisition_start` | `comment[acquisition date]`, else mzML `run/@startTimeStamp` | Run acquisition start, preserved as source text |
 | `samples[].channel_role` | `comment[channel role]`, or `comment[reference channel]` | `reference` for the channel `comment[reference channel]` names, `sample` for the others; otherwise the value of `comment[channel role]`, such as `carrier` or `empty` |
 | `samples[].mixture` | `comment[mixture]` | Identifier of the labelled mixture, to separate TMT plexes |
+
+`acquisition_start` is an optional, nullable string. The first valid `comment[acquisition date]` value of each run takes precedence; SDRF missing values such as `not available` and `not applicable` are ignored. If no valid value exists, `qpxc convert sdrf --mzml-dir` reads the `startTimeStamp` attribute from the run's `.mzML` or `.mzML.gz` header. The mzML source is currently exposed only by this command. Missing files or attributes leave the value null. Text is preserved verbatim, including date-only values (`2011-05-31`), fractional seconds (`2016-10-06T22:36:56.803000`) and timezone suffixes (`2015-02-19T20:08:48Z`); QPX does not parse dates, convert timezones or fill in missing time components.
 
 A sample may occupy several labels of a run, as in pulsed SILAC; helpers keep them apart by `(sample, label, unit)`.
 
@@ -100,6 +103,7 @@ run_schema = pa.schema(
         pa.field("enzymes", pa.list_(pa.string()), nullable=True),
         pa.field("dissociation_method", pa.string(), nullable=True),
         pa.field("acquisition_method", pa.string(), nullable=True),
+        pa.field("acquisition_start", pa.string(), nullable=True),
         # Other ontology-backed run terms (acquisition method as CV, labeling, etc.)
         pa.field("additional_terms", pa.list_(ONTOLOGY_TERM), nullable=True),
         # Modification parameters -- list of typed modification structs
@@ -127,6 +131,7 @@ run_schema = pa.schema(
 | `modification_parameters` | Modifications configured in the database search | list[modification_param] | optional |
 | `label_definitions` | For each SILAC, dimethyl or mTRAQ label of the run, its label modifications; see above | list[label_definition] | optional |
 | `gradient_length` | LC gradient in seconds; see above | float32 | optional |
+| `acquisition_start` | Run acquisition start as source text; see above | string | optional |
 
 ### Samples list detail
 
