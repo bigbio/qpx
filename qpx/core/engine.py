@@ -11,11 +11,14 @@ from pathlib import Path
 import duckdb
 
 from qpx.core.sql import escape_path, sql_build, validate_identifier, validate_table
-from qpx.core.struct_lists import restore_items
+from qpx.core.struct_lists import STRUCT_LIST_COLUMNS, footer_layouts, is_struct, layout_groups, restore_items
 
 logger = logging.getLogger(__name__)
 
 _SAFE_SET_VALUE = re.compile(r"^[\w./:@\-]+$")
+
+# The characters that make DuckDB read a path as a glob.
+_GLOB_CHARACTERS = re.compile(r"[*?\[]")
 
 # Columns that became list<int32> after files were written. Older files are read
 # in the current shape: mz.scan was a single int32 before it followed the
@@ -150,32 +153,76 @@ class DuckDBEngine:
     def connection(self) -> duckdb.DuckDBPyConnection:
         return self._conn
 
-    def _create_view(self, name: str, files: str, options: str = "") -> None:
-        """Create view *name* over the Parquet *files* (SQL), reading legacy scalar columns and struct lists as lists."""
-        view = validate_table(name)
-        source = sql_build("read_parquet($files$options)", files=files, options=options)
-        self._conn.execute(sql_build("CREATE OR REPLACE VIEW $view AS SELECT * FROM $source", view=view, source=source))
-        types = dict(self._conn.execute(sql_build("SELECT column_name, column_type FROM (DESCRIBE $view)", view=view)).fetchall())
+    def _column_types(self, relation: str) -> dict[str, str]:
+        """The DuckDB type of each column of *relation* (a view or a query)."""
+        describe = sql_build("SELECT column_name, column_type FROM (DESCRIBE $relation)", relation=relation)
+        return dict(self._conn.execute(describe).fetchall())
+
+    @staticmethod
+    def _select(view: str, source: str, types: dict[str, str], layouts: dict[str, list[dict]]) -> str:
+        """The rows of *source*, with legacy scalar columns and the struct lists of *layouts* read as lists."""
         legacy = [
             column for column in _SCALAR_TO_LIST_COLUMNS.get(view, ()) if column in types and not types[column].endswith("]")
         ]
         replace = [
             sql_build("CASE WHEN $column IS NULL THEN NULL ELSE [CAST($column AS INTEGER)] END AS $column", column=column)
             for column in map(validate_identifier, legacy)
-        ] + restore_items(self._conn, files, types)
-        if replace:
-            self._conn.execute(
-                sql_build(
-                    "CREATE OR REPLACE VIEW $view AS SELECT * REPLACE ($replace) FROM $source",
-                    view=view,
-                    replace=", ".join(replace),
-                    source=source,
+        ] + restore_items(layouts, types)
+        if not replace:
+            return sql_build("SELECT * FROM $source", source=source)
+        return sql_build("SELECT * REPLACE ($replace) FROM $source", replace=", ".join(replace), source=source)
+
+    def _create_view(self, name: str, files: str, options: str = "", one_file: bool = False) -> None:
+        """Create view *name* over the Parquet *files* (SQL), reading legacy scalar columns and struct lists as lists.
+
+        Files that one ``read_parquet`` cannot read as each file alone, such as
+        files whose footers declare different struct-list layouts, are read group
+        by group (see :func:`layout_groups`) and unioned by name. The footer of a
+        single file is read only once it holds a struct. If the view cannot be
+        restored it is dropped, so that no query reads the files unrestored.
+        """
+        view = validate_table(name)
+        source = sql_build("read_parquet($files$options)", files=files, options=options)
+        plain = sql_build("SELECT * FROM $source", source=source)
+        self._conn.execute(sql_build("CREATE OR REPLACE VIEW $view AS $query", view=view, query=plain))
+        try:
+            query = self._restored(view, files, source, options, one_file)
+            if query != plain:
+                self._conn.execute(sql_build("CREATE OR REPLACE VIEW $view AS $query", view=view, query=query))
+        except Exception:
+            self._conn.execute(sql_build("DROP VIEW IF EXISTS $view", view=view))
+            raise
+
+    def _restored(self, view: str, files: str, source: str, options: str, one_file: bool) -> str:
+        """The query of *view*, registered over *source*, that reads its legacy scalar columns and struct lists as lists."""
+        types = self._column_types(view)
+        if one_file:
+            # One file is one group; only its declared layouts are needed, and only once it holds a struct.
+            structs = any(is_struct(types.get(column, "")) for column in STRUCT_LIST_COLUMNS)
+            groups = [([], next(iter(footer_layouts(self._conn, files).values()), {}) if structs else {})]
+        elif any(column in types for column in STRUCT_LIST_COLUMNS):
+            groups = layout_groups(self._conn, files)
+        else:
+            groups = [([], {})]
+        if len(groups) == 1:
+            return self._select(view, source, types, groups[0][1])
+        selects = []
+        for paths, layouts in groups:
+            group = ", ".join(sql_build("'$path'", path=escape_path(path)) for path in paths)
+            group_source = sql_build("read_parquet([$group]$options)", group=group, options=options)
+            group_types = self._column_types(sql_build("SELECT * FROM $source", source=group_source))
+            bare = [column for column in STRUCT_LIST_COLUMNS if is_struct(group_types.get(column, "")) and column not in layouts]
+            if bare:
+                raise ValueError(
+                    f"{paths[0]} holds {', '.join(bare)} as a struct without a qpx.struct_lists layout, "
+                    f"so it cannot be read with the other files of {view}"
                 )
-            )
+            selects.append(self._select(view, group_source, group_types, layouts))
+        return " UNION ALL BY NAME ".join(selects)
 
     def register_parquet(self, name: str, file_path: str | Path) -> None:
         """Register a Parquet file as a lazy DuckDB view."""
-        self._create_view(name, sql_build("'$path'", path=escape_path(str(file_path))))
+        self._create_view(name, sql_build("'$path'", path=escape_path(str(file_path))), one_file=True)
 
     def register_parquet_files(self, name: str, file_paths) -> None:
         """Register several Parquet shards as one unioned DuckDB view.
@@ -195,15 +242,22 @@ class DuckDBEngine:
         """Register a Hive-partitioned Parquet directory as a DuckDB view.
 
         A run name is a string however it looks: autocast, ``1/10`` would be a
-        BIGINT and ``2024-01-15`` a DATE.
+        BIGINT and ``2024-01-15`` a DATE. The partitions are unioned by name, as
+        shards are: read with the types of the first file, a value another file
+        stores as ``DOUBLE`` would read as that file's ``FLOAT``.
         """
         glob_pattern = str(Path(directory) / "**" / "*.parquet")
         hive_types = ", hive_types={'run_file_name': 'VARCHAR'}" if next(Path(directory).rglob("run_file_name=*"), None) else ""
-        self._create_view(name, sql_build("'$path'", path=escape_path(glob_pattern)), ", hive_partitioning=true" + hive_types)
+        self._create_view(
+            name,
+            sql_build("'$path'", path=escape_path(glob_pattern)),
+            ", hive_partitioning=true, union_by_name=true" + hive_types,
+        )
 
     def register_s3_parquet(self, name: str, s3_path: str) -> None:
-        """Register an S3 Parquet file as a DuckDB view."""
-        self._create_view(name, sql_build("'$path'", path=escape_path(s3_path)), ", union_by_name=true")
+        """Register an S3 Parquet file, or the files of a glob, as a DuckDB view."""
+        path = sql_build("'$path'", path=escape_path(s3_path))
+        self._create_view(name, path, ", union_by_name=true", one_file=not _GLOB_CHARACTERS.search(s3_path))
 
     def register_view(self, name: str, sql: str) -> None:
         """Register ``sql`` as a named DuckDB view.
