@@ -48,6 +48,8 @@ metadata = {"qpx_version": "1.3"}
 
 The current QPX specification version is **1.3**.
 
+qpx 1.4.0 is the first package release to write specification 1.3; qpx 1.2.0 and 1.3.0 write specification 1.2.
+
 This version defines all core serialized views (PSM, Feature, PG, MZ), the derived [API views](views.md) (Peptide, Protein) computed on demand from them, expression views (Absolute, Differential), and metadata views (SDRF, Project).
 
 ### Changelog
@@ -187,7 +189,7 @@ In addition to the specification version, every QPX file records the software be
 ```json
 {
   "software_provider": "qpx",
-  "writer_version": "1.2.0",
+  "writer_version": "1.4.0",
   "creator": "diann"
 }
 ```
