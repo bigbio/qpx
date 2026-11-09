@@ -137,7 +137,7 @@ the layer `imputed_mask`.
 
 ## Additional intensities
 
-The `additional_intensities` field stores values computed from the primary ones -- normalized intensities, LFQ values, iBAQ values, and so on. Converters read these from the tool's output files (e.g., MaxQuant's `proteinGroups.txt`, DIA-NN's report) and store them as-is. See [Derived quantities](#derived-quantities) for values computed after the conversion. Each element mirrors the label structure of primary intensities but adds a nested array of named intensity types.
+The `additional_intensities` field stores values computed from the primary ones -- normalized intensities, LFQ values, iBAQ values, and so on. Converters read these from the tool's output files (e.g., MaxQuant's `proteinGroups.txt`, DIA-NN's report) and store them as-is. See [Derived quantities](#derived-quantities) for values computed after the conversion. Each element mirrors the label structure of primary intensities but adds a nested array of named intensity types. `qpxc transform relayout` can store it as a struct with one field per label and name ([Struct lists](serialization.md#struct-lists)).
 
 ### Struct definition
 

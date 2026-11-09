@@ -23,6 +23,8 @@ File: `{PREFIX}.fragment.parquet`. One row per fragment of a feature, channel an
 | `rt_array`, `intensity_array` | Extracted ion chromatogram, seconds and intensities. No converter fills them yet: they are for a producer that has them, as OpenMS' XIC files | list\<float32\>, null | No |
 | `additional_scores` | Other per-fragment values | list\<score\>, null | No |
 
+`qpxc transform relayout` can store `additional_scores` as a struct with one field per name ([Struct lists](serialization.md#struct-lists)).
+
 ## Producers
 
 | | DIA-NN `--fragments` | Spectronaut `--fragments` |

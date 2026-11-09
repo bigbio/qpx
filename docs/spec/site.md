@@ -45,6 +45,8 @@ The YAML schema definition lives at `qpx/core/data/schemas/site.yaml` in the sou
 | `additional_scores` | Additional scores, e.g. a localization probability | list\<score\> | no |
 | `cv_params` | CV parameters | list\<cv_param\> | no |
 
+`qpxc transform relayout` can store `additional_scores` and `cv_params` as a struct with one field per name ([Struct lists](serialization.md#struct-lists)).
+
 The `site_alternative` struct:
 
 | Field | Type | Description |

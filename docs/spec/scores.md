@@ -1,6 +1,6 @@
 # Scores & CV Terms
 
-QPX provides two structured fields for attaching metadata to records beyond the core columns: `additional_scores` for numeric quality metrics and `cv_params` for controlled vocabulary annotations. Both are stored as arrays of structs, making them extensible without schema changes.
+QPX provides two structured fields for attaching metadata to records beyond the core columns: `additional_scores` for numeric quality metrics and `cv_params` for controlled vocabulary annotations. Both are stored as arrays of structs, making them extensible without schema changes. `qpxc transform relayout` can store either as a struct with one field per name ([Struct lists](serialization.md#struct-lists)).
 
 ## Additional scores
 

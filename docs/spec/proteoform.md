@@ -51,6 +51,8 @@ A PSM-level q-value does not control error over members, even the q-value of a m
 | `additional_scores` | Additional scores | list\<score\> | no |
 | `cv_params` | CV parameters | list\<cv_param\> | no |
 
+`qpxc transform relayout` can store `additional_intensities`, `additional_scores` and `cv_params` as a struct with one field per name, per label and name for `additional_intensities` ([Struct lists](serialization.md#struct-lists)).
+
 !!! note "One row per label, one pg row per label"
     Like [pg](pg.md), the view is flattened: a quantified member has one row per label, and an identification-only member has one row with `label` and `intensity` null. Writers accept the natural `intensities: list<{label, intensity}>` per member and unroll it. `pg_id` names one pg row, so each label row links to the pg row of its own label: give `pg_id` on each `intensities` entry. `ProteoformWriter` refuses a record-level `pg_id` on a member with several labels.
 

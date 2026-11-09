@@ -172,6 +172,8 @@ Each entry in `peptides` contains:
 | `is_imputed` | Whether the tool imputed this quantity instead of measuring it; null when the tool does not say | `bool`, null | No |
 | `cv_params` | Optional list of controlled vocabulary parameters for additional metadata | `array[struct{cv_name, cv_value}]` | No |
 
+`qpxc transform relayout` can store `additional_intensities`, `additional_scores` and `cv_params` as a struct with one field per name, per label and name for `additional_intensities` ([Struct lists](serialization.md#struct-lists)).
+
 ## Example
 
 ```json
