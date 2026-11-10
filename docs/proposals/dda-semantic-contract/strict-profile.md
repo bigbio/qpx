@@ -3,9 +3,9 @@
 [Overview](index.md) · [Consumers](consumers.md) · [OpenMS work list](openms-worklist.md)
 
 !!! warning "Status: proposal, not normative"
-    This is the core of the [DDA semantic contract proposal](index.md), targeting specification 1.4. Items marked **(pending)** need a maintainer decision.
+    This is the core of the [DDA semantic contract proposal](index.md), targeting specification 1.4.
 
-This profile states what a DDA dataset **written by OpenMS** contains: ProteomicsLFQ and IsobaricWorkflow with `-out_qpx`, as used by the quantms pipeline. It is strict on purpose. Every column listed is filled, and no footer value is `unknown`, so that qpxui, the quantms.io portal and mokume can read these files with plain SQL on typed columns, without reading provenance and without special cases.
+This profile states what a DDA dataset **written by OpenMS** contains: ProteomicsLFQ and IsobaricWorkflow with `-out_qpx`, as used by the quantms pipeline. It is strict on purpose. Every column listed is filled as stated, and no footer value is `unknown`, so that qpxui, the quantms.io portal and mokume can read these files with plain SQL on typed columns, without special cases.
 
 OpenMS can meet this profile because it holds the information internally; the [OpenMS work list](openms-worklist.md) names the export changes needed. Files from other producers (MaxQuant, FragPipe, Proteome Discoverer, mzIdentML, CDAP, and the Python consensusXML converter) follow the relaxed rules in the [annex](index.md#annex). Where the annex and this page differ, this page wins for OpenMS-written files.
 
@@ -14,8 +14,8 @@ OpenMS can meet this profile because it holds the information internally; the [O
 | Requirement | Detail |
 |---|---|
 | Views | `psm`, `feature`, `pg`, `run`, `sample` and `provenance` are always written. |
-| `unidentified_feature` | Written only when OpenMS kept untargeted features (`targeted_only = false`). The feature view never holds a row without a peptidoform ([UNI-1](t07-unidentified-features.md)). |
 | Runs and samples | Every `run_file_name` used in psm, feature and pg has a row in `run`. Every `(run_file_name, label)` of an intensity entry resolves to exactly one sample through `run.samples`, by exact string equality. |
+| Unidentified features | Optional. OpenMS may write MS1 features without an identification as rows of the feature view, marked `identification_type = 'unidentified'`. Readers ignore them by default. See [feature rows](#feature-rows). |
 | Version | `qpx_version = 1.4`. |
 
 ## Footer
@@ -37,10 +37,11 @@ The footer has no key that names the profile. A dataset claims it in the `proven
 | Fact | Value for OpenMS-written files |
 |---|---|
 | PSM rank | Only the best hit per precursor is exported. `rank` is always 1. |
+| FDR levels | OpenMS estimates FDR at the levels the analysis asks for: PSM, peptide (common for immunopeptidomics) and protein. A typed q-value column is filled exactly when FDR was estimated at its level, and is null on every row otherwise. |
 | Scope of PSM q-values | One estimate over the whole experiment. |
 | Protein grouping | One inference over the whole dataset, so a group is the same in every run. |
 | Primary intensity | The measured signal: the feature area for label-free data, the reporter-ion intensity for isobaric data. Protein quantities are OpenMS's own. |
-| Imputation | None. `imputed_labels` is `[]` and pg `is_imputed` is false. |
+| Imputation | OpenMS imputes nothing. A value that OpenMS's own algorithm estimates, such as the area it derives when the elution-model fit fails, counts as measured. `imputed_labels` is `[]` and pg `is_imputed` is false. A tool that fills in values afterwards, such as mokume, flags them as imputed. |
 | Precursor-level FDR | OpenMS has none. `feature.precursor_qvalue` and `feature.global_qvalue` are null by definition. |
 
 Settings that vary between analyses go to the `provenance` view under fixed parameter names: `decoy_policy`, the FDR settings, whether match-between-runs ran and with which method, and `mbr_fdr` (a threshold under PIP-ECHO, `none` otherwise).
@@ -54,7 +55,7 @@ One row is one identified precursor of one MS/MS spectrum.
 | `run_file_name`, `scan`, `peptidoform`, `charge` | Unique together. `charge ≥ 1`. `scan` holds one spectrum, and `spectrum_reference` holds the native id. |
 | `rank` | Always 1. |
 | `precursor_index` | Never null. 1 for the spectrum's first precursor; 2, 3, … for co-isolated precursors identified in the same spectrum ([CHI-3](t02-chimeric-spectra.md)). |
-| `qvalue` | Never null. The PSM-level q-value. |
+| `qvalue` | The PSM-level q-value. Filled whenever PSM-level FDR was estimated. |
 | `posterior_error_probability` | Never null. |
 | `is_decoy` | Never null. True only if every protein the peptide maps to is a decoy. |
 | `contaminant` | Never null. |
@@ -67,14 +68,17 @@ One row is one identified precursor of one MS/MS spectrum.
 
 One row is one quantity of one precursor (peptidoform and charge) in one run.
 
-- **Label-free:** at most one quantified row per `(peptidoform, charge, run_file_name)`. **(pending)** OpenMS does not write a transferred row beside a quantified direct row of the same precursor and run, and records how many it dropped.
+- **Label-free:** at most one quantified row per `(peptidoform, charge, run_file_name)`. OpenMS does not write a transferred row beside a quantified direct row of the same precursor and run, and records in provenance how many it left out.
 - **Isobaric:** one row per quantified reporter spectrum. Readers add the rows of a precursor in a run.
+
+The rules below apply to identified rows, that is every row except the optional unidentified ones described after the table.
 
 | Column | Rule |
 |---|---|
 | `peptidoform`, `sequence`, `charge` | Never null or empty. Canonical peptidoform. `charge ≥ 1`. |
 | `identification_type` | Never null: `direct`, `secondary` or `transferred` ([MBR-1](t08-match-between-runs.md)). The transfer status comes from OpenMS's own annotation of transferred runs. |
-| `scan`, `id_run_file_name`, `posterior_error_probability`, `psm_qvalue` | On `direct` and `secondary` rows: exactly one spectrum, `id_run_file_name = run_file_name`, and PEP and `psm_qvalue` of that PSM, all non-null. On `transferred` rows: `scan` is empty and the others are null. |
+| `scan`, `id_run_file_name`, `posterior_error_probability`, `psm_qvalue` | On `direct` and `secondary` rows: exactly one spectrum, `id_run_file_name = run_file_name`, and the PEP and `psm_qvalue` of that PSM. On `transferred` rows: `scan` is empty and the others are null. |
+| `peptide_qvalue` | Filled whenever peptide-level FDR was estimated. |
 | `match_qvalue` | On `transferred` rows, non-null exactly when PIP-ECHO ran. Null on other rows. |
 | `intensities` | One entry per label that has a sample in the run. A null intensity means not quantified; 0 is never used for missing. A `transferred` row has at least one measured value. |
 | `rt`, `rt_start`, `rt_stop` | Seconds on the acquisition clock, with `rt_start ≤ rt ≤ rt_stop` (label-free). `rt_aligned` holds the aligned time. |
@@ -83,8 +87,19 @@ One row is one quantity of one precursor (peptidoform and charge) in one run.
 | `pg_accessions`, `anchor_protein`, `pg_group_id` | The full membership of the one protein group the peptide is attributed to, its representative, and its id. All three are null together when the peptide is attributed to no group. |
 | `group_unique` | Never null. True when the peptide is evidence for exactly one group. |
 | `consensus_feature_id`, `identification_conflict` | Never null. Rows of one cross-run feature share the id. |
-| `peptide_qvalue` | Filled only when OpenMS ran peptide-level FDR. |
 | Isobaric rows | `quant_scan`, `quant_ms_level` and `parent_ion_fraction` are filled, and `quant_spectrum_count = 1`. |
+
+### Unidentified features (optional)
+
+OpenMS may also write MS1 features that have no identification. They are rows of the same feature view ([T07](t07-unidentified-features.md)):
+
+- `identification_type = 'unidentified'`.
+- `peptidoform` and `sequence` are null, never empty strings. `charge` is the feature's charge, or null when none was assigned, never 0.
+- `is_decoy` is false. The scan, PEP, q-values, `match_*`, `contaminant` and all protein columns are null.
+- Intensities, retention times, `observed_mz` and `consensus_feature_id` follow the rules above.
+- No PSM links to such a row, and it never counts as evidence for a peptide or protein.
+
+Readers ignore these rows by default. The test is `peptidoform IS NOT NULL`.
 
 ## pg rows
 
@@ -96,24 +111,28 @@ One row is one protein group in one quantification unit (the fractions of one sa
 | `grouped_runs`, `label` | Never null. The runs of the unit, and the label. |
 | `identified_in_unit` | Never null. True when a PSM from a run of this unit, not a transfer, supports the group. |
 | `intensity` | OpenMS's own protein abundance. Null means identified but not quantified. |
-| `global_qvalue` | The group's q-value over the experiment. **(pending)** Never null: OpenMS estimates protein FDR even when no cut is applied. |
+| `global_qvalue` | The group's q-value over the experiment. Filled whenever protein-level FDR was estimated; null on every row otherwise. |
 | `pg_qvalue` | Null by definition; OpenMS has no per-unit protein q-value. |
 | `is_decoy` | Never null. True only if every member is a decoy. |
 | `contaminant` | Never null. |
 
 ## Reading these files
 
-Because every column above is filled, each question a consumer asks is one `WHERE` clause. `:t` is the reader's threshold, usually 0.01.
+Each question a consumer asks is one `WHERE` clause on typed columns. `:t` is the reader's threshold, usually 0.01.
 
 | Question | Predicate |
 |---|---|
 | Is this PSM an accepted identification? | `NOT is_decoy AND qvalue <= :t` |
 | Was this precursor identified in this run? | `NOT is_decoy AND identification_type IN ('direct', 'secondary') AND psm_qvalue <= :t` |
-| Does this feature row carry a usable quantity? | `NOT is_decoy` and an entry with a non-null intensity. Transferred rows are included; drop them with `identification_type <> 'transferred'`, or under PIP-ECHO keep those with `match_qvalue <= :t`. |
+| Does this feature row carry a usable quantity? | `NOT is_decoy AND peptidoform IS NOT NULL`, and an entry with a non-null intensity. |
 | Was this protein group identified in this unit? | `NOT is_decoy AND identified_in_unit AND global_qvalue <= :t` |
 | Is this row a contaminant? | `contaminant` |
 
-Protein groups are keyed on `pg_group_id`. `anchor_protein` is for display only.
+Three points go with these predicates:
+
+- **A q-value level that was not estimated cannot be filtered on.** If a q-value column is null on every row, the reader filters at a level that exists and says so. For an analysis with peptide-level FDR only, that means `peptide_qvalue <= :t` on features and no q-value condition on protein groups. A reader never treats null as 1.0 and never drops every row silently.
+- **Transferred quantities are kept by default.** They improve quantification. Leaving them out is the reader's choice: add `identification_type <> 'transferred'`, or under PIP-ECHO keep those with `match_qvalue <= :t`.
+- **Protein groups are keyed on `pg_group_id`.** `anchor_protein` is for display only.
 
 ### Reference queries (DuckDB)
 
@@ -143,12 +162,14 @@ SELECT f.peptidoform, f.charge, f.run_file_name, s.sample_accession,
 FROM feature f, unnest(f.intensities) AS t(i),
      run r, unnest(r.samples) AS u(s)
 WHERE NOT f.is_decoy
+  AND f.peptidoform IS NOT NULL
   AND i.intensity IS NOT NULL
   AND r.run_file_name = f.run_file_name
   AND s.label = i.label
 GROUP BY ALL;
 
 -- Protein groups identified per unit at 1% protein FDR
+-- (drop the q-value condition when the file has no protein q-values)
 SELECT grouped_runs, count(DISTINCT pg_group_id) AS identified_groups
 FROM pg
 WHERE NOT is_decoy AND identified_in_unit AND global_qvalue <= 0.01
@@ -174,7 +195,12 @@ Two annex rules were changed so that existing consumers keep working:
 - **Typed columns and score entries are both written in 1.4.** q-values and `rank` fill their typed columns and also stay in `additional_scores` with the same value. The entries are removed in a later minor version ([CNF-6](t04-confidence-fields.md)).
 - **A protein quantity that QPX computes may fill `pg.intensity`**, but only when the tool provides none in the whole file, and then with `intensity_processing = sum` ([INT-4](t09-intensities-missing-values.md)). This does not arise for OpenMS-written files, which carry OpenMS's own abundance.
 
-One change still needs consumer work: OpenMS's PSM-level q-value moves from `feature.peptide_qvalue` to `feature.psm_qvalue`. See [Consumers](consumers.md).
+Two changes need consumer work:
+
+- OpenMS's PSM-level q-value moves from `feature.peptide_qvalue` to `feature.psm_qvalue`.
+- `peptidoform`, `sequence` and `charge` can be null in the feature view, on unidentified rows only.
+
+See [Consumers](consumers.md).
 
 ## Not in this profile yet
 
@@ -185,9 +211,21 @@ These need algorithm work in OpenMS, or are not needed by the current consumers,
 - an FDR for transfers made without PIP-ECHO;
 - transfer scores and the retention-time and m/z differences to the donor.
 
-## Decisions pending
+## Decisions taken
 
-1. **Transferred rows beside direct rows.** Should OpenMS leave them out, as proposed above? Before deciding, check what OpenMS's protein quantification does with such pairs, and confirm that ProteomicsLFQ never writes two direct rows for one precursor and run.
-2. **Protein q-values.** Should OpenMS always estimate protein FDR, so `global_qvalue` is never null?
-3. **Estimated areas.** When the elution-model fit fails, OpenMS replaces the area by a regression estimate. Is that value measured or imputed?
-4. **Unidentified features.** Confirm the separate `unidentified_feature` view (this reverses [#229](https://github.com/bigbio/qpx/issues/229)/[#232](https://github.com/bigbio/qpx/issues/232) and settles [#378](https://github.com/bigbio/qpx/issues/378)).
+The maintainers decided these points in [#383](https://github.com/bigbio/qpx/issues/383):
+
+| Point | Decision |
+|---|---|
+| A transferred row beside a quantified direct row of the same precursor and run | OpenMS leaves the transferred row out. |
+| Unidentified features | They may be stored in the feature view, optionally, marked `identification_type = 'unidentified'`. Readers ignore them. There is no separate view. |
+| Protein FDR | Not always estimated. OpenMS sometimes estimates only peptide-level FDR, for example for immunopeptidomics. A q-value column is null when its level was not estimated. This holds for every producer. |
+| Transferred quantities | Kept by default. Filtering them out is the reader's choice. |
+| Estimated values | A value the quantification tool's own algorithm estimates counts as measured; that is the tool's decision. A value added afterwards by another tool counts as imputed. |
+| Profile claim | A provenance parameter, not a footer key. |
+
+## To verify in OpenMS
+
+- What OpenMS's protein quantification does with a direct and a transferred feature of the same precursor in one run, so that the feature rows still add up to the protein quantity after the transferred row is left out.
+- That ProteomicsLFQ never writes two direct features for one precursor in one run.
+- That PSM-level q-values are available whenever peptide-level FDR is the requested level.

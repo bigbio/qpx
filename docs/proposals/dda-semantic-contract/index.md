@@ -51,7 +51,7 @@ One feature row is one precursor (peptidoform and charge) in one run. A `direct`
 Each co-isolated precursor identified in a spectrum is its own psm row. The rows share `run_file_name` and `scan` and differ in `precursor_index` (1, 2, …). Each has rank 1. A chimeric spectrum's reporter ions feed at most one feature.
 
 **What if a feature has no identification?**
-It is not a feature row. Feature rows always have a peptidoform and a charge. Unidentified MS1 features go to an optional `unidentified_feature` view. An identified precursor without a quantity is a feature row whose intensity is null.
+By default it is not written. A producer may store such MS1 features in the feature view, marked `identification_type = 'unidentified'` with a null peptidoform, and readers ignore those rows. An identified precursor without a quantity is a feature row whose intensity is null.
 
 **How are match-between-runs and identification in the same run told apart?**
 By `identification_type`, which is never null: `direct` or `secondary` means identified by MS/MS in this run; `transferred` means the signal was measured here but the identity came from another run. Transferred rows have no scan, PEP or `psm_qvalue`; their own confidence is `match_qvalue`. They never count as identifications or as protein evidence. On protein rows, `identified_in_unit` says whether the group has MS/MS evidence in that unit.
@@ -82,7 +82,7 @@ No footer key names the profile. A dataset claims it with the provenance paramet
 5. **Consumer predicates.** Each consumer adopts the predicates of the [strict profile](strict-profile.md#reading-these-files).
 6. **Other producers.** The converter work in the annex, by producer.
 
-Deferred until a consumer needs them: the `unidentified_feature` view, conflict flags, the `match_*` details beyond `match_qvalue`, most spectrum-field rules, and the rules that exist only for other producers.
+Deferred until a consumer needs them: writing unidentified features, conflict flags, the `match_*` details beyond `match_qvalue`, most spectrum-field rules, and the rules that exist only for other producers.
 
 ## Annex
 
@@ -94,14 +94,22 @@ The annex keeps the full producer-neutral analysis. It matters for three reasons
 
 Start with the [annex overview](annex-overview.md).
 
-## Decisions needed
+## Decisions taken
 
-1. **Transferred rows beside direct rows.** Should OpenMS leave out a transferred row when the same precursor has a quantified direct row in that run? This gives one row per precursor and run.
-2. **Unidentified features.** Confirm the separate view. This reverses [#229](https://github.com/bigbio/qpx/issues/229)/[#232](https://github.com/bigbio/qpx/issues/232) and settles [#378](https://github.com/bigbio/qpx/issues/378).
-3. **Protein q-values.** Should OpenMS always estimate protein FDR, so `pg.global_qvalue` is never null?
-4. **Transfers in quantities.** By default readers keep transferred quantities and mark them. Should they be dropped by default instead (mokume#117)?
+The maintainers decided these points in [#383](https://github.com/bigbio/qpx/issues/383). They are worked into the strict profile and the annex.
 
-The [strict profile](strict-profile.md#decisions-pending) and the [annex overview](annex-overview.md#open-questions-for-maintainers) list further open points.
+| Point | Decision |
+|---|---|
+| A transferred row beside a quantified direct row of the same precursor and run | OpenMS leaves the transferred row out, so there is one row per precursor and run. |
+| Unidentified features | They may be stored in the feature view, optionally, marked `identification_type = 'unidentified'`. Readers ignore them. There is no separate view. This keeps [#229](https://github.com/bigbio/qpx/issues/229)/[#232](https://github.com/bigbio/qpx/issues/232) and settles [#378](https://github.com/bigbio/qpx/issues/378). |
+| Protein FDR | Not always estimated. OpenMS sometimes estimates only peptide-level FDR, for example for immunopeptidomics. A q-value column is null when its level was not estimated. This holds for every producer. |
+| Transferred quantities | Kept by default, because they improve quantification. Filtering them out is the reader's choice. |
+| Estimated values | A value the quantification tool's own algorithm estimates counts as measured; that is the tool's decision. A value added afterwards by another tool, such as mokume, counts as imputed. |
+| Profile claim | A provenance parameter, not a footer key. |
+| PSI alignment | Not a goal. PSI terms are cited only where they pin down a meaning. |
+| Footer | Five new keys. Everything else is a typed column, a fixed rule or a provenance parameter. |
+
+Open points that remain are checks against the OpenMS source ([strict profile](strict-profile.md#to-verify-in-openms)) and the questions on other producers in the [annex overview](annex-overview.md#open-questions-for-maintainers).
 
 ## How this was produced
 

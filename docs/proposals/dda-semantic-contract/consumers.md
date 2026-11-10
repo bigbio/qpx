@@ -37,7 +37,7 @@ Two defects are in the consumers themselves and are independent of the contract:
 
 ## What consumers change
 
-With files that follow the strict profile, each consumer needs about six predicates. The exact SQL is in the [strict profile](strict-profile.md#reading-these-files).
+With files that follow the strict profile, each consumer needs about seven predicates. The exact SQL is in the [strict profile](strict-profile.md#reading-these-files).
 
 | Change | qpxui | Portal |
 |---|---|---|
@@ -48,6 +48,7 @@ With files that follow the strict profile, each consumer needs about six predica
 | Count identified groups with `identified_in_unit` | `src/lib/queries/qc.ts:47` | `qpx_stats.py:226-235` |
 | Read the q-value of a feature's PSM from `psm_qvalue` | `src/lib/queries/overview.ts:108-110` | `apps/qpx_explore/store.py:1139` |
 | Resolve samples by exact `(run, label)` match | `src/lib/report.ts:337-346` | `apps/coexpression/builder.py:36-53` |
+| Skip unidentified feature rows with `peptidoform IS NOT NULL` | `src/lib/report.ts`, `src/lib/queries/quant.ts` | `apps/qpx_explore/store.py`, `qpx_stats.py` |
 | Read pg in the current layout | `src/lib/queries/quant.ts`, `proteins.ts` | – |
 
 ## Changes that would have emptied consumer output
@@ -59,9 +60,11 @@ Four rules of the first draft removed a value that these consumers filter on. Th
 | q-values leave `additional_scores` once typed columns exist | The portal's evaluation checks and its planned atlas FDR look scores up by name | Both are written during 1.4 ([CNF-6](t04-confidence-fields.md)) |
 | A QPX-computed sum may not fill `pg.intensity` | Protein quantities go empty in both consumers for consensusXML conversions | Allowed when the tool gives none, declared as `intensity_processing = sum` ([INT-4](t09-intensities-missing-values.md)) |
 | OpenMS's PSM-level value leaves `feature.peptide_qvalue` | q-value columns, filters and charts go empty | Consumers switch to `psm_qvalue`. The old column must not keep a value of the wrong level |
-| OpenMS's member-protein minimum leaves `pg.global_qvalue` | The portal's co-expression reads null as 1.0 and drops every protein | The strict profile requires a group-level `global_qvalue` from OpenMS |
+| OpenMS's member-protein minimum leaves `pg.global_qvalue` | The portal's co-expression reads null as 1.0 and drops every protein | OpenMS writes a group-level `global_qvalue` whenever protein FDR was estimated. When it was not, the column is null on every row, and the portal must not read that as 1.0 |
 
 Which route produced the portal's current quantms files, and whether their `pg.intensity` is an OpenMS abundance or a QPX sum, could not be established. One query on those files would settle how urgent the second and fourth rows are.
+
+One decision adds consumer work. A q-value column is null on every row when FDR was not estimated at its level, which is legitimate, for example for immunopeptidomics analyses with peptide-level FDR only. Consumers must then filter at a level that exists and say so, instead of dropping every row.
 
 ## What the contract does not give consumers yet
 
@@ -74,4 +77,4 @@ Which route produced the portal's current quantms files, and whether their `pg.i
 
 ## What these consumers do not need
 
-Neither consumer uses the following, so they are deferred in the [order of work](index.md#order-of-work): the chimeric precursor index beyond counting spectra, the links from PSMs to features, conflict flags, the `unidentified_feature` view, the `match_*` details, most spectrum-field rules, and every rule that exists only for MaxQuant, FragPipe, Proteome Discoverer, mzIdentML or CDAP.
+Neither consumer uses the following, so they are deferred in the [order of work](index.md#order-of-work): the chimeric precursor index beyond counting spectra, the links from PSMs to features, conflict flags, unidentified feature rows (which they only need to skip), the `match_*` details, most spectrum-field rules, and every rule that exists only for MaxQuant, FragPipe, Proteome Discoverer, mzIdentML or CDAP.

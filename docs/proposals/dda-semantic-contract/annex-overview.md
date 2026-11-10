@@ -51,11 +51,11 @@ In total the audit produced **443 verified findings**: 268 confirmed, 119 confir
 
 There are three cases:
 
-1. **An MS1 signal that nothing identifies is not a feature row.**
-    - Every feature row has a canonical peptidoform, a sequence and a charge ≥ 1, checked at the basic validation tier ([UNI-1](t07-unidentified-features.md)). `identification_type` gets no `unidentified` value ([UNI-2](t07-unidentified-features.md)).
-    - Such signals MAY go to a new optional view, `unidentified_feature`, with derived ids ([UNI-3](t07-unidentified-features.md), [UNI-4](t07-unidentified-features.md)).
-    - The presence of that view says they were kept. Features that were not exported are counted in provenance ([UNI-5](t07-unidentified-features.md)).
-    - This reverses the placement agreed in [#229](https://github.com/bigbio/qpx/issues/229)/[#232](https://github.com/bigbio/qpx/issues/232) and settles the open point in [#378](https://github.com/bigbio/qpx/issues/378). Maintainers need to confirm this.
+1. **An MS1 signal that nothing identifies** is optional to store. A producer MAY write it as a row of the feature view, marked `identification_type = 'unidentified'` ([UNI-1](t07-unidentified-features.md) to [UNI-3](t07-unidentified-features.md)).
+    - `peptidoform` and `sequence` are null, never empty strings. `charge` is null when none was assigned, never 0.
+    - No PSM links to such a row, and it never counts as peptide or protein evidence.
+    - Readers ignore these rows by default; the test is `peptidoform IS NOT NULL`.
+    - This keeps the placement agreed in [#229](https://github.com/bigbio/qpx/issues/229)/[#232](https://github.com/bigbio/qpx/issues/232) and settles [#378](https://github.com/bigbio/qpx/issues/378).
 2. **A row with an identity but no identifying PSM in its own run** is a transferred row, a multi-run unit row, or a row whose run has only PSMs of competing peptidoforms (`transferred` or null type, [FID-1](t06-identifications-per-feature.md)). A `direct` row whose identifying spectrum cannot be located looks the same ([FID-6](t06-identifications-per-feature.md)). In all these rows `scan` is empty and `id_run_file_name` is null, and only `identification_type` tells them apart. Readers never infer a transfer from those nulls ([FID-R3](t06-identifications-per-feature.md)).
 3. **An identified precursor without a quantity** is an identification-only row whose entries have a null intensity ([INT-6](t09-intensities-missing-values.md)). The footer key `unquantified_policy` says whether such rows were kept, so a missing row means "not identified" only when the producer says so ([UNI-6](t07-unidentified-features.md), [UNI-R4](t07-unidentified-features.md)).
 
@@ -84,7 +84,7 @@ Each topic has its own page with the current state, options, numbered rules, sch
 | [T04 Confidence fields](t04-confidence-fields.md) | The column name fixes the level. New `feature.psm_qvalue`, so a best-PSM q-value is never promoted to precursor or peptide level. Typed columns are filled only from level-explicit names. Feature PEP is the identifying PSM's. `confident()` takes an explicit level and never returns a silently empty set. |
 | [T05 Feature rows](t05-feature-rows.md) | A row is one quantity of one precursor ion in one run or declared unit. A signal feeds at most one row. The `identity_composite` says whether keys repeat. New `grouped_runs` for unit rows. All times are in seconds: `rt`, `rt_start` and `rt_stop` on the run's acquisition clock, `rt_aligned` and `consensus_rt` on the tool's aligned clock. |
 | [T06 Identifications per feature](t06-identifications-per-feature.md) | 0..n supporting PSMs and at most one identifying PSM from the row's own run, chosen by a total order. `scan` is one spectrum. New `identification_conflict` and `consensus_feature_id`. Links are mandatory when a producer writes both views. |
-| [T07 Unidentified features](t07-unidentified-features.md) | Feature rows are always identified. Unidentified MS1 features go to an optional `unidentified_feature` view. The footer key `unquantified_policy` says whether identification-only rows were kept. |
+| [T07 Unidentified features](t07-unidentified-features.md) | Unidentified MS1 features may be stored in the feature view, marked `identification_type = 'unidentified'` with a null peptidoform; readers ignore them. The footer key `unquantified_policy` says whether identification-only rows were kept. |
 | [T08 Match-between-runs](t08-match-between-runs.md) | `identification_type` alone gives the origin. Transfers carry no PSM and no run-level confidence. `match_*` is defined precisely. pg gains `identified_in_unit`. MBR settings go to provenance. |
 | [T09 Intensities and missing values](t09-intensities-missing-values.md) | The primary is the least-processed quantity of one kind per file, declared by `intensity_quantity` and `intensity_processing`. One entry per sample label (null = not quantified, 0 = measured zero). New `quant_spectrum_count`. A QPX roll-up is primary only when the tool gives no protein quantity. |
 | [T10 Protein mapping](t10-protein-mapping.md) | `protein_accessions` is the set of mapped entries. `pg_accessions` is one group's full membership or null. `anchor_protein` is a representative, never a key. New `group_unique`, from which `unique` is derived. A peptide is a decoy only if every entry is. Typed `contaminant` on psm and feature. Markers are kept verbatim. |
@@ -118,8 +118,8 @@ The footer holds only what a reader needs to interpret the rows: a key stays in 
 | `acquisition_method` | psm, feature, pg | `dda`, `dia`, `prm`, `mixed` | [META-5](t13-metadata-conformance.md) |
 | `fdr_filter` | psm, feature, pg | `none`, or a `;`-separated list of `<level>:<value>` such as `psm:0.01;protein:0.01`. The level is `psm`, `precursor`, `peptide` or `protein`; the value is a threshold in (0, 1], `applied` (a cut on another statistic) or `unknown`. A level not listed had no cut. | [FLT-1](t03-filtering-state.md), [FLT-2](t03-filtering-state.md) |
 | `unquantified_policy` | feature, pg | `retained`, `removed` | [UNI-6](t07-unidentified-features.md), [PGV-4](t12-protein-groups.md) |
-| `intensity_quantity` | feature, pg, site, unidentified_feature | `ms1_area`, `ms1_apex`, `ms1_trigger`, `ms1`, `reporter_uncorrected`, `reporter_corrected`, `reporter` (correction unknown), `reporter_sn`, `fragment`, `none` | [INT-2](t09-intensities-missing-values.md) |
-| `intensity_processing` | feature, pg, site, unidentified_feature | `none`, `sum`, `topn`, `normalized`, `maxlfq`, `other`; the most processed step applied | [INT-2](t09-intensities-missing-values.md) |
+| `intensity_quantity` | feature, pg, site | `ms1_area`, `ms1_apex`, `ms1_trigger`, `ms1`, `reporter_uncorrected`, `reporter_corrected`, `reporter` (correction unknown), `reporter_sn`, `fragment`, `none` | [INT-2](t09-intensities-missing-values.md) |
+| `intensity_processing` | feature, pg, site | `none`, `sum`, `topn`, `normalized`, `maxlfq`, `other`; the most processed step applied | [INT-2](t09-intensities-missing-values.md) |
 | `scan_format` (existing, extended) | psm, feature, mz | adds `mixed` (psm only) and `unknown`; required from 1.4 on psm, and on feature when any `scan` is non-empty | [SPC-7](t11-spectrum-precursor-fields.md) |
 
 ### Declarations that are not footer keys
@@ -164,7 +164,7 @@ The cost is that some states can no longer be read from the file alone. For exam
 | `match_qvalue` | feature | float32 → float64 [0, 1] | [CNF-9](t04-confidence-fields.md), [MBR-4](t08-match-between-runs.md) | **Physical type** |
 | `identified_in_unit` | pg | bool, null | [MBR-10](t08-match-between-runs.md) | No |
 | `level` | ontology | enum | [CNF-5](t04-confidence-fields.md) | No |
-| New view `unidentified_feature` | – | see T07 | [UNI-3](t07-unidentified-features.md) | No |
+| `peptidoform`, `sequence`, `charge` | feature | nullable, on `unidentified` rows only | [UNI-1](t07-unidentified-features.md) | Readers must skip null-peptidoform rows |
 
 ## Breaking changes
 
@@ -191,7 +191,7 @@ Additive changes come first. The following changes alter values or meanings and 
     - `scan_format` gains `mixed` and `unknown`, and from 1.4 an absent key means `unknown` ([SPC-7](t11-spectrum-precursor-fields.md)).
     - pg: a QPX roll-up may fill the primary only when the tool gives none, declared as `intensity_processing = sum` ([INT-4](t09-intensities-missing-values.md)). Counts get fixed scopes, `peptides` becomes nullable, `is_decoy` needs every member, `contaminant` may be null, rows follow tool units, and `pg_names` align with members ([PGV-5](t12-protein-groups.md), [PGV-7](t12-protein-groups.md), [PGV-10](t12-protein-groups.md), [PGV-12](t12-protein-groups.md)).
 - **Rows.**
-    - Unidentified rows leave the feature view ([UNI-1](t07-unidentified-features.md)).
+    - Unidentified rows are marked `identification_type = 'unidentified'` and get a null peptidoform instead of `''` ([UNI-1](t07-unidentified-features.md)).
     - K-duplicate PSMs are merged ([PSM-2](t01-psm-rows.md)).
     - OpenMS `feature.scan` holds one spectrum ([FID-5](t06-identifications-per-feature.md)).
     - Identification-only entries and rows are added where producers dropped them ([INT-5](t09-intensities-missing-values.md), [UNI-6](t07-unidentified-features.md)).
@@ -212,7 +212,7 @@ Additive changes come first. The following changes alter values or meanings and 
 
 ## Cross-section decisions taken here
 
-The harmonization pass left ten conflicts between sections open. This overview decides them as follows.
+The harmonization pass left ten conflicts between sections open. One of them, on a separate view for unidentified features, no longer applies. This overview decides them as follows.
 
 | Conflict | Decision |
 |---|---|
@@ -225,7 +225,6 @@ The harmonization pass left ten conflicts between sections open. This overview d
 | PSM counts when `precursor_index` is null | Count once per spectrum and report the coverage. The count is a lower bound on identified precursors ([PSM-R2](t01-psm-rows.md)). |
 | Should the `dda` profile require rank-1-only PSM files, or reject `unknown` footer values? | No, not in 1.4. Requiring rank-1-only files would reverse [#241](https://github.com/bigbio/qpx/issues/241); rank is a typed column and readers count `rank = 1`. Rejecting `unknown` should wait until every qpx converter fills the keys. |
 | MaxQuant `MULTI-MATCH-MSMS` | Keep it as `transferred` ([MBR-1](t08-match-between-runs.md)) until MaxQuant documentation or a fixture shows that its MS/MS identifies the peptide at PSM FDR. |
-| Footer keys of `unidentified_feature` | `intensity_quantity`, `intensity_processing` and the identity keys. Isobaric runs are out of scope for this view in 1.4 ([UNI-3](t07-unidentified-features.md)). |
 
 ## Producer status today
 
@@ -256,7 +255,7 @@ This is the producer-neutral order from the first draft. The current order, whic
     - anchor-keyed protein outputs;
     - zeros read as missing;
     - lone-sample label fallbacks.
-3. **Additive 1.4 columns, keys and the `unidentified_feature` view**, with the writer's allowlist fill ([CNF-6](t04-confidence-fields.md)).
+3. **Additive 1.4 columns and keys**, with the writer's allowlist fill ([CNF-6](t04-confidence-fields.md)).
 4. **Converter work**, by producer, from the [worklist](converter-worklist.md).
 5. **Breaking semantic changes** behind `qpx_version` 1.4, with `qpxc migrate`.
 6. **`consumer-guide.md`, the `dda` profile and the reader-contract fixtures** ([RDR-1](t14-reader-contract.md), [RDR-14](t14-reader-contract.md), [META-13](t13-metadata-conformance.md), [META-14](t13-metadata-conformance.md)). mokume can then run the same fixtures.
@@ -265,18 +264,15 @@ The fixtures lack real Proteome Discoverer exports, FragPipe with IonQuant match
 
 ## Open questions for maintainers
 
-Each section lists its own open questions. These are the ones that shape the contract:
+Each section lists its own open questions. These are the ones that still shape the contract. The points the maintainers have decided are listed on the [overview](index.md#decisions-taken).
 
-1. **Unidentified features.** Should they go to a separate view, as proposed, which reverses [#229](https://github.com/bigbio/qpx/issues/229)/[#232](https://github.com/bigbio/qpx/issues/232)? Or should they stay in `feature` with nullable identity columns? This also settles [#378](https://github.com/bigbio/qpx/issues/378). ([T07](t07-unidentified-features.md))
-2. **Transfers in quantities.** The default read profile keeps transferred quantities, de-duplicated and masked, because MaxQuant and IonQuant protein values include them. Should they be dropped by default, or weighted (mokume#117)? ([T14](t14-reader-contract.md), [T08](t08-match-between-runs.md))
-3. **Conflicts.** Should loser rows of an identification conflict be MUST rather than MAY? Do co-eluting localisation isomers count as conflicts ([T06](t06-identifications-per-feature.md))?
-4. **`peptide_qvalue`.** Is it per stripped sequence (MS:1001868) or per peptidoform? Fixing one meaning for the column (probably per peptidoform) avoids a footer key ([CRITIC-34](findings-feature.md#critic-34)).
-5. **2.0 clean-up.**
+1. **Conflicts.** Should loser rows of an identification conflict be MUST rather than MAY? Do co-eluting localisation isomers count as conflicts ([T06](t06-identifications-per-feature.md))?
+2. **`peptide_qvalue`.** Is it per stripped sequence (MS:1001868) or per peptidoform? Fixing one meaning for the column (probably per peptidoform) avoids a footer key ([CRITIC-34](findings-feature.md#critic-34)).
+3. **2.0 clean-up.**
     - Retype `feature.pg_accessions` to `list<string>`.
     - Remove `unique`.
-    - Move imputed values out of the primary slot.
     - Rename `feature.global_qvalue` to `precursor_global_qvalue` and `pg_qvalue` to `pg_unit_qvalue`.
-6. **Facts to confirm with tool authors or real exports.**
+4. **Facts to confirm with tool authors or real exports.**
     - MaxQuant `MULTI-MATCH-MSMS`.
     - FragPipe DDA+ and CHIMERYS per-precursor m/z.
     - PD `Found in Sample` and decoy content.
