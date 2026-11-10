@@ -97,9 +97,7 @@ def test_sdrf_handler_preserves_zero_padded_source_names(tmp_path):
 
     sdrf = tmp_path / "zero_padded.sdrf.tsv"
     sdrf.write_text(
-        "source name\tcomment[data file]\tcomment[label]\n"
-        "001\trun1.raw\tlabel free sample\n"
-        "01\trun2.raw\tlabel free sample\n"
+        "source name\tcomment[data file]\tcomment[label]\n001\trun1.raw\tlabel free sample\n01\trun2.raw\tlabel free sample\n"
     )
 
     assert SDRFHandler(sdrf).get_sample_map_run() == {"run1": "001", "run2": "01"}

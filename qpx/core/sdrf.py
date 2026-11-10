@@ -128,8 +128,8 @@ def get_complex_value_sdrf_column(sdrf_table: DataFrame, column: str) -> list:
     :param column: column name
     """
     values = get_unique_from_column_substr(sdrf_table, column)
-    # Blank cells carry no value even though the SDRF reader keeps them as strings.
-    return [get_name_from_complex_sdrf_value(value) for value in values if pd.notna(value) and value != ""]
+    # Blank cells are read as NaN and carry no value.
+    return [get_name_from_complex_sdrf_value(value) for value in values if pd.notna(value)]
 
 
 class SDRFHandler:
@@ -147,7 +147,7 @@ class SDRFHandler:
         :param sdrf_file: SDRF file
         """
         try:
-            sdrf_table = pd.read_csv(sdrf_file, sep="\t", header=0, dtype=str, keep_default_na=False)
+            sdrf_table = pd.read_csv(sdrf_file, sep="\t", header=0, dtype=str, keep_default_na=False, na_values=[""])
             sdrf_table.columns = sdrf_table.columns.str.lower()
             # Normalize common SDRF column name variants
             col_renames = {}
