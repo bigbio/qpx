@@ -97,7 +97,7 @@ Entries are distinct, with null positions, and SHOULD be sorted by code point. F
 - false: it is evidence for several groups, whether assigned or not;
 - null: the producer has no grouping for the peptide (MaxQuant without proteinGroups.txt), or the peptide is in no group.
 
-Under `mapping_set`, grouped rows are true. A producer that writes any non-null `pg_accessions` SHOULD fill `group_unique` on every row (MUST under the [T13](t13-metadata-conformance.md) `dda` profile).
+Under `mapping_set`, grouped rows are true. A producer that writes any non-null `pg_accessions` SHOULD fill `group_unique` on every identified row (MUST under the [T13](t13-metadata-conformance.md) `dda` profile).
 
 **PRT-10 (MUST)** `unique` is null when `pg_accessions` is null, false when the group has more than one member, and otherwise equals `group_unique`. This is `versioning.md:68-69` unchanged. `unique` is deprecated in 1.4, and 2.0 removes it. This reverses the `is_unique` rename in `feature.md:117`, because `pepmap.is_unique` already uses that name with another meaning.
 
@@ -109,7 +109,7 @@ The anchor is a member of `pg_accessions`. On feature it is non-null exactly whe
 
 **PRT-13 (MUST)** `pg_group_id` = `derive_id([members deduplicated and sorted per identity.md:51])`, with a test vector.
 
-**PRT-14 (SHOULD)** pepmap has one row per target peptidoform of the rank-1 psm rows and the feature rows ([T01](t01-psm-rows.md) PSM-8). Decoys are left out, because pepmap has no `is_decoy`. Entries follow PRT-1. `is_unique` means exactly one entry (MS:1001363).
+**PRT-14 (SHOULD)** pepmap has one row per target peptidoform of the rank-1 psm rows and the identified feature rows ([T01](t01-psm-rows.md) PSM-8). Decoys are left out, because pepmap has no `is_decoy`. Entries follow PRT-1. `is_unique` means exactly one entry (MS:1001363).
 
 ## Schema and footer changes
 | Change | View | Type / values | Required | Breaking? |

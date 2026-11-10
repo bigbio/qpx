@@ -6,7 +6,7 @@
     Part of the annex of the [DDA semantic contract proposal](index.md) for QPX. Rules here are proposals for specification 1.4, not normative text, and they cover every producer. For OpenMS-written files the [strict profile](strict-profile.md) is the contract and wins where the two differ. Bracketed ids such as [OPENMS-01](findings-psm.md#openms-01) link to the verified audit findings; code references are to `dev` at commit `32cbbdc`.
 
 
-> **Decision in one line:** A feature row is one quantity of one precursor ion in one run or one declared multi-run unit, and a signal feeds at most one row. No footer key declares the grain: the declared `identity_composite` says whether `(peptidoform, charge, run_file_name)` can repeat (exactly those columns: at most one row per key; a leading `quantification_unit_id`: one row per unit key; any other composite: distinct signals, which readers sum). A new column `grouped_runs` names a unit row's runs. `rt`, `rt_start` and `rt_stop` are seconds on the run's acquisition clock, and `rt` is the MS1 peak's time, else the identifying spectrum's.
+> **Decision in one line:** A feature row is one quantity of one precursor ion in one run or one declared multi-run unit, or one unidentified MS1 signal marked as such ([T07](t07-unidentified-features.md)), and a signal feeds at most one row. No footer key declares the grain: the declared `identity_composite` says whether `(peptidoform, charge, run_file_name)` can repeat (exactly those columns: at most one row per key; a leading `quantification_unit_id`: one row per unit key; any other composite: distinct signals, which readers sum). A new column `grouped_runs` names a unit row's runs. `rt`, `rt_start` and `rt_stop` are seconds on the run's acquisition clock, and `rt` is the MS1 peak's time, else the identifying spectrum's.
 
 ## Questions a reader has
 - What is one row: a peak, a precursor per run, one reporter spectrum, or an experiment-level quantity?
@@ -57,8 +57,9 @@ Spec:
 | **W2. Shift by the row's offset `rt − rt_aligned`, else null** | No new column | Derived value; small error where the calibration curve bends inside a peak |
 
 ## Recommendation
-**FRW-1 (MUST)** A feature row is one quantity of one precursor ion measured in one run, or in one declared unit (FRW-6). This amends [#217](https://github.com/bigbio/qpx/issues/217) ("a feature is a chromatographic peak"): peaks remain the rows of `peak` producers only.
-- The ion is one canonical peptidoform at one charge ≥ 1 ([T07](t07-unidentified-features.md) UNI-1). An MS1 multiplet counts as one ion (FRW-10).
+**FRW-1 (MUST)** A feature row is one quantity of one precursor ion measured in one run, or in one declared unit (FRW-6), or one unidentified MS1 signal marked as such ([T07](t07-unidentified-features.md) UNI-1). This amends [#217](https://github.com/bigbio/qpx/issues/217) ("a feature is a chromatographic peak"): peaks remain the rows of `peak` producers only.
+- On an identified row, the ion is one canonical peptidoform at one charge ≥ 1 ([T07](t07-unidentified-features.md) UNI-1). An MS1 multiplet counts as one ion (FRW-10).
+- An unidentified row has a null peptidoform and `identification_type = 'unidentified'` ([T07](t07-unidentified-features.md) UNI-3). It has no natural key, so it stands outside the grain of FRW-3 and its checks (FRW-12); its id follows [T07](t07-unidentified-features.md) UNI-4.
 - Labels are `intensities` entries ([T09](t09-intensities-missing-values.md) INT-5), never part of the row's key.
 - The signal is an MS1 peak or multiplet, or one or more reporter spectra, or none (FRW-5).
 - Charge states and modified forms are separate rows. Rows the tool separates by FAIMS CV carry that CV. A quantity spanning several CVs has a null `compensation_voltage`.
@@ -134,7 +135,7 @@ When a unit has several runs, its rows have null `rt`, `rt_aligned`, `rt_start` 
 
 | Check | Severity |
 |---|---|
-| A repeated natural key under `precursor_run` or `precursor_unit` | Error under `dda`, else warning ([T13](t13-metadata-conformance.md) META-8) |
+| A repeated natural key under `precursor_run` or `precursor_unit`, among identified rows | Error under `dda`, else warning ([T13](t13-metadata-conformance.md) META-8) |
 | A `precursor_unit` row that breaks FRW-6 (null `grouped_runs`, `run_file_name ≠ grouped_runs[0]`, unit id not 1:1) | Error |
 | `rt` outside `[rt_start, rt_stop]`, or a negative time | Error under `dda`, else warning ([T13](t13-metadata-conformance.md) META-8) |
 | Two intensity-bearing rows equal in natural key, `rt` and `intensities` | Error |
@@ -184,7 +185,7 @@ Under `precursor_run`, duplicates are an error. Current violations:
 
 **FRW-R5 (MUST)** A label is a channel, never a run name. mokume's "label = run" layout (mokume:python/mokume/io/feature.py:605-643; mokume:rust/crates/mokume-io/src/qpx.rs:528-539) is allowed only behind a legacy flag.
 
-**FRW-R6 (MUST)** Quantified-feature counts include only rows with a non-null entry. Identification counts follow [T08](t08-match-between-runs.md) MBR-R3. A missing feature row means "not identified" only under `unquantified_policy = retained` ([T07](t07-unidentified-features.md) UNI-R4). qpx/views/api.py:25 counts MaxQuant `MSMS` rows as features.
+**FRW-R6 (MUST)** Quantified-feature counts include only identified rows with a non-null entry; unidentified rows are excluded ([T07](t07-unidentified-features.md) UNI-R1). Identification counts follow [T08](t08-match-between-runs.md) MBR-R3. A missing feature row means "not identified" only under `unquantified_policy = retained` ([T07](t07-unidentified-features.md) UNI-R4). qpx/views/api.py:25 counts MaxQuant `MSMS` rows as features.
 
 **FRW-R7 (MUST)** Compare times across runs only through `rt_aligned`, and join spectra on 60 × `mz.scan_start_time`. Link multiplet PSMs through `psm.feature_id`. Read the window clock from FRW-7 only in 1.4 or migrated files.
 

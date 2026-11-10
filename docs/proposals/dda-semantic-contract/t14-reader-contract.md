@@ -6,7 +6,7 @@
     Part of the annex of the [DDA semantic contract proposal](index.md) for QPX. Rules here are proposals for specification 1.4, not normative text, and they cover every producer. For OpenMS-written files the [strict profile](strict-profile.md) is the contract and wins where the two differ. Bracketed ids such as [OPENMS-01](findings-psm.md#openms-01) link to the verified audit findings; code references are to `dev` at commit `32cbbdc`.
 
 
-> **Decision in one line:** A normative `consumer-guide.md` merges all topic reader rules into one default profile, implemented by qpx's read API: decoys out; accepted rank-1 rows identify; transfers are never evidence and never combined with a measured own-run entry of the same precursor, run and label; signals and fractions are summed; the group is the protein; samples resolve exactly via `run.samples`; absent keys, null declaring columns and missing provenance parameters mean unknown; filters never silently return empty or unfiltered results; outputs record the policy applied.
+> **Decision in one line:** A normative `consumer-guide.md` merges all topic reader rules into one default profile, implemented by qpx's read API: decoys and unidentified rows out; accepted rank-1 rows identify; transfers are never evidence and never combined with a measured own-run entry of the same precursor, run and label; signals and fractions are summed; the group is the protein; samples resolve exactly via `run.samples`; absent keys, null declaring columns and missing provenance parameters mean unknown; filters never silently return empty or unfiltered results; outputs record the policy applied.
 
 ## Questions a reader has
 - Which rows drop by default: decoys, null `is_decoy`, rank > 1, failing, unidentified, transferred, contaminants?
@@ -56,7 +56,7 @@ D, with warnings and upper bounds from E and opt-in filters from B.
 
 **RDR-2 (MUST)** Footer keys are read per META-R1–R3: key-value metadata, per file, shards combined by META-4; absent or off-vocabulary means `unknown` (off-vocabulary warns); never inferred from data (FLT-R1). `file_metadata` returns every registry key, `unknown` filled in. Declarations that are not footer keys come from their columns (`rank`, `precursor_index`, `identification_type`, `identified_in_unit`, `imputed_labels`, `is_imputed`), from `identity_composite`, or from provenance step parameters of the row's source (META-4); the table at the end of Reader rules says what a missing one means.
 
-**RDR-3 (MUST)** A threshold filter (q-value at an explicit level, `pass_threshold`, `match_qvalue`) classes rows as pass, fail or unassessable: null, and not settled by `fdr_filter` or a provenance-stated `pass_threshold` basis (FLT-R3, CNF-R1). It returns the pass rows, reports the unassessable count and the keys used, and raises an error if every row is unassessable. On a transferred row, a column [T04](t04-confidence-fields.md) CNF-8 leaves null is not unassessable: the row passes through to the transfer policy and is reported apart (CNF-R5, MBR-R5). A null flag follows its owner rule: `rank` → PSM-R3 (upper bounds), `is_decoy` → PRT-R2 (invalid file), `contaminant` → PRT-R3 (unknown), `identification_type` → MBR-R2.
+**RDR-3 (MUST)** A threshold filter (q-value at an explicit level, `pass_threshold`, `match_qvalue`) classes rows as pass, fail or unassessable: null, and not settled by `fdr_filter` or a provenance-stated `pass_threshold` basis (FLT-R3, CNF-R1). It returns the pass rows, reports the unassessable count and the keys used, and raises an error if every row is unassessable. When a q-value column is null on every row and `fdr_filter` does not settle it, FDR was not estimated at that level ([T04](t04-confidence-fields.md) CNF-2) and filtering at that level is not available: the error says so and names the levels that have q-values, and the reader filters at a level that exists. It never reads a null as 1.0 and never drops every row silently. On a transferred row, a column [T04](t04-confidence-fields.md) CNF-8 leaves null is not unassessable: the row passes through to the transfer policy and is reported apart (CNF-R5, MBR-R5). A null flag follows its owner rule: `rank` → PSM-R3 (upper bounds), `is_decoy` → PRT-R2 (invalid file), `contaminant` → PRT-R3 (unknown), `identification_type` → MBR-R2.
 
 **RDR-4 (MUST)** The default profile is below. Caller overrides are recorded (RDR-13).
 
@@ -68,12 +68,14 @@ D, with warnings and upper bounds from E and opt-in filters from B.
 | Confidence | FLT-R4; unknown state → non-decoy rank 1, as an upper bound | only on request, at an explicit level | CNF-R4 |
 | `transferred` | excluded | kept, de-duplicated (RDR-5), masked | MBR-R3–R5 |
 | Null type | own-run only when provenance records `match_between_runs = false` or `transferred_rows_removed = true`; otherwise unknown, count reported | kept | MBR-R2 |
-| Unidentified (1.3: null or `''` peptidoform, charge ≤ 0, type `unidentified`) | excluded | excluded | UNI-R1, -R2 |
+| Unidentified: `identification_type = 'unidentified'`, tested as `peptidoform IS NULL` (below 1.4 also a `''` or `'None'` peptidoform, or charge ≤ 0) | excluded | excluded | UNI-R1, -R2 |
 | Null entry | identified, not quantified | no cell, never 0 | UNI-R5 |
 | Contaminant | included; true and null counts reported | kept, with a `contaminant` column | PRT-R3 |
 | Imputed | – | excluded or masked | INT-R3 |
 | 0 | – | measured (MAY be read as censored, recorded) | INT-R2 |
 | Protein | `pg_group_id` or sorted membership | same | PRT-R1 |
+
+Whether to use transferred quantities is the reader's choice. The default keeps them, because they improve quantification; filtering them out is optional (MBR-R5).
 
 In 1.3 psm and feature files, contamination comes from the linked pg row; otherwise it is unknown.
 
@@ -99,7 +101,7 @@ Picking one row (MAX, best row) in steps 1–2 is a selection, not the quantity.
 **RDR-9 (MUST)** Counts run over accepted rows (FLT-R4):
 - **Spectra**: distinct (`run_file_name`, `scan`), or `spectrum_reference` where `scan` is empty (CHI-R1).
 - **PSMs**: per PSM-R2 and CHI-R2.
-- **Peptidoforms and peptides**: distinct, over accepted PSMs or `direct`/`secondary` features; never `''`.
+- **Peptidoforms and peptides**: distinct, over accepted PSMs or `direct`/`secondary` features; never `''` or null.
 - **Quantified features**: target, identified rows with a non-null entry (FRW-R6); transfers reported apart.
 - **Groups per unit**: target, accepted pg rows with `identified_in_unit = true`; a null value gives an upper bound (PGV-R1).
 - **Group spectral count**: distinct spectra among accepted PSMs whose linked feature carries the group, complete in 1.4 files except in runs listed in provenance `skipped_runs_psm` (FID-9, FID-R2). Counts via `protein_accessions` or pepmap count shared spectra in every group and say so. Tool counts (`spectral_count`, `unique_spectral_count`, `total_spectral_count`; pg.md:233-235) stay the tool's. Summing feature `spectral_count` over co-identified rows overcounts (CHI-R5).
@@ -111,7 +113,8 @@ Under an `unknown` filter state, counts are upper bounds (FLT-R5).
 **RDR-11 (MUST)** Readers check `qpx_version` and `file_type` (META-R4). Below 1.4, every 1.4 key is `unknown` (META-2), and the legacy clauses apply:
 - PSM-R1: the score `rank`;
 - [T02](t02-chimeric-spectra.md): `direct` may include secondary-only rows;
-- CNF-R6, FRW-R7, FID-R7, UNI-R2, MBR-R7 and SPC-R5;
+- CNF-R6, FRW-R7, FID-R7, MBR-R7 and SPC-R5;
+- UNI-R2: a feature row with a null, `''` or `'None'` peptidoform or a charge ≤ 0 is unidentified;
 - PRT-R4: below 1.1.3, a null `unique` with one member means unique.
 
 **RDR-12 (MUST)** K (PSM-R4), the feature key under the `precursor_run`/`precursor_unit` grain of `identity_composite` (FRW-R1) and `pg_id` are unique only after strict validation. Otherwise a reader drops exact duplicates, reports keys whose rows differ, and never silently joins on or sums them.
@@ -202,7 +205,7 @@ RDR-1–14 above are the normative reader rules. Current violations:
 | `precursor_index`, `quant_scan` ([T02](t02-chimeric-spectra.md) CHI-10, CHI-11) | Read a null index as unknown, never 1 (CHI-R7); count spectra by scan (CHI-R1); de-duplicate reporter roll-ups on `quant_scan` wherever it is set (CHI-R6) |
 | `identity_composite` ([T05](t05-feature-rows.md) FRW-3) | Derive the grain; a missing composite is the `peak` default. Apply RDR-5, then sum rows sharing a natural key, except under `precursor_run` or `precursor_unit` (FRW-R1/R2) |
 | PSM links, provenance `skipped_runs_psm` ([T06](t06-identifications-per-feature.md) FID-9) | Treat links in 1.4 files as complete except in listed runs; there, never read a missing link as "not supporting" (FID-R2) |
-| `unidentified_feature` file, provenance `skipped_rows_unidentified_feature` ([T07](t07-unidentified-features.md) UNI-5) | Compute an identification rate only with the file and no skipped rows (UNI-R3) |
+| Unidentified rows in the feature file, provenance `skipped_unidentified_features` ([T07](t07-unidentified-features.md) UNI-5) | Compute an identification rate only when the file holds unidentified rows and none were skipped (UNI-R3) |
 | `identification_type`, `identified_in_unit`, provenance `match_between_runs` step ([T08](t08-match-between-runs.md) MBR-8, MBR-9) | Report null types as unknown unless provenance settles them (MBR-R2); a null `identified_in_unit` gives upper bounds (PGV-R1); when `mbr_fdr` is `none`, `unknown` or absent, warn and offer to drop transfers (MBR-R6) |
 | `imputed_labels`, `is_imputed` ([T09](t09-intensities-missing-values.md) INT-9) | Read a null flag as unknown, not measured: exclude or mask (INT-R3) |
 | Provenance `pass_threshold_level`, `pass_threshold_fdr` ([T03](t03-filtering-state.md) FLT-8) | Treat `pass_threshold = true` as an FDR cut at t only if they state an FDR level and a value ≤ t (FLT-R4) |
@@ -213,7 +216,7 @@ RDR-1–14 above are the normative reader rules. Current violations:
 | Provenance `pg_grouping` ([T12](t12-protein-groups.md) PGV-6) | Pivot `pg_group_id` across units only under `dataset_inference` or `mapping_set`; otherwise warn (PGV-R5) |
 
 ## Open questions for maintainers
-1. Should quantities drop transfers by default (mokume#117)? Here they are kept, de-duplicated and masked, because MaxQuant and IonQuant protein values include MBR.
+1. *Resolved by the maintainer:* whether to use transferred quantities is the reader's choice. The default keeps them, de-duplicated and masked, because they improve quantification and MaxQuant and IonQuant protein values include MBR. Filtering them out is optional (RDR-4, [T08](t08-match-between-runs.md) MBR-R5; mokume#117).
 2. Should matrices drop contaminants by default, as the usual Perseus workflow does?
 3. Should the lone-sample fallback survive one release with a deprecation warning?
 4. Should FRW-R2/R3 allow a recorded best-row or MAX selection (mokume TMT `best-row`), as RDR-6 does?

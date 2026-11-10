@@ -74,7 +74,9 @@ An absent or off-vocabulary value means `unknown`. `qpxc validate --profile dda`
 - **Level not listed:** no confidence cut at that level. `none` means no level was cut.
 - **Several cuts:** write the strictest decimal, else `applied`.
 
-**FLT-3 (MUST)** On `transferred` feature rows, `fdr_filter` describes the donor identification; the transfer's cut is the `mbr_fdr` parameter of the provenance `match_between_runs` step ([T08](t08-match-between-runs.md)). Rows of [T07](t07-unidentified-features.md)'s `unidentified_feature` view are outside this key.
+`fdr_filter` lists the levels at which rows were cut, not the levels at which FDR was estimated. A source may estimate FDR at one level only: OpenMS sometimes estimates only peptide-level FDR (for example in immunopeptidomics), or only PSM-level FDR, and the same holds for every producer. The typed q-value column of a level that was not estimated is null on every row of the file ([T04](t04-confidence-fields.md) CNF-2). This is not a defect and not `unknown`.
+
+**FLT-3 (MUST)** On `transferred` feature rows, `fdr_filter` describes the donor identification; the transfer's cut is the `mbr_fdr` parameter of the provenance `match_between_runs` step ([T08](t08-match-between-runs.md)). Unidentified feature rows ([T07](t07-unidentified-features.md) UNI-3) are outside the meaning of `fdr_filter`: no identification stands behind them.
 
 **FLT-4** Provenance traces each cut.
 - **(MUST)** A qpxc cut is recorded as `qvalue_threshold` and `qvalue_threshold_level` in `format_conversion`.
@@ -152,7 +154,7 @@ Link resolution follows [T06](t06-identifications-per-feature.md) FID-8 (every s
 
 **FLT-R2 (MUST)** Always exclude `is_decoy = true` in every view before counting or quantifying. Estimate FDR from targets and decoys only when provenance states `decoy_policy = retained` and that level in `fdr_filter` is not listed or a decimal ≥ the estimated threshold.
 
-**FLT-R3 (MUST)** A confidence filter at level L and threshold t uses the typed q-value of L ([T04](t04-confidence-fields.md)). A null passes when the `fdr_filter` entry for L is a decimal ≤ t; otherwise the row is unassessable, is excluded and counted, and the reader raises if every row is ([T14](t14-reader-contract.md) RDR-3). Never return a silently empty or unfiltered result.
+**FLT-R3 (MUST)** A confidence filter at level L and threshold t uses the typed q-value of L ([T04](t04-confidence-fields.md)). A null passes when the `fdr_filter` entry for L is a decimal ≤ t; otherwise the row is unassessable, and is excluded and counted. When the q-value column of L is null on every row and `fdr_filter` does not settle it, FDR was not estimated at L ([T04](t04-confidence-fields.md) CNF-2) and filtering at L is not available: the reader says so (a qpx helper raises an error that names the levels with q-values, [T14](t14-reader-contract.md) RDR-3) and filters at a level that exists. It never reads a null as 1.0 and never drops every row silently. Never return a silently empty or unfiltered result.
 
 **FLT-R4 (MUST)** An accepted PSM has `is_decoy = false`, rank 1 ([T01](t01-psm-rows.md) PSM-R1; null rank per PSM-R3), and either `pass_threshold = true` or a null `pass_threshold` with a `psm`, `precursor` or `peptide` entry in `fdr_filter` that is a decimal or `applied`. `true` equals an FDR filter at t only if provenance states that `pass_threshold_level` is an FDR level and `pass_threshold_fdr` ≤ t. With a null `pass_threshold` and no declared cut, the reader applies FLT-R3 at a stated threshold, or reports non-decoy rank-1 counts as upper bounds. This predicate governs counts, spectral counts, modification statistics and pg evidence.
 

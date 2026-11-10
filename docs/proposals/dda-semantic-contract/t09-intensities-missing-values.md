@@ -65,8 +65,8 @@ One column holds apex heights, areas, reporter S/N, sums over 1-9 spectra, norma
 
 | Key | Views | Values |
 |---|---|---|
-| `intensity_quantity` | feature, pg, site, unidentified_feature ([T07](t07-unidentified-features.md)) | `ms1_area` (MS:1001844), `ms1_apex` (MS:1001843), `ms1_trigger` (survey-scan precursor, MS:1003085), `ms1` (kind unstated), `reporter_uncorrected`, `reporter_corrected` (isotope-impurity correction not applied / applied; MS:1001847), `reporter` (MS:1001847, correction state unknown), `reporter_sn` (no PSI term), `fragment` (DIA), `none` (every intensity null), `unknown` |
-| `intensity_processing` | feature, pg, site, unidentified_feature | `none` (the measured signal, not normalized), `sum` (pg: a plain sum of measured signals), `topn`, `normalized`, `maxlfq`, `other`, `unknown`. If several apply, write the most processed: `maxlfq` > `normalized` > `topn` > `sum` > `none` |
+| `intensity_quantity` | feature, pg, site | `ms1_area` (MS:1001844), `ms1_apex` (MS:1001843), `ms1_trigger` (survey-scan precursor, MS:1003085), `ms1` (kind unstated), `reporter_uncorrected`, `reporter_corrected` (isotope-impurity correction not applied / applied; MS:1001847), `reporter` (MS:1001847, correction state unknown), `reporter_sn` (no PSI term), `fragment` (DIA), `none` (every intensity null), `unknown` |
+| `intensity_processing` | feature, pg, site | `none` (the measured signal, not normalized), `sum` (pg: a plain sum of measured signals), `topn`, `normalized`, `maxlfq`, `other`, `unknown`. If several apply, write the most processed: `maxlfq` > `normalized` > `topn` > `sum` > `none` |
 
 On pg, `intensity_quantity` names the signal the roll-up combines. Details go in provenance: the normalization method (`normalization`), the peptides summed (razor, unique or all), N for top-N, and qpx as the computing tool of a QPX roll-up (INT-4). Imputation has no key (INT-9). PSI-MS accessions were checked in OLS.
 
@@ -108,6 +108,8 @@ A null entry beside a non-null one means the label was not detected (a channel b
 **INT-8 (MUST)** In `additional_intensities`, each label appears at most once and only labels of the row's entries (pg: the row's label). An absent name means not reported; sentinels are dropped, so a 0 is real (a count). Values are finite, and negative only under a registered log-scale name (INT-12).
 
 **INT-9 (MUST)** Imputed values stay entries, flagged by `imputed_labels` or `is_imputed` (intensities.md:131).
+- A value produced by the quantification tool's own algorithm counts as measured, unless the tool itself marks it as imputed. This includes model-based estimates inside the algorithm, such as OpenMS's regression estimate when the elution-model fit fails. It is the tool's decision.
+- A value filled in afterwards by another tool (for example by mokume) is imputed and MUST be flagged (`imputed_labels`, pg `is_imputed`).
 - `imputed_labels` ⊆ the labels of non-null entries, and `is_imputed = true` ⇒ a non-null `intensity`.
 - `imputed_labels = []` means nothing in the row was imputed; pg `is_imputed = false` means measured. A null flag means unknown. Producers that know write `[]`/`false`.
 - Imputation never sets `identification_type` ([T08](t08-match-between-runs.md) MBR-6). Fix producer-guide.md:48.
@@ -141,7 +143,7 @@ A null entry beside a non-null one means the label was not detected (a channel b
 | Change | View | Type / values | Required | Breaking? |
 |---|---|---|---|---|
 | `quant_spectrum_count` | feature | int32, null, ≥ 1 | SHOULD on reporter rows | No |
-| `intensity_quantity`, `intensity_processing` | feature, pg, site, unidentified_feature footers | INT-2 | SHOULD; MUST on feature and pg under the profile | No |
+| `intensity_quantity`, `intensity_processing` | feature, pg, site footers | INT-2 | SHOULD; MUST on feature and pg under the profile | No |
 | Imputation per row: `imputed_labels = []` / `is_imputed = false` = none, null = unknown (INT-9) | feature, pg | Constraint | Producers that know write `[]`/`false` | No |
 | "Raw" promise withdrawn; one column per file (INT-1) | feature, pg | Constraint | Yes | Semantic: 1.3 files read as `unknown`; some FragPipe and DIA-NN pg cells → null |
 | Complete label set, no null list (INT-5) | feature | Constraint | Yes | Semantic: OpenMS, FragPipe TMT and PD gain null entries |

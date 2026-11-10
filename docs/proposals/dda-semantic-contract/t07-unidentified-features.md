@@ -6,7 +6,7 @@
     Part of the annex of the [DDA semantic contract proposal](index.md) for QPX. Rules here are proposals for specification 1.4, not normative text, and they cover every producer. For OpenMS-written files the [strict profile](strict-profile.md) is the contract and wins where the two differ. Bracketed ids such as [OPENMS-01](findings-psm.md#openms-01) link to the verified audit findings; code references are to `dev` at commit `32cbbdc`.
 
 
-> **Decision in one line:** The feature view holds identified precursors only: every row has a canonical peptidoform, a sequence and a charge ≥ 1, and `identification_type` gets no `unidentified` value. MS1 features without an identification MAY go into a new optional view, `unidentified_feature`, with ids derived from a declared composite; the file's presence means they were retained. The footer key `unquantified_policy` declares whether identified, unquantified precursors keep a row.
+> **Decision in one line:** MS1 features without an identification stay in the feature view, in the same file as identified ones. A producer MAY write them; each is marked `identification_type = 'unidentified'` and has a null `peptidoform` and `sequence`, and readers ignore these rows by default. Every other row has a canonical peptidoform, a sequence and a charge ≥ 1. There is no separate view and no footer key for unidentified features. The footer key `unquantified_policy` declares whether identified, unquantified precursors keep a row.
 
 ## Questions a reader has
 - Can a feature row lack an identification? How do I recognise one: `identification_type`, an empty `peptidoform`, charge 0?
@@ -48,15 +48,15 @@ Readers mishandle legacy rows (UNI-R2): on a probe, `QualityControlView.metrics(
 - One OpenMS analysis gives feature views with or without unidentified rows, by route; "not detected", "unidentified" and "dropped" look alike.
 - The sentinels `''`, `'None'` and charge 0 enter peptide counts, MuData variables and id hashes; one such row disables id verification for the file.
 - FragPipe, PD and OpenMS make "identified, not quantified" look like "not identified"; MaxQuant and CDAP keep the difference, so MNAR-aware imputation gets producer-dependent input.
-- Unidentified features are real tool output [[EXTERNAL-15](findings-feature.md#external-15)]: MaxQuant allPeptides.txt, OpenMS `targeted_only=false` seeds, Dinosaur, Biosaur2, PSI QC term MS:4000093. mzTab-M keeps them in SMF (empty `SME_ID_REFS`) because identifications live in SME [[EXTERNAL-14](findings-feature.md#external-14)]. A QPX feature row carries its identification like an mzTab 1.0 PEP row (`sequence` mandatory), so SMF's counterpart is an identification-free view.
+- Unidentified features are real tool output [[EXTERNAL-15](findings-feature.md#external-15)]: MaxQuant allPeptides.txt, OpenMS `targeted_only=false` seeds, Dinosaur, Biosaur2, PSI QC term MS:4000093. mzTab-M keeps them in SMF, beside identified features, with empty `SME_ID_REFS` [[EXTERNAL-14](findings-feature.md#external-14)]. A QPX feature row carries its identification itself, like an mzTab 1.0 PEP row, so an unidentified row needs null identification columns and a marker.
 
 ## Options considered
 | Option | For | Against |
 |---|---|---|
 | A. Forbid unidentified features | Smallest; matches scope.md:21 | Reverses [#229](https://github.com/bigbio/qpx/issues/229); loses OpenMS seeds, allPeptides and QC data |
-| B. Same view, `identification_type='unidentified'`, nullable `peptidoform`/`sequence`/`charge`/`is_decoy` | One file; a row flag (P-C) | Breaks 4 required columns; every reader must filter (qpx MuData, views and mokume fail today); ~25 columns meaningless; contradicts [T05](t05-feature-rows.md) FRW-1, [T06](t06-identifications-per-feature.md) FID-1 |
+| **B. Same view, optional rows marked `identification_type = 'unidentified'`, null `peptidoform`/`sequence`, nullable `charge`** | One file; keeps [#229](https://github.com/bigbio/qpx/issues/229)/#232; a row flag (P-C); producers that write none change nothing | Three required columns become nullable; every reader must exclude the rows (qpx MuData, views and mokume fail today); about 25 columns are null on them |
 | C. Same view with `''`/0 sentinels (today's writer; what `-out_qpx` does at HEAD) | No schema change | Violates P-D; fails `--semantic`; ids unverifiable |
-| **D. Separate optional view, identified-only feature view** | Additive; existing readers stay correct; membership in the view marks the row; ids verifiable | One more view; `-out_qpx` must split |
+| D. Separate optional view, identified-only feature view | Additive; existing readers stay correct; membership in the view marks the row | One more view and file; `-out_qpx` must split; reverses [#229](https://github.com/bigbio/qpx/issues/229)/#232. Rejected by the maintainer: unidentified features must be storable in the same file |
 | Mirror M1: identification-only rows MUST exist | Strongest | Infeasible for quantms MSstats, which cannot tell whether NA means identified (P-G) |
 | **Mirror M2: declare the policy; SHOULD keep the rows** | Feasible, testable | Readers handle two modes |
 
@@ -66,42 +66,43 @@ Definitions:
 - A *precursor-run* is a `(peptidoform, charge)` in one run, or in one unit for unit rows ([T05](t05-feature-rows.md) FRW-6).
 - An *identification-only row* has no non-null intensity entry ([T05](t05-feature-rows.md) FRW-5, [T09](t09-intensities-missing-values.md) INT-6).
 
-**UNI-1 (MUST)** Every feature row is an identified precursor.
-- Basic tier (`qpxc validate`): `peptidoform` and `sequence` are non-empty, and `charge` ≥ 1 ([T11](t11-spectrum-precursor-fields.md) SPC-6).
+**UNI-1 (MUST)** A feature row is an identified precursor, or an unidentified feature marked as such. A producer MAY write unidentified features as rows of the feature view; none is required to.
+- A row is unidentified exactly when `identification_type = 'unidentified'` (UNI-2). Its columns follow UNI-3.
+- Every other row is an identified precursor: `peptidoform` and `sequence` are non-null, and `charge` ≥ 1 ([T11](t11-spectrum-precursor-fields.md) SPC-6). The validator checks this at the basic tier (`qpxc validate`).
+- `''`, `'None'` and charge 0 are errors on every row.
 - `peptidoform` is canonical and equals `sequence` without its tags ([T11](t11-spectrum-precursor-fields.md) SPC-15). semantic_validation.py:85-88 already checks this and catches `'None'`; SPC-15 moves the check from `--semantic` to the basic tier.
+- The psm view is unchanged: `peptidoform` is never null, and `charge` ≥ 1.
 
-Errors for `qpx_version` ≥ 1.4; warnings pointing to `qpxc migrate` before. UNI-1 replaces the unidentified sentence of feature.md:7-10 and settles [#378](https://github.com/bigbio/qpx/issues/378) for feature. It reverses [#229](https://github.com/bigbio/qpx/issues/229)/#232's placement of unidentified features in feature: their required columns cannot be filled truthfully.
+Errors for `qpx_version` ≥ 1.4; warnings pointing to `qpxc migrate` before. UNI-1 keeps [#229](https://github.com/bigbio/qpx/issues/229)/#232: unidentified features live in the feature view (feature.md:7-10). It adds the marker and replaces the `''` and 0 sentinels by nulls. It settles [#378](https://github.com/bigbio/qpx/issues/378) as: same view, flagged, optional, ignored by readers.
 
-**UNI-2 (MUST)** [T08](t08-match-between-runs.md) MBR-1's enum gets no `unidentified` value. A null `identification_type` means an identified row of unstated origin, never "unidentified".
+**UNI-2 (MUST)** [T08](t08-match-between-runs.md) MBR-1's enum is `direct`, `secondary`, `transferred`, `unidentified` and null. `unidentified` marks an unidentified feature. A null `identification_type` means an identified row of unstated origin, never "unidentified".
 
-**UNI-3 (MUST)** Unidentified features appear only in the optional view `unidentified_feature` (`{PREFIX}.unidentified_feature.parquet`, `file_type` `unidentified_feature_file`), never in feature or pg.
+**UNI-3 (MUST)** Unidentified features appear only as rows of the feature view marked `identification_type = 'unidentified'`. There is no separate view. On such a row:
 
-| Column | Type | Meaning |
-|---|---|---|
-| `feature_id` | int64, PK | Derived (UNI-4); `psm.feature_id` never points here |
-| `source_feature_id` | string, null | The tool's own feature id |
-| `run_file_name` | string, required | Must exist in `run` |
-| `charge` | int16, null | ≥ 1; null if not assigned, never 0 |
-| `observed_mz` | float32, null | Monoisotopic m/z from the feature finder |
-| `rt`, `rt_start`, `rt_stop`, `rt_aligned` | float32, null | As [T05](t05-feature-rows.md) FRW-7 to FRW-9 |
-| `ion_mobility`, `ion_mobility_start`, `ion_mobility_stop`, `compensation_voltage` | float32, null | As in feature |
-| `intensities`, `additional_intensities` | as feature | `LFQ`, or the run's MS1-label channels |
-| `consensus_feature_id` | int64, null | [T06](t06-identifications-per-feature.md) FID-11; a value never occurs in both views |
-| `additional_scores`, `cv_params` | as feature | |
+| Column | Value |
+|---|---|
+| `peptidoform`, `sequence` | null, never `''` or `'None'` |
+| `charge` | The feature's charge when the feature finder assigned one, else null; never 0 |
+| `is_decoy` | false |
+| `scan` | `[]` |
+| `id_run_file_name`, PEP, every q-value, `match_*` | null |
+| `contaminant`, `pg_accessions`, `anchor_protein`, `pg_group_id`, `unique`, `group_unique`, `identification_conflict` | null |
+| `intensities`, `rt`, `rt_start`, `rt_stop`, `rt_aligned`, `observed_mz`, ion mobility, `consensus_feature_id` | The same rules as on other rows ([T05](t05-feature-rows.md) FRW-7 to FRW-9, [T06](t06-identifications-per-feature.md) FID-11, [T09](t09-intensities-missing-values.md), [T11](t11-spectrum-precursor-fields.md)) |
 
-The view has no peptidoform, protein, decoy, q-value or `match_*` columns. Until open question 3 is decided, it holds label-free and MS1-label runs only. Its footer carries [T09](t09-intensities-missing-values.md)'s `intensity_quantity` and `intensity_processing` (INT-2) and the identity keys of UNI-4.
+- `peptidoform`, `sequence` and `charge` become nullable in the feature schema, for these rows only (UNI-1).
+- An unidentified row is never evidence: no `psm.feature_id` points to it, and it never enters pg evidence, counts, pepmap or protein quantities. Unidentified features have no pg rows.
+- Until open question 3 is decided, unidentified rows are written for label-free and MS1-label runs only.
 
-**UNI-4 (MUST)** Ids in `unidentified_feature` are derived from the declared `identity_composite`, and `identity_source` is `derived`.
-- A tool with its own feature id (OpenMS unique id, Dinosaur index, allPeptides row number) writes it to `source_feature_id` and declares `[run_file_name, source_feature_id]`.
-- Otherwise the composite is `[run_file_name, charge, observed_mz, rt]`; if that collides, the producer writes a deterministic ordinal ([#229](https://github.com/bigbio/qpx/issues/229)) to `source_feature_id` and uses the first composite.
+**UNI-4 (MUST)** Ids of unidentified rows are unchanged from [#229](https://github.com/bigbio/qpx/issues/229): the producer supplies an id (OpenMS unique id, Dinosaur index, allPeptides row number), and QPX namespaces it by run (feature.md:7-10). The original id stays in the cv_param `provided_feature_id`.
+- The writer recognises an unidentified row by `identification_type = 'unidentified'` or a null peptidoform, not by a falsy `''` peptidoform (feature.py:49-51).
+- These ids count as derived from `[run_file_name, provided id]`. A file with such rows then no longer reports `identity_source` `mixed` or `provided` [[INFRA-18](findings-feature.md#infra-18)], and `--check-identity` can verify it.
 - A duplicate id is a write error.
 
-This keeps [#229](https://github.com/bigbio/qpx/issues/229)'s producer id, verifiable by `--check-identity`.
-
-**UNI-5 (MUST)** No footer key states what happened to unidentified features.
-- The presence of the dataset's `unidentified_feature` file means retained: it holds every unidentified feature the producer obtained.
-- Unidentified features the source has but the producer did not export SHOULD be counted as `skipped_rows_unidentified_feature` ([T03](t03-filtering-state.md) FLT-6).
+**UNI-5 (MUST)** No footer key states what happened to unidentified features, and writing them is optional (UNI-1).
+- A file that holds unidentified rows holds every unidentified feature the producer obtained.
+- Unidentified features the source has but the producer did not write SHOULD be counted as `skipped_unidentified_features` ([T03](t03-filtering-state.md) FLT-6).
 - A producer whose source has none (the tool quantifies only identified or transferred precursors, or the input contains none) MAY state provenance parameter `unidentified_feature_policy = not_applicable`.
+- A file without unidentified rows and without these provenance entries says nothing about them.
 
 **UNI-6 (MUST)** The feature footer key `unquantified_policy` takes one of these values; absent means `unknown`.
 - `retained`: every target precursor-run with an accepted own-run identification ([T08](t08-match-between-runs.md) MBR-1, under [T03](t03-filtering-state.md) filters) has at least one feature row; if none is quantified, its rows are identification-only.
@@ -112,58 +113,63 @@ Transfers are out of scope ([T08](t08-match-between-runs.md) MBR-3 forbids trans
 
 **UNI-7 (SHOULD)** A producer whose source states per run that a precursor was identified writes `unquantified_policy = retained`. "Identified" follows the source: a rejected PSM (PD `Rejected`) identifies nothing; a PSM only excluded from quantification (PD `Excluded by Method`) identifies the precursor, with null entries. The tool's reason MAY go in the cv_param `unquantified_reason`.
 
-**UNI-8 (MUST)** Every qpxc command that writes a 1.4 feature file from 1.3 input (`migrate`, and the deprecated `convert openms`) handles rows with a null or `''` peptidoform. It:
-- moves them to `unidentified_feature`, whose presence then means retained (UNI-5);
+**UNI-8 (MUST)** Every qpxc command that writes a 1.4 feature file from 1.3 input (`migrate`, and the deprecated `convert openms`) handles rows with a null, `''` or `'None'` peptidoform. It rewrites them in place; nothing moves to another file. It:
+- makes `peptidoform` and `sequence` null;
 - makes a charge ≤ 0 null;
-- fills `source_feature_id` from the cv_param `provided_feature_id`, or else from the 1.3 `feature_id` when the file says `identity_source=provided` (feature.md:14-17);
-- nulls any `psm.feature_id` that points at a moved row, with a warning.
+- sets `identification_type = 'unidentified'`, and the other columns as UNI-3 requires;
+- nulls any `psm.feature_id` that points at such a row, with a warning.
+
+A row that has a real peptidoform but a charge ≤ 0 keeps its peptidoform. The command reports it; it fails validation until the source is converted again.
 
 **UNI-9 (MUST)** The validator reports:
 
 | Check | Severity |
 |---|---|
-| UNI-1 violation | Error (≥ 1.4); warning before |
+| UNI-1 violation: a row that is not `unidentified` with a null `peptidoform` or `sequence` or a null `charge`; on any row, `''`, `'None'` or a charge < 1 | Error (≥ 1.4); warning before |
+| An `unidentified` row that breaks UNI-3: a non-null `peptidoform`, `sequence` or other column that UNI-3 sets to null, `is_decoy = true`, or a non-empty `scan` | Error |
+| A `psm.feature_id` that points to an `unidentified` row | Error, dataset level |
 | `unquantified_policy` value outside its vocabulary | Error |
-| A companion file while provenance states `unidentified_feature_policy = not_applicable` | Error, dataset level |
+| An `unidentified` row while provenance states `unidentified_feature_policy = not_applicable` | Error, dataset level |
 | `unquantified_policy=removed` and an identification-only row | Error |
 | `unquantified_policy=retained`, a psm view, and an accepted target PSM ([T03](t03-filtering-state.md) FLT-R4) whose precursor-run has no feature row (units match through `grouped_runs`) | Warning |
-| `unidentified_feature`: a duplicate id, an unknown run, a charge < 1, or a `consensus_feature_id` that also occurs in feature | Error |
+| A duplicate id among `unidentified` rows | Error |
 
 ## Schema and footer changes
 | Change | View | Type / values | Required | Breaking? |
 |---|---|---|---|---|
-| UNI-1 checks. Text changes: feature.md:7-10, psm.md:175, scope.md:12,21 (scope gains the new view as an exception) | feature | – | – | **Yes for producers**: OpenMS `-out_qpx`, FeatureWriter's `''` path, MaxQuant `'None'`. 1.3 files only warn |
-| New view `unidentified_feature` (schemas/unidentified_feature.yaml) | new | UNI-3 | Optional | No |
+| `peptidoform`, `sequence` and `charge` become nullable; UNI-1 checks at the basic tier. Text changes: feature.md:7-10,51-55, psm.md:175, scope.md:12,21 (unidentified rows are the stated exception) | feature | null only on `unidentified` rows; elsewhere a canonical peptidoform and `charge` ≥ 1 | Non-null on every row that is not `unidentified` | **Yes for readers**: these columns can be null, and predicates must exclude the rows (UNI-R1). **Yes for producers**: OpenMS `-out_qpx`, FeatureWriter's `''` path, MaxQuant `'None'`. 1.3 files only warn |
+| `identification_type` gains `unidentified` (UNI-2; [T08](t08-match-between-runs.md) MBR-1) | feature | `direct`, `secondary`, `transferred`, `unidentified`, null | On every unidentified row | No: a new value ([T13](t13-metadata-conformance.md) META-10) |
+| Unidentified rows (UNI-3); no new view, no footer key | feature | UNI-3 | Optional (MAY) | No |
 | `unidentified_feature_policy` (UNI-5) | provenance parameter | `not_applicable` | MAY | No |
 | `unquantified_policy` (pg: [T12](t12-protein-groups.md) PGV-4) | feature footer | `retained`, `removed`, `unknown` | SHOULD; MUST in [T13](t13-metadata-conformance.md) | No |
 | cv_param `unquantified_reason` | feature | string | MAY | No |
-| FeatureWriter: remove the falsy-peptidoform branch (feature.py:44-100); add `UnidentifiedFeatureWriter` | writers | – | – | API: `''` rows raise |
-| UNI-8 migration | feature, new | – | – | **Yes** for migrated `-out_qpx` bundles: rows leave feature |
+| FeatureWriter: recognise unidentified rows by `identification_type = 'unidentified'` or a null peptidoform, not by the falsy-peptidoform branch (feature.py:44-100); record their ids as derived from `[run_file_name, provided id]` (UNI-4) | writers | – | – | API: `''` rows raise |
+| UNI-8 migration | feature | – | – | **Yes** for migrated `-out_qpx` bundles: `''` and charge 0 become null and the rows are marked `unidentified`; they stay in feature |
 
 ## Producer changes
 | Producer | Unidentified features (UNI-5) / `unquantified_policy` | Change needed |
 |---|---|---|
-| OpenMS consensusXML | Companion file, or a `skipped_rows_unidentified_feature` count (provenance `not_applicable` if the map has none) / `removed` until fixed, then `retained` | Test every PID for a hit, not only the first (feature_adapter.py:715). Write hitless consensus features to the new view (map position → `consensus_feature_id`, handle unique id → `source_feature_id`), or keep dropping them with a count. Add identification-only rows for precursor-runs with an accepted identification but no row (runs without a positive element; unassigned PIDs) and link them ([T06](t06-identifications-per-feature.md) FID-8) |
-| OpenMS `-out_qpx` (upstream) | Companion file / as above | Verified at HEAD: unidentified features are feature rows with `peptidoform = ""`, and intensity entries are non-nullable. Seeds go to the new view with null charge, never 0; entries become nullable, so identification-only rows can be written. See the [OpenMS worklist](openms-worklist.md). |
-| MaxQuant | No file (allPeptides.txt not read), or a companion file once read / `retained` | MAY read allPeptides.txt rows `Identified` leaves unmarked (check the mapping: coxdocs words it per MS/MS). Drop TMT transfers without a reporter value ([T08](t08-match-between-runs.md) MBR-3). Skip and count NULL `Modified sequence` rows; never write `'None'` |
+| OpenMS consensusXML | Unidentified rows, or a `skipped_unidentified_features` count (provenance `not_applicable` if the map has none) / `removed` until fixed, then `retained` | Test every PID for a hit, not only the first (feature_adapter.py:715). Write hitless consensus features as unidentified rows (map position → `consensus_feature_id`, handle unique id → the producer id of UNI-4), or keep dropping them with a count. Add identification-only rows for precursor-runs with an accepted identification but no row (runs without a positive element; unassigned PIDs) and link them ([T06](t06-identifications-per-feature.md) FID-8) |
+| OpenMS `-out_qpx` (upstream) | Unidentified rows (optional) / as above | Verified at HEAD: unidentified features are feature rows with `peptidoform = ""`, and intensity entries are non-nullable. Seeds, when OpenMS writes them, stay in feature as rows marked `identification_type = 'unidentified'`, with null `peptidoform` and `sequence` and a null charge, never 0 (UNI-3); entries become nullable, so identification-only rows can be written. See the [OpenMS worklist](openms-worklist.md). |
+| MaxQuant | None (allPeptides.txt not read), or unidentified rows once it is read / `retained` | MAY read allPeptides.txt rows `Identified` leaves unmarked (check the mapping: coxdocs words it per MS/MS). Drop TMT transfers without a reporter value ([T08](t08-match-between-runs.md) MBR-3). Skip and count NULL `Modified sequence` rows; never write `'None'` |
 | FragPipe | Provenance `not_applicable` / `retained` after the fix | Write null entries for an LFQ ion with `<exp> Intensity` 0 and Match Type MS/MS or spectral count > 0, and for an all-zero TMT plex |
 | Proteome Discoverer | Provenance `not_applicable` for reporters; nothing for LFQ (the PSM export does not say whether Minora detected features independently) / `retained` after the fix | Keep "Excluded by Method" and unquantified precursors as null entries with `unquantified_reason` |
 | CDAP | Provenance `not_applicable` / `retained` | converter-coverage.md:194 "Null" reads as a null list; CDAP writes null entries |
 | quantms MSstats | Provenance `not_applicable` for TMT, nothing for LFQ (`targeted_only` unknown) / `unknown` | Write a null entry for NA instead of aborting |
 | mzIdentML | none (no feature view) | – |
-| qpx core | – | UNI-1 checks, `Dataset` discovery of the new view, `UnidentifiedFeatureWriter`, UNI-8 |
+| qpx core | – | Nullable `peptidoform`, `sequence` and `charge` in the feature schema; UNI-1 and UNI-3 checks; FeatureWriter per UNI-4; read helpers exclude unidentified rows by default (UNI-R1); UNI-8 |
 
 ## Reader rules
-**UNI-R1 (MUST)** A feature row is an identified precursor. Read unidentified features only from `unidentified_feature`. Never put them into roll-ups, MuData variables or peptide counts.
+**UNI-R1 (MUST)** Ignore unidentified rows by default. Every reader predicate on the feature view excludes them; the portable test is `peptidoform IS NOT NULL` (equivalently `identification_type IS DISTINCT FROM 'unidentified'`). Never put them into roll-ups, MuData variables, peptide or feature counts, pg evidence or protein quantities. A reader uses them only on request (QC, UNI-R3).
 
-**UNI-R2 (MUST)** In files with `qpx_version` < 1.4, exclude as unidentified any row with a null or `''` `peptidoform`, a `charge` ≤ 0, or `identification_type` `unidentified`. Current violations:
+**UNI-R2 (MUST)** In files with `qpx_version` < 1.4, read as unidentified, and so exclude by default, any row with a null, `''` or `'None'` `peptidoform`, a `charge` ≤ 0, or `identification_type` `unidentified`. Current violations:
 - qpx/mudata.py:183 makes such rows the variable `'|0'` and combines them per `duplicates`.
 - qpx/views/api.py:24-25,176-179 count `''` as a peptide and count these rows as features.
 - `Feature.for_quantification` passes them through (qpx/core/data/feature.py:91-115).
 - mokume Rust accepts `''` and errors on null (mokume:rust/crates/mokume-io/src/qpx.rs:438-439). It reads null `identification_type` with null `id_run_file_name` as transferred (qpx.rs:493-523), and counts `'unidentified'` as identified (:501-504) [[MOKUME-30](findings-feature.md#mokume-30)].
 - mokume Python drops them only through the unique filter, and only when `require_unique` is set (mokume:python/mokume/io/feature.py:227-229).
 
-**UNI-R3 (MUST)** Compute an identification rate only when the dataset has an `unidentified_feature` file and provenance counts no `skipped_rows_unidentified_feature`: `direct` and `secondary` rows with a non-null entry, over those plus transferred rows with a non-null entry plus `unidentified_feature` rows. Otherwise there is no denominator.
+**UNI-R3 (MUST)** Compute an identification rate only when the feature file holds unidentified rows and provenance counts no `skipped_unidentified_features` (UNI-5): `direct` and `secondary` rows with a non-null entry, over those plus transferred rows with a non-null entry plus unidentified rows. Otherwise there is no denominator.
 
 **UNI-R4 (MUST)** Judge a precursor-run as a whole, never a single row, under `unquantified_policy`:
 - `retained`: no row means not identified there under the declared filters. A precursor-run whose rows are all identification-only is identified but not quantified, an MNAR candidate. An identification-only row beside a quantified one (8,731 MaxQuant `MSMS` rows) adds nothing.
@@ -174,9 +180,9 @@ Transfers are out of scope ([T08](t08-match-between-runs.md) MBR-3 forbids trans
 Violations: qpx/views/api.py:25,179 count such rows. MuData stores no null cells (qpx/mudata.py:104-106,188; anndata.md:146), so the state exists only in feature. mokume Python's `intensity > 0` (mokume:python/mokume/io/feature.py:212) is correct.
 
 ## Open questions for maintainers
-1. Should the view be named `unidentified_feature` or `ms1_feature`?
-2. Should the view carry the MS/MS scans acquired on each feature (MaxQuant `MSMS Scan Numbers`)?
+1. *Resolved by the maintainer:* unidentified features stay in the feature view, in the same file as identified ones. They are marked `identification_type = 'unidentified'`, optional for producers, and ignored by readers by default (UNI-1 to UNI-3, UNI-R1). This settles [#378](https://github.com/bigbio/qpx/issues/378); there is no separate view to name.
+2. Should an unidentified row carry the MS/MS scans acquired on its feature (MaxQuant `MSMS Scan Numbers`)? UNI-3 sets `scan = []`.
 3. Isobaric runs: should unidentified features be excluded, get a null label, or carry only `ms1_intensity` in `additional_intensities`?
 4. Should UNI-6 `retained` become MUST in the [T13](t13-metadata-conformance.md) profile once FragPipe, PD and OpenMS comply?
 5. Should MuData gain an `identified_mask` layer, so that "identified, not quantified" survives export?
-6. A merge of datasets with and without `unidentified_feature` yields a file that covers only some runs, yet its presence means retained (UNI-5). Should merge drop the file, or provenance list the runs it covers?
+6. A merge of datasets with and without unidentified rows yields a file whose unidentified rows cover only some runs, yet their presence means every one was written (UNI-5). Should merge drop these rows, or provenance list the runs they cover?

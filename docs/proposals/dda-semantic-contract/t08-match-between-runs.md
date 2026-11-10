@@ -64,7 +64,8 @@
 - `direct`: an accepted own-run identification supports the signal, and not all are `secondary`;
 - `secondary`: [T02](t02-chimeric-spectra.md) CHI-9;
 - `transferred`: measured in this run, no accepted own-run identification of its peptidoform, whatever unidentified, sub-threshold or differently identified MS/MS the run has. `MULTI-MATCH-MSMS` and a transferred donor-run second peptide are `transferred`;
-- null: unknown.
+- `unidentified`: an MS1 feature without any identification, with a null `peptidoform` ([T07](t07-unidentified-features.md) UNI-1, UNI-3);
+- null: an identified row of unknown origin.
 
 Any accepted own-run identification wins over transfer.
 
@@ -91,9 +92,9 @@ Any accepted own-run identification wins over transfer.
 
 **MBR-5 (MUST)** `id_run_file_name` never names a donor ([T06](t06-identifications-per-feature.md) FID-2, FID-6). With `consensus_feature_id` ([T06](t06-identifications-per-feature.md) FID-11), candidate donors are the `direct`/`secondary` rows sharing it.
 
-**MBR-6 (MUST)** `imputed_labels`/`is_imputed` say whether a value was measured, `identification_type` only where the identity came from; neither sets the other.
+**MBR-6 (MUST)** `imputed_labels`/`is_imputed` say whether a value was measured, `identification_type` only where the identity came from; neither sets the other. A transferred quantity comes from the quantification tool's own algorithm, so it counts as measured unless the tool itself marks it as imputed ([T09](t09-intensities-missing-values.md) INT-9).
 
-**MBR-7 (MUST)** Rows of different types sharing `(peptidoform, charge, run_file_name, compensation_voltage)` are distinct signals and stay separate; two rows known to be one peak become one row with the own-run type ([T05](t05-feature-rows.md) FRW-2). De-duplication ranks `direct` > `secondary` > `transferred` by `identification_type`, never by the raw tool string. The OpenMS strict profile goes further and proposes that OpenMS does not write a transferred row beside a quantified direct row of the same precursor and run ([strict profile](strict-profile.md)).
+**MBR-7 (MUST)** Rows of different types sharing `(peptidoform, charge, run_file_name, compensation_voltage)` are distinct signals and stay separate; two rows known to be one peak become one row with the own-run type ([T05](t05-feature-rows.md) FRW-2). De-duplication ranks `direct` > `secondary` > `transferred` by `identification_type`, never by the raw tool string. The OpenMS strict profile goes further and requires that OpenMS does not write a transferred row beside a quantified direct row of the same precursor and run ([strict profile](strict-profile.md)).
 
 **MBR-8 (MUST)** No footer key declares the transfer state; rows and provenance carry it:
 - `identification_type` is filled whenever the tool states the origin or every row rests on own-run identifications (MBR-2); pg `identified_in_unit` whenever the source states it (MBR-10). Null = unknown.
@@ -108,12 +109,12 @@ Unless provenance records `match_between_runs = false`, identified pg rows may i
 
 **MBR-11 (MUST)** Decoy transfers made for error control (FlashLFQ decoy-peptide or random-RT peaks) are never written as target rows; decoy-peptide transfers MAY appear with `is_decoy = true` ([T03](t03-filtering-state.md) FLT-10).
 
-**MBR-12 (MUST)** Off-vocabulary types are errors on every write path and in the validator. For `qpx_version` ≥ 1.4 the following are errors under the `dda` profile and warnings otherwise ([T13](t13-metadata-conformance.md) META-8): MBR-3 violations (non-empty `scan`, non-null `id_run_file_name`, PEP or run-scope q-values, a linked PSM, no measured entry); `match_*` on non-transferred rows; `match_qvalue` outside [0, 1] or above a decimal provenance `mbr_fdr`; transferred rows when provenance records `match_between_runs = false` or `transferred_rows_removed = true`; `identified_in_unit = false` with null intensity.
+**MBR-12 (MUST)** Off-vocabulary types (any value other than `direct`, `secondary`, `transferred`, `unidentified` or null) are errors on every write path and in the validator. For `qpx_version` ≥ 1.4 the following are errors under the `dda` profile and warnings otherwise ([T13](t13-metadata-conformance.md) META-8): MBR-3 violations (non-empty `scan`, non-null `id_run_file_name`, PEP or run-scope q-values, a linked PSM, no measured entry); `match_*` on non-transferred rows; `match_qvalue` outside [0, 1] or above a decimal provenance `mbr_fdr`; transferred rows when provenance records `match_between_runs = false` or `transferred_rows_removed = true`; `identified_in_unit = false` with null intensity.
 
 ## Schema and footer changes
 | Change | View | Type / values | Required | Breaking? |
 |---|---|---|---|---|
-| `identification_type` enum, MBR-1 text (`feature.md:145`, `feature.yaml:210-214`), checked on both write paths | feature | `direct`, `transferred`, `secondary`, null | Non-null when the tool states the origin or every row is own-run (MBR-2) | Yes for writers with other values (none in qpx); `MULTI-MATCH-MSMS` rows lose scan, run, PEP |
+| `identification_type` enum, MBR-1 text (`feature.md:145`, `feature.yaml:210-214`), checked on both write paths | feature | `direct`, `transferred`, `secondary`, `unidentified` ([T07](t07-unidentified-features.md) UNI-2), null | Non-null when the tool states the origin or every row is own-run (MBR-2); `unidentified` on every unidentified row | Yes for writers with other values (none in qpx); `MULTI-MATCH-MSMS` rows lose scan, run, PEP |
 | `match_*` definitions (`feature.yaml:215-234`) | feature | `match_qvalue` float64 [0, 1] | Optional | **Yes**: physical type ([T04](t04-confidence-fields.md) CNF-9) |
 | `match_score` = transfer score; MaxQuant value → `maxquant_match_score` | feature | – | – | **Yes**, semantic: 1.3 MaxQuant files hold the donor score (MBR-R7) |
 | `match_between_runs` step: `match_between_runs`, `mbr_fdr`, `mbr_peptide_fdr`, `mbr_protein_fdr`, `mbr_rt_tolerance`; option `transferred_rows_removed` (MBR-8, MBR-9) | provenance | `match_between_runs`: `true`, `false`; `mbr_fdr`: decimal, `applied`, `none`, `unknown` | Optional | No |
@@ -140,7 +141,7 @@ Unless provenance records `match_between_runs = false`, identified pg rows may i
 
 **MBR-R4 (MUST)** Before combining rows into one (peptidoform, charge, run or unit, label) value, drop the transferred entry of a label whenever a `direct` or `secondary` row of the same key has a measured entry (non-null, not imputed) for that label; never sum, average or MAX across them. A transferred entry beside an own-run row whose entry for that label is null is kept. [T14](t14-reader-contract.md) RDR-5 applies this rule in the default read profile.
 
-**MBR-R5 (MUST)** Choose and record the transfer policy (keep, drop, `match_qvalue ≤ t`) separately from confidence filters, which never drop transfers merely for null values ([T04](t04-confidence-fields.md) CNF-R5).
+**MBR-R5 (MUST)** Choose and record the transfer policy (keep, drop, `match_qvalue ≤ t`) separately from confidence filters, which never drop transfers merely for null values ([T04](t04-confidence-fields.md) CNF-R5). Whether to use transferred quantities is the reader's choice. The default keeps them, because they improve quantification ([T14](t14-reader-contract.md) RDR-4); filtering them out is optional.
 
 **MBR-R6 (SHOULD)** When provenance `mbr_fdr` is `none`, `unknown` or absent, warn and offer to drop transfers. Transfer weights (mokume#117) use only `identification_type`, `match_qvalue` and provenance `mbr_fdr`, never `match_score` or donor scores.
 

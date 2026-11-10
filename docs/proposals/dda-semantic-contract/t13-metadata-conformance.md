@@ -66,7 +66,7 @@ Blank Carry cell: kept when all sources agree, else `unknown`.
 | `acquisition_method` | psm, feature, pg | `dda`, `dia`, `prm`, `mixed` (T13) | differing known values → `mixed` | `dda`, `mixed` |
 | `fdr_filter` | psm, feature, pg | `none`, or `<level>:<value>` entries joined by `;` ([T03](t03-filtering-state.md) FLT-1) | weakest value per level (FLT-13) | present |
 | `unquantified_policy` | feature, pg | `retained`, `removed` ([T07](t07-unidentified-features.md) UNI-6, [T12](t12-protein-groups.md) PGV-4) | | present |
-| `intensity_quantity`, `intensity_processing` | feature, pg, site, unidentified_feature | [T09](t09-intensities-missing-values.md) INT-2 | | present (feature, pg) |
+| `intensity_quantity`, `intensity_processing` | feature, pg, site | [T09](t09-intensities-missing-values.md) INT-2 | | present (feature, pg) |
 
 **META-2 (MUST) Reading values.**
 - An absent key, `unknown` and an unrecognised value (also a V1 error) all mean unknown.
@@ -80,7 +80,7 @@ Blank Carry cell: kept when all sources agree, else `unknown`.
 - merge, relayout, write-back, the OpenMS `-out_qpx` upgrade and the annotation transforms read the key-value footer and apply the carry rules through one shared function, warning on every `unknown` outcome. A transform that removes rows updates the keys it affects ([T03](t03-filtering-state.md) FLT-5, FLT-13).
 - merge keeps the provenance steps of every input, each tagged with its `source_dataset` (as `qpx/core/dataset_merge.py:369-391` does today), because several [T01](t01-psm-rows.md)-[T12](t12-protein-groups.md) declarations are provenance step parameters or options ([T01](t01-psm-rows.md) PSM-4; [T02](t02-chimeric-spectra.md) CHI-10; [T03](t03-filtering-state.md) FLT-8, FLT-10–12; [T04](t04-confidence-fields.md) CNF-3; [T06](t06-identifications-per-feature.md) FID-8; [T07](t07-unidentified-features.md) UNI-5; [T08](t08-match-between-runs.md) MBR-8, MBR-9; [T11](t11-spectrum-precursor-fields.md) SPC-2; [T12](t12-protein-groups.md) PGV-6).
 - Only converters (the OpenMS upgrade included) and `migrate` write a new `qpx_version`. Any other rewrite refuses a source at another version and names `qpxc migrate`.
-- `migrate` writes a 1.4 key only when certain ([T09](t09-intensities-missing-values.md) INT-3) and keeps the source's provenance steps. It writes no other key: `rank1_only` and `include_unassigned_psms` stay provenance options, and rows [T07](t07-unidentified-features.md) UNI-8 moves go to `unidentified_feature`, whose presence means retained (UNI-5).
+- `migrate` writes a 1.4 key only when certain ([T09](t09-intensities-missing-values.md) INT-3) and keeps the source's provenance steps. It writes no other key: `rank1_only` and `include_unassigned_psms` stay provenance options, and the rows [T07](t07-unidentified-features.md) UNI-8 rewrites stay in the feature file, marked `identification_type = 'unidentified'`; no row moves to another file.
 
 **META-5 (MUST) `acquisition_method`.**
 - Values: `dda` (MS:1003221), `dia` (MS:1003215), `prm` (MS:1003907), `mixed`, `unknown`.
@@ -115,7 +115,7 @@ Blank Carry cell: kept when all sources agree, else `unknown`.
 | V3 | `--profile dda`: presence of the keys META-1 marks (of the new ones, `fdr_filter` on psm, feature and pg; `unquantified_policy`, `intensity_quantity` and `intensity_processing` on feature and pg); `acquisition_method` `dda` or `mixed`; run view | error under `dda` |
 | V4 | `acquisition_method` against `run`; `mixed` without per-run values | error |
 | V5 | Declarations against rows (footer keys, `rank`, `precursor_index`, `identity_composite`, provenance parameters) and the fixed rules that replace keys: PSM-4, CHI-10, CHI-11, FLT-14, CNF-3, FRW-12, FID-8, FID-9, UNI-9, MBR-12, INT-14, PGV-13 | owner's grade |
-| V6 | Row invariants: PSM-1, 7; CHI-1, 6; CNF-6; FID-1, 5, 6, 7, 10; INT-5; [T10](t10-protein-mapping.md) anchor and `unique`; SPC-3, 7, 8 | owner's grade; DDA scope (META-5) |
+| V6 | Row invariants: PSM-1, 7; CHI-1, 6; CNF-6; FID-1, 5, 6, 7, 10; UNI-1, 3 (null `peptidoform`, `sequence` or `charge` only on `unidentified` rows); INT-5; [T10](t10-protein-mapping.md) anchor and `unique`; SPC-3, 7, 8 | owner's grade; DDA scope (META-5) |
 | V7 | `identity_not_checked`, `pg_link_coverage`, skipped run checks, DDA checks under `unknown` | info |
 | V8 | Undeclared non-`x_` column; unregistered footer key (except `ARROW:schema`, `pandas`, `x_*`) or one newer than the file | warning |
 
@@ -137,7 +137,7 @@ Blank Carry cell: kept when all sources agree, else `unknown`.
 - Tests that pin divergent behaviour change with the rule: the PD tests above; `psm_empty_scan` re-derives its id so only [T11](t11-spectrum-precursor-fields.md) SPC-8 fails it; a new positive case has a shared peptide with null anchor, membership and `pg_group_id` [[VALIDATOR-24](findings-feature.md#validator-24)].
 
 **META-14 (SHOULD) Fixtures.**
-- The golden dataset becomes DDA, in LFQ and TMT variants with every 1.4 key known: rank-2 rows, a chimeric secondary, a transferred feature, decoys, an identification-only feature and an `unidentified_feature` row ([T07](t07-unidentified-features.md)).
+- The golden dataset becomes DDA, in LFQ and TMT variants with every 1.4 key known: rank-2 rows, a chimeric secondary, a transferred feature, decoys, an identification-only feature and an unidentified feature row (`identification_type = 'unidentified'`, [T07](t07-unidentified-features.md) UNI-3).
 - Real exports: PD multi-engine TMT and Minora LFQ; FragPipe with IonQuant MBR; a Sage or MSFragger DDA+ search; a two-engine mzIdentML.
 
 ## Schema and footer changes

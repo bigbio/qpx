@@ -6,7 +6,7 @@
     Part of the annex of the [DDA semantic contract proposal](index.md) for QPX. Rules here are proposals for specification 1.4, not normative text, and they cover every producer. For OpenMS-written files the [strict profile](strict-profile.md) is the contract and wins where the two differ. Bracketed ids such as [OPENMS-01](findings-psm.md#openms-01) link to the verified audit findings; code references are to `dev` at commit `32cbbdc`.
 
 
-> **Decision in one line:** A DDA feature row has one peptidoform and one charge, 0..n *supporting PSMs* linked by `psm.feature_id`, and at most one *identifying PSM* from its own run: the one the source names, else lowest PEP, then q-value, then scan. Only that PSM feeds `scan` (one spectrum), `id_run_file_name`, PEP and PSM scores. A quantified signal feeds at most one row; competing peptidoforms set `identification_conflict`. Run rows of one cross-run feature share `consensus_feature_id`. A producer writing both views links every supporting PSM; provenance `skipped_runs_psm` names runs it could not link.
+> **Decision in one line:** An identified DDA feature row has one peptidoform and one charge, 0..n *supporting PSMs* linked by `psm.feature_id`, and at most one *identifying PSM* from its own run: the one the source names, else lowest PEP, then q-value, then scan. Only that PSM feeds `scan` (one spectrum), `id_run_file_name`, PEP and PSM scores. A quantified signal feeds at most one row; competing peptidoforms set `identification_conflict`. Run rows of one cross-run feature share `consensus_feature_id`. A producer writing both views links every supporting PSM; provenance `skipped_runs_psm` names runs it could not link.
 
 ## Questions a reader has
 - How many identifications stand behind a feature row? Which PSM gave it `scan`, `id_run_file_name`, PEP and scores, and how do I find it?
@@ -55,7 +55,7 @@
 | **Integer `consensus_feature_id`** | Covers every measured case | New column |
 
 ## Recommendation
-Scope: DDA rows ([T13](t13-metadata-conformance.md) `acquisition_method = dda`, or a DDA run under `mixed`). DIA keeps scan.md:111.
+Scope: identified DDA rows ([T13](t13-metadata-conformance.md) `acquisition_method = dda`, or a DDA run under `mixed`). DIA keeps scan.md:111. An unidentified row ([T07](t07-unidentified-features.md) UNI-3) has no peptidoform, no identifying or supporting PSM and no link; of the rules below only FID-11 applies to it.
 
 Definitions:
 - A *quantified signal* is the MS1 peak or multiplet, or the reporter spectrum, that gives a row its intensities.
@@ -81,7 +81,7 @@ Nulls sort last. [T01](t01-psm-rows.md) PSM-2 and [T02](t02-chimeric-spectra.md)
 **FID-6 (MUST)** `id_run_file_name` is `run_file_name` or null, and non-null if and only if `scan` is non-empty. It is null when there is no identifying PSM or its spectrum cannot be located; `identification_type` still states what the tool reported.
 
 **FID-7 (MUST)** Links.
-- A row has 0..n linked PSMs; a PSM links to at most one row, of which it is a supporting PSM: no other peptidoform (MS1-label partners aside), charge or run (unit rows aside), no decoy PSM on a target row, no `rank > 1` ([T01](t01-psm-rows.md) PSM-7), no transferred row.
+- A row has 0..n linked PSMs; a PSM links to at most one row, of which it is a supporting PSM: no other peptidoform (MS1-label partners aside), charge or run (unit rows aside), no decoy PSM on a target row, no `rank > 1` ([T01](t01-psm-rows.md) PSM-7), no transferred row, no unidentified row ([T07](t07-unidentified-features.md) UNI-3).
 - When several rows qualify, the source's assignment wins (MaxQuant `Evidence ID`). If it names several ([T01](t01-psm-rows.md) PSM-2 merged twins), link the row the PSM identifies; otherwise use the psm.md:158-161 order.
 
 **FID-8 (MUST)** A producer that writes both views writes `psm.feature_id` on every supporting PSM it exports (including when it builds features from PSMs). The validator checks it.
@@ -99,7 +99,8 @@ Nulls sort last. [T01](t01-psm-rows.md) PSM-2 and [T02](t02-chimeric-spectra.md)
 `false` = checked, none found; null = not checked. Co-identifications ([T02](t02-chimeric-spectra.md)) and MS1-label partners are not conflicts under (b); one MS1 signal credited to two co-identified peptidoforms is a conflict under (a) ([T02](t02-chimeric-spectra.md) CHI-11).
 
 **FID-11 (SHOULD)** `consensus_feature_id` (int64, nullable; owned here, answering [T05](t05-feature-rows.md) question 3) carries one integer on every run row split from one cross-run entity of the source: an OpenMS ConsensusFeature (map position allowed) or an IonQuant `combined_ion` row; null elsewhere.
-- Unique within the file (also in [T07](t07-unidentified-features.md)'s `unidentified_feature`); relayout may renumber it consistently, merge namespaces it, migrate keeps it.
+- Unique within the file; relayout may renumber it consistently, merge namespaces it, migrate keeps it.
+- Unidentified rows ([T07](t07-unidentified-features.md) UNI-3) carry it under the same rule. The rows of one id are either all unidentified or all identified, because a signal that cross-run linking ties to a peptidoform is `transferred`, not unidentified ([T07](t07-unidentified-features.md)).
 - Within one id, rows with a non-null intensity share one peptidoform, at most one per `run_file_name`.
 
 **FID-12 (MUST)** `spectral_count` is named and placed by [T09](t09-intensities-missing-values.md) INT-11. In T06 terms it counts the distinct `(run_file_name, scan)` of the row's supporting PSMs that pass the file's filters. It is `0` on transferred rows ([T08](t08-match-between-runs.md) MBR-3) and never counts psm rows, engine hits or summed reporter spectra ([T09](t09-intensities-missing-values.md) `quant_spectrum_count`).

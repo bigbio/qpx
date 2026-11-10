@@ -86,6 +86,11 @@
 
 Tool placeholders (Percolator's peptide-level 1.0) are written as null.
 
+A typed q-value column is filled exactly when the source estimated FDR at that level and scope. A level that was not estimated is null on every row of the file. This is legitimate for every producer, and it is not a defect and not `unknown`: OpenMS sometimes estimates only peptide-level FDR (for example in immunopeptidomics), or only PSM-level FDR.
+- `feature.peptide_qvalue` is filled when peptide-level FDR was estimated.
+- `feature.psm_qvalue` and `psm.qvalue` are filled when PSM-level FDR was estimated.
+- `pg.global_qvalue` is nullable for every producer, OpenMS included ([T12](t12-protein-groups.md) PGV-8).
+
 **CNF-3 (MUST)** The scope is recorded as validation-step provenance parameters, next to [T03](t03-filtering-state.md) FLT-4's `<level>_fdr_scope`: `psm_qvalue_scope` (psm; feature when `psm_qvalue` is filled) and `peptide_qvalue_scope` (feature), each `run`, `experiment` or `unknown`. No footer key carries them.
 - A writer that fills the column records the parameter. Absent means `unknown`.
 - A merge keeps every input's provenance steps ([T13](t13-metadata-conformance.md) META-4). The merged scope is `run` only if every input states `run`; otherwise it is `unknown`.
@@ -130,7 +135,7 @@ The others stay as `<tool>_qvalue`; PSM PEP follows the same order. File and col
 - PEP stays float64, which decides [#377](https://github.com/bigbio/qpx/issues/377) B2 (open). `BYTE_STREAM_SPLIT` is allowed; −log10 is not.
 
 **CNF-8 (MUST)** On a feature row with an identifying PSM ([T06](t06-identifications-per-feature.md) FID-1), PEP, `psm_qvalue` and the `psm`-level `additional_scores` describe that PSM. They equal its psm row when that row is present.
-- Rows without an identifying PSM (transferred rows, rows of a multi-run unit; [T06](t06-identifications-per-feature.md) FID-1) have null PEP and `psm_qvalue` and no `psm`-level entries. Unidentified features are not feature rows ([T07](t07-unidentified-features.md) UNI-1). Under `acquisition_method = dia`, PEP is the tool's run-level precursor PEP.
+- Rows without an identifying PSM (transferred rows, rows of a multi-run unit; [T06](t06-identifications-per-feature.md) FID-1) have null PEP and `psm_qvalue` and no `psm`-level entries. Unidentified rows ([T07](t07-unidentified-features.md) UNI-3) have a null PEP and null q-values at every level. Under `acquisition_method = dia`, PEP is the tool's run-level precursor PEP.
 - Transferred rows also have null `precursor_qvalue`, and null `peptide_qvalue` unless its scope is `experiment`; they MAY carry `global_qvalue` and `pg_global_qvalue`. Transfer confidence goes only in `match_*` ([T08](t08-match-between-runs.md)).
 - Delete the last sentence of psm.md:286, scores.md:122 and the PSM `global_qvalue` recommendation at psm.md:291.
 
@@ -165,7 +170,7 @@ The others stay as `<tool>_qvalue`; PSM PEP follows the same order. File and col
 | Writer and docs | Implement CNF-6 (allowlist, dual-write and its equality check; qpx/writers/derived.py) and the CNF-3 provenance parameters. Fix converter-coverage.md:59,181,274,299-300 and scores.md:40-56. |
 
 ## Reader rules
-- **CNF-R1 (MUST)** The typed column is authoritative. A null makes the row unassessable unless [T03](t03-filtering-state.md) settles it: FLT-R3 from the `fdr_filter` entry for that level, or, for `psm.qvalue`, a `pass_threshold = true` whose basis provenance states is a PSM-level FDR ≤ t (`pass_threshold_level`, `pass_threshold_fdr`; FLT-R4). Helpers never count unassessable rows as passing. They report the count, and raise an error when every row is unassessable ([T14](t14-reader-contract.md) RDR-3).
+- **CNF-R1 (MUST)** The typed column is authoritative. A null makes the row unassessable unless [T03](t03-filtering-state.md) settles it: FLT-R3 from the `fdr_filter` entry for that level, or, for `psm.qvalue`, a `pass_threshold = true` whose basis provenance states is a PSM-level FDR ≤ t (`pass_threshold_level`, `pass_threshold_fdr`; FLT-R4). Helpers never count unassessable rows as passing. They report the count, and raise an error when every row is unassessable ([T14](t14-reader-contract.md) RDR-3). A q-value column that is null on every row means FDR was not estimated at that level (CNF-2), so filtering at that level is not available: the reader says so and filters at a level that exists. It never reads a null as 1.0 and never drops every row silently.
 - **CNF-R2 (MUST)** Never `COALESCE` across levels or scopes. Never use a PSM-level value for peptide or protein FDR.
 - **CNF-R3 (MUST)** When the CNF-3 scope parameter is `unknown` or absent from provenance, warn and do not report an experiment-wide FDR.
 - **CNF-R4 (MUST)** `PSM.confident(max_qvalue)` keeps target rows with `qvalue ≤ t` that are rank 1 where rank is known ([T01](t01-psm-rows.md) PSM-R1, PSM-R3); null `qvalue` rows follow CNF-R1. It is a q-value filter: when `qvalue` is non-null, `pass_threshold` is not consulted. A separate `PSM.accepted()` implements [T03](t03-filtering-state.md) FLT-R4 (source acceptance), and identification counts use `accepted()`. `Feature.confident(max_qvalue, column=…)` has no default; `column` ∈ {`psm_qvalue`, `precursor_qvalue`, `peptide_qvalue`, `global_qvalue`}. Breaking for callers ([T14](t14-reader-contract.md)).
