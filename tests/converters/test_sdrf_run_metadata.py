@@ -52,6 +52,33 @@ def test_only_sentinel_modification_columns_leave_none(tmp_path):
     assert run["modification_parameters"] is None
 
 
+def test_zero_padded_source_names_are_preserved_in_sample_and_run_outputs(tmp_path):
+    """Source names remain distinct text identifiers, while biological replicates are integers."""
+    sdrf = tmp_path / "zero_padded.sdrf.tsv"
+    sdrf.write_text(
+        "source name\tcharacteristics[organism]\tcharacteristics[organism part]\t"
+        "characteristics[biological replicate]\tcomment[fraction identifier]\t"
+        "comment[data file]\tcomment[label]\n"
+        "001\tHomo sapiens\tliver\t1\t01\tA_001.raw\tlabel free sample\n"
+        "01\tHomo sapiens\tliver\t2\t02\tA_002.raw\tlabel free sample\n",
+        encoding="utf-8",
+    )
+    sample_path = tmp_path / "sample.parquet"
+    run_path = tmp_path / "run.parquet"
+
+    with SdrfConverter() as converter:
+        converter.convert(str(sdrf), sample_output=str(sample_path), run_output=str(run_path))
+
+    samples = pq.read_table(sample_path).to_pylist()
+    runs = pq.read_table(run_path).to_pylist()
+    assert {sample["sample_accession"] for sample in samples} == {"001", "01"}
+    assert [(run["samples"][0]["sample_accession"], run["samples"][0]["biological_replicate"]) for run in runs] == [
+        ("001", 1),
+        ("01", 2),
+    ]
+    assert [run["fraction"] for run in runs] == ["01", "02"]
+
+
 @pytest.mark.parametrize(
     ("sdrf_value", "expected"),
     [

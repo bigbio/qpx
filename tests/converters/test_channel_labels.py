@@ -91,6 +91,20 @@ def test_multi_dot_run_names_match_sdrf_conversion(tmp_path):
     assert pq.read_table(run_output).column("run_file_name").to_pylist() == grouped
 
 
+def test_sdrf_handler_preserves_zero_padded_source_names(tmp_path):
+    """The core SDRF reader keeps leading zeros in sample-map identifiers."""
+    from qpx.core.sdrf import SDRFHandler
+
+    sdrf = tmp_path / "zero_padded.sdrf.tsv"
+    sdrf.write_text(
+        "source name\tcomment[data file]\tcomment[label]\n"
+        "001\trun1.raw\tlabel free sample\n"
+        "01\trun2.raw\tlabel free sample\n"
+    )
+
+    assert SDRFHandler(sdrf).get_sample_map_run() == {"run1": "001", "run2": "01"}
+
+
 @pytest.mark.parametrize(
     ("labels", "expected"),
     [

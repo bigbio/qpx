@@ -358,7 +358,7 @@ class SdrfConverter(BaseConverter):
 
     def _read_sdrf(self, sdrf_path: str) -> pd.DataFrame:
         """Load the SDRF file and normalise column names to lower-case."""
-        df = pd.read_csv(sdrf_path, sep="\t", header=0)
+        df = pd.read_csv(sdrf_path, sep="\t", header=0, dtype=str, keep_default_na=False)
         df.columns = df.columns.str.lower()
         return df
 
@@ -485,7 +485,7 @@ class SdrfConverter(BaseConverter):
         # Fraction
         fraction = None
         if _COL_FRACTION in group.columns:
-            frac_vals = group[_COL_FRACTION].dropna().unique()
+            frac_vals = group.loc[group[_COL_FRACTION].str.strip().ne(""), _COL_FRACTION].unique()
             if len(frac_vals) > 0:
                 fraction = str(frac_vals[0])
 
