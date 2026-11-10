@@ -77,6 +77,23 @@ One decision adds consumer work. A q-value column is null on every row when FDR 
 5. **Protein identity across datasets.** `pg_group_id` is stable only for identical accession strings. Filling gene names and stating the database version would help the portal's cross-dataset views.
 6. **Tested readers.** qpxui and the portal should run the same reader fixtures as qpx ([RDR-14](t14-reader-contract.md)).
 
+## AI research agents as a fourth consumer
+
+This is a suggestion, not yet decided. An agent reads QPX the way qpxui and the portal do: SQL over typed columns, usually with DuckDB directly on the Parquet files. The failure mode differs. A person notices an empty chart; an agent reports a wrong count with confidence. So the rule that a threshold filter reports unassessable rows and raises an error, instead of silently returning nothing or everything ([RDR-3](t14-reader-contract.md)), matters even more here.
+
+No new rule is needed. The points concern where the reader contract is published and how the tooling exposes it:
+
+1. **Publish the reader contract where agents look.** Once `consumer-guide.md` and the strict-profile predicates are adopted, `docs/llms-full.txt` carries or links them with the reference queries. A separate agent guide would be a second copy that drifts.
+2. **Bring `docs/llms-full.txt` up to date first.** At `4c89f0c` its examples do not match the code:
+    - It shows `qpxc query dataset.parquet "SELECT ProteinName, AVG(Intensity) FROM psms …"`. The command is `qpxc query sql --dataset-path … --sql …`, the tables are named after the views, and the columns are the QPX ones.
+    - It shows `qpx.read_parquet`, `qpx.connect`, `qpx.to_anndata`, `gene_mapping`, `protein_grouping` and `DiannConverter`, which are not in the package. The entry points are `qpx.open_dataset`, the `read_<view>` functions and `DiaNNConverter`.
+3. **Record the filter policy in query output.** When the read API applies the default reader profile, the JSON output of `qpxc query sql` also states the policy applied (decoy handling, q-value level and threshold, transfers kept or not) and the count of unassessable rows ([RDR-13](t14-reader-contract.md)).
+4. **Remote datasets from the CLI.** `Dataset` accepts `s3://` paths, but `qpxc query` requires a local directory. Agents working on portal data need the remote path too.
+5. **Shared reader tests.** The reference queries used as reader tests in the [order of work](index.md#order-of-work) are also the examples an agent should be given.
+6. **An MCP server is optional.** It only helps chat-style agents without a shell.
+
+qpxui's own queries are not a safe template for agents until the consumer fixes land: they apply no q-value threshold, treat a null `is_decoy` as a target, and read the pg view in the 1.0 layout.
+
 ## What these consumers do not need
 
 Neither consumer uses the following, so they are deferred in the [order of work](index.md#order-of-work): unidentified feature rows (which they only need to skip), the `match_*` details, most spectrum-field rules, and every rule that exists only for MaxQuant, FragPipe, Proteome Discoverer, mzIdentML or CDAP.
