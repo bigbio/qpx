@@ -22,7 +22,7 @@ Spec:
 - Only the composite implies the grain (docs/spec/identity.md:27-35), and the validator checks only it (qpx/core/data/footer_validation.py:157-172).
 - `run_file_name` is "the run file name that contains the feature" (feature.md:89), and a row is one run (docs/spec/intensities.md:136; docs/spec/anndata.md:140). `quantification_unit_id` is a free string (feature.md:90).
 - `rt_start` and `rt_stop` have no unit or clock (feature.md:69-70; qpx/core/data/schemas/feature.yaml:255-260). `rt` is given only as seconds (feature.md:65), while `xic.rt` is raw run time (docs/spec/xic.md:18).
-- An MS1 multiplet is one row with the lightest partner's peptidoform (intensities.md:84-92; docs/spec/peptidoform.md:20-23). convert.md:1038-1040 contradicts this for dimethyl and mTRAQ, and [#308](https://github.com/bigbio/qpx/issues/308) is open.
+- An MS1 multiplet is one row with the lightest partner's peptidoform (intensities.md:84-92; docs/spec/peptidoform.md:20-23). convert.md:1038-1040 contradicts this for dimethyl and mTRAQ. [#308](https://github.com/bigbio/qpx/issues/308) settled the encoding.
 - Duplicate cells are summed (anndata.md:153; docs/spec/views.md:212). Nothing says whether such rows are parts or alternatives.
 
 | Producer | Behaviour | Findings |
@@ -122,7 +122,7 @@ When a unit has several runs, its rows have null `rt`, `rt_aligned`, `rt_start` 
 **FRW-9 (MUST)** `rt_start` and `rt_stop` bound the integrated MS1 signal. They are null when nothing was integrated or no bounds are reported, and they are never placeholders (MaxQuant `MSMS`). When all three are set, `rt_start ≤ rt ≤ rt_stop`. Every time is ≥ 0. OpenMS: ProteomicsLFQ clears the feature hulls, so the consensusXML route cannot recover the bounds and writes null; the native writer currently writes `rt ± width/2`, not the hull bounds.
 
 **FRW-10 (MUST)** MS1-label multiplets:
-- There is one row per multiplet per run (intensities.md:84). We recommend closing [#308](https://github.com/bigbio/qpx/issues/308) on this existing rule.
+- There is one row per multiplet per run (intensities.md:84). This is the encoding agreed in [#308](https://github.com/bigbio/qpx/issues/308): the light peptidoform on the feature row, one intensity entry per channel, and PSMs keeping their labelled peptidoform.
 - `peptidoform` and `calculated_mz` belong to the partner of the run's lightest channel, with any dimethyl or mTRAQ label inline.
 - `observed_mz` and `mass_error_ppm` describe that same partner, and are null when it was not measured.
 - `rt` is the lightest measured partner's time (partners co-elute).

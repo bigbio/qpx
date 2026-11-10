@@ -101,6 +101,18 @@ OpenMS may also write MS1 features that have no identification. They are rows of
 
 Readers ignore these rows by default. The test is `peptidoform IS NOT NULL`.
 
+### MS1-label multiplets (SILAC, dimethyl, mTRAQ)
+
+The encoding is the one agreed in [#308](https://github.com/bigbio/qpx/issues/308) and written into the specification on `dev`:
+
+- **One feature row per multiplet per run.** The partners of a multiplet are the same peptide with different isotope labels. They are one row, not one row per partner.
+- **The row carries the light peptidoform**, that is the partner of the run's lightest channel. For SILAC this is the unlabelled peptidoform. For dimethyl and mTRAQ, where the lightest channel itself carries a label, it is the peptidoform with that lightest label written inline. `calculated_mz`, `observed_mz` and `mass_error_ppm` describe that same partner.
+- **One intensity entry per channel**, labelled `SILAC light`, `SILAC medium`, `SILAC heavy` and so on. A partner that was not quantified has a null intensity.
+- **`identified_labels`** lists the channels whose partner was identified by MS/MS. It is never null on an identified row of a labelled run.
+- **PSMs keep their labelled peptidoform**, the one the spectrum was matched with, so the calculated mass fits the precursor. `psm.label` names the channel. A PSM links to its multiplet row through `psm.feature_id`, even though its peptidoform differs from the row's.
+
+The rules for feature rows above apply unchanged: there is still one row per precursor and run, and the predicates and reference queries work as they are.
+
 ## pg rows
 
 One row is one protein group in one quantification unit (the fractions of one sample) for one label.
@@ -223,4 +235,5 @@ The maintainers decided these points in [#383](https://github.com/bigbio/qpx/iss
 | Transferred quantities | Kept by default. Filtering them out is the reader's choice. |
 | Estimated values | A value the quantification tool's own algorithm estimates counts as measured; that is the tool's decision. A value added afterwards by another tool counts as imputed. |
 | Features per precursor | ProteomicsLFQ is taken to produce one feature per precursor in a run, so label-free files have one feature row per precursor and run. |
+| MS1-label multiplets | One feature row per multiplet with the light peptidoform and one intensity entry per channel. PSMs keep their labelled peptidoform. |
 | Profile claim | A provenance parameter, not a footer key. |

@@ -106,6 +106,7 @@ The maintainers decided these points in [#383](https://github.com/bigbio/qpx/iss
 | Transferred quantities | Kept by default, because they improve quantification. Filtering them out is the reader's choice. |
 | Estimated values | A value the quantification tool's own algorithm estimates counts as measured; that is the tool's decision. A value added afterwards by another tool, such as mokume, counts as imputed. |
 | Features per precursor | ProteomicsLFQ is taken to produce one feature per precursor in a run, so label-free files have one feature row per precursor and run. |
+| MS1-label multiplets | One feature row per multiplet with the light peptidoform and one intensity entry per channel. PSMs keep their labelled peptidoform. |
 | Profile claim | A provenance parameter, not a footer key. |
 | PSI alignment | Not a goal. PSI terms are cited only where they pin down a meaning. |
 | Footer | Five new keys. Everything else is a typed column, a fixed rule or a provenance parameter. |

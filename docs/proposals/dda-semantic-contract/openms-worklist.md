@@ -50,7 +50,8 @@ Where OpenMS states a transfer: the consensus feature annotation `mbr_transfer_m
 | 9 | `identification_conflict`, `consensus_feature_id`, `spectral_count`. | Traceability across runs. | `feature_dedup.py` |
 | 10 | Guarantee one feature row per precursor and run for label-free data. ProteomicsLFQ already produces one feature per precursor in a run. If the internal data ever holds more than one candidate, the export decides which one to write, consistently with the protein quantification. | Readers that sum or count rows are correct. | – |
 | 11 | Identification-only feature rows from identifications that support no quantified feature, with `unquantified_policy = retained`. | "Identified but not quantified" can be told from "not identified". | – |
-| 12 | Later, algorithm work: a transfer score and the differences to the donor from PIP-ECHO; an FDR for transfers made by the linker; precursor-level q-values; rank-1 ties. | Fills `match_*` and `precursor_qvalue`. | – |
+| 12 | MS1-label multiplets (SILAC, dimethyl, mTRAQ). Write the label state to the typed columns `feature.identified_labels` and `psm.label` instead of `cv_params`. For dimethyl and mTRAQ, write the lightest label inline in the feature peptidoform; the export currently writes the label-free peptide identity there, so `calculated_mz` lacks the label mass and the mass error is left null. | Ratios and per-channel identification state without parsing `cv_params`; calculated and measured m/z describe the same ion. | – |
+| 13 | Later, algorithm work: a transfer score and the differences to the donor from PIP-ECHO; an FDR for transfers made by the linker; precursor-level q-values; rank-1 ties. | Fills `match_*` and `precursor_qvalue`. | – |
 
 **Effect on qpx.** `qpx/converters/openms_consensus/` (about 4,100 lines) becomes a legacy path for existing consensusXML files. `qpx/converters/openms/` (about 750 lines) shrinks to validation and adding SDRF sample metadata. `qpx/converters/quantms_msstats/` (about 710 lines) is not needed for OpenMS-produced data.
 
@@ -60,7 +61,7 @@ The maintainers take ProteomicsLFQ to produce one feature per precursor in a run
 
 - Whether a protein group's probability after protein FDR is a group-level q-value, as the writer assumes.
 - PIP-ECHO internals: whether a transfer score or differences to the donor are stored, and whether decoy transfers can reach the output.
-- MS1-label handling (MS1LabeledWorkflow, FeatureFinderMultiplex).
+- MS1-label handling inside MS1LabeledWorkflow and FeatureFinderMultiplex. The export code was read: it writes the label-free peptide identity on feature rows, the matched peptidoform on psm rows, and the label state as `cv_params`.
 - How OpenMS records which group a shared peptide is assigned to.
 - Whether search adapters set a chimeric hit's m/z to the co-isolated ion, and whether that m/z was recalibrated.
 - How FDR cuts applied before ProteomicsLFQ in the quantms pipeline are recorded.
