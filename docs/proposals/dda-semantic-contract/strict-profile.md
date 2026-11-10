@@ -123,7 +123,7 @@ The rules below apply to identified rows, that is every row except the optional 
 | `match_qvalue` | On `transferred` rows, non-null exactly when PIP-ECHO ran. Null on other rows. |
 | `intensities` | One entry per label that has a sample in the run. A null intensity means not quantified; 0 is never used for missing. A `transferred` row has at least one measured value. |
 | `rt`, `rt_start`, `rt_stop` | Seconds on the acquisition clock, with `rt_start ≤ rt ≤ rt_stop` (label-free). `rt_aligned` holds the aligned time. |
-| `observed_mz` | The measured m/z of the quantified signal, or null. Never the theoretical value. |
+| `observed_mz` | Label-free and MS1-label rows: the measured m/z of the quantified MS1 signal, or null. It is never the theoretical value and never copied from a PSM; a row without a quantified signal is null. Isobaric rows: the measured precursor m/z of the row's own spectrum. |
 | `is_decoy`, `contaminant` | Never null. |
 | `pg_accessions`, `anchor_protein`, `pg_group_id` | The full membership of the one protein group the peptide is attributed to, its representative, and its id. All three are null together when the peptide is attributed to no group. |
 | `group_unique` | Never null. True when the peptide is evidence for exactly one group. |

@@ -321,11 +321,11 @@ Each section lists its own open questions. These are the ones that still shape t
 
 ### Loose ends from the OpenMS corrections
 
-Correcting the OpenMS facts in the topic sections left three points open:
+Correcting the OpenMS facts in the topic sections left two points open and one that is now decided:
 
 1. **Feature id on the consensusXML route.** [FRW-4](t05-feature-rows.md) builds the OpenMS feature id from `rt`, `observed_mz` and `consensus_rt`. For aligned ProteomicsLFQ output `rt` and `observed_mz` are now null, which leaves only `consensus_rt`. Either `rt_aligned` replaces `rt` there, or this route stays on its current ids.
 2. **Detecting mixed protein quantities.** [INT-4](t09-intensities-missing-values.md) forbids a file that mixes tool quantities and QPX sums in `pg.intensity`, but nothing on a row says which kind it holds, so the validator cannot check it.
-3. **Feature m/z fallback.** [SPC-1](t11-spectrum-precursor-fields.md) lets a feature fall back to its identifying PSM's m/z, while the OpenMS producer rows say null. One of the two should change.
+3. **Feature m/z fallback: decided, dropped.** `feature.observed_mz` is the m/z of the quantified MS1 signal or null for every producer, and never the identifying PSM's m/z ([SPC-1](t11-spectrum-precursor-fields.md)). Isobaric rows carry the precursor m/z of their own spectrum.
 
 ### Loose ends from moving declarations out of the footer
 

@@ -57,7 +57,8 @@ The *claimed ion* is the precursor the row's identification asserts ([T02](t02-c
 - Never computed from the row's `peptidoform` or `calculated_mz`, never a targeted extraction's theoretical m/z; null, not 0, when not measured.
 - OpenMS: the ProteomicsLFQ feature m/z is the theoretical value, and the measured deviation `masserror_ppm` is kept only with PIP-ECHO. Without it, the consensusXML route cannot recover the signal's measured m/z.
 - A value rebuilt from a tool's deviation starts from the tool's theoretical m/z, plus label masses that m/z omits.
-- Feature rows: the quantified MS1 signal's m/z when the tool reports one (multiplets: [T05](t05-feature-rows.md) FRW-10); else the identifying PSM's ([T06](t06-identifications-per-feature.md) FID-3) unless its `isotope_error` ≠ 0; else null.
+- Feature rows quantified at MS1 (label-free, MS1 labels): the m/z of the quantified MS1 signal as the tool reports it (multiplets: [T05](t05-feature-rows.md) FRW-10), else null. There is no fallback to the identifying PSM's m/z: that value is another measurement, and it is in the psm view, reached through `psm.feature_id`. So the column is null when the tool reports only a theoretical m/z for its extraction, on a label-free row without a quantified signal (identification-only), and when the tool reports no m/z at all.
+- Isobaric feature rows: the measured precursor m/z of the row's own spectrum. The row and its identifying PSM describe the same ion in the same spectrum, so the value equals that PSM's `observed_mz`.
 - The selected ion MAY go to cv_param `selected ion m/z` (MS:1000744).
 - Validator: ≤ 0 is an error; |`mass_error_ppm`| < 0.001 on ≥ 50 % of rows is a warning.
 
