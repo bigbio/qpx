@@ -91,9 +91,9 @@ Blank Carry cell: kept when all sources agree, else `unknown`.
 **META-6 (MUST) Conformance profiles** (not [T14](t14-reader-contract.md)'s reader profile).
 - `core`: everything `--conformance` checks today (strict, semantic, identity) [[VALIDATOR-33](findings-cross.md#validator-33)], plus V1, V2, V4-V8.
 - `dda`: `core` plus V3: every key marked in META-1 is present (`unknown` counts, except for `acquisition_method`); a run view exists when rows carry intensities; owners' profile-level errors apply.
-- The validator picks the profile: `qpxc validate --profile dda`. No file claims one (META-7).
+- The validator picks the profile: `qpxc validate --profile dda`, or `--profile dda-strict` for the OpenMS strict profile. No footer key claims one (META-7).
 
-**META-7 (MUST) No claims.** No footer key names a profile, and a file makes no conformance claim. `--conformance` checks `core` unless `--profile` names another; whoever needs `dda` runs `qpxc validate --profile dda`. **(MAY)** A writer given `profile=` raises on every file-local rule of that profile; it stamps nothing.
+**META-7 (MUST) No footer claim.** No footer key names a profile. A dataset MAY claim the OpenMS strict profile with the provenance parameter `conformance_profile = dda-strict` on the step that wrote the QPX files ([strict profile](strict-profile.md)); a merge keeps the claim only if every input has it. `--conformance` checks `core` unless `--profile` names another; whoever needs `dda` runs `qpxc validate --profile dda`. **(MAY)** A writer given `profile=` raises on every file-local rule of that profile; it stamps nothing.
 
 **META-8 (MUST) Severity.**
 - **error**: a violated MUST. As a transition, a 1.4 rule its owner grades "warning outside the profile" is an error only under `dda`.
@@ -173,7 +173,7 @@ Blank Carry cell: kept when all sources agree, else `unknown`.
 - **META-R3 (MUST)** Absent, `unknown` and unrecognised values mean unknown; never assume a convenient state such as "decoys removed". Violation: mokume reads no declaration [[MOKUME-23](findings-cross.md#mokume-23)].
 - **META-R4 (MUST)** Check `qpx_version` and `file_type` first. Apply a rule only to the versions it covers, since minors may break. Violation: mokume checks neither.
 - **META-R5 (MUST)** Apply DDA rules only to `dda` files and to `dda` runs under `mixed`. Violation: mokume takes `data_type` from its caller (mokume:rust/python/mokume/agentic/profiler.py:26-31), not the footer.
-- **META-R6 (SHOULD)** Files make no conformance claim (META-7). A reader that needs a guarantee validates with `--profile dda`.
+- **META-R6 (SHOULD)** Files carry no conformance claim in the footer (META-7). A reader MAY trust the provenance parameter `conformance_profile = dda-strict`; one that needs a guarantee validates with `--profile dda-strict`.
 - **META-R7 (MUST)** Exports copy each source's registry keys and `qpx_version` into `uns`. Violations: `qpx/mudata.py:400-401` and `qpx/core/dataset_writes.py:243-244` stamp the reader's version and no keys.
 - **META-R8 (MUST)** Ignore unregistered keys. An unregistered key never changes a column's meaning.
 

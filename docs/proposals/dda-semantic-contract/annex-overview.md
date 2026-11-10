@@ -135,7 +135,7 @@ An earlier draft of this proposal had about 30 new footer keys. The others are r
 | `mbr_policy` | `identification_type`, filled whenever the tool states the origin (null means unknown), and pg `identified_in_unit` ([MBR-8](t08-match-between-runs.md)). |
 | `psm_feature_link` | Links are mandatory when a producer writes both views; gaps are recorded in provenance ([FID-8](t06-identifications-per-feature.md), [FID-9](t06-identifications-per-feature.md)). |
 | `chimeric_quant_policy` | A fixed rule ([CHI-11](t02-chimeric-spectra.md)). |
-| `conformance_profile` | Dropped here: files make no claim; `qpxc validate --profile dda` checks ([META-7](t13-metadata-conformance.md)). The [strict profile](strict-profile.md#footer) proposes one claim value, `dda-strict`, as a pending decision. |
+| `conformance_profile` | No footer key. A dataset claims the [strict profile](strict-profile.md#footer) with a provenance parameter of the same name; `qpxc validate --profile` checks ([META-7](t13-metadata-conformance.md)). |
 | `fdr_filter_psm`, `_precursor`, `_peptide`, `_protein` | Merged into `fdr_filter`. |
 | `unquantified_feature_policy`, `unquantified_pg_policy` | Merged into `unquantified_policy`. |
 | `intensity_normalization`, `intensity_rollup`, `reporter_correction` | Merged into `intensity_processing` and the reporter values of `intensity_quantity`. |
@@ -280,6 +280,14 @@ Each section lists its own open questions. These are the ones that shape the con
     - MaxQuant `MULTI-MATCH-MSMS`.
     - FragPipe DDA+ and CHIMERYS per-precursor m/z.
     - PD `Found in Sample` and decoy content.
+
+### Loose ends from the OpenMS corrections
+
+Correcting the OpenMS facts in the topic sections left three points open:
+
+1. **Feature id on the consensusXML route.** [FRW-4](t05-feature-rows.md) builds the OpenMS feature id from `rt`, `observed_mz` and `consensus_rt`. For aligned ProteomicsLFQ output `rt` and `observed_mz` are now null, which leaves only `consensus_rt`. Either `rt_aligned` replaces `rt` there, or this route stays on its current ids.
+2. **Detecting mixed protein quantities.** [INT-4](t09-intensities-missing-values.md) forbids a file that mixes tool quantities and QPX sums in `pg.intensity`, but nothing on a row says which kind it holds, so the validator cannot check it.
+3. **Feature m/z fallback.** [SPC-1](t11-spectrum-precursor-fields.md) lets a feature fall back to its identifying PSM's m/z, while the OpenMS producer rows say null. One of the two should change.
 
 ## Residual items
 

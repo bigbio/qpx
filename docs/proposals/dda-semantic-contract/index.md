@@ -68,7 +68,7 @@ A key is in the footer only if a reader's default behaviour depends on its value
 | `intensity_quantity` | feature, pg | `ms1_area`, `reporter_corrected`, `reporter_uncorrected` | Decides whether files can be pooled, and whether reporters may be corrected again. |
 | `intensity_processing` | feature, pg | `none`, `normalized`, `topn`, `sum` | Same reason. |
 
-One more key is pending: `conformance_profile = dda-strict`, a single claim that lets a reader skip every "unknown" branch. Other producers may also write `unknown` and further values; see the [annex overview](annex-overview.md#proposed-footer-keys), which also lists what replaced the roughly 25 keys of the first draft.
+No footer key names the profile. A dataset claims it with the provenance parameter `conformance_profile = dda-strict`, which lets a reader skip every "unknown" branch. Other producers may also write `unknown` and further values; see the [annex overview](annex-overview.md#proposed-footer-keys), which also lists what replaced the roughly 25 keys of the first draft.
 
 ## Order of work
 
@@ -78,7 +78,7 @@ One more key is pending: `conformance_profile = dda-strict`, a single claim that
     - Portal: key protein groups one way.
     - Both: stop treating a null `is_decoy` as a target.
 3. **Footer plumbing in qpx.** The five keys, kept through merge and migrate ([T13](t13-metadata-conformance.md)).
-4. **Strict-profile validation.** `qpxc validate --profile dda-strict`, with fixtures written by OpenMS, and the reference queries as shared reader tests for qpx, qpxui, the portal and mokume.
+4. **Strict-profile validation.** `qpxc validate --profile dda-strict` and the provenance claim, with fixtures written by OpenMS, and the reference queries as shared reader tests for qpx, qpxui, the portal and mokume.
 5. **Consumer predicates.** Each consumer adopts the predicates of the [strict profile](strict-profile.md#reading-these-files).
 6. **Other producers.** The converter work in the annex, by producer.
 
@@ -96,11 +96,10 @@ Start with the [annex overview](annex-overview.md).
 
 ## Decisions needed
 
-1. **The claim key.** Add `conformance_profile = dda-strict` as a sixth footer key, or let readers rely on `creator` and `qpx_version`?
-2. **Transferred rows beside direct rows.** Should OpenMS leave out a transferred row when the same precursor has a quantified direct row in that run? This gives one row per precursor and run.
-3. **Unidentified features.** Confirm the separate view. This reverses [#229](https://github.com/bigbio/qpx/issues/229)/[#232](https://github.com/bigbio/qpx/issues/232) and settles [#378](https://github.com/bigbio/qpx/issues/378).
-4. **Protein q-values.** Should OpenMS always estimate protein FDR, so `pg.global_qvalue` is never null?
-5. **Transfers in quantities.** By default readers keep transferred quantities and mark them. Should they be dropped by default instead (mokume#117)?
+1. **Transferred rows beside direct rows.** Should OpenMS leave out a transferred row when the same precursor has a quantified direct row in that run? This gives one row per precursor and run.
+2. **Unidentified features.** Confirm the separate view. This reverses [#229](https://github.com/bigbio/qpx/issues/229)/[#232](https://github.com/bigbio/qpx/issues/232) and settles [#378](https://github.com/bigbio/qpx/issues/378).
+3. **Protein q-values.** Should OpenMS always estimate protein FDR, so `pg.global_qvalue` is never null?
+4. **Transfers in quantities.** By default readers keep transferred quantities and mark them. Should they be dropped by default instead (mokume#117)?
 
 The [strict profile](strict-profile.md#decisions-pending) and the [annex overview](annex-overview.md#open-questions-for-maintainers) list further open points.
 

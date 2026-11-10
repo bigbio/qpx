@@ -29,7 +29,8 @@ OpenMS can meet this profile because it holds the information internally; the [O
 | `intensity_processing` | feature, pg | feature: `none` or `normalized`. pg: `topn`, `sum` or `normalized`. |
 | `scan_format` | psm, feature | `scan`, `index` or `nativeId` |
 | `identity_composite` | feature | Label-free: `peptidoform, charge, run_file_name`. Isobaric: `peptidoform, charge, run_file_name, scan`. |
-| `conformance_profile` **(pending)** | psm, feature, pg | `dda-strict`. One claim that lets a reader skip every "unknown" branch. This adds a sixth key to the five in the [reduced footer](index.md#proposed-footer-keys). The alternative is for readers to rely on `creator` and `qpx_version`. |
+
+The footer has no key that names the profile. A dataset claims it in the `provenance` view instead: the step that wrote the QPX files carries the parameter `conformance_profile = dda-strict`. Provenance is an ordinary table, so consumers read the claim with a plain `SELECT`. A merge keeps the claim only if every input dataset has it. A reader that needs a guarantee runs `qpxc validate --profile dda-strict`.
 
 ## What the profile fixes, so no declaration is needed
 
@@ -186,8 +187,7 @@ These need algorithm work in OpenMS, or are not needed by the current consumers,
 
 ## Decisions pending
 
-1. **The claim key.** Add `conformance_profile = dda-strict`, or let readers rely on `creator` and `qpx_version`?
-2. **Transferred rows beside direct rows.** Should OpenMS leave them out, as proposed above? Before deciding, check what OpenMS's protein quantification does with such pairs, and confirm that ProteomicsLFQ never writes two direct rows for one precursor and run.
-3. **Protein q-values.** Should OpenMS always estimate protein FDR, so `global_qvalue` is never null?
-4. **Estimated areas.** When the elution-model fit fails, OpenMS replaces the area by a regression estimate. Is that value measured or imputed?
-5. **Unidentified features.** Confirm the separate `unidentified_feature` view (this reverses [#229](https://github.com/bigbio/qpx/issues/229)/[#232](https://github.com/bigbio/qpx/issues/232) and settles [#378](https://github.com/bigbio/qpx/issues/378)).
+1. **Transferred rows beside direct rows.** Should OpenMS leave them out, as proposed above? Before deciding, check what OpenMS's protein quantification does with such pairs, and confirm that ProteomicsLFQ never writes two direct rows for one precursor and run.
+2. **Protein q-values.** Should OpenMS always estimate protein FDR, so `global_qvalue` is never null?
+3. **Estimated areas.** When the elution-model fit fails, OpenMS replaces the area by a regression estimate. Is that value measured or imputed?
+4. **Unidentified features.** Confirm the separate `unidentified_feature` view (this reverses [#229](https://github.com/bigbio/qpx/issues/229)/[#232](https://github.com/bigbio/qpx/issues/232) and settles [#378](https://github.com/bigbio/qpx/issues/378)).
