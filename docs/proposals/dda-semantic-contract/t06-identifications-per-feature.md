@@ -6,7 +6,7 @@
     Part of the [DDA semantic contract proposal](index.md) for QPX. Rules here are proposals for specification 1.4, not normative text. Bracketed ids such as [OPENMS-01](findings-psm.md#openms-01) link to the verified audit findings; code references are to `dev` at commit `32cbbdc`.
 
 
-> **Decision in one line:** A DDA feature row has one peptidoform and one charge, 0..n *supporting PSMs* linked by `psm.feature_id`, and at most one *identifying PSM* from its own run: the one the source names, else lowest PEP, then q-value, then scan. Only that PSM feeds `scan` (one spectrum), `id_run_file_name`, PEP and PSM scores. A quantified signal feeds at most one row; competing peptidoforms set `identification_conflict`. Run rows of one cross-run feature share `consensus_feature_id`; the psm footer `psm_feature_link` states link completeness.
+> **Decision in one line:** A DDA feature row has one peptidoform and one charge, 0..n *supporting PSMs* linked by `psm.feature_id`, and at most one *identifying PSM* from its own run: the one the source names, else lowest PEP, then q-value, then scan. Only that PSM feeds `scan` (one spectrum), `id_run_file_name`, PEP and PSM scores. A quantified signal feeds at most one row; competing peptidoforms set `identification_conflict`. Run rows of one cross-run feature share `consensus_feature_id`. A producer writing both views links every supporting PSM; provenance `skipped_runs_psm` names runs it could not link.
 
 ## Questions a reader has
 - How many identifications stand behind a feature row? Which PSM gave it `scan`, `id_run_file_name`, PEP and scores, and how do I find it?
@@ -84,11 +84,12 @@ Nulls sort last. [T01](t01-psm-rows.md) PSM-2 and [T02](t02-chimeric-spectra.md)
 - A row has 0..n linked PSMs; a PSM links to at most one row, of which it is a supporting PSM: no other peptidoform (MS1-label partners aside), charge or run (unit rows aside), no decoy PSM on a target row, no `rank > 1` ([T01](t01-psm-rows.md) PSM-7), no transferred row.
 - When several rows qualify, the source's assignment wins (MaxQuant `Evidence ID`). If it names several ([T01](t01-psm-rows.md) PSM-2 merged twins), link the row the PSM identifies; otherwise use the psm.md:158-161 order.
 
-**FID-8 (MUST)** A producer that writes both views and knows or decides which PSMs support a row (including by building features from PSMs) writes `psm.feature_id` on every supporting PSM it exports.
-- Each non-empty `feature.scan` resolves to exactly one psm row by FID-R1, unless a declared psm filter ([T03](t03-filtering-state.md) `fdr_filter_psm`) removed it.
+**FID-8 (MUST)** A producer that writes both views writes `psm.feature_id` on every supporting PSM it exports (including when it builds features from PSMs). The validator checks it.
+- A producer that cannot cover every run (e.g. a single FragPipe psm.tsv) records the uncovered runs in provenance `skipped_runs_psm`.
+- Each non-empty `feature.scan` resolves to exactly one psm row by FID-R1, unless a declared psm filter (a `psm` entry in [T03](t03-filtering-state.md) `fdr_filter`) removed it.
 - `--no-include-unassigned-psms` keeps identifying PSMs [[OPENMS-21](findings-cross.md#openms-21)].
 
-**FID-9 (MUST)** psm footer `psm_feature_link` (absent = `unknown`): `complete` (every exported supporting PSM is linked to a row it supports), `partial`, `none` (psm-only export, mzIdentML), `unknown`.
+**FID-9 (MUST)** No footer key states link completeness. By FID-8, links in a 1.4 file are complete (every exported supporting PSM is linked to a row it supports), except in runs listed in provenance `skipped_runs_psm`. A psm-only export (mzIdentML) has no links.
 
 **FID-10 (MUST)** Conflicts: the case of [T05](t05-feature-rows.md) FRW-2 (a signal feeds at most one row) in which several peptidoforms claim one MS1 signal; reporter spectra follow [T02](t02-chimeric-spectra.md) CHI-11. A *conflict* exists when the source assigns the row's signal to several peptidoforms, or every supporting PSM has a rank-1 tie with another peptidoform ([T01](t01-psm-rows.md) PSM-6). Then:
 - The signal stays on the source's resolution, else on the peptidoform whose best PSM sorts first under FID-3, over the whole `consensus_feature_id` when there is one.
@@ -108,18 +109,18 @@ Nulls sort last. [T01](t01-psm-rows.md) PSM-2 and [T02](t02-chimeric-spectra.md)
 |---|---|---|---|---|
 | `identification_conflict` | feature | bool, nullable | Optional; SHOULD in [T13](t13-metadata-conformance.md) `dda` | No |
 | `consensus_feature_id` | feature | int64, nullable; add to `_NAMESPACED_IDS` (`qpx/core/dataset_merge.py:41`), relayout, migrate | Optional | No |
-| `psm_feature_link` | psm footer | `complete`, `partial`, `none`, `unknown` | SHOULD; MUST in `dda` | No |
+| `skipped_runs_psm` (FID-8) | psm provenance | list of `run_file_name` | When some runs are not linked | No |
 | `scan` = one spectrum; check feature scan_format (`qpx/core/data/schema.py:134-139`, [T11](t11-spectrum-precursor-fields.md)); edit `feature.md:26-28,139,301`, `scan.md:90-92,120,123-124`, `feature.yaml:98-101` | feature | `list<int32>` unchanged | – | **Yes**: openms-consensus arrays and derived ids change |
 | `id_run_file_name` ∈ {`run_file_name`, null}; drop "(may differ)" (`feature.md:138`) | feature | – | – | **Yes** for pre-[#378](https://github.com/bigbio/qpx/issues/378) OpenMS `-out_qpx` files with donor runs (FID-R7) |
 | PEP and scores per FID-4 | feature | – | – | Values change (PD, OpenMS); OpenMS peptide-level PEP null per [T04](t04-confidence-fields.md) |
 | Delete the `psm.md:286` sentence (with [T04](t04-confidence-fields.md)); `data-model.md:166` → `id_run_file_name + scan` | docs | – | – | No |
-| Validator ([T13](t13-metadata-conformance.md) V6; errors under `dda`, else warnings): FID-1, 5, 6, 7, 10, 11 invariants; FID-8 resolution under `complete` (warning under `fdr_filter_psm`). Warning: a linked same-run PSM with lower PEP than the identifying one | psm, feature | – | – | New findings |
+| Validator ([T13](t13-metadata-conformance.md) V5, V6; errors under `dda`, else warnings): FID-1, 5, 6, 7, 10, 11 invariants; FID-8 links and resolution outside runs in `skipped_runs_psm` (warning when `fdr_filter` has a `psm` entry). Warning: a linked same-run PSM with lower PEP than the identifying one | psm, feature | – | – | New findings |
 
 ## Producer changes
 | Producer | Change needed |
 |---|---|
-| MaxQuant | Match `MS/MS Scan Number` (MQ 1.5). `MULTI-MATCH-MSMS`: empty scan, null run and PEP ([T08](t08-match-between-runs.md) MBR-1, MBR-3). Shared isotope patterns (same `Raw file`, `Charge`, `m/z`, `Intensity`, different `Modified sequence`): intensity on the FID-3 winner, null on the others, all flagged; elsewhere `false`. Check run, charge, peptidoform on `Evidence ID` links. Footer `complete`. Fix converter-coverage.md:285 |
-| FragPipe | Key the lookup by CV; null run when no PSM is found; unit rows per [T05](t05-feature-rows.md) FRW-6, linking member-run PSMs. Fill links; read `<exp> Spectral Count`; `consensus_feature_id` from the `combined_ion` row. FID-3's fallback is today's pick (question 1) |
+| MaxQuant | Match `MS/MS Scan Number` (MQ 1.5). `MULTI-MATCH-MSMS`: empty scan, null run and PEP ([T08](t08-match-between-runs.md) MBR-1, MBR-3). Shared isotope patterns (same `Raw file`, `Charge`, `m/z`, `Intensity`, different `Modified sequence`): intensity on the FID-3 winner, null on the others, all flagged; elsewhere `false`. Check run, charge, peptidoform on `Evidence ID` links. Fix converter-coverage.md:285 |
+| FragPipe | Key the lookup by CV; null run when no PSM is found; unit rows per [T05](t05-feature-rows.md) FRW-6, linking member-run PSMs. Fill links; runs without a psm.tsv go to provenance `skipped_runs_psm`; read `<exp> Spectral Count`; `consensus_feature_id` from the `combined_ion` row. FID-3's fallback is today's pick (question 1) |
 | Proteome Discoverer | FID-3 for the feature pick, [T01](t01-psm-rows.md) PSM-2 for psm de-duplication. Fill links. `spectral_count` = distinct scans, TMT included ([T09](t09-intensities-missing-values.md)) |
 | CDAP | Order compatible (SpecEValue documented). Fill links. `AmbiguousMatch` ties: one flagged row, losers optional. `psm_count` → `spectral_count` or `quant_spectrum_count` ([T09](t09-intensities-missing-values.md) INT-12) |
 | OpenMS (qpxc) | Peptidoform per ConsensusFeature: resolver survivor, else FID-3 first over its PSMs. Per run: FID-3 pick of that peptidoform; `scan` = its spectrum (drop feature_dedup.py:48); runs with only competing PSMs per FID-1/FID-10. Link supporting PSMs only; keep identifying PSMs under `--no-include-unassigned-psms`. Write `consensus_feature_id`, feature `scan_format` |
@@ -130,7 +131,7 @@ Nulls sort last. [T01](t01-psm-rows.md) PSM-2 and [T02](t02-chimeric-spectra.md)
 ## Reader rules
 **FID-R1 (MUST)** Find the identifying PSM with `psm.feature_id = feature.feature_id AND psm.run_file_name = feature.id_run_file_name AND psm.scan = feature.scan`; without a link, by `(id_run_file_name, scan, peptidoform, charge)` (not for MS1-label rows). Never `(run, scan)` alone: ambiguous in 440 of 5,843 LFQ and 10,661 of 43,121 TMT PD features ([#378](https://github.com/bigbio/qpx/issues/378)).
 
-**FID-R2 (MUST)** Supporting spectra are the linked PSMs; count distinct `(run_file_name, scan)` among accepted PSMs ([T03](t03-filtering-state.md) FLT-R4). A missing link means "not supporting" only under `psm_feature_link = complete`; otherwise use `spectral_count` or report unknown.
+**FID-R2 (MUST)** Supporting spectra are the linked PSMs; count distinct `(run_file_name, scan)` among accepted PSMs ([T03](t03-filtering-state.md) FLT-R4). A missing link means "not supporting" in 1.4 files (FID-9), except in runs listed in provenance `skipped_runs_psm`; there, and in older files, use `spectral_count` or report unknown.
 
 **FID-R3 (MUST)** A null `id_run_file_name` or empty `scan` means only "no located identifying PSM"; never infer a transfer from it ([T08](t08-match-between-runs.md) MBR-R1).
 

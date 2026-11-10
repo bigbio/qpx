@@ -6,7 +6,7 @@
     Part of the [DDA semantic contract proposal](index.md) for QPX. Rules here are proposals for specification 1.4, not normative text. Bracketed ids such as [OPENMS-01](findings-psm.md#openms-01) link to the verified audit findings; code references are to `dev` at commit `32cbbdc`.
 
 
-> **Decision in one line:** One peptidoform per row, no ProForma `+`; a typed `psm.precursor_index` (1 = primary, ≥ 2 = co-isolated) with rank 1 per precursor; feature `secondary` = identified here only by secondary PSMs; a chimeric spectrum's reporters feed at most one feature; footers declare `chimeric_policy` and `chimeric_quant_policy`.
+> **Decision in one line:** One peptidoform per row, no ProForma `+`; a typed `psm.precursor_index` (1 = primary, ≥ 2 = co-isolated) with rank 1 per precursor; feature `secondary` = identified here only by secondary PSMs; a chimeric spectrum's reporters feed at most one feature (a plain MUST); no footer keys: a null index means unknown, and removed secondaries are recorded in provenance.
 
 ## Questions a reader has
 - Two PSM rows share `run_file_name` and `scan`: co-isolated peptides (both may be right), alternatives or ties (at most one right), or engine duplicates?
@@ -82,46 +82,38 @@ In the spec:
 
 **CHI-9 (MUST)** For every producer, feature `identification_type = 'secondary'` means MS/MS of this run (or of its unit's runs, [T05](t05-feature-rows.md)) identified the row and every supporting PSM there ([T06](t06-identifications-per-feature.md)) is secondary. Without psm-level indices the tool's type decides (MaxQuant Type ending in `SECPEP`). Any index-1 supporting PSM makes the row `direct`. Secondary rows keep [T06](t06-identifications-per-feature.md)'s `direct` invariants (FID-1, FID-5, FID-6). De-duplication follows [T08](t08-match-between-runs.md) MBR-7 (`direct` > `secondary` > `transferred`).
 
-**CHI-10 (MUST)** The psm and feature footers carry `chimeric_policy`; absent means `unknown`:
-- `not_searched`: the source reports one precursor per spectrum, and every index is 1.
-- `flagged`: every reported co-identification is kept, apart from declared [T03](t03-filtering-state.md) filters. Every rank-1 psm row has an index, and features follow CHI-9.
-- `primary_only`: rows and features with index > 1 were removed.
-- `unknown`.
-
-Converters default to `flagged` ([#241](https://github.com/bigbio/qpx/issues/241)). A merge keeps a value only if all inputs agree.
+**CHI-10 (MUST)** No footer key declares chimeric handling; `precursor_index` alone carries it.
+- Every rank-1 psm row has an index whenever the producer knows it (tool marker or CHI-5); a source that reports one precursor per spectrum gives index 1. Otherwise the index is null (unknown). Features follow CHI-9.
+- Converters keep every reported co-identification by default ([#241](https://github.com/bigbio/qpx/issues/241)), apart from declared [T03](t03-filtering-state.md) filters.
+- A producer that removes rows or features with index > 1 records the provenance option `chimeric_secondaries_removed = true`.
 
 **CHI-11 (MUST)** The reporter ions of a chimeric spectrum (its MS2 reporters, or the MS3 `quant_scan` taken from it) give intensities to at most one feature row: an index-1 hypothesis's (ties follow [T06](t06-identifications-per-feature.md) FID-10), or none. This is the chimeric case of [T05](t05-feature-rows.md) FRW-2. A secondary feature MAY keep its row with null intensities (intensities.md:123; [T07](t07-unidentified-features.md)).
 
-Feature footers with reporter intensities declare `chimeric_quant_policy`:
-- `exclusive`: the producer applied this rule.
-- `unknown`: the producer cannot tell which spectra fed its intensities, as with tool-aggregated sums.
-
-A pg computed by qpx inherits the feature value; a tool's pg writes `unknown` unless the tool documents the rule. MS1 co-identifications are separate peaks; one peak given to two peptidoforms [[MAXQUANT-08](findings-feature.md#maxquant-08)] is a [T06](t06-identifications-per-feature.md) FID-10 conflict.
+No footer key declares it. A producer that cannot ensure it, because it cannot tell which spectra fed its intensities (tool-aggregated reporter sums), says so in converter-coverage. A pg computed by qpx complies when its features do; a tool's pg is listed in converter-coverage unless the tool documents the rule. Readers de-duplicate on `quant_scan` whenever it is set (CHI-R6). MS1 co-identifications are separate peaks; one peak given to two peptidoforms [[MAXQUANT-08](findings-feature.md#maxquant-08)] is a [T06](t06-identifications-per-feature.md) FID-10 conflict.
 
 ## Schema and footer changes
 | Change | View | Type / values | Required | Breaking? |
 |---|---|---|---|---|
-| `precursor_index` | psm | int16, null, ≥ 1 | Optional; non-null on rank-1 rows unless `chimeric_policy` is `unknown` | No (additive) |
+| `precursor_index` | psm | int16, null, ≥ 1; null = unknown | Optional; non-null on rank-1 rows whenever the producer knows the precursor (CHI-10) | No (additive) |
 | `secondary` defined (CHI-9) | feature | existing value | – | No. In 1.3 files, `direct` may include secondary-only rows |
 | No `+` joiner | psm, feature | validator error, `qpx_version` ≥ 1.4 | – | Yes for third-party writers. No qpx converter emits it (qpx/converters/ptm.py:611-614 passes it through) |
-| `chimeric_policy` | psm, feature footer | `not_searched`, `flagged`, `primary_only`, `unknown` | SHOULD; present under [T13](t13-metadata-conformance.md) `dda` | No |
-| `chimeric_quant_policy` | feature, pg footer | `exclusive`, `unknown` | SHOULD with reporter intensities | No |
+| Provenance option `chimeric_secondaries_removed` | psm, feature | `true` | When rows or features with index > 1 were removed (CHI-10) | No |
 | cv_param `MS:1000744` | psm | selected precursor m/z | MAY | No |
-| Validator | psm, feature | CHI-1, CHI-6, CHI-10; under `exclusive` no two intensity-bearing rows share a non-null `(run_file_name, quant_scan)` | – | No |
+| Validator | psm, feature | CHI-1, CHI-6; CHI-10: no index > 1 when provenance records `chimeric_secondaries_removed`; CHI-11: no two intensity-bearing rows share a non-null `(run_file_name, quant_scan)` | – | No |
 
 ## Producer changes
 | Producer | Change needed |
 |---|---|
-| MaxQuant | PSM: non-SECPEP index 1; SECPEP 2, 3, … in FID-3 order; twins merge into index 1. Footer: `not_searched` if parameters.txt `Second peptides` is False (already read: qpx/converters/maxquant/base_adapter.py:182-199); `flagged` if True or SECPEP rows exist; else `unknown`. Feature: every `*SECPEP` Type without `MATCH` is `secondary` (a transferred second peptide is `transferred`, [T08](t08-match-between-runs.md) MBR-1); dedup ranks type before PEP (feature_adapter.py:264). TMT: null `secondary` reporters; `unknown` until a fixture shows how evidence reporters are summed |
-| FragPipe | CHI-5 on `Observed M/Z` (no tool marker); `flagged` when the column exists. ion.tsv reporter sums: `unknown` |
-| Proteome Discoverer | CHI-5 on `m/z [Da]`; `Ambiguous` ties share an index. A chimeric scan's reporters go only to an index-1 feature ([PD-03](findings-cross.md#pd-03)), once across engines ([PD-04](findings-feature.md#pd-04)): `exclusive` |
-| OpenMS consensus | CHI-5 on PID MZ; a PID's hits share its index. Isobaric: one peptidoform per consensus feature, by FID-3 not `pids[0]`: `exclusive` |
+| MaxQuant | PSM: non-SECPEP index 1; SECPEP 2, 3, … in FID-3 order; twins merge into index 1. Feature: every `*SECPEP` Type without `MATCH` is `secondary` (a transferred second peptide is `transferred`, [T08](t08-match-between-runs.md) MBR-1); dedup ranks type before PEP (feature_adapter.py:264). TMT: null `secondary` reporters; listed in converter-coverage as not ensuring CHI-11 until a fixture shows how evidence reporters are summed |
+| FragPipe | CHI-5 on `Observed M/Z` (no tool marker). ion.tsv reporter sums: listed in converter-coverage as not ensuring CHI-11 |
+| Proteome Discoverer | CHI-5 on `m/z [Da]`; `Ambiguous` ties share an index. A chimeric scan's reporters go only to an index-1 feature ([PD-03](findings-cross.md#pd-03)), once across engines ([PD-04](findings-feature.md#pd-04)) |
+| OpenMS consensus | CHI-5 on PID MZ; a PID's hits share its index. Isobaric: one peptidoform per consensus feature, by FID-3 not `pids[0]` |
 | OpenMS `-out_qpx` | Same rules; not verified |
 | mzIdentML | CHI-5 on `experimentalMassToCharge` |
-| CDAP | MS-GF+ searches one precursor: index 1, `not_searched`. Ties are left out of features: `exclusive` |
-| quantms/MSstats | No psm view: no `chimeric_policy`. TMT: `exclusive` if no `(run_file_name, scan)` feeds two features; else keep the FID-3 first or write `unknown` |
+| CDAP | MS-GF+ searches one precursor: index 1. Ties are left out of features, which meets CHI-11 |
+| quantms/MSstats | No psm view. TMT: CHI-11 holds if no `(run_file_name, scan)` feeds two features; else keep the FID-3 first, or list the gap in converter-coverage |
 | Third-party (Sage, CHIMERYS) | Sage `chimera=true`: hit n gets index n, rank 1, `sage_rank = n`; otherwise index 1 and Sage's rank. CHIMERYS: CHI-5; I/L ties share an index |
-| DIA-NN, Spectronaut | DIA: omit the keys |
+| DIA-NN, Spectronaut | None (DIA) |
 
 ## Reader rules
 **CHI-R1 (MUST)** Identified spectra are distinct `(run_file_name, scan)` values, or `spectrum_reference` where `scan` is empty ([T11](t11-spectrum-precursor-fields.md) SPC-9), over accepted rank-1 target rows ([T01](t01-psm-rows.md) PSM-R2). Never count them as rows.
@@ -134,9 +126,9 @@ A pg computed by qpx inherits the feature value; a tool's pg writes `unknown` un
 
 **CHI-R5 (MUST)** A spectral count (peptide, protein, group) counts distinct `(run_file_name, scan)` among accepted PSMs; summing feature `spectral_count` overcounts a scan whose co-identifications share a group.
 
-**CHI-R6 (MUST)** Roll up reporter intensities across peptidoforms only under `exclusive`. Otherwise de-duplicate on `(run_file_name, quant_scan)` where it is set (lowest index of the identifying PSM, then FID-3), and warn where it is not.
+**CHI-R6 (MUST)** Before rolling up reporter intensities across peptidoforms, de-duplicate on `(run_file_name, quant_scan)` wherever `quant_scan` is set (keep the lowest index of the identifying PSM, then FID-3). Rows without `quant_scan` rely on CHI-11.
 
-**CHI-R7 (MUST)** A null or absent `precursor_index` is unknown, never 1. A file without `chimeric_policy` may hold co-identifications.
+**CHI-R7 (MUST)** A null or absent `precursor_index` is unknown, never 1; such rows may be co-identifications. Rows with index > 1 were removed only if provenance records `chimeric_secondaries_removed = true`.
 
 Violations:
 - qpx counts no spectra: `n_psms` = `COUNT(*)` (qpx/converters/summary.py:109); `ModificationView.frequency()` counts rows (qpx/views/api.py:139-151); `PSM.confident()` ignores rank and index (qpx/core/data/psm.py:23-25).
@@ -145,6 +137,6 @@ Violations:
 - mokume counts `psm_id` rows per group (mokume:rust/crates/mokume-pipeline/src/spectral_count.rs:235-249; CHI-R5), aborts on MaxQuant's duplicate SECPEP ids (:210-231), and reads `scan` but no rank or index (mokume:rust/crates/mokume-io/src/psm.rs:14-25). It keys TMT rows on `(peptidoform, charge, plex)` (mokume:rust/crates/mokume-pipeline/src/tmt.rs:116-124), never on `quant_scan` (CHI-R6). Its reading of `secondary` as in-run (mokume:rust/crates/mokume-io/src/qpx.rs:501-504) conforms to CHI-R4.
 
 ## Open questions for maintainers
-1. MaxQuant TMT: does an evidence row's reporter sum include MS/MS where it was a second peptide? A TMT fixture decides `exclusive` vs `unknown`.
-2. Do FragPipe DDA+ `Observed M/Z` and PD-with-CHIMERYS `m/z [Da]` give each co-identification its own precursor ([FRAGPIPE-03](findings-psm.md#fragpipe-03))? If not, CHI-5 merges them into ties and the producer must write `unknown`.
+1. MaxQuant TMT: does an evidence row's reporter sum include MS/MS where it was a second peptide? A TMT fixture decides whether MaxQuant meets CHI-11 or is listed in converter-coverage.
+2. Do FragPipe DDA+ `Observed M/Z` and PD-with-CHIMERYS `m/z [Da]` give each co-identification its own precursor ([FRAGPIPE-03](findings-psm.md#fragpipe-03))? If not, CHI-5 merges them into ties and the producer must leave the index null.
 3. Should index 1 go to the lowest PEP, which every producer can compute, or to the precursor nearest the isolation target, which needs mzML?

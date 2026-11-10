@@ -6,7 +6,7 @@
     Part of the [DDA semantic contract proposal](index.md) for QPX. Rules here are proposals for specification 1.4, not normative text. Bracketed ids such as [OPENMS-01](findings-psm.md#openms-01) link to the verified audit findings; code references are to `dev` at commit `32cbbdc`.
 
 
-> **Decision in one line:** One registry (`footer.yaml`, adding `acquisition_method` and an optional `conformance_profile`) defines the Parquet key-value footer as each file's declaration; rewrites carry every key by its rule and never relabel old rows with a new `qpx_version`; writers and `qpxc validate` share one check set with error, warning and info severities and `core`/`dda` profiles, so no allowed state fails `--conformance`; any change of meaning moves `qpx_version`.
+> **Decision in one line:** One registry (`footer.yaml`) defines the Parquet key-value footer as each file's declaration, adding exactly five keys (`acquisition_method`, `fdr_filter`, `unquantified_policy`, `intensity_quantity`, `intensity_processing`); other declarations are columns, fixed rules or provenance parameters; rewrites carry every key by its rule, merge keeps every input's provenance steps, and none relabels old rows with a new `qpx_version`; writers and `qpxc validate` share one check set with error, warning and info severities and `core`/`dda` profiles chosen by `--profile` (files claim none), so no allowed state fails `--conformance`; any change of meaning moves `qpx_version`.
 
 ## Questions a reader has
 - Which footer keys exist, where are they read, and what does an absent or unrecognised value mean?
@@ -36,7 +36,7 @@
 | Readers | qpx reads `schema_arrow` of the first shard and stamps its own version on exports; mokume never checks `qpx_version`, `file_type` or acquisition (sites under Reader rules) | [[MOKUME-23](findings-cross.md#mokume-23)] |
 
 ## Why it matters
-[T01](t01-psm-rows.md)-[T12](t12-protein-groups.md) move most semantics into footer keys (P-B), which work only if readers find them, rewrites keep them and a validator checks them. Today a reader who follows the spec misses `identity_source`; a merge reads zero-based indices as scan numbers; relayout or merge by a newer qpx labels 1.3 rows as 1.4; `--conformance` fails spec-sanctioned mzIdentML output; and nothing says whether DDA rules (one row per hypothesis, `scan` = the triggering MS2) apply.
+[T01](t01-psm-rows.md)-[T12](t12-protein-groups.md) move most semantics into footer keys, typed columns and provenance parameters (P-B), which work only if readers find them, rewrites keep them and a validator checks them. Today a reader who follows the spec misses `identity_source`; a merge reads zero-based indices as scan numbers; relayout or merge by a newer qpx labels 1.3 rows as 1.4; `--conformance` fails spec-sanctioned mzIdentML output; and nothing says whether DDA rules (one row per hypothesis, `scan` = the triggering MS2) apply.
 
 ## Options considered
 | Option | For | Against |
@@ -52,6 +52,7 @@
 **META-1 (MUST) One registry.**
 - `qpx/core/data/schemas/footer.yaml` (mirrored in `docs/spec/schemas/`) defines each key's views, value type, first `qpx_version`, owner, carry rule and `dda` requirement. `serialization.md` renders it as the only footer table; delete `psm.md:256-278` and `feature.md:272-294`; drop `project_*`.
 - Every 1.4 enum also allows `unknown`. Private keys use `x_<namespace>_<name>`. "The T13 profile" in [T01](t01-psm-rows.md)-[T12](t12-protein-groups.md) means `dda`.
+- 1.4 adds exactly five keys: `acquisition_method`, `fdr_filter`, `unquantified_policy`, `intensity_quantity` and `intensity_processing` (the existing `scan_format` keeps its [T11](t11-spectrum-precursor-fields.md) SPC-7 extension). Every other [T01](t01-psm-rows.md)-[T12](t12-protein-groups.md) declaration is a column, a fixed rule or a provenance step parameter, defined by its owner; the registry lists none of them.
 
 Blank Carry cell: kept when all sources agree, else `unknown`.
 
@@ -63,27 +64,9 @@ Blank Carry cell: kept when all sources agree, else `unknown`.
 | `scan_format` | psm, feature, mz | [T11](t11-spectrum-precursor-fields.md) SPC-7 | agreed value; else `mixed` (psm, every row with `spectrum_reference`); else `unknown` | psm; feature with a `scan` |
 | `spectrum_content`; `acquisition_start`; `qpx.*`; `xic_*`, `transition_format` | psm, mz; mz; any; xic | psm.md:290, mz.md:154; JSON; JSON; xic.md:21 | default; union; recomputed; dropped | psm with arrays |
 | `acquisition_method` | psm, feature, pg | `dda`, `dia`, `prm`, `mixed` (T13) | differing known values → `mixed` | `dda`, `mixed` |
-| `conformance_profile` | psm, feature, pg | `core`, `dda`; absent = no claim (T13) | never carried | – |
-| `psm_rank_policy` | psm | `top1`, `all_reported` ([T01](t01-psm-rows.md) PSM-4) | | present |
-| `chimeric_policy` | psm, feature | `not_searched`, `flagged`, `primary_only` ([T02](t02-chimeric-spectra.md) CHI-10) | | present |
-| `chimeric_quant_policy` | feature, pg with reporters | `exclusive` ([T02](t02-chimeric-spectra.md) CHI-11) | | present |
-| `fdr_filter_psm`, `fdr_filter_precursor`, `fdr_filter_peptide`, `fdr_filter_protein` | psm, feature, pg | decimal (0,1], `applied`, `none` ([T03](t03-filtering-state.md) FLT-1) | weakest (FLT-13) | present |
-| `decoy_policy`, `contaminant_policy` | psm, feature, pg | `retained`, `removed`, `not_searched` ([T03](t03-filtering-state.md)) | | present |
-| `unassigned_psm_policy` | psm | `retained`, `removed`, `not_applicable` ([T03](t03-filtering-state.md)) | | present |
-| `pass_threshold_level`, `pass_threshold_fdr` | psm; pg with `pass_threshold` | `psm` … `protein`, `other`; decimal ([T03](t03-filtering-state.md) FLT-8, [T12](t12-protein-groups.md)) | | with `pass_threshold` |
-| `psm_qvalue_scope`, `peptide_qvalue_scope` | psm, feature | `run`, `experiment` ([T04](t04-confidence-fields.md) CNF-3) | `run` if all `run`, else `unknown` | with the column |
-| `feature_grain` | feature | `precursor_run`, `peak`, `spectrum`, `precursor_unit` ([T05](t05-feature-rows.md)) | | present |
-| `psm_feature_link` | psm | `complete`, `partial`, `none` ([T06](t06-identifications-per-feature.md) FID-9) | | present |
-| `unidentified_feature_policy` | feature | `retained`, `removed`, `not_applicable` ([T07](t07-unidentified-features.md) UNI-5) | | present |
-| `unquantified_feature_policy` | feature | `retained`, `removed` ([T07](t07-unidentified-features.md) UNI-6) | | present |
-| `mbr_policy` | feature, pg | `not_performed`, `excluded`, `flagged`, `unflagged` ([T08](t08-match-between-runs.md)) | | present |
-| `mbr_fdr` | feature | decimal, `applied`, `none` ([T08](t08-match-between-runs.md) MBR-9) | weakest | unless `not_performed`/`excluded` |
-| `intensity_quantity`, `intensity_normalization` | feature, pg, site, unidentified_feature | [T09](t09-intensities-missing-values.md) INT-2 | | present (feature, pg) |
-| `intensity_imputation`; `intensity_rollup` | feature, pg; pg | `none`, `flagged`; INT-2 | | present |
-| `reporter_correction` | reporter views | `corrected`, `uncorrected` ([T09](t09-intensities-missing-values.md)) | | present |
-| `observed_mz_calibration` | psm, feature | `raw`, `recalibrated` ([T11](t11-spectrum-precursor-fields.md) SPC-2) | | – |
-| `unquantified_pg_policy` | pg | `retained`, `removed` ([T12](t12-protein-groups.md) PGV-4) | | present |
-| `pg_grouping` | pg; feature with `pg_accessions` | `dataset_inference`, `partial_inference`, `mapping_set` ([T12](t12-protein-groups.md) PGV-6) | `partial_inference` unless all `mapping_set` | present |
+| `fdr_filter` | psm, feature, pg | `none`, or `<level>:<value>` entries joined by `;` ([T03](t03-filtering-state.md) FLT-1) | weakest value per level (FLT-13) | present |
+| `unquantified_policy` | feature, pg | `retained`, `removed` ([T07](t07-unidentified-features.md) UNI-6, [T12](t12-protein-groups.md) PGV-4) | | present |
+| `intensity_quantity`, `intensity_processing` | feature, pg, site, unidentified_feature | [T09](t09-intensities-missing-values.md) INT-2 | | present (feature, pg) |
 
 **META-2 (MUST) Reading values.**
 - An absent key, `unknown` and an unrecognised value (also a V1 error) all mean unknown.
@@ -95,9 +78,9 @@ Blank Carry cell: kept when all sources agree, else `unknown`.
 
 **META-4 (MUST) Rewrites.**
 - merge, relayout, write-back, the OpenMS `-out_qpx` upgrade and the annotation transforms read the key-value footer and apply the carry rules through one shared function, warning on every `unknown` outcome. A transform that removes rows updates the keys it affects ([T03](t03-filtering-state.md) FLT-5, FLT-13).
+- merge keeps the provenance steps of every input, each tagged with its `source_dataset` (as `qpx/core/dataset_merge.py:369-391` does today), because several [T01](t01-psm-rows.md)-[T12](t12-protein-groups.md) declarations are provenance step parameters or options ([T01](t01-psm-rows.md) PSM-4; [T02](t02-chimeric-spectra.md) CHI-10; [T03](t03-filtering-state.md) FLT-8, FLT-10–12; [T04](t04-confidence-fields.md) CNF-3; [T06](t06-identifications-per-feature.md) FID-8; [T07](t07-unidentified-features.md) UNI-5; [T08](t08-match-between-runs.md) MBR-8, MBR-9; [T11](t11-spectrum-precursor-fields.md) SPC-2; [T12](t12-protein-groups.md) PGV-6).
 - Only converters (the OpenMS upgrade included) and `migrate` write a new `qpx_version`. Any other rewrite refuses a source at another version and names `qpxc migrate`.
-- `migrate` writes a 1.4 key only when certain: [T09](t09-intensities-missing-values.md) INT-3, `rank1_only = true` → `top1`, `include_unassigned_psms = false` → `removed`, and `unidentified_feature_policy = retained` when [T07](t07-unidentified-features.md) UNI-8 moved rows.
-- No rewrite carries `conformance_profile`.
+- `migrate` writes a 1.4 key only when certain ([T09](t09-intensities-missing-values.md) INT-3) and keeps the source's provenance steps. It writes no other key: `rank1_only` and `include_unassigned_psms` stay provenance options, and rows [T07](t07-unidentified-features.md) UNI-8 moves go to `unidentified_feature`, whose presence means retained (UNI-5).
 
 **META-5 (MUST) `acquisition_method`.**
 - Values: `dda` (MS:1003221), `dia` (MS:1003215), `prm` (MS:1003907), `mixed`, `unknown`.
@@ -108,8 +91,9 @@ Blank Carry cell: kept when all sources agree, else `unknown`.
 **META-6 (MUST) Conformance profiles** (not [T14](t14-reader-contract.md)'s reader profile).
 - `core`: everything `--conformance` checks today (strict, semantic, identity) [[VALIDATOR-33](findings-cross.md#validator-33)], plus V1, V2, V4-V8.
 - `dda`: `core` plus V3: every key marked in META-1 is present (`unknown` counts, except for `acquisition_method`); a run view exists when rows carry intensities; owners' profile-level errors apply.
+- The validator picks the profile: `qpxc validate --profile dda`. No file claims one (META-7).
 
-**META-7 Claims.** **(MAY)** `conformance_profile` names the targeted profile; a writer stamps it only on request (`profile=`) and then raises on every file-local rule of it. **(MUST)** `--conformance` checks each file against its claim, else `core`; `--profile` overrides.
+**META-7 (MUST) No claims.** No footer key names a profile, and a file makes no conformance claim. `--conformance` checks `core` unless `--profile` names another; whoever needs `dda` runs `qpxc validate --profile dda`. **(MAY)** A writer given `profile=` raises on every file-local rule of that profile; it stamps nothing.
 
 **META-8 (MUST) Severity.**
 - **error**: a violated MUST. As a transition, a 1.4 rule its owner grades "warning outside the profile" is an error only under `dda`.
@@ -122,15 +106,15 @@ Blank Carry cell: kept when all sources agree, else `unknown`.
 **META-9 (MUST) Write paths.**
 - Records, tables and DataFrames get the same file-local checks, and each raises on range, vocabulary, NaN/inf, sign and footer-value violations, naming check and column.
 - Vocabularies come from a YAML `enum:` attribute, not `qpx/core/data/validation.py:70-74`.
-- A duplicate PK stays a write-time warning (`versioning.md:120-127`) unless a profile is claimed.
+- A duplicate PK stays a write-time warning (`versioning.md:120-127`) unless the writer is given a profile (META-7).
 
 | # | Validator check | Severity |
 |---|---|---|
 | V1 | Off-vocabulary or ill-typed key; differing `ARROW:schema` value (1.4) | error |
 | V2 | Missing or bad version, file type or identity keys; other major | error (existing); newer minor: warning |
-| V3 | `dda`: key presence, `acquisition_method`, run view | error under `dda` |
+| V3 | `--profile dda`: presence of the keys META-1 marks (of the new ones, `fdr_filter` on psm, feature and pg; `unquantified_policy`, `intensity_quantity` and `intensity_processing` on feature and pg); `acquisition_method` `dda` or `mixed`; run view | error under `dda` |
 | V4 | `acquisition_method` against `run`; `mixed` without per-run values | error |
-| V5 | Keys against rows: PSM-4, CHI-10, CHI-11, FLT-14, CNF-3, FRW-12, FID-9, UNI-9, MBR-12, INT-14, PGV-13 | owner's grade |
+| V5 | Declarations against rows (footer keys, `rank`, `precursor_index`, `identity_composite`, provenance parameters) and the fixed rules that replace keys: PSM-4, CHI-10, CHI-11, FLT-14, CNF-3, FRW-12, FID-8, FID-9, UNI-9, MBR-12, INT-14, PGV-13 | owner's grade |
 | V6 | Row invariants: PSM-1, 7; CHI-1, 6; CNF-6; FID-1, 5, 6, 7, 10; INT-5; [T10](t10-protein-mapping.md) anchor and `unique`; SPC-3, 7, 8 | owner's grade; DDA scope (META-5) |
 | V7 | `identity_not_checked`, `pg_link_coverage`, skipped run checks, DDA checks under `unknown` | info |
 | V8 | Undeclared non-`x_` column; unregistered footer key (except `ARROW:schema`, `pandas`, `x_*`) or one newer than the file | warning |
@@ -149,7 +133,7 @@ Blank Carry cell: kept when all sources agree, else `unknown`.
 - Fix `producer-guide.md:48` (`imputed_labels`, `is_imputed`) and `provenance.md:105,107` (`lfq` is a label type). `source_column_name` names the column read, or `derived`.
 
 **META-13 (MUST) Tests.**
-- Every check has a negative fixture, and a positive fixture per allowed state it touches. Every fixture conversion passes `--conformance` at its claimed profile.
+- Every check has a negative fixture, and a positive fixture per allowed state it touches. Every fixture conversion passes `--conformance` at the profile its test names (`--profile`).
 - Tests that pin divergent behaviour change with the rule: the PD tests above; `psm_empty_scan` re-derives its id so only [T11](t11-spectrum-precursor-fields.md) SPC-8 fails it; a new positive case has a shared peptide with null anchor, membership and `pg_group_id` [[VALIDATOR-24](findings-feature.md#validator-24)].
 
 **META-14 (SHOULD) Fixtures.**
@@ -159,9 +143,9 @@ Blank Carry cell: kept when all sources agree, else `unknown`.
 ## Schema and footer changes
 | Change | View | Type / values | Required | Breaking? |
 |---|---|---|---|---|
-| `footer.yaml`; generated table; `project_*` dropped | schemas, docs | – | – | No |
+| `footer.yaml` with the existing keys plus five new ones (`acquisition_method`, `fdr_filter`, `unquantified_policy`, `intensity_quantity`, `intensity_processing`); generated table; `project_*` dropped | schemas, docs | – | – | No |
 | `acquisition_method` | psm, feature, pg | `dda`, `dia`, `prm`, `mixed`, `unknown` | SHOULD; `dda`/`mixed` under `dda` | No |
-| `conformance_profile` | psm, feature, pg | `core`, `dda` | MAY | No |
+| merge keeps every input's provenance steps (META-4) | provenance | `source_dataset` per step | MUST | No (today's behaviour) |
 | YAML `enum:` attribute; recipes read `metadata.metadata` | schemas, docs | – | – | No |
 | Severity `info`, `--profile`, two checks to info | CLI | – | – | No; `--conformance` outcomes change |
 | Writers raise on value violations | writers | – | – | **Yes** for producers that persisted invalid values |
@@ -177,8 +161,8 @@ Blank Carry cell: kept when all sources agree, else `unknown`.
 | FragPipe | SDRF or option; `dda` for isobaric input; else `unknown`; record MSFragger and IonQuant versions |
 | mzIdentML, quantms-MSstats | SDRF or option, else `unknown` |
 | DIA-NN, Spectronaut | `dia` |
-| Rewrites | META-4 at the sites in META-R1, plus `qpx/writers/partitioned.py:60-67` and `migrate.py:195-197,211` |
-| Validator, CLI | Registry checks, `info`, `--profile`; `_passes` skips info |
+| Rewrites | META-4 at the sites in META-R1, plus `qpx/writers/partitioned.py:60-67` and `migrate.py:195-197,211`; merge and migrate keep every input's provenance steps |
+| Validator, CLI | Registry checks, `info`, `--profile` (no claim key); `_passes` skips info; V5 checks that read provenance run at dataset level |
 | Third-party writers | Write the key-value footer; an Arrow copy is optional but must match |
 
 ## Reader rules
@@ -189,14 +173,15 @@ Blank Carry cell: kept when all sources agree, else `unknown`.
 - **META-R3 (MUST)** Absent, `unknown` and unrecognised values mean unknown; never assume a convenient state such as "decoys removed". Violation: mokume reads no declaration [[MOKUME-23](findings-cross.md#mokume-23)].
 - **META-R4 (MUST)** Check `qpx_version` and `file_type` first. Apply a rule only to the versions it covers, since minors may break. Violation: mokume checks neither.
 - **META-R5 (MUST)** Apply DDA rules only to `dda` files and to `dda` runs under `mixed`. Violation: mokume takes `data_type` from its caller (mokume:rust/python/mokume/agentic/profiler.py:26-31), not the footer.
-- **META-R6 (SHOULD)** Treat `conformance_profile` as a claim. A reader that needs a guarantee validates with `--profile dda`.
+- **META-R6 (SHOULD)** Files make no conformance claim (META-7). A reader that needs a guarantee validates with `--profile dda`.
 - **META-R7 (MUST)** Exports copy each source's registry keys and `qpx_version` into `uns`. Violations: `qpx/mudata.py:400-401` and `qpx/core/dataset_writes.py:243-244` stamp the reader's version and no keys.
 - **META-R8 (MUST)** Ignore unregistered keys. An unregistered key never changes a column's meaning.
 
 ## Open questions for maintainers
-1. Should `dda` reject `unknown` for policy keys once every qpx converter fills them ([T01](t01-psm-rows.md) Q1, [T07](t07-unidentified-features.md) Q4)?
+1. Should `dda` reject `unknown` for `fdr_filter` and `unquantified_policy` once every qpx converter fills them ([T07](t07-unidentified-features.md) Q4), and require provenance parameters such as `decoy_policy` ([T03](t03-filtering-state.md) Q6)?
 2. Wide-window DDA (DDA+, CHIMERYS): own value, or `dda` plus a cv_param [[EXTERNAL-33](findings-cross.md#external-33)]?
 3. How can the MaxQuant and PD converters detect DIA output without an SDRF?
-4. Should a validation result be a provenance step rather than a footer claim?
+4. Should `qpxc validate` record its result (profile, outcome, qpx version) as a provenance step, now that files make no claim?
 5. Should a `dia` profile reuse `dda`'s key-presence checks, and `dataset` carry `acquisition_method`?
 6. Should merge split sources by `scan_format` rather than write `unknown`?
+7. Should exports (META-R7) also copy the provenance parameters readers act on, such as `pass_threshold_level` ([T03](t03-filtering-state.md) FLT-R4) and `pg_grouping` ([T12](t12-protein-groups.md) PGV-R5)?

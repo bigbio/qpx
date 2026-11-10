@@ -6,7 +6,7 @@
     Part of the [DDA semantic contract proposal](index.md) for QPX. Rules here are proposals for specification 1.4, not normative text. Bracketed ids such as [OPENMS-01](findings-psm.md#openms-01) link to the verified audit findings; code references are to `dev` at commit `32cbbdc`.
 
 
-> **Decision in one line:** Producers may keep or drop rows, but every psm, feature and pg footer states what survived: one `fdr_filter_<level>` key per level (psm, precursor, peptide, protein), `decoy_policy`, `contaminant_policy`, and on psm `unassigned_psm_policy`. `pass_threshold` stays the source's own acceptance flag, as mzIdentML passThreshold is, with its basis declared in `pass_threshold_level` and `pass_threshold_fdr`. qpxc still removes no rows by default.
+> **Decision in one line:** Producers may keep or drop rows, but every psm, feature and pg footer states the confidence cuts behind its rows in one `fdr_filter` key (`<level>:<value>` for psm, precursor, peptide, protein); decoy, contaminant and unassigned-PSM handling are provenance parameters. `pass_threshold` stays the source's own acceptance flag, as mzIdentML passThreshold is, with its basis in the provenance parameters `pass_threshold_level` and `pass_threshold_fdr`. qpxc still removes no rows by default.
 
 ## Questions a reader has
 - Is this file FDR-filtered? At which level and threshold, on which statistic, by the tool or by qpxc?
@@ -53,31 +53,28 @@
 | Provenance text only | No change | Unvalidated; mzTab and mzIdentML declare it per file [[EXTERNAL-03](findings-cross.md#external-03)] |
 | qpxc enforces 1% | Uniform | Reverses [#241](https://github.com/bigbio/qpx/issues/241)/#342; loses rescoring inputs |
 | `fdr_filter_level` / `_threshold` / `_metric` (registry draft) | 3 keys | One level per file; MaxQuant and Philosopher cut at several |
-| **`fdr_filter_<level>`** | One value per level, like mzTab `false_discovery_rate`; cumulative | 4 keys; a non-FDR cut collapses to `applied` |
+| **One `fdr_filter` key with a value per level** | One value per level, like mzTab `false_discovery_rate`; cumulative | The value has a small syntax; a non-FDR cut collapses to `applied` |
 | `pass_threshold` = "passes 1% PSM FDR" | One meaning | Only PD could fill it |
 | **`pass_threshold` = source acceptance, basis declared** | Always fillable or null | Readers check the basis |
 | **Decoys declared, never removed by qpx** | Feasible; [#342](https://github.com/bigbio/qpx/issues/342) | Readers filter `is_decoy` everywhere |
 
 ## Recommendation
-**FLT-1 (MUST)** psm, feature and pg footers use only these values:
+**FLT-1 (MUST)** psm, feature and pg footers carry one filtering key:
 
 | Key | Views | Values |
 |---|---|---|
-| `fdr_filter_psm`, `fdr_filter_precursor`, `fdr_filter_peptide`, `fdr_filter_protein` | psm, feature, pg | decimal in (0, 1], `applied`, `none`, `unknown` |
-| `decoy_policy`, `contaminant_policy` | psm, feature, pg | `retained`, `removed`, `not_searched`, `unknown` |
-| `unassigned_psm_policy` | psm | `retained`, `removed`, `not_applicable`, `unknown` |
-| `pass_threshold_level` | psm; pg with `pass_threshold` ([T12](t12-protein-groups.md) PGV-9) | `psm`, `precursor`, `peptide`, `protein`, `other`, `unknown` |
-| `pass_threshold_fdr` | as above | decimal in (0, 1], `unknown` |
+| `fdr_filter` | psm, feature, pg | `none`; or a `;`-separated list of `<level>:<value>`, level ∈ {`psm`, `precursor`, `peptide`, `protein`} (each at most once), value = a decimal in (0, 1], `applied` or `unknown`; or `unknown`. Examples: `psm:0.01`, `psm:0.01;protein:0.01`, `precursor:applied` |
 
-An absent or off-vocabulary value means `unknown`. The [T13](t13-metadata-conformance.md) profile requires every key of the view (`unknown` allowed), but the `pass_threshold_*` keys only when `pass_threshold` is non-null.
+An absent or off-vocabulary value means `unknown`. `qpxc validate --profile dda` ([T13](t13-metadata-conformance.md)) requires the key (`unknown` allowed). Decoy, contaminant and unassigned-PSM handling and the basis of `pass_threshold` are provenance parameters (FLT-8, FLT-10–12), not footer keys.
 
-**FLT-2 (MUST)** `fdr_filter_<level>` describes this file's rows, cumulatively over every cut by the source and by qpxc.
+**FLT-2 (MUST)** `fdr_filter` describes this file's rows, cumulatively over every cut by the source and by qpxc. Per level:
 - **Decimal x:** a row is present only if its entity at that level (PSM; precursor = peptidoform + charge; peptide, [T04](t04-confidence-fields.md); protein group) had a source-estimated FDR or q-value ≤ x. On feature and pg rows, a finer level limits the identifications behind evidence, counts and quantities ([T12](t12-protein-groups.md) PGV-3); a multiplet is cut per channel. Decoys are cut like targets. x bounds the rows; it does not promise every passing entity is present.
 - **`applied`:** a cut whose FDR value is unknown, or a cut on another statistic (score, p-value, PEP, probability, confidence class).
-- **`none`:** no confidence cut at that level.
+- **`unknown`:** whether that level was cut is unknown.
+- **Level not listed:** no confidence cut at that level. `none` means no level was cut.
 - **Several cuts:** write the strictest decimal, else `applied`.
 
-**FLT-3 (MUST)** On `transferred` feature rows, `fdr_filter_*` describes the donor identification; the transfer's cut is [T08](t08-match-between-runs.md) `mbr_fdr`. Rows of [T07](t07-unidentified-features.md)'s `unidentified_feature` view are outside these keys.
+**FLT-3 (MUST)** On `transferred` feature rows, `fdr_filter` describes the donor identification; the transfer's cut is the `mbr_fdr` parameter of the provenance `match_between_runs` step ([T08](t08-match-between-runs.md)). Rows of [T07](t07-unidentified-features.md)'s `unidentified_feature` view are outside this key.
 
 **FLT-4** Provenance traces each cut.
 - **(MUST)** A qpxc cut is recorded as `qvalue_threshold` and `qvalue_threshold_level` in `format_conversion`.
@@ -85,82 +82,81 @@ An absent or off-vocabulary value means `unknown`. The [T13](t13-metadata-confor
 - **(SHOULD)** The scope of each cut (`run` or `experiment`, [T04](t04-confidence-fields.md) CNF-3 vocabulary) goes in the same step as `<level>_fdr_scope`. No footer key carries it in 1.4. A reader that needs the scope and finds none follows [T04](t04-confidence-fields.md) CNF-R3.
 
 **FLT-5 (MUST)** qpxc removes no psm, feature or pg rows by default ([#241](https://github.com/bigbio/qpx/issues/241)), whether by confidence, decoy or contaminant status.
-- An option that removes rows updates the keys of every view it changed. DIA-NN `--qvalue-threshold t` sets `fdr_filter_precursor = t` on feature and pg and leaves `fdr_filter_protein` alone ([#342](https://github.com/bigbio/qpx/issues/342)); Spectronaut sets it on feature only. `--rank1-only` sets [T01](t01-psm-rows.md) `psm_rank_policy`; `--no-include-unassigned-psms` sets `unassigned_psm_policy = removed`.
+- An option that removes rows updates `fdr_filter` in every view it changed, or is recorded as a provenance option. DIA-NN `--qvalue-threshold t` sets the entry `precursor:t` on feature and pg and leaves the `protein` entry alone ([#342](https://github.com/bigbio/qpx/issues/342)); Spectronaut sets it on feature only. `--rank1-only` is recorded as `rank1_only` ([T01](t01-psm-rows.md) PSM-5); `--no-include-unassigned-psms` as `include_unassigned_psms = false` (FLT-12).
 - An option that was not applied changes no key, and provenance records `<option>_applied = false`.
 
 **FLT-6 (MUST)** Rows dropped other than by a declared filter are counted in provenance (`skipped_rows_<view>`) and warned about.
 
 **FLT-7 (MUST)** `pass_threshold` values:
-- **`true`:** the source accepted the row under the criterion that `pass_threshold_level` and `pass_threshold_fdr` declare.
+- **`true`:** the source accepted the row under the criterion that the provenance parameters `pass_threshold_level` and `pass_threshold_fdr` declare (FLT-8).
 - **`false`:** the source evaluated the row and it failed.
 - **`null`:** the source states no acceptance: no flag, or the mzIdentML Threshold is MS:1001494 "no threshold" (a `true` without a threshold certifies nothing).
 
 The flag ignores rank, decoy status and `precursor_index` ([T02](t02-chimeric-spectra.md)), so `true` never means "the spectrum's identification" (FLT-R4).
 
-**FLT-8 (MUST)** If any `pass_threshold` is non-null, the footer carries `pass_threshold_level`, plus `pass_threshold_fdr` unless the level is `other` or `unknown`. The mzIdentML SIP `<Threshold>` maps MS:1002350, MS:1002354 and MS:1003337 to `psm`, MS:1001364 and MS:1001868 to `peptide`, and other terms (Mascot:SigThreshold) to `other`. Several FDR terms give the finest level; disagreeing protocols give `unknown`. The cvParams go into the search step's provenance.
+**FLT-8 (MUST)** If any `pass_threshold` is non-null, the source's search or validation step in provenance carries `pass_threshold_level` (`psm`, `precursor`, `peptide`, `protein`, `other`, `unknown`), plus `pass_threshold_fdr` (a decimal in (0, 1] or `unknown`) unless the level is `other` or `unknown`. This holds for pg `pass_threshold` too ([T12](t12-protein-groups.md) PGV-9). The mzIdentML SIP `<Threshold>` maps MS:1002350, MS:1002354 and MS:1003337 to `psm`, MS:1001364 and MS:1001868 to `peptide`, and other terms (Mascot:SigThreshold) to `other`. Several FDR terms give the finest level; disagreeing protocols give `unknown`. The cvParams go into the same step.
 
 **FLT-9** Failing and pre-cut rows:
 - **(MUST)** A row the source marks as failing (mzIdentML `passThreshold="false"`, PD Medium or Low) keeps `false`, never null. This replaces `producer-guide.md:11`.
-- **(SHOULD)** If the source wrote only rows passing a psm, precursor or peptide cut and flags none (MaxQuant msms, Philosopher psm.tsv), write `true` on every row, with the finest cut's level (`other` if not an FDR) and its `fdr_filter_<level>` value (`unknown` for `applied`).
+- **(SHOULD)** If the source wrote only rows passing a psm, precursor or peptide cut and flags none (MaxQuant msms, Philosopher psm.tsv), write `true` on every row, with `pass_threshold_level` = the finest cut's level (`other` if not an FDR) and `pass_threshold_fdr` = its `fdr_filter` value (`unknown` for `applied`).
 
-**FLT-10 (MUST)** `decoy_policy` values:
+**FLT-10 (MUST)** `decoy_policy`, a parameter of the provenance `format_conversion` or search step, takes these values (absent means `unknown`):
 - **`retained`:** every decoy row the source reported at this grain is present, except those cut under FLT-2. Zero decoys then means the source reported none.
 - **`removed`:** no decoy is present.
 - **`not_searched`:** no target-decoy search; `is_decoy = false` then means "not decoy-labelled".
 
 qpx converters MUST NOT remove decoys from psm, feature or pg; producers SHOULD retain them. Decoy feature rows are allowed, settling [#229](https://github.com/bigbio/qpx/issues/229)'s open point.
 
-**FLT-11 (MUST)** `contaminant_policy` uses the same values, for rows flagged by the typed `contaminant` ([T10](t10-protein-mapping.md) PRT-6). `retained` does not claim that contaminants were searched. qpx converters MUST NOT remove contaminants.
+**FLT-11 (MUST)** `contaminant_policy`, a provenance parameter, uses the same values, for rows flagged by the typed `contaminant` ([T10](t10-protein-mapping.md) PRT-6). `retained` does not claim that contaminants were searched. qpx converters MUST NOT remove contaminants.
 
-**FLT-12 (MUST)** `unassigned_psm_policy` values:
-- **`retained`:** identifications the source assigned to no feature are present.
-- **`removed`:** they were dropped.
-- **`not_applicable`:** the source has none: no features (mzIdentML), or every identification linked (MaxQuant msms `Evidence ID`).
+**FLT-12 (MUST)** Identifications the source assigned to no feature (unassigned PSMs) are stated by the existing psm provenance option `include_unassigned_psms`:
+- **`true`:** they are present.
+- **`false`:** they were dropped.
+- **Not recorded:** the converter has no such option and keeps them (FLT-5), or the source has none: no features (mzIdentML), or every identification linked (MaxQuant msms `Evidence ID`).
 
-Link resolution is [T06](t06-identifications-per-feature.md) `psm_feature_link`; no row marker (66281f3).
+Link resolution follows [T06](t06-identifications-per-feature.md) FID-8 (every supporting PSM linked; uncovered runs recorded as provenance `skipped_runs_psm`); no row marker (66281f3).
 
-**FLT-13 (MUST)** Carrying the keys:
+**FLT-13 (MUST)** Carrying the key:
 - Writers keep `ARROW:schema` equal to the key-value footer ([T13](t13-metadata-conformance.md) META-3).
-- Relayout, merge, migrate and the OpenMS `-out_qpx` upgrade carry the keys through [T13](t13-metadata-conformance.md) META-4's shared function; a transform that removes rows updates them (FLT-5).
-- Carry rule owned here: a merge writes the weakest `fdr_filter_*` value, `unknown` (or absent) over `none` over `applied` over the largest decimal. The other keys follow [T13](t13-metadata-conformance.md)'s default rule (kept when all sources agree, else `unknown` with a warning).
+- Relayout, merge, migrate and the OpenMS `-out_qpx` upgrade carry `fdr_filter` through [T13](t13-metadata-conformance.md) META-4's shared function; a transform that removes rows updates it (FLT-5).
+- Carry rule owned here: a merge writes, per level, the weakest value: `unknown` (or an absent key) over not listed over `applied` over the largest decimal. The provenance parameters of FLT-8 and FLT-10–12 survive because a merge keeps every input's provenance steps ([T13](t13-metadata-conformance.md) META-4).
 
-**FLT-14 (MUST)** The validator reports as errors: (a) values outside FLT-1; (b) `is_decoy = true` rows under `decoy_policy ∈ {removed, not_searched}`; (c) `contaminant = true` rows under `contaminant_policy = removed`. As warnings: (d) a typed q-value of level L ([T04](t04-confidence-fields.md)) above a decimal `fdr_filter_L` (scopes may differ); (e) a non-null `pass_threshold` without `pass_threshold_level` (an error under the `dda` profile, [T13](t13-metadata-conformance.md) META-8).
+**FLT-14 (MUST)** The validator reports as errors: (a) `fdr_filter` values outside FLT-1, including a level listed twice; (b) `is_decoy = true` rows under provenance `decoy_policy ∈ {removed, not_searched}`; (c) `contaminant = true` rows under provenance `contaminant_policy = removed`. As warnings: (d) a typed q-value of level L ([T04](t04-confidence-fields.md)) above a decimal `fdr_filter` entry for L (scopes may differ); (e) a non-null `pass_threshold` without provenance `pass_threshold_level` (an error under the `dda` profile, [T13](t13-metadata-conformance.md) META-8).
 
 ## Schema and footer changes
 | Change | View | Type / values | Required | Breaking? |
 |---|---|---|---|---|
-| `fdr_filter_psm/_precursor/_peptide/_protein` | psm, feature, pg | FLT-1 | SHOULD; MUST under `dda` | No |
-| `decoy_policy`, `contaminant_policy` | psm, feature, pg | FLT-10/11 | SHOULD; MUST under `dda` | No |
-| `unassigned_psm_policy` | psm | FLT-12 | SHOULD; MUST under `dda` | No |
-| `pass_threshold_level`, `pass_threshold_fdr` | psm (pg via [T12](t12-protein-groups.md)) | FLT-8 | MUST if `pass_threshold` non-null | No |
+| `fdr_filter` | psm, feature, pg | FLT-1 | SHOULD; MUST under `dda` | No |
 | `pass_threshold` semantics (FLT-7/9); `psm.yaml:133-136` adds `nullable: true` | psm | bool, null | optional | **Yes for mzIdentML:** rows under SIP "no threshold" become null |
 | `producer-guide.md:11` → FLT-9; `pg.md:126-128` → FLT-R4; `psm.md:270-276` → FLT-R1 | – | text | – | No |
 | `qvalue_threshold_level`, `<level>_fdr`, `<level>_fdr_term`, `<option>_applied`, `skipped_rows_<view>` | provenance | string | FLT-4/5/6 | No |
+| `decoy_policy`, `contaminant_policy` | provenance (`format_conversion` or search step) | FLT-10/11 | SHOULD | No |
+| `pass_threshold_level`, `pass_threshold_fdr` | provenance (search or validation step; psm, pg via [T12](t12-protein-groups.md)) | FLT-8 | MUST if `pass_threshold` non-null | No |
 
 ## Producer changes
 | Producer | Change needed |
 |---|---|
-| Writers, CLI | `FilterState` like `XicExtraction` (`qpx/writers/xic.py:9-31`), stamped by every writer. Repeatable `--filter-state KEY=VALUE` lets pipelines (quantms) declare unreadable state, marked user-declared in provenance |
-| MaxQuant | `fdr_filter_psm` (all views) from parameters.txt `PSM FDR`; pg `fdr_filter_protein` from `Protein FDR`. Without the file, `applied` (row names to confirm; no fixture has it). Other levels `unknown`. Decoys and contaminants `retained`. FLT-9 `true` (`psm`). Unassigned `not_applicable` |
-| FragPipe | `fdr_filter_*` from fragpipe.workflow if supplied, else psm `applied`, rest `unknown`. `decoy_policy = removed`, or `unknown` if a decoy row appears. Contaminants `retained` ([T10](t10-protein-mapping.md) keeps `contam_`). FLT-9 `true`. Unassigned `retained` |
-| Proteome Discoverer | `pass_threshold_level = psm` and `pass_threshold_fdr` = strict target FDR only when a target-decoy validator is declared, else both `unknown` (the Fixed Value validator uses scores). `fdr_filter_*` `unknown`. Decoys `removed` (to confirm). Unassigned `retained` |
-| mzIdentML | FLT-7/8. Decoys `retained` if any `isDecoy="true"` or the SearchDatabase has MS:1001197 (target+decoy), else `unknown`. Unassigned `not_applicable` |
-| OpenMS consensusXML | Decoys `retained`. Unassigned follows the option. `fdr_filter_*` from header IDFilter/ProteomicsLFQ parameters, else `unknown`. MAY derive `pass_threshold` from a non-zero `significance_threshold` (`other`). Count the drops at `psm_adapter.py:348-358` |
-| OpenMS -out_qpx | OpenMS stamps the keys; `qpxc convert openms` copies them (`converter.py:209-223`) |
-| CDAP, quantms-MSstats | Decoys `retained` if decoy rows are written, else `unknown`. The rest `unknown` unless declared. CDAP unassigned `retained` |
-| DIA-NN, Spectronaut | FLT-5. DIA-NN main report: `fdr_filter_precursor = applied` (`qpx/cli/convert/diann.py:100-108`) |
-| Validator | FLT-14 in `footer_validation.py` |
+| Writers, CLI | `FilterState` like `XicExtraction` (`qpx/writers/xic.py:9-31`), stamped by every writer as `fdr_filter`, its other fields written as provenance parameters. Repeatable `--filter-state KEY=VALUE` lets pipelines (quantms) declare unreadable state, marked user-declared in provenance |
+| MaxQuant | `fdr_filter` entry `psm` (all views) from parameters.txt `PSM FDR`; pg adds `protein` from `Protein FDR`. Without the file, `applied` (row names to confirm; no fixture has it). Other levels `unknown`. Provenance decoys and contaminants `retained`. FLT-9 `true` (`psm`) |
+| FragPipe | `fdr_filter` from fragpipe.workflow if supplied, else `psm:applied` with the other levels `unknown`. Provenance `decoy_policy = removed`, or `unknown` if a decoy row appears; contaminants `retained` ([T10](t10-protein-mapping.md) keeps `contam_`). FLT-9 `true` |
+| Proteome Discoverer | Provenance `pass_threshold_level = psm` and `pass_threshold_fdr` = strict target FDR only when a target-decoy validator is declared, else both `unknown` (the Fixed Value validator uses scores). `fdr_filter = unknown`. Provenance decoys `removed` (to confirm) |
+| mzIdentML | FLT-7/8. Provenance decoys `retained` if any `isDecoy="true"` or the SearchDatabase has MS:1001197 (target+decoy), else `unknown` |
+| OpenMS consensusXML | Provenance decoys `retained`. `fdr_filter` from header IDFilter/ProteomicsLFQ parameters, else `unknown`. MAY derive `pass_threshold` from a non-zero `significance_threshold` (`other`). Count the drops at `psm_adapter.py:348-358` |
+| OpenMS -out_qpx | OpenMS stamps `fdr_filter` and records the provenance parameters; `qpxc convert openms` copies both (`converter.py:209-223`) |
+| CDAP, quantms-MSstats | Provenance decoys `retained` if decoy rows are written, else `unknown`. The rest `unknown` unless declared |
+| DIA-NN, Spectronaut | FLT-5. DIA-NN main report: `fdr_filter` lists `precursor:applied` (`qpx/cli/convert/diann.py:100-108`) |
+| Validator | FLT-14 in `footer_validation.py`; (b), (c) and (e) read provenance |
 
 ## Reader rules
-**FLT-R1 (MUST)** Read the keys per [T13](t13-metadata-conformance.md) META-R1–R3 (key-value footer, per file; absent means `unknown`). Never infer filtering state from data: no decoys does not mean removed, and max q ≤ 0.01 does not mean filtered.
+**FLT-R1 (MUST)** Read `fdr_filter` per [T13](t13-metadata-conformance.md) META-R1–R3 (key-value footer, per file; absent means `unknown`), and the parameters of FLT-8 and FLT-10–12 from provenance (absent means `unknown`). Never infer filtering state from data: no decoys does not mean removed, and max q ≤ 0.01 does not mean filtered.
 
-**FLT-R2 (MUST)** Exclude `is_decoy = true` in every view before counting or quantifying. Estimate FDR from targets and decoys only when `decoy_policy = retained` and that level's cut is `none` or a decimal ≥ the estimated threshold.
+**FLT-R2 (MUST)** Always exclude `is_decoy = true` in every view before counting or quantifying. Estimate FDR from targets and decoys only when provenance states `decoy_policy = retained` and that level in `fdr_filter` is not listed or a decimal ≥ the estimated threshold.
 
-**FLT-R3 (MUST)** A confidence filter at level L and threshold t uses the typed q-value of L ([T04](t04-confidence-fields.md)). A null passes when `fdr_filter_L` is a decimal ≤ t; otherwise the row is unassessable, is excluded and counted, and the reader raises if every row is ([T14](t14-reader-contract.md) RDR-3). Never return a silently empty or unfiltered result.
+**FLT-R3 (MUST)** A confidence filter at level L and threshold t uses the typed q-value of L ([T04](t04-confidence-fields.md)). A null passes when the `fdr_filter` entry for L is a decimal ≤ t; otherwise the row is unassessable, is excluded and counted, and the reader raises if every row is ([T14](t14-reader-contract.md) RDR-3). Never return a silently empty or unfiltered result.
 
-**FLT-R4 (MUST)** An accepted PSM has `is_decoy = false`, rank 1 ([T01](t01-psm-rows.md) PSM-R1; null rank per PSM-R3), and either `pass_threshold = true` or a null `pass_threshold` with `fdr_filter_psm`, `_precursor` or `_peptide` a decimal or `applied`. `true` equals an FDR filter at t only if `pass_threshold_level` is an FDR level and `pass_threshold_fdr` ≤ t. With a null `pass_threshold` and no declared cut, the reader applies FLT-R3 at a stated threshold, or reports non-decoy rank-1 counts as upper bounds. This predicate governs counts, spectral counts, modification statistics and pg evidence.
+**FLT-R4 (MUST)** An accepted PSM has `is_decoy = false`, rank 1 ([T01](t01-psm-rows.md) PSM-R1; null rank per PSM-R3), and either `pass_threshold = true` or a null `pass_threshold` with a `psm`, `precursor` or `peptide` entry in `fdr_filter` that is a decimal or `applied`. `true` equals an FDR filter at t only if provenance states that `pass_threshold_level` is an FDR level and `pass_threshold_fdr` ≤ t. With a null `pass_threshold` and no declared cut, the reader applies FLT-R3 at a stated threshold, or reports non-decoy rank-1 counts as upper bounds. This predicate governs counts, spectral counts, modification statistics and pg evidence.
 
-**FLT-R5 (SHOULD)** Counts and exported matrices carry the file's filter keys. Under `unknown` or `none` they are upper bounds.
+**FLT-R5 (SHOULD)** Counts and exported matrices carry the file's `fdr_filter`. Under `unknown` or `none` they are upper bounds.
 
 **FLT-R6 (MUST)** Remove contaminants by the typed flag ([T10](t10-protein-mapping.md) PRT-R3), never by accession substring.
 
@@ -179,4 +175,5 @@ Link resolution is [T06](t06-identifications-per-feature.md) `psm_feature_link`;
 2. Spectronaut `--qvalue-threshold` cuts features but pg still comes from every `PG.Quantity`, unlike DIA-NN ([#342](https://github.com/bigbio/qpx/issues/342)). Align?
 3. Proteome Discoverer: do real exports lack decoys, and can the validator node and FDR values be read?
 4. CDAP: is its PSM cut documented? The fixture suggests q ≤ 0.01.
-5. pepmap population [[MZID_CDAP-M2](findings-cross.md#mzid_cdap-m2)] [[CRITIC-57](findings-cross.md#critic-57)]: [T10](t10-protein-mapping.md) PRT-14 sets it (target peptidoforms of rank-1 psm rows and of feature rows). Should pepmap also carry these keys, or inherit those of the psm file?
+5. pepmap population [[MZID_CDAP-M2](findings-cross.md#mzid_cdap-m2)] [[CRITIC-57](findings-cross.md#critic-57)]: [T10](t10-protein-mapping.md) PRT-14 sets it (target peptidoforms of rank-1 psm rows and of feature rows). Should pepmap also carry `fdr_filter`, or inherit the psm file's?
+6. Should `qpxc validate --profile dda` require the provenance `decoy_policy` and `contaminant_policy`, as it required the former footer keys?

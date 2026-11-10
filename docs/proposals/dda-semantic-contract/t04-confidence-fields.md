@@ -6,7 +6,7 @@
     Part of the [DDA semantic contract proposal](index.md) for QPX. Rules here are proposals for specification 1.4, not normative text. Bracketed ids such as [OPENMS-01](findings-psm.md#openms-01) link to the verified audit findings; code references are to `dev` at commit `32cbbdc`.
 
 
-> **Decision in one line:** The column name fixes each typed confidence column's level; its scope is fixed or declared in `psm_qvalue_scope` / `peptide_qvalue_scope`. Writers fill typed columns only from level-explicit names and move the value. The identifying PSM's q-value gets `feature.psm_qvalue` and is never promoted to precursor or peptide level. In DDA, feature PEP is the identifying PSM's. `confident()` takes an explicit level, settles nulls only through [T03](t03-filtering-state.md)'s footer keys, and raises instead of returning an empty set.
+> **Decision in one line:** The column name fixes each typed confidence column's level; its scope is fixed or recorded in provenance (`psm_qvalue_scope` / `peptide_qvalue_scope`). Writers fill typed columns only from level-explicit names and move the value. The identifying PSM's q-value gets `feature.psm_qvalue` and is never promoted to precursor or peptide level. In DDA, feature PEP is the identifying PSM's. `confident()` takes an explicit level, settles nulls only through [T03](t03-filtering-state.md) (`fdr_filter`, FLT-R4), and raises instead of returning an empty set.
 
 ## Questions a reader has
 - What level and scope does each column hold: `psm.qvalue`, PSM PEP, feature `peptide_qvalue` / `precursor_qvalue` / `global_qvalue` / PEP / `match_qvalue`, and pg `pg_qvalue` / `global_qvalue`? Is `global_qvalue` the same in every view?
@@ -57,28 +57,28 @@
 | Feature PEP | Drop it | Matches psm.md:286 | Loses data most converters fill |
 | | **The identifying PSM's PEP** | What MaxQuant, FragPipe and PD write | Nulls OpenMS peptide-level PEP |
 | `confident()` | Silent fallback to `pass_threshold` or PEP | Non-empty results | Mixes bases silently |
-| | **Explicit level; nulls settled only by [T03](t03-filtering-state.md) footer keys; raise when nothing is assessable** | Portable; matches [T03](t03-filtering-state.md) FLT-R3, [T14](t14-reader-contract.md) RDR-3 | Callers must choose |
+| | **Explicit level; nulls settled only by [T03](t03-filtering-state.md)'s `fdr_filter` and the declared `pass_threshold` basis; raise when nothing is assessable** | Portable; matches [T03](t03-filtering-state.md) FLT-R3, [T14](t14-reader-contract.md) RDR-3 | Callers must choose |
 
 ## Recommendation
 **CNF-1 (MUST)** Columns have the levels and scopes below. "global" in a QPX name means experiment scope at the row's own level. It never means a PSI-MS "global FDR" (MS:1002350, MS:1001364, MS:1001214, MS:1002369), which are statistics of a whole list ([T03](t03-filtering-state.md)).
 
 | Column | Level | Scope | PSI-MS |
 |---|---|---|---|
-| `psm.qvalue` | PSM | `psm_qvalue_scope` | MS:1002354 |
+| `psm.qvalue` | PSM | provenance `psm_qvalue_scope` (CNF-3) | MS:1002354 |
 | `psm.posterior_error_probability` | PSM | – | CNF-7 |
-| `feature.psm_qvalue` (new) | identifying PSM ([T06](t06-identifications-per-feature.md)) | `psm_qvalue_scope` | MS:1002354 |
+| `feature.psm_qvalue` (new) | identifying PSM ([T06](t06-identifications-per-feature.md)) | provenance `psm_qvalue_scope` (CNF-3) | MS:1002354 |
 | `feature.posterior_error_probability` | identifying PSM (DIA: precursor, CNF-8) | – | CNF-7 |
 | `feature.precursor_qvalue` | precursor (peptidoform, charge) | run | none |
 | `feature.global_qvalue` | precursor | experiment | none |
-| `feature.peptide_qvalue` | peptide | `peptide_qvalue_scope` | MS:1001868 (per stripped sequence; open question 2) |
+| `feature.peptide_qvalue` | peptide | provenance `peptide_qvalue_scope` (CNF-3) | MS:1001868 (per stripped sequence; open question 2) |
 | `feature.channel_details.qvalue` | the label's precursor | run | none |
 | `pg.pg_qvalue` / `pg.global_qvalue` | protein group | the unit (`grouped_runs`) / experiment | MS:1002373 |
 | `feature.pg_global_qvalue` | protein group | experiment; equals `pg.global_qvalue` of the row's group | MS:1002373 |
 | `feature.match_qvalue` | transfer ([T08](t08-match-between-runs.md)) | – | none |
 
-`run` means estimated within the row's run, or its unit under `feature_grain = precursor_unit` ([T05](t05-feature-rows.md)). `experiment` means one estimate over all runs of the analysis that produced the file.
+`run` means estimated within the row's run, or its unit when `identity_composite` starts with `quantification_unit_id` ([T05](t05-feature-rows.md) FRW-3). `experiment` means one estimate over all runs of the analysis that produced the file.
 
-**CNF-2 (MUST)** A value enters a typed column only when the source states its level. For a fixed-scope column, the source must also state that scope. For `psm_qvalue` and `peptide_qvalue`, the scope goes in the CNF-3 key. Forbidden:
+**CNF-2 (MUST)** A value enters a typed column only when the source states its level. For a fixed-scope column, the source must also state that scope. For `psm_qvalue` and `peptide_qvalue`, the scope goes in the CNF-3 provenance parameter. Forbidden:
 - any PSM's PSM-level q-value, the best one included, in `precursor_qvalue` or `peptide_qvalue`;
 - an experiment-scope value in a run-scope column, or the reverse;
 - `1 − probability` in a q-value column;
@@ -86,9 +86,9 @@
 
 Tool placeholders (Percolator's peptide-level 1.0) are written as null.
 
-**CNF-3 (MUST)** The footer keys `psm_qvalue_scope` (psm; feature when `psm_qvalue` is filled) and `peptide_qvalue_scope` (feature) take `run`, `experiment` or `unknown`.
-- A writer that fills the column writes the key. Absent means `unknown`.
-- A merge keeps `run` only if all inputs are `run`. Otherwise it is `unknown`.
+**CNF-3 (MUST)** The scope is recorded as validation-step provenance parameters, next to [T03](t03-filtering-state.md) FLT-4's `<level>_fdr_scope`: `psm_qvalue_scope` (psm; feature when `psm_qvalue` is filled) and `peptide_qvalue_scope` (feature), each `run`, `experiment` or `unknown`. No footer key carries them.
+- A writer that fills the column records the parameter. Absent means `unknown`.
+- A merge keeps every input's provenance steps ([T13](t13-metadata-conformance.md) META-4). The merged scope is `run` only if every input states `run`; otherwise it is `unknown`.
 
 **CNF-4 (MUST)** With several PSM-level q-values, `psm.qvalue` takes, in order:
 1. the value the source marks as final (mzIdentML MS:1002354, or the tool's documented final column);
@@ -143,7 +143,7 @@ The others stay as `<tool>_qvalue`; PSM PEP follows the same order. File and col
 | Change | View | Type / values | Required | Breaking? |
 |---|---|---|---|---|
 | `psm_qvalue` column | feature | float64 [0,1], nullable, optional | no | No |
-| `psm_qvalue_scope`, `peptide_qvalue_scope` keys | psm, feature | `run` \| `experiment` \| `unknown` | when the column is filled | No |
+| `psm_qvalue_scope`, `peptide_qvalue_scope` validation-step provenance parameters (no footer key) | psm, feature | `run` \| `experiment` \| `unknown` | when the column is filled | No |
 | `level` column | ontology | CNF-5 values, nullable | for `<tool>_` confidence names | No |
 | `match_qvalue` → float64 [0,1]; `channel_detail.qvalue` range | feature | float64 | – | **Yes** (physical type) |
 | Allowlist fill that moves the value | psm, feature | CNF-6 | – | **Yes**: name lookups fail, and `<engine>_qvalue` no longer fills `psm.qvalue` |
@@ -153,7 +153,7 @@ The others stay as `<tool>_qvalue`; PSM PEP follows the same order. File and col
 ## Producer changes
 | Producer | Change needed |
 |---|---|
-| OpenMS consensus (and upstream `-out_qpx`) | **PSM-level:** emit `psm_qvalue`; `feature.psm_qvalue` from the identifying PSM; `peptide_qvalue` null. **Peptide-level:** `psm.qvalue`, PSM and feature PEP null; write `peptide_qvalue`, `peptide_pep`. **Both:** `fdr` → `openms_fdr`; a PEP primary score fills PEP; scope from the runs each ProteinIdentification covers (one → `run`, all → `experiment`, else `unknown`). |
+| OpenMS consensus (and upstream `-out_qpx`) | **PSM-level:** emit `psm_qvalue`; `feature.psm_qvalue` from the identifying PSM; `peptide_qvalue` null. **Peptide-level:** `psm.qvalue`, PSM and feature PEP null; write `peptide_qvalue`, `peptide_pep`. **Both:** `fdr` → `openms_fdr`; a PEP primary score fills PEP; the CNF-3 scope parameters from the runs each ProteinIdentification covers (one → `run`, all → `experiment`, else `unknown`). |
 | MaxQuant | pg `pg_qvalue` null. Map proteinGroups `PEP` to `pg_pep` when present. |
 | FragPipe | pg `pg_qvalue` null. The probability goes to `pg_probability`. Record the PSM validator in provenance and fix the PEP ontology row. |
 | Proteome Discoverer | `precursor_qvalue` becomes `psm_qvalue` (`unknown`). `Exp. q-value: Combined` goes to `global_qvalue`. MAY read PeptideGroups q-values (`experiment`). |
@@ -161,12 +161,12 @@ The others stay as `<tool>_qvalue`; PSM PEP follows the same order. File and col
 | CDAP | `Qvalue` becomes `psm_qvalue`. `PepQvalue` stays `peptide_qvalue` (`unknown`). Drop the pg q-values. |
 | Spectronaut | `qvalue` → `precursor_qvalue`. Feature `pg_qvalue` → `pg_global_qvalue`. `pg_qvalue_runwise` → `pg_qvalue`. |
 | DIA-NN, quantms/MSstats | None. |
-| Writer and docs | Implement CNF-6 (qpx/writers/derived.py) and the keys. Fix converter-coverage.md:59,181,274,299-300 and scores.md:40-56. |
+| Writer and docs | Implement CNF-6 (qpx/writers/derived.py) and the CNF-3 provenance parameters. Fix converter-coverage.md:59,181,274,299-300 and scores.md:40-56. |
 
 ## Reader rules
-- **CNF-R1 (MUST)** The typed column is authoritative. A null makes the row unassessable unless [T03](t03-filtering-state.md) settles it: FLT-R3 from `fdr_filter_<level>`, or, for `psm.qvalue`, a `pass_threshold = true` whose declared basis is a PSM-level FDR ≤ t (FLT-R4). Helpers never count unassessable rows as passing. They report the count, and raise an error when every row is unassessable ([T14](t14-reader-contract.md) RDR-3).
+- **CNF-R1 (MUST)** The typed column is authoritative. A null makes the row unassessable unless [T03](t03-filtering-state.md) settles it: FLT-R3 from the `fdr_filter` entry for that level, or, for `psm.qvalue`, a `pass_threshold = true` whose basis provenance states is a PSM-level FDR ≤ t (`pass_threshold_level`, `pass_threshold_fdr`; FLT-R4). Helpers never count unassessable rows as passing. They report the count, and raise an error when every row is unassessable ([T14](t14-reader-contract.md) RDR-3).
 - **CNF-R2 (MUST)** Never `COALESCE` across levels or scopes. Never use a PSM-level value for peptide or protein FDR.
-- **CNF-R3 (MUST)** When a scope key is `unknown` or absent, warn and do not report an experiment-wide FDR.
+- **CNF-R3 (MUST)** When the CNF-3 scope parameter is `unknown` or absent from provenance, warn and do not report an experiment-wide FDR.
 - **CNF-R4 (MUST)** `PSM.confident(max_qvalue)` keeps target rows with `qvalue ≤ t` that are rank 1 where rank is known ([T01](t01-psm-rows.md) PSM-R1, PSM-R3); null `qvalue` rows follow CNF-R1. It is a q-value filter: when `qvalue` is non-null, `pass_threshold` is not consulted. A separate `PSM.accepted()` implements [T03](t03-filtering-state.md) FLT-R4 (source acceptance), and identification counts use `accepted()`. `Feature.confident(max_qvalue, column=…)` has no default; `column` ∈ {`psm_qvalue`, `precursor_qvalue`, `peptide_qvalue`, `global_qvalue`}. Breaking for callers ([T14](t14-reader-contract.md)).
 - **CNF-R5 (MUST)** On a transferred row, a column that CNF-8 leaves null is not unassessable: identification filters pass the row through, report how many they passed, and leave its fate to the reader's transfer policy ([T08](t08-match-between-runs.md) MBR-R5, [T14](t14-reader-contract.md) RDR-3). A filled experiment-scope column is filtered as on other rows.
 - **CNF-R6 (MUST)** In files with `qpx_version` < 1.4, the level of feature `precursor_qvalue` and `peptide_qvalue` from PD, CDAP or OpenMS is unknown. Readers warn.
@@ -182,6 +182,6 @@ Current violations:
 
 ## Open questions for maintainers
 1. Should psm get a typed `peptide_qvalue` for producers that write only PSMs (mzIdentML, Sage) [[EXTERNAL-25](findings-psm.md#external-25)]?
-2. Is `peptide_qvalue` per peptidoform (PD peptide groups, DIA-NN `Peptidoform.Q.Value`) or per stripped sequence (as MS:1001868 defines it)? Fix one, or declare it in a key?
-3. *Resolved in the overview:* the scope keys stay separate from [T03](t03-filtering-state.md); the scope of a filter cut goes in provenance ([T03](t03-filtering-state.md) FLT-4).
+2. Is `peptide_qvalue` per peptidoform (PD peptide groups, DIA-NN `Peptidoform.Q.Value`) or per stripped sequence (as MS:1001868 defines it)? Fix one, or record it in provenance?
+3. *Resolved in the overview and R1:* the column scope parameters (CNF-3) stay separate from the scope of a filter cut ([T03](t03-filtering-state.md) FLT-4 `<level>_fdr_scope`); both are provenance parameters.
 4. Should `feature.global_qvalue` be renamed `precursor_global_qvalue` in 2.0?

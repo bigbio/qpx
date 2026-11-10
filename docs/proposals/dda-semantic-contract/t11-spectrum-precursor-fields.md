@@ -6,7 +6,7 @@
     Part of the [DDA semantic contract proposal](index.md) for QPX. Rules here are proposals for specification 1.4, not normative text. Bracketed ids such as [OPENMS-01](findings-psm.md#openms-01) link to the verified audit findings; code references are to `dev` at commit `32cbbdc`.
 
 
-> **Decision in one line:** `observed_mz` is the measured m/z of the claimed ion, calibration declared; `calculated_mz` and `mass_error_ppm` are computed from the row, plus a typed `isotope_error`; `charge` ≥ 1; `scan` has a declared `scan_format`, no hashes, and a verbatim `spectrum_reference` beside it; `psm.rt` is on the acquisition clock; `ion_mobility` is 1/K0; one stem function names runs; the canonical peptidoform is validated.
+> **Decision in one line:** `observed_mz` is the measured m/z of the claimed ion, calibration recorded in provenance; `calculated_mz` and `mass_error_ppm` are computed from the row, plus a typed `isotope_error`; `charge` ≥ 1; `scan` has a declared `scan_format`, no hashes, and a verbatim `spectrum_reference` beside it; `psm.rt` is on the acquisition clock; `ion_mobility` is 1/K0; one stem function names runs; the canonical peptidoform is validated.
 
 ## Questions a reader has
 - Is `observed_mz` the selected ion, monoisotopic, recalibrated or derived? Can it be 0? Is `mass_error_ppm` isotope-corrected?
@@ -60,7 +60,7 @@ The *claimed ion* is the precursor the row's identification asserts ([T02](t02-c
 - The selected ion MAY go to cv_param `selected ion m/z` (MS:1000744).
 - Validator: ≤ 0 is an error; |`mass_error_ppm`| < 0.001 on ≥ 50 % of rows is a warning.
 
-**SPC-2 (SHOULD)** Footer `observed_mz_calibration` (psm, feature), one value per file: `raw`, `recalibrated` (by MaxQuant, MSFragger, PD Spectrum Files RC, OpenMS InternalCalibration) or `unknown`, also written by a producer that cannot tell; absent = `unknown`. ontology.md:167,197 say "selected precursor m/z".
+**SPC-2 (SHOULD)** Search-step provenance parameter `observed_mz_calibration` (psm, feature; no footer key), one value per search step: `raw`, `recalibrated` (by MaxQuant, MSFragger, PD Spectrum Files RC, OpenMS InternalCalibration) or `unknown`, also written by a producer that cannot tell; absent = `unknown`. ontology.md:167,197 say "selected precursor m/z".
 
 **SPC-3 (MUST)** `calculated_mz` is the theoretical monoisotopic m/z (MS:1003053) of the written peptidoform at `charge`, counting every tag; cross-links follow psm.md:95. If a tag has no known mass it is null or the tool's value. The 20 ppm check is an error in the `dda` profile ([T13](t13-metadata-conformance.md) V6).
 
@@ -119,7 +119,7 @@ The *claimed ion* is the precursor the row's identification asserts ([T02](t02-c
 ## Schema and footer changes
 | Change | View | Type / values | Required | Breaking? |
 |---|---|---|---|---|
-| `observed_mz_calibration` (T11 key, [T13](t13-metadata-conformance.md) registry) | psm, feature | `raw`\|`recalibrated`\|`unknown` | SHOULD | No |
+| `observed_mz_calibration` search-step provenance parameter (no footer key) | psm, feature | `raw`\|`recalibrated`\|`unknown` | SHOULD | No |
 | `isotope_error` | psm | int16, null | SHOULD | No |
 | `spectrum_reference`, standing in for an empty `scan` in K | psm | string, null | SPC-9 | **Yes**: ids of empty-scan and former hash rows; part of [T01](t01-psm-rows.md) PSM-1's K |
 | `compensation_voltage` | psm | float32, null | optional | No |
@@ -135,22 +135,22 @@ The *claimed ion* is the precursor the row's identification asserts ([T02](t02-c
 ## Producer changes
 | Producer | Change needed |
 |---|---|
-| MaxQuant | psm `observed_mz` = m/z·(1 + ppm·10⁻⁶) + omitted label mass/z; `recalibrated`; derive `isotope_error`. Skip NULL `Modified sequence` (counted). SPC-14(d). `scan` when msms `Mass analyzer` is FTMS/ITMS or SDRF files are `.raw`, else `unknown` |
-| FragPipe | `recalibrated` if `Calibrated Observed M/Z` differs from `Observed M/Z`, else `raw`. `isotope_error` from constants.py:116-142. One right-to-left `Spectrum` parser for psm, feature lookup and isobaric.py. psm `compensation_voltage`; feature CV null. `scan` for `.raw` inputs, else `unknown` |
+| MaxQuant | psm `observed_mz` = m/z·(1 + ppm·10⁻⁶) + omitted label mass/z; provenance `observed_mz_calibration = recalibrated`; derive `isotope_error`. Skip NULL `Modified sequence` (counted). SPC-14(d). `scan` when msms `Mass analyzer` is FTMS/ITMS or SDRF files are `.raw`, else `unknown` |
+| FragPipe | Provenance `observed_mz_calibration`: `recalibrated` if `Calibrated Observed M/Z` differs from `Observed M/Z`, else `raw`. `isotope_error` from constants.py:116-142. One right-to-left `Spectrum` parser for psm, feature lookup and isobaric.py. psm `compensation_voltage`; feature CV null. `scan` for `.raw` inputs, else `unknown` |
 | Proteome Discoverer | Compute the mass error; derive `isotope_error`; `run_file_stem` on both paths; SPC-10; `scan` when Spectrum File is `.raw`, else `unknown` |
 | OpenMS consensusXML | Null, never 0.0. Feature `observed_mz` = run element ([T05](t05-feature-rows.md)), but null within 0.01 ppm of the hit's theoretical m/z (FeatureFinderIdentification). `[]` plus `spectrum_reference` instead of hashes; `spectrum=` is `nativeId`. Deltas from the modification's own mass, since normalize_peptidoform keeps residue masses. `original_RT` when present (OQ1) |
 | OpenMS `-out_qpx` | Write its `spectrum_reference` ([#259](https://github.com/bigbio/qpx/issues/259)), all components with `scan_format`, null m/z, charge ≥ 1 (seeds to [T07](t07-unidentified-features.md)'s view) |
 | mzIdentML | `qpx.core.scan.scan_from_native_id`; format from `SpectrumIDFormat`, bare integers without one `unknown`; `spectrum_reference`; MS-GF+ `IsotopeError`; SPC-14(b) |
 | CDAP | psm `rt` null (half-elution to feature, [T05](t05-feature-rows.md)); missing m/z null; missing charge drops the row; compute the mass error; `scan`; phosphoRS sites in `peptidoform`, probabilities in `modification_candidates` |
 | quantms/MSstats | OpenMS mass-shift fix; feature `scan_format` |
-| qpx writers, merge | Write-time checks for SPC-4/7/8/15 (writers/base.py:525-533 checks psm `scan_format` only). Merge keeps an agreed `scan_format`; otherwise it writes `mixed` (psm, every row with `spectrum_reference`), else `unknown` with a warning ([T13](t13-metadata-conformance.md) META-4); carries `observed_mz_calibration` ([T13](t13-metadata-conformance.md)) |
+| qpx writers, merge | Write-time checks for SPC-4/7/8/15 (writers/base.py:525-533 checks psm `scan_format` only). Merge keeps an agreed `scan_format`; otherwise it writes `mixed` (psm, every row with `spectrum_reference`), else `unknown` with a warning ([T13](t13-metadata-conformance.md) META-4); keeps every input's provenance steps, with their `observed_mz_calibration` ([T13](t13-metadata-conformance.md) META-4) |
 
 ## Reader rules
 **SPC-R1 (MUST)** Read `scan_format` per file with its `qpx_version`. Violation: qpx/transforms/spectra_mapping.py:305-311,468 reads multi-file psm views as scan numbers even when every shard declares `index`.
 
 **SPC-R2 (MUST)** Join to mz on `(run_file_name, scan)` only when both files declare one format other than `mixed`/`unknown`; otherwise on `spectrum_reference`. Under `unknown` a reader MAY join on `scan` if every pair agrees on `rt` = 60 × `scan_start_time` within 0.1 s (refines [T14](t14-reader-contract.md)'s absent-key row). qpx/core/data/mz.py:39-41 filters in minutes.
 
-**SPC-R3 (MUST)** Mass-accuracy QC corrects by `isotope_error`, excludes rows with `±mass` tags (fitted to the measurement) and compares within one calibration value. Violation: qpx/core/semantic_validation.py:146-152 flags isotope offsets as `mass_error` at a fixed 50 ppm.
+**SPC-R3 (MUST)** Mass-accuracy QC corrects by `isotope_error`, excludes rows with `±mass` tags (fitted to the measurement) and compares within one calibration value (provenance `observed_mz_calibration`). Violation: qpx/core/semantic_validation.py:146-152 flags isotope offsets as `mass_error` at a fixed 50 ppm.
 
 **SPC-R4 (MUST)** Compare `peptidoform` and `run_file_name` exactly: no case folding, suffix stripping or I/L merging. To match an external SDRF, apply `run_file_stem` to `comment[data file]` only. qpx MuData complies (qpx/mudata.py:183). mokume normalises the QPX run: Rust `normalize_file_key` lowercases and cuts at an inner `.d`, `.raw`, `.mzml` or `.wiff` followed by `.` or `_`, so `run.D.v1` and `run.D.v2` both become `run` (mokume:rust/crates/mokume-io/src/sdrf.rs:454-482, applied at :109); Python lowercases (mokume:python/mokume/io/feature.py:44-60, applied at :113) [[MOKUME-13](findings-cross.md#mokume-13)].
 

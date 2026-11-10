@@ -71,7 +71,7 @@
 - Row-level tool flags (MaxQuant `Reverse`, OpenMS peptide `target_decoy`, DIA-NN `Decoy`) are used as they are, including on rows with no entries.
 - Otherwise the database marker is applied to every mapped entry, never to the razor protein alone.
 
-psm and feature rows of one peptidoform have equal, non-null `is_decoy`; without target-decoy search [T03](t03-filtering-state.md) `decoy_policy = not_searched` declares `false`. A marker used SHOULD be recorded as provenance `decoy_marker` and `decoy_marker_position` (`prefix` | `suffix`) of `format_conversion`.
+psm and feature rows of one peptidoform have equal, non-null `is_decoy`; without target-decoy search it is `false`, with provenance `decoy_policy = not_searched` ([T03](t03-filtering-state.md) FLT-10). A marker used SHOULD be recorded as provenance `decoy_marker` and `decoy_marker_position` (`prefix` | `suffix`) of `format_conversion`.
 
 **PRT-5 (MUST)** pg `is_decoy` is true if and only if every member is a decoy ([T12](t12-protein-groups.md) PGV-10). A feature and its linked pg row have equal `is_decoy`.
 
@@ -82,11 +82,11 @@ psm and feature rows of one peptidoform have equal, non-null `is_decoy`; without
 
 A constant `false` is never written. `contaminant` never changes `is_decoy`, so `REV__CON__` rows are both.
 
-**PRT-7 (MUST)** `feature.pg_accessions` is the full membership of the one group, in the producer's grouping ([T12](t12-protein-groups.md) `pg_grouping`), that the feature is attributed to. If the dataset has a pg view, some pg row has the same membership set. Unknown membership is null. The column never holds:
+**PRT-7 (MUST)** `feature.pg_accessions` is the full membership of the one group, in the producer's grouping ([T12](t12-protein-groups.md) PGV-6), that the feature is attributed to. If the dataset has a pg view, some pg row has the same membership set. Unknown membership is null. The column never holds:
 - leaders of several groups (MaxQuant `Leading proteins`);
 - a lead-only list (FragPipe without `--pg-file`);
 - a union of several masters or `ProteinName` values (PD, quantms-MSstats);
-- a mapping set, unless `pg_grouping = mapping_set` (CDAP).
+- a mapping set, unless provenance records `pg_grouping = mapping_set` (CDAP).
 
 Entries are distinct, with null positions, and SHOULD be sorted by code point. FeatureWriter accepts `list<string>`, which makes the `feature.md` examples valid.
 
@@ -105,7 +105,7 @@ Under `mapping_set`, grouped rows are true. A producer that writes any non-null 
 
 The anchor is a member of `pg_accessions`. On feature it is non-null exactly when `pg_accessions` is, and it equals the anchor of pg rows with the same membership. With unknown membership the razor protein MAY go to cv_param `razor_protein`.
 
-**PRT-12 (MUST)** In one file, psm rows with the same `sequence` have the same `protein_accessions` and `contaminant`. Feature rows with the same `sequence` have the same `pg_accessions`, `anchor_protein`, `group_unique`, `unique` and `contaminant` across runs, charges, labels (TMT, SILAC) and modifications ([#51](https://github.com/bigbio/qpx/issues/51)): MUST under `pg_grouping = dataset_inference` ([T12](t12-protein-groups.md) PGV-6), SHOULD otherwise (OpenMS per-run inference).
+**PRT-12 (MUST)** In one file, psm rows with the same `sequence` have the same `protein_accessions` and `contaminant`. Feature rows with the same `sequence` have the same `pg_accessions`, `anchor_protein`, `group_unique`, `unique` and `contaminant` across runs, charges, labels (TMT, SILAC) and modifications ([#51](https://github.com/bigbio/qpx/issues/51)): MUST when provenance records `pg_grouping = dataset_inference` ([T12](t12-protein-groups.md) PGV-6), SHOULD otherwise (OpenMS per-run inference).
 
 **PRT-13 (MUST)** `pg_group_id` = `derive_id([members deduplicated and sorted per identity.md:51])`, with a test vector.
 
@@ -125,7 +125,7 @@ The anchor is a member of `pg_accessions`. On feature it is non-null exactly whe
 | `decoy_marker`, `decoy_marker_position`, `contaminant_marker` | provenance | string | when markers are used | No |
 | cv_param `razor_protein` | feature | accession | MAY | No |
 | `pg_group_id` dedup + test vector | feature, pg | int64 | — | Only for lists with duplicates |
-| Footer | — | none new: [T03](t03-filtering-state.md) `decoy_policy`, `contaminant_policy`; [T12](t12-protein-groups.md) `pg_grouping` | — | — |
+| Footer | — | none new; `decoy_policy`, `contaminant_policy` ([T03](t03-filtering-state.md) FLT-10/11) and `pg_grouping` ([T12](t12-protein-groups.md) PGV-6) are provenance parameters | — | — |
 | `dda` validator errors: anchor outside membership (today a warning, `qpx/core/data/validation.py:524`); membership without anchor; duplicate members; non-null positions; `unique` ≠ PRT-10; `pg_group_id` ≠ hash; `is_decoy` differing between feature and pg or psm; PRT-12. `pg_link_coverage` skips null-membership and decoy rows (`qpx/core/label_validation.py:404-411`) | all | — | — | Profile only |
 
 ## Producer changes
@@ -133,11 +133,11 @@ The anchor is a member of `pg_accessions`. On feature it is non-null exactly whe
 |---|---|
 | MaxQuant | Unresolved `Protein group IDs`: null membership, anchor, `unique`, `group_unique`; `razor_protein`; warn that proteinGroups.txt is needed. `group_unique` = one id. `contaminant` from evidence `Potential contaminant` (msms via `Evidence ID`), else `CON__`. Sort members |
 | FragPipe | Keep `contam_` in `protein_accessions()`; `canonical_accession` accepts lower-case markers. `is_decoy` over `Protein` + `Mapped Proteins` of the row's own peptidoform. Without `--pg-file`: null membership. `group_unique` from combined_protein |
-| Proteome Discoverer | `group_unique` = one master. Several masters, or no Proteins.txt: null group. Members from the master's own group. Derive `unique` and fix the test. `contaminant`: the PSM `Contaminant` column (to confirm), else Proteins.txt entries with `Contaminant` = True; pg null when absent. `is_decoy` false with `decoy_policy = removed` ([T03](t03-filtering-state.md)) |
+| Proteome Discoverer | `group_unique` = one master. Several masters, or no Proteins.txt: null group. Members from the master's own group. Derive `unique` and fix the test. `contaminant`: the PSM `Contaminant` column (to confirm), else Proteins.txt entries with `Contaminant` = True; pg null when absent. `is_decoy` false with provenance `decoy_policy = removed` ([T03](t03-filtering-state.md)) |
 | OpenMS consensusXML | One decoy rule: per-entry `target_decoy`, else PeptideIndexer `decoy_string` and position from the header parameters. Drop the pg prefix fallback. No anchor without a group. `group_unique` from candidates. `contaminant` by marker |
 | OpenMS `-out_qpx` | Upstream change to OpenMS's writer. Until then `group_unique` and `contaminant` are absent, i.e. unknown |
 | mzIdentML | `is_decoy = all(isDecoy)` (psm, crosslinks). pg decoy from evidence. Anchor per PRT-11. No position cv_params. pepmap from rank-1 rows. `contaminant` null unless a marker is given |
-| CDAP | Keep `XXX_`. Pre/post go to pepmap. `contaminant` from a supplied list, else null. `pg_grouping = mapping_set` |
+| CDAP | Keep `XXX_`. Pre/post go to pepmap. `contaminant` from a supplied list, else null. Provenance `pg_grouping = mapping_set` |
 | quantms-MSstats | Membership = one `ProteinName` split on `;`. Several values per sequence: null group, `group_unique = false`. `unique` per PRT-10. Anchor = first in source order |
 
 ## Reader rules

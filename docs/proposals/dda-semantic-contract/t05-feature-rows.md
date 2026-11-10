@@ -6,7 +6,7 @@
     Part of the [DDA semantic contract proposal](index.md) for QPX. Rules here are proposals for specification 1.4, not normative text. Bracketed ids such as [OPENMS-01](findings-psm.md#openms-01) link to the verified audit findings; code references are to `dev` at commit `32cbbdc`.
 
 
-> **Decision in one line:** A feature row is one quantity of one precursor ion in one run or one declared multi-run unit, and a signal feeds at most one row. The footer key `feature_grain` (`precursor_run` | `peak` | `spectrum` | `precursor_unit`) says whether `(peptidoform, charge, run_file_name)` can repeat. A new column `grouped_runs` names a unit row's runs. `rt`, `rt_start` and `rt_stop` are seconds on the run's acquisition clock, and `rt` is the MS1 peak's time, else the identifying spectrum's.
+> **Decision in one line:** A feature row is one quantity of one precursor ion in one run or one declared multi-run unit, and a signal feeds at most one row. No footer key declares the grain: the declared `identity_composite` says whether `(peptidoform, charge, run_file_name)` can repeat (exactly those columns: at most one row per key; a leading `quantification_unit_id`: one row per unit key; any other composite: distinct signals, which readers sum). A new column `grouped_runs` names a unit row's runs. `rt`, `rt_start` and `rt_stop` are seconds on the run's acquisition clock, and `rt` is the MS1 peak's time, else the identifying spectrum's.
 
 ## Questions a reader has
 - What is one row: a peak, a precursor per run, one reporter spectrum, or an experiment-level quantity?
@@ -50,7 +50,7 @@ Spec:
 | A. Grain implied by the composite (status quo) | No change | Readers cannot tell parts from alternatives |
 | B. `precursor_run` for everyone | Simple pivots | QPX invents sum or pick rules; loses per-peak origin; infeasible for FragPipe |
 | C. Peak only (literal [#217](https://github.com/bigbio/qpx/issues/217)) | Matches [#217](https://github.com/bigbio/qpx/issues/217) | PD, CDAP, DIA-NN and TMT rows are not peaks |
-| **D. Signal definition, no double counting, declared grain** | Every native entity fits; testable | One footer key; amends [#217](https://github.com/bigbio/qpx/issues/217) |
+| **D. Signal definition, no double counting, grain read from the identity composite** | Every native entity fits; testable | Amends [#217](https://github.com/bigbio/qpx/issues/217) |
 | U1. Null `run_file_name`, or unit quantities only in pg | Pure per-run rows | Breaking (non-nullable column), or loses FragPipe precursor quantities |
 | **U2. First member run + new `grouped_runs`** | Additive; joins pg | `run_file_name` is a placeholder |
 | W1. Footer key for the window's clock, or aligned-window columns | No value change | Violates P-A, or two columns for one producer |
@@ -68,16 +68,18 @@ This replaces data-model.md:64,74, feature.md:301, producer-guide.md:12 and conv
 **FRW-2 (MUST)** A quantified signal (an MS1 peak or a reporter spectrum) gives intensities to at most one row.
 - Rows that share `(peptidoform, charge, run_file_name, compensation_voltage)` are therefore distinct signals. A direct and a transferred copy of one peak are forbidden ([T08](t08-match-between-runs.md) MBR-7).
 - One signal claimed by several peptidoforms follows [T06](t06-identifications-per-feature.md) FID-10. The reporters of a chimeric spectrum follow [T02](t02-chimeric-spectra.md) CHI-11.
-- A producer that cannot see which signals feed a tool's quantity (tool-aggregated evidence, `ion.tsv`) keeps the tool's rows. It declares `chimeric_quant_policy = unknown` ([T02](t02-chimeric-spectra.md)) and leaves `identification_conflict` null ([T06](t06-identifications-per-feature.md)).
+- A producer that cannot see which signals feed a tool's quantity (tool-aggregated evidence, `ion.tsv`) keeps the tool's rows. It lists the gap in converter-coverage ([T02](t02-chimeric-spectra.md) CHI-11) and leaves `identification_conflict` null ([T06](t06-identifications-per-feature.md)).
 
-**FRW-3 (MUST)** The feature footer declares `feature_grain`. An absent key means `unknown`. A merge keeps the value only when all inputs agree, and writes `unknown` otherwise.
+**FRW-3 (MUST)** No footer key declares the grain. It follows from the feature footer's `identity_composite` (FRW-4), and FRW-2 makes this safe. A file without an `identity_composite` has the schema default `peptidoform, charge, run_file_name, rt`, a `peak` composite. A merge keeps the grain, because it writes one file per composite (qpx/core/dataset_merge.py:311-316).
 
-| Value | Rows per natural key | Producers |
-|---|---|---|
-| `precursor_run` | At most one per `(peptidoform, charge, run_file_name, compensation_voltage)` | DIA-NN, Spectronaut, CDAP, PD; quantms label-free and DIA-NN inputs |
-| `peak` | Any number. Each is one MS1 peak or multiplet, or one MS/MS spectrum whose precursor peak the tool did not detect (MaxQuant `MSMS`) | MaxQuant; OpenMS LFQ and MS1 labels |
-| `spectrum` | Any number. Each is one reporter quantification spectrum | quantms and OpenMS isobaric |
-| `precursor_unit` | At most one per `(quantification_unit_id, peptidoform, charge, compensation_voltage)` | FragPipe |
+| Grain | Composite | Rows per natural key | Producers |
+|---|---|---|---|
+| `precursor_run` | Exactly `peptidoform, charge, run_file_name`, plus `compensation_voltage` when the tool separates CVs | At most one per `(peptidoform, charge, run_file_name, compensation_voltage)` | DIA-NN, Spectronaut, CDAP, PD; quantms label-free and DIA-NN inputs |
+| `peak` | Any other | Any number. Each is one MS1 peak or multiplet, or one MS/MS spectrum whose precursor peak the tool did not detect (MaxQuant `MSMS`) | MaxQuant; OpenMS LFQ and MS1 labels |
+| `spectrum` | Any other | Any number. Each is one reporter quantification spectrum | quantms and OpenMS isobaric |
+| `precursor_unit` | Starts with `quantification_unit_id` | At most one per `(quantification_unit_id, peptidoform, charge, compensation_voltage)` | FragPipe |
+
+The composite does not tell `peak` from `spectrum`; readers treat both alike (FRW-R2).
 
 **FRW-4 (MUST)** The `identity_composite` depends on the grain:
 
@@ -130,7 +132,6 @@ When a unit has several runs, its rows have null `rt`, `rt_aligned`, `rt_start` 
 
 | Check | Severity |
 |---|---|
-| A `feature_grain` value outside the vocabulary | Error |
 | A repeated natural key under `precursor_run` or `precursor_unit` | Error under `dda`, else warning ([T13](t13-metadata-conformance.md) META-8) |
 | A `precursor_unit` row that breaks FRW-6 (null `grouped_runs`, `run_file_name ≠ grouped_runs[0]`, unit id not 1:1) | Error |
 | `rt` outside `[rt_start, rt_stop]`, or a negative time | Error under `dda`, else warning ([T13](t13-metadata-conformance.md) META-8) |
@@ -140,7 +141,7 @@ When a unit has several runs, its rows have null `rt`, `rt_aligned`, `rt_start` 
 ## Schema and footer changes
 | Change | View | Type / values | Required | Breaking? |
 |---|---|---|---|---|
-| `feature_grain` | feature footer | `precursor_run`, `peak`, `spectrum`, `precursor_unit`, `unknown` | SHOULD; MUST in [T13](t13-metadata-conformance.md) conformance | No |
+| Grain derived from `identity_composite` (FRW-3, FRW-4); no new footer key | feature footer | – | – | No |
 | `grouped_runs` | feature | `list<string>`, nullable, optional | Under `precursor_unit` | No |
 | Text for `rt`, the window and `run_file_name` (feature.md:65-70,89; feature.yaml:255-260) | feature | doc | – | **Meaning change** for 1.3 MaxQuant windows (calibrated). Applies from `qpx_version` 1.4; `qpxc migrate` shifts 1.3 windows by `rt − rt_aligned`, both in the file |
 | `compensation_voltage` null without FAIMS (feature.md:76; feature.yaml:128-132) | feature | doc | – | **Yes**: FragPipe values and `feature_id` |
@@ -149,18 +150,18 @@ When a unit has several runs, its rows have null `rt`, `rt_aligned`, `rt_start` 
 ## Producer changes
 | Producer | Change needed |
 |---|---|
-| MaxQuant | Grain `peak`. Set `rt_start` to calibrated start + (`rt` − `rt_aligned`), and `rt_stop` likewise (feature_adapter.py:574-585). Null the window on `MSMS` rows. Shared isotope patterns per [T06](t06-identifications-per-feature.md) FID-10. Fix tool-mappings.md:50-51 |
-| FragPipe | Grain `precursor_unit`. `grouped_runs` on every row, ordered per [T12](t12-protein-groups.md) PGV-5, never re-sorted (pg_adapter.py:96). Null CV without FAIMS (feature_adapter.py:519). Apex RT of one-run units, if `combined_ion` has one (unverified) |
+| MaxQuant | Grain `peak` (current composite). Set `rt_start` to calibrated start + (`rt` − `rt_aligned`), and `rt_stop` likewise (feature_adapter.py:574-585). Null the window on `MSMS` rows. Shared isotope patterns per [T06](t06-identifications-per-feature.md) FID-10. Fix tool-mappings.md:50-51 |
+| FragPipe | Grain `precursor_unit` (current composite). `grouped_runs` on every row, ordered per [T12](t12-protein-groups.md) PGV-5, never re-sorted (pg_adapter.py:96). Null CV without FAIMS (feature_adapter.py:519). Apex RT of one-run units, if `combined_ion` has one (unverified) |
 | Proteome Discoverer | Grain `precursor_run`; composite `peptidoform, charge, run_file_name`; group on the canonical peptidoform (feature_adapter.py:16-20). Summed TMT rows: null PIF, `quant_spectrum_count` ([T09](t09-intensities-missing-values.md)) |
 | OpenMS consensusXML | Grain `peak`, or `spectrum` for isobaric data. Lightest dimethyl or mTRAQ label inline (:638-639), and fix convert.md:1038-1040. `observed_mz` is the run element's m/z, else null (:645). Composite per FRW-4. Aligned times go to `rt_aligned` (OQ1) |
-| OpenMS `-out_qpx` | Upstream stamps `peak` or `spectrum`; `qpxc convert openms` copies it like `identity_composite` (qpx/converters/openms/converter.py:182-220) |
+| OpenMS `-out_qpx` | Upstream declares a `peak` or `spectrum` composite per FRW-4; `qpxc convert openms` already copies `identity_composite` (qpx/converters/openms/converter.py:182-220) |
 | quantms MSstats | `spectrum` for isobaric inputs. `precursor_run` with composite `peptidoform, charge, run_file_name` for label-free and DIA-NN inputs |
-| CDAP | Grain `precursor_run`. `rt` 0.00 becomes null (feature_adapter.py:321) |
-| DIA-NN, Spectronaut | Grain `precursor_run`. mzIdentML: none |
-| Writers | `FeatureWriter(grain=...)` stamps the key, and relayout and migrate keep it |
+| CDAP | Grain `precursor_run` (current composite). `rt` 0.00 becomes null (feature_adapter.py:321) |
+| DIA-NN, Spectronaut | None: the current composite gives `precursor_run`. mzIdentML: none |
+| Writers | None: the grain follows from the `identity_composite` writers already stamp (FRW-3) |
 
 ## Reader rules
-**FRW-R1 (MUST)** Treat `(peptidoform, charge, run_file_name)` as unique only under `precursor_run`. Treat an absent or `unknown` grain as `peak`.
+**FRW-R1 (MUST)** Derive the grain from `identity_composite` (FRW-3), and read every other composite as `peak`. Treat `(peptidoform, charge, run_file_name)` as unique only under `precursor_run`.
 
 **FRW-R2 (MUST)** Under `peak` or `spectrum`, the rows of one key are distinct signals. A reader that collapses them per key and label:
 1. first applies [T08](t08-match-between-runs.md) MBR-R4 (drop a transferred entry beside a measured `direct` or `secondary` entry of the same label) and, to reporter rows, [T02](t02-chimeric-spectra.md) CHI-R6;
@@ -181,12 +182,12 @@ Under `precursor_run`, duplicates are an error. Current violations:
 
 **FRW-R5 (MUST)** A label is a channel, never a run name. mokume's "label = run" layout (mokume:python/mokume/io/feature.py:605-643; mokume:rust/crates/mokume-io/src/qpx.rs:528-539) is allowed only behind a legacy flag.
 
-**FRW-R6 (MUST)** Quantified-feature counts include only rows with a non-null entry. Identification counts follow [T08](t08-match-between-runs.md) MBR-R3. A missing feature row means "not identified" only under `unquantified_feature_policy = retained` ([T07](t07-unidentified-features.md) UNI-R4). qpx/views/api.py:25 counts MaxQuant `MSMS` rows as features.
+**FRW-R6 (MUST)** Quantified-feature counts include only rows with a non-null entry. Identification counts follow [T08](t08-match-between-runs.md) MBR-R3. A missing feature row means "not identified" only under `unquantified_policy = retained` ([T07](t07-unidentified-features.md) UNI-R4). qpx/views/api.py:25 counts MaxQuant `MSMS` rows as features.
 
 **FRW-R7 (MUST)** Compare times across runs only through `rt_aligned`, and join spectra on 60 × `mz.scan_start_time`. Link multiplet PSMs through `psm.feature_id`. Read the window clock from FRW-7 only in 1.4 or migrated files.
 
 ## Open questions for maintainers
 1. In ProteomicsLFQ output that declares "Retention time alignment", are element and PeptideIdentification RTs (one shared clock [[OPENMS-M3](findings-feature.md#openms-m3)]) aligned? If so, OpenMS `rt` and `psm.rt` ([T11](t11-spectrum-precursor-fields.md)) move to `rt_aligned`, and `rt` becomes null.
-2. Should MaxQuant `MSMS` rows collapse to one per key? That would drop 8,731 rows that sit beside a quantified row, and it interacts with [T07](t07-unidentified-features.md)'s `unquantified_feature_policy`.
+2. Should MaxQuant `MSMS` rows collapse to one per key? That would drop 8,731 rows that sit beside a quantified row, and it interacts with [T07](t07-unidentified-features.md)'s `unquantified_policy`.
 3. Should `quantification_unit_id` be canonical (runs joined by `;`, as views.md:212 names units) instead of the tool's experiment name? FragPipe ids would change.
 4. Does FragPipe `combined_ion` report a per-experiment apex RT [[FRAGPIPE-17](findings-feature.md#fragpipe-17)]?

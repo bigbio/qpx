@@ -6,7 +6,7 @@
     Part of the [DDA semantic contract proposal](index.md) for QPX. Rules here are proposals for specification 1.4, not normative text. Bracketed ids such as [OPENMS-01](findings-psm.md#openms-01) link to the verified audit findings; code references are to `dev` at commit `32cbbdc`.
 
 
-> **Decision in one line:** One psm row per hypothesis per spectrum, unique on K = `(run_file_name, scan, peptidoform, charge)` with engines merged; a typed `rank` (the source's rank per precursor ion, ties share 1) plus the footer key `psm_rank_policy`; rank stays out of the identity; only rank-1 rows are identifications.
+> **Decision in one line:** One psm row per hypothesis per spectrum, unique on K = `(run_file_name, scan, peptidoform, charge)` with engines merged; a typed `rank` (the source's rank per precursor ion, ties share 1; null = unknown) and no footer key; rank stays out of the identity; only rank-1 rows are identifications.
 
 ## Questions a reader has
 - How many rows per spectrum, and what tells them apart? Is a scan with two charges two rows?
@@ -53,7 +53,7 @@ Infrastructure:
 | Option | For | Against |
 |---|---|---|
 | Rank-1 only is mandatory | Simplest for readers | Breaks [#241](https://github.com/bigbio/qpx/issues/241); rescoring needs rank>1 |
-| **All ranks allowed; typed `rank` plus a declared policy** | Lossless; one filter (`rank = 1`) for every producer | Readers must apply the filter |
+| **All ranks allowed; typed `rank` (null = unknown)** | Lossless; one filter (`rank = 1`) for every producer | Readers must apply the filter |
 | Rank stays a score | No schema change | About 100x the read cost (`scores.md:38`); absent means "rank 1" or "unknown" depending on producer |
 | Rank per spectrum (literal mzIdentML SIR) | Same as mzIdentML | Sage, MaxQuant and DDA+ co-identifications become rank 2+, so a rank filter drops them [[EXTERNAL-06](findings-psm.md#external-06)] |
 | **Rank per precursor ion** | A co-identification is rank 1 for its own ion ([T02](t02-chimeric-spectra.md) CHI-4); equals mzIdentML for single-precursor spectra | Charges ranked in separate source queries stay rank 1 each |
@@ -83,12 +83,12 @@ Infrastructure:
 - Where the source ranked the charge states of one precursor in separate queries (Comet, MSFragger `file.scan.scan.charge`), each query's ranks are kept, so several rank-1 rows of one ion are alternatives (PSM-6).
 - A source rank of another scope (Sage co-identifications at rank 2+) goes to `<engine>_rank`. mzIdentML rank 0 (PMF) gives null.
 
-**PSM-4 (MUST)** The footer key `psm_rank_policy` takes `top1` | `all_reported` | `unknown`; absent means `unknown`. Every 1.4 psm footer SHOULD carry it; the [T13](t13-metadata-conformance.md) conformance profile requires it.
-- `top1`: `rank` is present and every row has `rank = 1`; rank-1 ties appear as far as the source reports them.
-- `all_reported`: every rank the source reported is kept; every row has a non-null rank. Other removals are declared under [T03](t03-filtering-state.md) keys.
-- `unknown`: `rank` is null or absent. A producer that does not know the rank never defaults it to 1.
+**PSM-4 (MUST)** No footer key declares the rank policy; the `rank` column alone carries it.
+- `rank` is non-null whenever the source states a rank. A source that reports only top hits gives 1; rank-1 ties appear as far as the source reports them.
+- Otherwise `rank` is null, meaning unknown. A producer that does not know the rank never defaults it to 1.
+- Removal of lower ranks is recorded only by the provenance option `rank1_only` (`provenance.md:65`).
 
-**PSM-5 (SHOULD)** Converters drop no ranks by default ([#241](https://github.com/bigbio/qpx/issues/241)); a source holding only top hits, or `--rank1-only`, gives `top1`. The writer stamps the key on every entry point, the Python API included.
+**PSM-5 (SHOULD)** Converters drop no ranks by default ([#241](https://github.com/bigbio/qpx/issues/241)); `--rank1-only` is recorded as `rank1_only`. The writer fills `rank` on every entry point, the Python API included.
 
 **PSM-6 (MUST)** Rank-1 alternatives stay one row each, with the source's sequence: ties (I/L, localisation isomers), charge states from separate queries, disagreeing engines, SILAC partner hypotheses. They are never collapsed to one row, to `J`, or to one isomer.
 - An *alternative group* is two or more rank-1 rows sharing `(run_file_name, scan, precursor_index)` ([T02](t02-chimeric-spectra.md) CHI-3); rows with a null index form one group per `(run_file_name, scan)`. Rows of different indices are co-identifications, never alternatives.
@@ -107,8 +107,7 @@ Infrastructure:
 ## Schema and footer changes
 | Change | View | Type / values | Required | Breaking? |
 |---|---|---|---|---|
-| `rank` column | psm | int16, nullable, ≥ 1; optional column | Present unless the policy is `unknown` | No: additive (a 1.3 `qpxc validate` warns `undeclared_column`, `footer_validation.py:139-145`) |
-| `psm_rank_policy` footer key | psm | `top1`, `all_reported`, `unknown` | SHOULD; MUST in the [T13](t13-metadata-conformance.md) profile | No |
+| `rank` column | psm | int16, nullable, ≥ 1; optional column; null = unknown | Non-null whenever the source states a rank (PSM-4) | No: additive (a 1.3 `qpxc validate` warns `undeclared_column`, `footer_validation.py:139-145`) |
 | `rank` score | psm | Writer fills the typed column from it and removes the entry, exactly as [T04](t04-confidence-fields.md) CNF-6 does for q-values (one store; settles the rank part of [#377](https://github.com/bigbio/qpx/issues/377)). In 1.3 files the score is read as the rank. No rank on feature rows ([T04](t04-confidence-fields.md)) | – | **Yes** for readers that look up the score `rank` in 1.4 files |
 | K unique for every `identity_source`; `psm.md:12-15` allowance removed; `identity.md:40` rewritten | psm | Spec text; the validator already checks K | Yes | **Yes** for producers: multi-SIL mzIdentML, MaxQuant K pairs, PD spelling variants |
 | `consensus_support` = engine count (OpenMS fraction → `consensusid_support`); engine prefixes replace `_2` suffixes | psm | Score names | – | **Yes**: OpenMS score names and meaning |
@@ -117,15 +116,15 @@ Infrastructure:
 ## Producer changes
 | Producer | Change needed |
 |---|---|
-| mzIdentML | `rank` from SII@rank (0 → null); PSM-9 needs a pre-pass (in the 1.2 XSD a SIL's cvParams follow its results; `document.py:44-62` streams results first); merge across SILs; derived `psm_id`, SII ids in cv_params; `all_reported`, or `top1` with `--rank1-only` |
-| Proteome Discoverer | `rank` from `Rank`; no `Rank` gives null, `unknown` and a warning; partition on the canonical peptidoform; merge engine-prefixed scores and write `consensus_support`; pick per PSM-2; drop `rank` from feature scores (`feature_adapter.py:126`) |
+| mzIdentML | `rank` from SII@rank (0 → null); PSM-9 needs a pre-pass (in the 1.2 XSD a SIL's cvParams follow its results; `document.py:44-62` streams results first); merge across SILs; derived `psm_id`, SII ids in cv_params; all ranks kept unless `--rank1-only` |
+| Proteome Discoverer | `rank` from `Rank`; no `Rank` gives null and a warning; partition on the canonical peptidoform; merge engine-prefixed scores and write `consensus_support`; pick per PSM-2; drop `rank` from feature scores (`feature_adapter.py:126`) |
 | OpenMS consensusXML | `rank` per PSM-3; merge cross-PID collisions (`psm_adapter.py:375-381`); engine-prefixed names; ConsensusID fraction → `consensusid_support`; link only same-peptidoform, same-charge, rank-1 target rows (`record_linking.py:30-33`) |
-| OpenMS `-out_qpx` / `qpxc convert openms` | C++ writer: same rules (not verified here). The Python upgrade (`qpx/converters/openms/converter.py`) keeps the source's key or writes `unknown` |
-| MaxQuant | `rank = 1`, `top1`; merge every pair of rows repeating K (lowest PEP), SECPEP pairs included; [T02](t02-chimeric-spectra.md) marks SECPEP rows |
-| FragPipe | psm.tsv has no rank. Read fragpipe.workflow (new input): `msfragger.output_report_topN = 1` gives `rank = 1` and `top1`, with DDA+ extra rows marked by [T02](t02-chimeric-spectra.md); without the file, null and `unknown` |
-| CDAP | `rank = 1`, `top1`; AmbiguousMatch rows form an alternative group |
+| OpenMS `-out_qpx` / `qpxc convert openms` | C++ writer: same rules (not verified here). The Python upgrade (`qpx/converters/openms/converter.py`) keeps the source's `rank` or leaves it null |
+| MaxQuant | `rank = 1`; merge every pair of rows repeating K (lowest PEP), SECPEP pairs included; [T02](t02-chimeric-spectra.md) marks SECPEP rows |
+| FragPipe | psm.tsv has no rank. Read fragpipe.workflow (new input): `msfragger.output_report_topN = 1` gives `rank = 1`, with DDA+ extra rows marked by [T02](t02-chimeric-spectra.md); without the file, null |
+| CDAP | `rank = 1`; AmbiguousMatch rows form an alternative group |
 | quantms MSstats | None (no psm view) |
-| Writer and validator | Stamp the key; fill `rank`; check the policy against `rank` and `rank > 1 ⇒ feature_id IS NULL`; warn when the policy is `unknown` and a spectrum has several rows |
+| Writer and validator | Fill `rank`; check `rank > 1 ⇒ feature_id IS NULL`; warn when `rank` is null and a spectrum has several rows |
 
 ## Reader rules
 **PSM-R1 (MUST)** An identification row has `rank = 1` (1.3 files: score `rank` = 1). Rows with `rank > 1` are never counted as identifications or used as peptide, protein or modification evidence, whatever their `pass_threshold` or `qvalue`; their q-values and PEPs are not FDR-controlled ([T04](t04-confidence-fields.md) CNF-10).
@@ -135,7 +134,7 @@ Infrastructure:
 - PSMs (identified precursors) = `COUNT(DISTINCT (run_file_name, scan, precursor_index))`, with the same substitution ([T02](t02-chimeric-spectra.md) CHI-3, CHI-R2): an alternative group counts once, each co-isolated precursor counts. Rows with a null index count once per spectrum, and the reader reports how many spectra that covers ([T02](t02-chimeric-spectra.md) CHI-R7). Such a count is a lower bound on identified precursors;
 - peptidoforms = `COUNT(DISTINCT peptidoform)`; each tied peptidoform counts, as the source ranked it 1.
 
-**PSM-R3 (MUST)** With no rank (policy absent or `unknown`) a reader does not assume top-1: counts are upper bounds, with a warning when a spectrum has several rows.
+**PSM-R3 (MUST)** With a null or absent `rank` a reader does not assume top-1: counts are upper bounds, with a warning when a spectrum has several rows.
 
 **PSM-R4 (MUST)** A reader joins on K only in a view that passed strict validation; otherwise it deduplicates K first.
 
@@ -148,7 +147,7 @@ Infrastructure:
 - The MuData export (`qpx/mudata.py`) does not read psm.
 
 ## Open questions for maintainers
-1. Should the [T13](t13-metadata-conformance.md) profile require `top1`, or keep `all_reported` ([#241](https://github.com/bigbio/qpx/issues/241)) and rely on PSM-R1 ([#378](https://github.com/bigbio/qpx/issues/378) "where do you stop")?
+1. Should `qpxc validate --profile dda` require `rank = 1` on every row, or accept all ranks ([#241](https://github.com/bigbio/qpx/issues/241)) and rely on PSM-R1 ([#378](https://github.com/bigbio/qpx/issues/378) "where do you stop")?
 2. Should a typed `search_engines list<string>` replace parsing prefixes and PD's `identifying_node` [[CRITIC-12](findings-psm.md#critic-12)]?
 3. FragPipe: is psm.tsv always top-1 per query, DDA+ aside? Then fragpipe.workflow is not needed.
 4. PD `PSM Ambiguity` (Selected/Rejected) resolves ties: cv_param, or mark Rejected rows?
