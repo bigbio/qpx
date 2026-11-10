@@ -72,7 +72,7 @@ No footer key names the profile. A dataset claims it with the provenance paramet
 
 ## Order of work
 
-1. **OpenMS export.** Merge the [#378](https://github.com/bigbio/qpx/issues/378) branch, then export the PSM q-value. These two give consumers correct identification counts and a working confidence filter. The remaining steps are in the [OpenMS work list](openms-worklist.md).
+1. **OpenMS export.** Merge the [#378](https://github.com/bigbio/qpx/issues/378) branch, then export the PSM q-value. These two give consumers correct identification counts and a working confidence filter. The remaining steps are in the [OpenMS work list](openms-worklist.md), tracked as [OpenMS/OpenMS#10869](https://github.com/OpenMS/OpenMS/issues/10869).
 2. **Consumer fixes that do not depend on new files.**
     - qpxui: read the pg view in its current layout.
     - Portal: key protein groups one way.

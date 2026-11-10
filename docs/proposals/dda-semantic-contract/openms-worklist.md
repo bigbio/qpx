@@ -7,6 +7,8 @@
 
 OpenMS is the producer the maintainers control, so the contract is written for it first. This page is based on reading the OpenMS C++ source: the default branch at `0707508` (2026-11-09) and the unmerged branch `claude/qpx-issue-377-review-dfv5gg` at `811c466`, which holds the work of [#378](https://github.com/bigbio/qpx/issues/378). Nothing was executed; no natively written fixture exists in qpx yet. The full review is in [review-openms.md](review-openms.md).
 
+The work is tracked in the OpenMS repository as [OpenMS/OpenMS#10869](https://github.com/OpenMS/OpenMS/issues/10869).
+
 ## Summary
 
 - **OpenMS already holds almost everything the contract asks for.**
