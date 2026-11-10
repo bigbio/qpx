@@ -465,11 +465,7 @@ class SdrfConverter(BaseConverter):
         extra_comment_cols: dict[str, list[str]] = {}
         for column in sdrf_df.columns:
             match = re.fullmatch(r"comment\[(.+)\]", column)
-            if (
-                not match
-                or column in _KNOWN_RUN_COMMENT_COLUMNS
-                or column.startswith(_COL_MOD_PARAM)
-            ):
+            if not match or column in _KNOWN_RUN_COMMENT_COLUMNS or column.startswith(_COL_MOD_PARAM):
                 continue
             name = _normalize_char_name(f"characteristics[{match.group(1)}]")
             if name:
