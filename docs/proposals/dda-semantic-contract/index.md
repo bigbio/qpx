@@ -100,7 +100,7 @@ The maintainers decided these points in [#383](https://github.com/bigbio/qpx/iss
 
 | Point | Decision |
 |---|---|
-| A transferred row beside a quantified direct row of the same precursor and run | Does not arise in ProteomicsLFQ output. If it ever did, OpenMS would leave the transferred row out. |
+| A transferred row beside a quantified direct row of the same precursor and run | Not written. The contract requires one row per precursor and run; how OpenMS resolves such a pair internally is decided in the OpenMS export. |
 | Unidentified features | They may be stored in the feature view, optionally, marked `identification_type = 'unidentified'`. Readers ignore them. There is no separate view. This keeps [#229](https://github.com/bigbio/qpx/issues/229)/[#232](https://github.com/bigbio/qpx/issues/232) and settles [#378](https://github.com/bigbio/qpx/issues/378). |
 | FDR levels | PSM-level FDR is always estimated, so PSM q-values are always present. Protein-level FDR is not: OpenMS sometimes stops at peptide-level FDR, for example for immunopeptidomics. A peptide or protein q-value column is null when its level was not estimated. This holds for every producer. |
 | Transferred quantities | Kept by default, because they improve quantification. Filtering them out is the reader's choice. |

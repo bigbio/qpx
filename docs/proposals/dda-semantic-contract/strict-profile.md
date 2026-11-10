@@ -68,7 +68,7 @@ One row is one identified precursor of one MS/MS spectrum.
 
 One row is one quantity of one precursor (peptidoform and charge) in one run.
 
-- **Label-free:** exactly one row per `(peptidoform, charge, run_file_name)`. ProteomicsLFQ produces one feature per precursor in a run, so a precursor is either identified in the run (`direct` or `secondary`) or transferred, never both. As a safeguard, should the export ever hold a transferred and a quantified direct feature for the same precursor and run, it writes only the direct one and records the count in provenance.
+- **Label-free:** exactly one row per `(peptidoform, charge, run_file_name)`. ProteomicsLFQ produces one feature per precursor in a run, so a precursor is either identified in the run (`direct` or `secondary`) or transferred, never both. The contract requires only this outcome. How OpenMS reaches it when its internal data holds more than one candidate feature is decided in the OpenMS export, as long as the rows written are the ones its protein quantification used.
 - **Isobaric:** one row per quantified reporter spectrum. Readers add the rows of a precursor in a run.
 
 The rules below apply to identified rows, that is every row except the optional unidentified ones described after the table.
@@ -217,7 +217,7 @@ The maintainers decided these points in [#383](https://github.com/bigbio/qpx/iss
 
 | Point | Decision |
 |---|---|
-| A transferred row beside a quantified direct row of the same precursor and run | Does not arise in ProteomicsLFQ output. If it ever did, OpenMS would leave the transferred row out. |
+| A transferred row beside a quantified direct row of the same precursor and run | Not written. The contract requires one row per precursor and run; how OpenMS resolves such a pair internally is decided in the OpenMS export. |
 | Unidentified features | They may be stored in the feature view, optionally, marked `identification_type = 'unidentified'`. Readers ignore them. There is no separate view. |
 | FDR levels | PSM-level FDR is always estimated, so PSM q-values are always present. Protein-level FDR is not: OpenMS sometimes stops at peptide-level FDR, for example for immunopeptidomics. A peptide or protein q-value column is null when its level was not estimated. This holds for every producer. |
 | Transferred quantities | Kept by default. Filtering them out is the reader's choice. |
