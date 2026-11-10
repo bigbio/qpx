@@ -80,7 +80,7 @@ Any accepted own-run identification wins over transfer.
 **MBR-3 (MUST)** A transferred row:
 - has no identifying or supporting PSM, so `scan = []`, null `id_run_file_name`, no `psm.feature_id` link ([T06](t06-identifications-per-feature.md) FID-1, FID-5 to FID-7) and `spectral_count`, where written, 0 (FID-12); a `MULTI-MATCH-MSMS` scan MAY go to cv_params;
 - has the confidence columns [T04](t04-confidence-fields.md) CNF-8 sets: null PEP, `psm_qvalue`, `precursor_qvalue` and run-scope `peptide_qvalue`, no `psm`-level `additional_scores`; experiment-scope q-values MAY be filled;
-- names no MS/MS-identified label: `identified_labels` is null, or `[]` on a multiplet row of an MS1-labelled run, where the [strict profile](strict-profile.md) requires the column to be non-null;
+- names no MS/MS-identified label: `identified_labels` is `[]` on a row of an MS1-labelled run and null elsewhere. The [strict profile](strict-profile.md) requires the column to be non-null on every row of a labelled run; other producers SHOULD write `[]` there too, and a reader treats null and `[]` alike on a transferred row;
 - carries the `rt`, `observed_mz` and intensities of the matched signal here ([T05](t05-feature-rows.md) FRW-8, [T11](t11-spectrum-precursor-fields.md) SPC-1);
 - has at least one non-null entry whose label is not in `imputed_labels`; other labels per [T09](t09-intensities-missing-values.md) INT-5. A transfer without a measured value (isobaric MBR rows without reporters, andes#148 zeros, [T09](t09-intensities-missing-values.md) INT-7) is not written and is counted in `skipped_rows_feature` ([T03](t03-filtering-state.md) FLT-6).
 

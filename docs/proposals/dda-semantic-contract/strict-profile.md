@@ -148,7 +148,7 @@ The encoding is the one agreed in [#308](https://github.com/bigbio/qpx/issues/30
 - **One feature row per multiplet per run.** The partners of a multiplet are the same peptide with different isotope labels. They are one row, not one row per partner.
 - **The row carries the light peptidoform**, that is the partner of the run's lightest channel. For SILAC this is the unlabelled peptidoform. For dimethyl and mTRAQ, where the lightest channel itself carries a label, it is the peptidoform with that lightest label written inline. `calculated_mz`, `observed_mz` and `mass_error_ppm` describe that same partner.
 - **One intensity entry per channel**, labelled `SILAC light`, `SILAC medium`, `SILAC heavy` and so on. A partner that was not quantified has a null intensity.
-- **`identified_labels`** lists the channels whose partner was identified by MS/MS. It is never null on an identified row of a labelled run.
+- **`identified_labels`** lists the channels whose partner was identified by MS/MS. In a run with MS1 labels it is never null, on any row: `[]` means that no partner was identified by MS/MS, which is the case on every `transferred` row. Null is left for label-free and isobaric data, where the column does not apply. A reader's test is that the list is non-empty.
 - **PSMs keep their labelled peptidoform**, the one the spectrum was matched with, so the calculated mass fits the precursor. `psm.label` names the channel. A PSM links to its multiplet row through `psm.feature_id`, even though its peptidoform differs from the row's.
 
 The rules for feature rows above apply unchanged: there is still one row per precursor and run, and the predicates and reference queries work as they are.
