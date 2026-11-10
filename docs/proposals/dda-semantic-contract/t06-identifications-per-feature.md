@@ -1,9 +1,9 @@
 # T06. Identifications per feature: the identifying PSM, conflicts, feature.scan and psm.feature_id
 
-[← T05](t05-feature-rows.md) · [Overview](index.md) · [T07 →](t07-unidentified-features.md)
+[← T05](t05-feature-rows.md) · [Overview](index.md) · [Strict profile](strict-profile.md) · [Annex overview](annex-overview.md) · [T07 →](t07-unidentified-features.md)
 
-!!! note "Proposal"
-    Part of the [DDA semantic contract proposal](index.md) for QPX. Rules here are proposals for specification 1.4, not normative text. Bracketed ids such as [OPENMS-01](findings-psm.md#openms-01) link to the verified audit findings; code references are to `dev` at commit `32cbbdc`.
+!!! note "Annex: producer-neutral analysis"
+    Part of the annex of the [DDA semantic contract proposal](index.md) for QPX. Rules here are proposals for specification 1.4, not normative text, and they cover every producer. For OpenMS-written files the [strict profile](strict-profile.md) is the contract and wins where the two differ. Bracketed ids such as [OPENMS-01](findings-psm.md#openms-01) link to the verified audit findings; code references are to `dev` at commit `32cbbdc`.
 
 
 > **Decision in one line:** A DDA feature row has one peptidoform and one charge, 0..n *supporting PSMs* linked by `psm.feature_id`, and at most one *identifying PSM* from its own run: the one the source names, else lowest PEP, then q-value, then scan. Only that PSM feeds `scan` (one spectrum), `id_run_file_name`, PEP and PSM scores. A quantified signal feeds at most one row; competing peptidoforms set `identification_conflict`. Run rows of one cross-run feature share `consensus_feature_id`. A producer writing both views links every supporting PSM; provenance `skipped_runs_psm` names runs it could not link.
@@ -30,7 +30,7 @@
 | Proteome Discoverer | Rank-1 PSMs of a precursor; pick lowest q-value, then scan (qpx/converters/proteome_discoverer/feature_adapter.py:16-20); PD's peptide groups pick by PEP (660 of 3,026 differ, [#378](https://github.com/bigbio/qpx/issues/378)). psm de-duplication breaks ties differently (psm_adapter.py:39-40). `spectral_count` counts rows (two engines count twice), absent on TMT (feature_adapter.py:70,84). No links | [[PD-03](findings-cross.md#pd-03)] [[PD-04](findings-feature.md#pd-04)] [[PD-05](findings-cross.md#pd-05)] [[PD-06](findings-cross.md#pd-06)] [[PD-M4](findings-feature.md#pd-m4)] |
 | CDAP | Lowest SpecEValue, full tie order (qpx/converters/cdap/feature_adapter.py:341-372). `AmbiguousMatch` ties are dropped from features (:116-120) and from pg. PSM count in cv_param `psm_count` (:384-388). No links | [[MZID_CDAP-15](findings-feature.md#mzid_cdap-15)] [[MZID_CDAP-16](findings-feature.md#mzid_cdap-16)] [[MZID_CDAP-29](findings-psm.md#mzid_cdap-29)] [[CRITIC-M3](findings-psm.md#critic-m3)] |
 | OpenMS (qpxc) | Peptide from `pids[0]` (qpx/converters/openms_consensus/feature_adapter.py:724); in PSM-level mode PEP and q from the run's first PID (:325-345). `scan` concatenates every PID of the run, other peptides included (:303-322), re-flattened by `sorted(set())` when duplicate peaks merge (feature_dedup.py:48). Every PSM of the run is linked, decoys and other peptidoforms included (record_linking.py:66-70). A conflicting run gets null type and run but keeps PEP (feature_adapter.py:533-534) | [[OPENMS-06](findings-feature.md#openms-06)] [[OPENMS-07](findings-feature.md#openms-07)] [[OPENMS-08](findings-feature.md#openms-08)] [[OPENMS-11](findings-feature.md#openms-11)] [[OPENMS-20](findings-psm.md#openms-20)] [[OPENMS-21](findings-cross.md#openms-21)] |
-| OpenMS `-out_qpx` (branch) | Follows [#378](https://github.com/bigbio/qpx/issues/378) rules 1–3 and 5; no `consensus_feature_id` yet | [#378](https://github.com/bigbio/qpx/issues/378) |
+| OpenMS `-out_qpx` | HEAD (verified): peptide, PEP, `scan` and `id_run_file_name` come from the best hit across all runs of the consensus feature, so a row can name a donor run. The unmerged [#378](https://github.com/bigbio/qpx/issues/378) branch adds a per-run identifying PSM and own-run links ([#378](https://github.com/bigbio/qpx/issues/378) rules 1–3 and 5); no `consensus_feature_id` yet. See the [OpenMS worklist](openms-worklist.md). | [#378](https://github.com/bigbio/qpx/issues/378) |
 | quantms-MSstats | `id_run_file_name = run_file_name` always, type null (qpx/converters/quantms_msstats/feature_adapter.py:525); LFQ `Reference` names only the file, so `scan` is empty. Wrong for 18 of 85 rows in ProteomicsLFQ_3 ([#378](https://github.com/bigbio/qpx/issues/378)) | [[INFRA-27](findings-feature.md#infra-27)] [[INFRA-M2](findings-feature.md#infra-m2)] |
 
 ## Why it matters
@@ -64,7 +64,7 @@ Definitions:
 **FID-1 (MUST)** A row has one peptidoform, one charge, 0..n supporting PSMs and at most one identifying PSM.
 - A per-run `direct` or `secondary` row has exactly one identifying PSM in the source; the file may fail to locate it (FID-5, FID-6).
 - `transferred` rows ([T08](t08-match-between-runs.md)) have no identifying or supporting PSM. Rows of a multi-run unit ([T05](t05-feature-rows.md) FRW-6) name no identifying PSM: empty `scan`, null `id_run_file_name`, PEP and `psm_qvalue`. A one-run unit row follows the per-run rules.
-- A row whose run has PSMs only of competing peptidoforms has no identifying PSM and is never `direct`: `transferred` where the tool says so ([T08](t08-match-between-runs.md) MBR-1; OpenMS `FFId_category` external), else null; FID-10 applies.
+- A row whose run has PSMs only of competing peptidoforms has no identifying PSM and is never `direct`: `transferred` where the tool says so ([T08](t08-match-between-runs.md) MBR-1, MBR-2; OpenMS: the run is listed in the consensus feature's `mbr_transfer_map_indices`), else null; FID-10 applies.
 
 **FID-2 (MUST)** The identifying PSM is a supporting PSM of the row's own run, never a donor-run PSM. Donors are reached through `consensus_feature_id` (FID-11) and `match_*` ([T08](t08-match-between-runs.md) MBR-5).
 
@@ -123,8 +123,8 @@ Nulls sort last. [T01](t01-psm-rows.md) PSM-2 and [T02](t02-chimeric-spectra.md)
 | FragPipe | Key the lookup by CV; null run when no PSM is found; unit rows per [T05](t05-feature-rows.md) FRW-6, linking member-run PSMs. Fill links; runs without a psm.tsv go to provenance `skipped_runs_psm`; read `<exp> Spectral Count`; `consensus_feature_id` from the `combined_ion` row. FID-3's fallback is today's pick (question 1) |
 | Proteome Discoverer | FID-3 for the feature pick, [T01](t01-psm-rows.md) PSM-2 for psm de-duplication. Fill links. `spectral_count` = distinct scans, TMT included ([T09](t09-intensities-missing-values.md)) |
 | CDAP | Order compatible (SpecEValue documented). Fill links. `AmbiguousMatch` ties: one flagged row, losers optional. `psm_count` → `spectral_count` or `quant_spectrum_count` ([T09](t09-intensities-missing-values.md) INT-12) |
-| OpenMS (qpxc) | Peptidoform per ConsensusFeature: resolver survivor, else FID-3 first over its PSMs. Per run: FID-3 pick of that peptidoform; `scan` = its spectrum (drop feature_dedup.py:48); runs with only competing PSMs per FID-1/FID-10. Link supporting PSMs only; keep identifying PSMs under `--no-include-unassigned-psms`. Write `consensus_feature_id`, feature `scan_format` |
-| OpenMS `-out_qpx` | Add `consensus_feature_id`, `identification_conflict` |
+| OpenMS (qpxc) | Peptidoform per ConsensusFeature: resolver survivor, else FID-3 first over its PSMs. Per run: FID-3 pick of that peptidoform; `scan` = its spectrum (drop feature_dedup.py:48); runs with only competing PSMs per FID-1/FID-10, with `transferred` taken from `mbr_transfer_map_indices` ([T08](t08-match-between-runs.md) MBR-2). Link supporting PSMs only; keep identifying PSMs under `--no-include-unassigned-psms`. Write `consensus_feature_id`, feature `scan_format` |
+| OpenMS `-out_qpx` | Merge the [#378](https://github.com/bigbio/qpx/issues/378) branch (per-run identifying PSM, own-run links), so that no row names a donor run (FID-2). Take `transferred` from `mbr_transfer_map_indices` ([T08](t08-match-between-runs.md) MBR-2). Add `consensus_feature_id`, `identification_conflict`. See the [OpenMS worklist](openms-worklist.md). |
 | quantms-MSstats | `id_run_file_name` only where `Reference` gives a scan (isobaric); LFQ null |
 | DIA-NN, Spectronaut | None (DIA, no psm view) |
 

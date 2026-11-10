@@ -1,9 +1,9 @@
 # T08. Match-between-runs and ID transfer versus identification in the same run
 
-[← T07](t07-unidentified-features.md) · [Overview](index.md) · [T09 →](t09-intensities-missing-values.md)
+[← T07](t07-unidentified-features.md) · [Overview](index.md) · [Strict profile](strict-profile.md) · [Annex overview](annex-overview.md) · [T09 →](t09-intensities-missing-values.md)
 
-!!! note "Proposal"
-    Part of the [DDA semantic contract proposal](index.md) for QPX. Rules here are proposals for specification 1.4, not normative text. Bracketed ids such as [OPENMS-01](findings-psm.md#openms-01) link to the verified audit findings; code references are to `dev` at commit `32cbbdc`.
+!!! note "Annex: producer-neutral analysis"
+    Part of the annex of the [DDA semantic contract proposal](index.md) for QPX. Rules here are proposals for specification 1.4, not normative text, and they cover every producer. For OpenMS-written files the [strict profile](strict-profile.md) is the contract and wins where the two differ. Bracketed ids such as [OPENMS-01](findings-psm.md#openms-01) link to the verified audit findings; code references are to `dev` at commit `32cbbdc`.
 
 
 > **Decision in one line:** `identification_type` alone says where a row's identity came from: `direct`/`secondary` = an accepted identification from a spectrum of this run (or unit); `transferred` = a signal measured here whose identity came only from other runs, whatever MS/MS exists here. Transferred rows carry no PSM and no run-scope confidence; their own confidence lives only in `match_*` (acceptor − donor, aligned clock). pg gains `identified_in_unit`. Type and `identified_in_unit` are filled whenever the source states them (null = unknown); whether transfer ran, and its FDR (`mbr_fdr`), go in the provenance `match_between_runs` step, not the footer. Readers never count transfers as identifications or protein evidence, nor combine them with an own-run quantity of the same precursor.
@@ -13,7 +13,7 @@
 - What are a MaxQuant `MULTI-MATCH-MSMS` row and a transferred donor-run second peptide?
 - On a transferred row: is `id_run_file_name` the donor or null? What do `scan`, PEP, q-values, scores and `spectral_count` hold?
 - What do the `match_*` fields mean (sign, units, donor)?
-- Was the transfer FDR-controlled (IonQuant) or an uncontrolled list (PIP-ECHO)?
+- Was the transfer FDR-controlled (IonQuant, OpenMS PIP-ECHO) or an uncontrolled list?
 - One precursor is direct and transferred in one run: which quantity counts?
 - Is a transferred value imputed (Spectronaut)? Are transfer-only pg rows protein evidence (andes#218)?
 - Were transfers kept, dropped or never made? How do I weight them (mokume#117)?
@@ -31,7 +31,7 @@
 |---|---|---|
 | MaxQuant | `Type` mapped (qpx/converters/maxquant/evidence_fields.py:10-17); run nulled only for exact `MULTI-MATCH` (qpx/converters/maxquant/feature_adapter.py:655-657), so `MULTI-MATCH-MSMS` rows are `transferred` with run, scan and PEP (injected test; no fixture). Unmapped Types: null, untraced (`cv_params` None, :474). maxquant_full: 104,491/243,821 rows transferred, all null run, scan, PEP; `match_score` = the donor's Andromeda score (coxdocs; ≤ best donor `Score` in 99.4%); `Match q-value` empty; `match_rt_delta` already ×60 (evidence_fields.py:22-28). Dedup demotes only `MULTI-MATCH` (feature_adapter.py:264). pg: 5,687 "By matching" rows marked only by cv_params (pg_adapter.py:403-406) | [[MAXQUANT-01](findings-feature.md#maxquant-01)] [[MAXQUANT-02](findings-feature.md#maxquant-02)] [[MAXQUANT-11](findings-feature.md#maxquant-11)] [[MAXQUANT-20](findings-pg.md#maxquant-20)] [[MAXQUANT-M2](findings-feature.md#maxquant-m2)] [[SPEC-M1](findings-feature.md#spec-m1)] [[EXTERNAL-10](findings-feature.md#external-10)] [[EXTERNAL-11](findings-feature.md#external-11)] |
 | FragPipe | `Match Type` `MS/MS` → direct, `MBR` → transferred, else null (qpx/converters/fragpipe/feature_adapter.py:51,361); transferred rows: null run, scan, PEP; no `match_*` or IonQuant FDR. MBR-only pg rows: spectral count 0, no flag | [[FRAGPIPE-14](findings-feature.md#fragpipe-14)] [[FRAGPIPE-15](findings-feature.md#fragpipe-15)] [[FRAGPIPE-23](findings-pg.md#fragpipe-23)] [[FRAGPIPE-29](findings-cross.md#fragpipe-29)] [[EXTERNAL-12](findings-feature.md#external-12)] |
-| OpenMS consensus | `transferred` = no own-run PID and every PID's run known (qpx/converters/openms_consensus/feature_adapter.py:542-547); `FFId_category` read nowhere. A run whose own competing PID IDConflictResolver removed also becomes `transferred`, with no conflict marker (fx/idconflict). Same-peak copies merge onto the direct evidence (feature_dedup.py:33-50) | [[OPENMS-11](findings-feature.md#openms-11)] [[OPENMS-12](findings-feature.md#openms-12)] |
+| OpenMS consensus | `transferred` = no own-run PID and every PID's run known (qpx/converters/openms_consensus/feature_adapter.py:542-547); OpenMS's own statement, the ConsensusFeature meta value `mbr_transfer_map_indices` (with `mbr_transfer_qvalues` under PIP-ECHO), is read nowhere. A run whose own competing PID IDConflictResolver removed also becomes `transferred`, with no conflict marker (fx/idconflict). Same-peak copies merge onto the direct evidence (feature_dedup.py:33-50) | [[OPENMS-11](findings-feature.md#openms-11)] [[OPENMS-12](findings-feature.md#openms-12)] |
 | Proteome Discoverer, CDAP | Hard-coded `direct` (qpx/converters/proteome_discoverer/feature_adapter.py:139; qpx/converters/cdap/feature_adapter.py:223-224), correct for PSM-built rows. PD pg may include Feature Mapper quantities (unverified); `Found in Sample` unread | [[PD-11](findings-cross.md#pd-11)] [[MZID_CDAP-22](findings-feature.md#mzid_cdap-22)] |
 | quantms-MSstats | Null type; `id_run_file_name = run_file_name` (qpx/converters/quantms_msstats/feature_adapter.py:525), though ProteomicsLFQ requantifies runs without own IDs | [[INFRA-27](findings-feature.md#infra-27)] [[INFRA-M2](findings-feature.md#infra-m2)] |
 | Spectronaut | `EG.IsImputed` → `transferred`, `imputed_labels`, null run (qpx/converters/spectronaut/feature_adapter.py:337-343) | [[SPEC-08](findings-feature.md#spec-08)] [[MOKUME-20](findings-feature.md#mokume-20)] |
@@ -58,7 +58,7 @@
 | pg `identification_type` vs **pg `identified_in_unit`** | Mirrors feature / exactly pg.md:126-135 | Mixed quantities make "direct" overclaim / new column |
 
 ## Recommendation
-*Accepted own-run identification*: a PSM (peptide-centric tools: a run-level precursor identification) of the row's peptidoform and charge, from a spectrum of `run_file_name` or of a run of the row's unit ([T05](t05-feature-rows.md) FRW-6), accepted by the source ([T03](t03-filtering-state.md)). A *transfer* (MBR, ID transfer, requantification, FFId external IDs) assigns a peptidoform to this run's signal using only other runs' identifications (*donors*).
+*Accepted own-run identification*: a PSM (peptide-centric tools: a run-level precursor identification) of the row's peptidoform and charge, from a spectrum of `run_file_name` or of a run of the row's unit ([T05](t05-feature-rows.md) FRW-6), accepted by the source ([T03](t03-filtering-state.md)). A *transfer* (MBR, ID transfer, requantification, PIP-ECHO) assigns a peptidoform to this run's signal using only other runs' identifications (*donors*).
 
 **MBR-1 (MUST)** `identification_type` (enum per [T07](t07-unidentified-features.md) UNI-2; other values are errors on every write path):
 - `direct`: an accepted own-run identification supports the signal, and not all are `secondary`;
@@ -68,9 +68,10 @@
 
 Any accepted own-run identification wins over transfer.
 
-**MBR-2 (MUST)** The value comes from the tool's per-row statement: MaxQuant `Type`, IonQuant `Match Type`, OpenMS `FFId_category`, FlashLFQ `Peak Detection Type`.
+**MBR-2 (MUST)** The value comes from the tool's per-row statement: MaxQuant `Type`, IonQuant `Match Type`, OpenMS `mbr_transfer_map_indices`, FlashLFQ `Peak Detection Type`.
+- `mbr_transfer_map_indices` is a ConsensusFeature meta value that lists the runs the identification was transferred to. It is written after FDR filtering by IDConflictResolver / ProteomicsLFQ, or by PIP-ECHO.
 - An unmappable source value gives null and MUST be kept as cv_param `<tool>_<column>` (e.g. `maxquant_type`); mapped values SHOULD be kept.
-- Without such a statement, write `transferred` only when every identification of the run the tool could have attached to the signal is visible, assigned or not (OpenMS: the consensus feature's PIDs plus those IDConflictResolver removed), and none is of the row's peptidoform and charge; if some name another peptidoform, also set `identification_conflict = true` ([T06](t06-identifications-per-feature.md) FID-1, FID-10). Otherwise null.
+- Without such a statement, write `transferred` only when every identification of the run the tool could have attached to the signal is visible, assigned or not (OpenMS consensusXML without the meta value: the consensus feature's PIDs plus those IDConflictResolver removed), and none is of the row's peptidoform and charge; if some name another peptidoform, also set `identification_conflict = true` ([T06](t06-identifications-per-feature.md) FID-1, FID-10). Otherwise null.
 - Never from imputation, a missing PSM, a null run or an empty scan.
 - A producer whose rows all rest on own-run identifications writes `direct`/`secondary`, not null.
 - So null means only unknown; no footer key qualifies it (MBR-8).
@@ -83,7 +84,7 @@ Any accepted own-run identification wins over transfer.
 - has at least one non-null entry whose label is not in `imputed_labels`; other labels per [T09](t09-intensities-missing-values.md) INT-5. A transfer without a measured value (isobaric MBR rows without reporters, andes#148 zeros, [T09](t09-intensities-missing-values.md) INT-7) is not written and is counted in `skipped_rows_feature` ([T03](t03-filtering-state.md) FLT-6).
 
 **MBR-4 (MUST)** `match_*` are null on rows that are not `transferred`.
-- `match_qvalue` (float64 in [0, 1], [T04](t04-confidence-fields.md) CNF-9): q-value of transferring this precursor ion into this run (MaxQuant `Match q-value`), never the donor's.
+- `match_qvalue` (float64 in [0, 1], [T04](t04-confidence-fields.md) CNF-9): q-value of transferring this precursor ion into this run (MaxQuant `Match q-value`; OpenMS `mbr_transfer_qvalues`, the per-transfer q-values under PIP-ECHO), never the donor's.
 - `match_score`: the tool's score of the transfer itself, higher better. Donor-identification scores go to `additional_scores`: MaxQuant `Match score` → `maxquant_match_score`.
 - `match_rt_delta` (s) = acceptor `rt_aligned` − donor-derived aligned RT; `match_mz_delta` (Th) = acceptor measured m/z − donor-expected m/z. Unknown sign → null. MaxQuant complies.
 - A transfer PEP or probability goes to `<tool>_match_pep`/`<tool>_match_probability`, level `transfer` ([T04](t04-confidence-fields.md) CNF-5).
@@ -92,7 +93,7 @@ Any accepted own-run identification wins over transfer.
 
 **MBR-6 (MUST)** `imputed_labels`/`is_imputed` say whether a value was measured, `identification_type` only where the identity came from; neither sets the other.
 
-**MBR-7 (MUST)** Rows of different types sharing `(peptidoform, charge, run_file_name, compensation_voltage)` are distinct signals and stay separate; two rows known to be one peak become one row with the own-run type ([T05](t05-feature-rows.md) FRW-2). De-duplication ranks `direct` > `secondary` > `transferred` by `identification_type`, never by the raw tool string.
+**MBR-7 (MUST)** Rows of different types sharing `(peptidoform, charge, run_file_name, compensation_voltage)` are distinct signals and stay separate; two rows known to be one peak become one row with the own-run type ([T05](t05-feature-rows.md) FRW-2). De-duplication ranks `direct` > `secondary` > `transferred` by `identification_type`, never by the raw tool string. The OpenMS strict profile goes further and proposes that OpenMS does not write a transferred row beside a quantified direct row of the same precursor and run ([strict profile](strict-profile.md)).
 
 **MBR-8 (MUST)** No footer key declares the transfer state; rows and provenance carry it:
 - `identification_type` is filled whenever the tool states the origin or every row rests on own-run identifications (MBR-2); pg `identified_in_unit` whenever the source states it (MBR-10). Null = unknown.
@@ -124,7 +125,7 @@ Unless provenance records `match_between_runs = false`, identified pg rows may i
 |---|---|
 | MaxQuant | Map Types by token: `*MATCH*` transferred, `*SECPEP` secondary, other `*MSMS*` direct, else null with warning; keep `maxquant_type`. Null run, scan, PEP by type (feature_adapter.py:655-657); dedup by type (:264). Move `Match score`. Drop isobaric MBR rows without reporters, counted. pg: "By MS/MS" → `true`, "By matching" → `false`. Provenance `match_between_runs` from parameters.txt; `mbr_fdr` from parameters.txt if stated, else `unknown` |
 | FragPipe | Provenance `mbr_fdr` = `ionquant.ionfdr` from a supplied fragpipe.workflow when MBR is on, else `unknown`. pg per [T12](t12-protein-groups.md) PGV-2 |
-| OpenMS (qpxc; `-out_qpx` upstream) | Only `external` PIDs of the peptidoform in the run → transferred. Without `FFId_category`, MBR-2 using the removed-PID index (feature_adapter.py:573-613): the IDConflictResolver case becomes `transferred` + `identification_conflict`. pg: `identified_in_unit` = a group PSM in the unit (pg_adapter.py:453-465) |
+| OpenMS (qpxc; `-out_qpx` upstream) | A run listed in the consensus feature's `mbr_transfer_map_indices` → transferred; `match_qvalue` from `mbr_transfer_qvalues` (PIP-ECHO). Without the meta value, MBR-2's fallback using the removed-PID index (feature_adapter.py:573-613): the IDConflictResolver case becomes `transferred` + `identification_conflict`. pg: `identified_in_unit` = a group PSM in the unit (pg_adapter.py:453-465). Native writer (verified): HEAD writes no `identification_type` or `match_*`, and its pg evidence counts every run the feature was quantified in, transfers included; the unmerged [#378](https://github.com/bigbio/qpx/issues/378) branch adds `identification_type` (direct, transferred, null) and `match_qvalue` (float32, from PIP-ECHO). See the [OpenMS worklist](openms-worklist.md). |
 | Proteome Discoverer | Features keep `direct`. pg: `identified_in_unit` from `Found in Sample` (`Peak Found` → `false`), else null |
 | CDAP; mzIdentML (pg only) | Provenance `match_between_runs = false`; pg `identified_in_unit = true` |
 | quantms-MSstats | Null run ([T06](t06-identifications-per-feature.md)). LFQ: null type. Isobaric: `direct`, provenance `match_between_runs = false` |

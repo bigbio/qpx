@@ -1,9 +1,9 @@
 # T07. Features without an identification
 
-[← T06](t06-identifications-per-feature.md) · [Overview](index.md) · [T08 →](t08-match-between-runs.md)
+[← T06](t06-identifications-per-feature.md) · [Overview](index.md) · [Strict profile](strict-profile.md) · [Annex overview](annex-overview.md) · [T08 →](t08-match-between-runs.md)
 
-!!! note "Proposal"
-    Part of the [DDA semantic contract proposal](index.md) for QPX. Rules here are proposals for specification 1.4, not normative text. Bracketed ids such as [OPENMS-01](findings-psm.md#openms-01) link to the verified audit findings; code references are to `dev` at commit `32cbbdc`.
+!!! note "Annex: producer-neutral analysis"
+    Part of the annex of the [DDA semantic contract proposal](index.md) for QPX. Rules here are proposals for specification 1.4, not normative text, and they cover every producer. For OpenMS-written files the [strict profile](strict-profile.md) is the contract and wins where the two differ. Bracketed ids such as [OPENMS-01](findings-psm.md#openms-01) link to the verified audit findings; code references are to `dev` at commit `32cbbdc`.
 
 
 > **Decision in one line:** The feature view holds identified precursors only: every row has a canonical peptidoform, a sequence and a charge ≥ 1, and `identification_type` gets no `unidentified` value. MS1 features without an identification MAY go into a new optional view, `unidentified_feature`, with ids derived from a declared composite; the file's presence means they were retained. The footer key `unquantified_policy` declares whether identified, unquantified precursors keep a row.
@@ -34,7 +34,7 @@ Writer and validator (re-run):
 | Producer | Unidentified MS1 features | Identified, not quantified | Findings |
 |---|---|---|---|
 | OpenMS consensusXML | Dropped and not counted when the first PID has no hit (qpx/converters/openms_consensus/feature_adapter.py:714-716) | No row: only runs with an element > 0 get one (:348-369). ProteomicsLFQ_1: 19 precursor-runs have a PSM but no row | [[OPENMS-10](findings-feature.md#openms-10)][[OPENMS-M2](findings-feature.md#openms-m2)][[OPENMS-13](findings-feature.md#openms-13)] |
-| OpenMS `-out_qpx`; `qpxc convert openms` (deprecated, qpx/cli/convert/openms.py:16) | Kept in feature. On the OpenMS branch measured in [#378](https://github.com/bigbio/qpx/issues/378), 216 of 304 rows are seeds: null `identification_type`, a grouping key reduced to `(charge, consensus_rt)` that collides, charge 0 linked to charge z. The upgrade keeps every row (converter.py:261-302) | No fixture | [[OPENMS-M5](findings-cross.md#openms-m5)] |
+| OpenMS `-out_qpx`; `qpxc convert openms` (deprecated, qpx/cli/convert/openms.py:16) | Kept in feature: at HEAD (verified) as rows with `peptidoform = ""`. On the OpenMS branch measured in [#378](https://github.com/bigbio/qpx/issues/378), 216 of 304 rows are seeds: null `identification_type`, a grouping key reduced to `(charge, consensus_rt)` that collides, charge 0 linked to charge z. The upgrade keeps every row (converter.py:261-302) | No fixture. At HEAD (verified) intensity entries are non-nullable, so no null entry can be written | [[OPENMS-M5](findings-cross.md#openms-m5)] |
 | MaxQuant | Never: allPeptides.txt is not read | Kept: MSMS rows get a null entry (feature_adapter.py:504-531). Full fixture: 12,758 null-only direct rows; 8,731 of them sit beside a quantified row of the same precursor-run. TMT fixture: 1,702 direct and 1,469 transferred. A NULL `Modified sequence` becomes `'None'` (:441) | [[MAXQUANT-30](findings-feature.md#maxquant-30) corrected][[MAXQUANT-09](findings-feature.md#maxquant-09)][[MAXQUANT-12](findings-feature.md#maxquant-12)][[MAXQUANT-M1](findings-cross.md#maxquant-m1)] |
 | FragPipe | IonQuant reports none | Dropped: LFQ intensity 0 (feature_adapter.py:332-333,376-377); TMT plex with every channel 0 (isobaric.py:44-50 via :374). Rows are per experiment | [[FRAGPIPE-16](findings-feature.md#fragpipe-16)] (isobaric.py:255-261 is stale) |
 | Proteome Discoverer | Not read | Dropped: LFQ abundance null or 0 (feature_adapter.py:80-83); no channel quantified (:89-92,99-100); every PSM "Excluded by Method" (:76). Omitting `Rejected` (:72) is correct | [[PD-12](findings-feature.md#pd-12) corrected] |
@@ -54,8 +54,8 @@ Readers mishandle legacy rows (UNI-R2): on a probe, `QualityControlView.metrics(
 | Option | For | Against |
 |---|---|---|
 | A. Forbid unidentified features | Smallest; matches scope.md:21 | Reverses [#229](https://github.com/bigbio/qpx/issues/229); loses OpenMS seeds, allPeptides and QC data |
-| B. Same view, `identification_type='unidentified'`, nullable `peptidoform`/`sequence`/`charge`/`is_decoy` | One file; what `-out_qpx` does; a row flag (P-C) | Breaks 4 required columns; every reader must filter (qpx MuData, views and mokume fail today); ~25 columns meaningless; contradicts [T05](t05-feature-rows.md) FRW-1, [T06](t06-identifications-per-feature.md) FID-1 |
-| C. Same view with `''`/0 sentinels (today's writer) | No schema change | Violates P-D; fails `--semantic`; ids unverifiable |
+| B. Same view, `identification_type='unidentified'`, nullable `peptidoform`/`sequence`/`charge`/`is_decoy` | One file; a row flag (P-C) | Breaks 4 required columns; every reader must filter (qpx MuData, views and mokume fail today); ~25 columns meaningless; contradicts [T05](t05-feature-rows.md) FRW-1, [T06](t06-identifications-per-feature.md) FID-1 |
+| C. Same view with `''`/0 sentinels (today's writer; what `-out_qpx` does at HEAD) | No schema change | Violates P-D; fails `--semantic`; ids unverifiable |
 | **D. Separate optional view, identified-only feature view** | Additive; existing readers stay correct; membership in the view marks the row; ids verifiable | One more view; `-out_qpx` must split |
 | Mirror M1: identification-only rows MUST exist | Strongest | Infeasible for quantms MSstats, which cannot tell whether NA means identified (P-G) |
 | **Mirror M2: declare the policy; SHOULD keep the rows** | Feasible, testable | Readers handle two modes |
@@ -144,7 +144,7 @@ Transfers are out of scope ([T08](t08-match-between-runs.md) MBR-3 forbids trans
 | Producer | Unidentified features (UNI-5) / `unquantified_policy` | Change needed |
 |---|---|---|
 | OpenMS consensusXML | Companion file, or a `skipped_rows_unidentified_feature` count (provenance `not_applicable` if the map has none) / `removed` until fixed, then `retained` | Test every PID for a hit, not only the first (feature_adapter.py:715). Write hitless consensus features to the new view (map position → `consensus_feature_id`, handle unique id → `source_feature_id`), or keep dropping them with a count. Add identification-only rows for precursor-runs with an accepted identification but no row (runs without a positive element; unassigned PIDs) and link them ([T06](t06-identifications-per-feature.md) FID-8) |
-| OpenMS `-out_qpx` (upstream) | Companion file / as above | Seeds go to the new view with null charge, never 0 |
+| OpenMS `-out_qpx` (upstream) | Companion file / as above | Verified at HEAD: unidentified features are feature rows with `peptidoform = ""`, and intensity entries are non-nullable. Seeds go to the new view with null charge, never 0; entries become nullable, so identification-only rows can be written. See the [OpenMS worklist](openms-worklist.md). |
 | MaxQuant | No file (allPeptides.txt not read), or a companion file once read / `retained` | MAY read allPeptides.txt rows `Identified` leaves unmarked (check the mapping: coxdocs words it per MS/MS). Drop TMT transfers without a reporter value ([T08](t08-match-between-runs.md) MBR-3). Skip and count NULL `Modified sequence` rows; never write `'None'` |
 | FragPipe | Provenance `not_applicable` / `retained` after the fix | Write null entries for an LFQ ion with `<exp> Intensity` 0 and Match Type MS/MS or spectral count > 0, and for an all-zero TMT plex |
 | Proteome Discoverer | Provenance `not_applicable` for reporters; nothing for LFQ (the PSM export does not say whether Minora detected features independently) / `retained` after the fix | Keep "Excluded by Method" and unquantified precursors as null entries with `unquantified_reason` |

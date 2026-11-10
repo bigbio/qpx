@@ -1,9 +1,9 @@
 # T03. Filtering state: FDR level and threshold, pass_threshold, decoys, contaminants and unassigned PSMs
 
-[← T02](t02-chimeric-spectra.md) · [Overview](index.md) · [T04 →](t04-confidence-fields.md)
+[← T02](t02-chimeric-spectra.md) · [Overview](index.md) · [Strict profile](strict-profile.md) · [Annex overview](annex-overview.md) · [T04 →](t04-confidence-fields.md)
 
-!!! note "Proposal"
-    Part of the [DDA semantic contract proposal](index.md) for QPX. Rules here are proposals for specification 1.4, not normative text. Bracketed ids such as [OPENMS-01](findings-psm.md#openms-01) link to the verified audit findings; code references are to `dev` at commit `32cbbdc`.
+!!! note "Annex: producer-neutral analysis"
+    Part of the annex of the [DDA semantic contract proposal](index.md) for QPX. Rules here are proposals for specification 1.4, not normative text, and they cover every producer. For OpenMS-written files the [strict profile](strict-profile.md) is the contract and wins where the two differ. Bracketed ids such as [OPENMS-01](findings-psm.md#openms-01) link to the verified audit findings; code references are to `dev` at commit `32cbbdc`.
 
 
 > **Decision in one line:** Producers may keep or drop rows, but every psm, feature and pg footer states the confidence cuts behind its rows in one `fdr_filter` key (`<level>:<value>` for psm, precursor, peptide, protein); decoy, contaminant and unassigned-PSM handling are provenance parameters. `pass_threshold` stays the source's own acceptance flag, as mzIdentML passThreshold is, with its basis in the provenance parameters `pass_threshold_level` and `pass_threshold_fdr`. qpxc still removes no rows by default.
@@ -34,7 +34,7 @@
 | Proteome Discoverer | `pass_threshold = (Confidence == 'High')`, null without the column (`qpx/converters/proteome_discoverer/psm_adapter.py:68`). Export filters and validator node are unknown. `is_decoy` is always false (`:60`) | [[PD-08](findings-psm.md#pd-08)] [[PD-09](findings-cross.md#pd-09)] [[PD-23](findings-cross.md#pd-23)] |
 | mzIdentML | SII `passThreshold` is copied (`qpx/converters/mzidentml/psm_adapter.py:304`; missing → false, only in schema-invalid files). SIP `<Threshold>` is never read; fixtures hold Mascot:SigThreshold 0.01 homology, MS:1003337 crosslinked PSM FDR 0.05, and MS:1001494. PXD054720: 11,517/13,386 true, 1,810 of them rank ≥ 2; no `qvalue` | [[MZID_CDAP-10](findings-psm.md#mzid_cdap-10)] [[INFRA-M3](findings-psm.md#infra-m3)] [[CRITIC-M2](findings-psm.md#critic-m2)] |
 | OpenMS consensusXML | No cut: decoys, all hits and unassigned PIDs are written (`qpx/converters/openms_consensus/converter.py:140`). `significance_threshold` is unread. PIDs lacking a run or spectrum reference vanish silently (`psm_adapter.py:348-358`) | [[OPENMS-03](findings-psm.md#openms-03)] [[OPENMS-22](findings-cross.md#openms-22)] [[OPENMS-M4](findings-psm.md#openms-m4)] |
-| OpenMS -out_qpx | The upgrade keeps only `creator`, `software_provider`, `scan_format` and `identity_composite` (`qpx/converters/openms/converter.py:209-223`) | [[OPENMS-31](findings-cross.md#openms-31)] |
+| OpenMS -out_qpx | The native writer (verified at HEAD) stamps no filtering key, and `ProteomicsLFQ -out_qpx` and `IsobaricWorkflow -out_qpx` write no provenance view. The upgrade keeps only `creator`, `software_provider`, `scan_format` and `identity_composite` (`qpx/converters/openms/converter.py:209-223`) | [[OPENMS-31](findings-cross.md#openms-31)] |
 | CDAP | Looks pre-cut (max Qvalue 0.0089, 10/100 decoys); nothing recorded | [[MZID_CDAP-11](findings-psm.md#mzid_cdap-11)] |
 | qpxc filters | DDA converters have none. DIA-NN `--qvalue-threshold` cuts `Q.Value < t` in feature, pg aggregation, fragment and pepmap (`qpx/converters/diann/pg_adapter.py:461-473`), and pepmap drops decoys (`feature_sql.py:250`). Spectronaut cuts feature only, and nothing without `EG.Qvalue` (`qpx/converters/spectronaut/feature_adapter.py:386-390`), yet provenance records the threshold (`qpx/cli/convert/postprocess.py:189-202`) | [[INFRA-32](findings-cross.md#infra-32)] |
 
@@ -142,7 +142,7 @@ Link resolution follows [T06](t06-identifications-per-feature.md) FID-8 (every s
 | Proteome Discoverer | Provenance `pass_threshold_level = psm` and `pass_threshold_fdr` = strict target FDR only when a target-decoy validator is declared, else both `unknown` (the Fixed Value validator uses scores). `fdr_filter = unknown`. Provenance decoys `removed` (to confirm) |
 | mzIdentML | FLT-7/8. Provenance decoys `retained` if any `isDecoy="true"` or the SearchDatabase has MS:1001197 (target+decoy), else `unknown` |
 | OpenMS consensusXML | Provenance decoys `retained`. `fdr_filter` from header IDFilter/ProteomicsLFQ parameters, else `unknown`. MAY derive `pass_threshold` from a non-zero `significance_threshold` (`other`). Count the drops at `psm_adapter.py:348-358` |
-| OpenMS -out_qpx | OpenMS stamps `fdr_filter` and records the provenance parameters; `qpxc convert openms` copies both (`converter.py:209-223`) |
+| OpenMS -out_qpx | OpenMS stamps `fdr_filter` and records the provenance parameters; `qpxc convert openms` copies both (`converter.py:209-223`). Verified at HEAD: `ProteomicsLFQ -out_qpx` and `IsobaricWorkflow -out_qpx` write only feature, psm and pg (no run, sample or provenance view) and stamp none of the five 1.4 footer keys. See the [OpenMS worklist](openms-worklist.md). |
 | CDAP, quantms-MSstats | Provenance decoys `retained` if decoy rows are written, else `unknown`. The rest `unknown` unless declared |
 | DIA-NN, Spectronaut | FLT-5. DIA-NN main report: `fdr_filter` lists `precursor:applied` (`qpx/cli/convert/diann.py:100-108`) |
 | Validator | FLT-14 in `footer_validation.py`; (b), (c) and (e) read provenance |

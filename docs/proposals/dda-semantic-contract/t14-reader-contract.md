@@ -1,9 +1,9 @@
 # T14. Reader contract: how consumers must interpret DDA files
 
-[← T13](t13-metadata-conformance.md) · [Overview](index.md)
+[← T13](t13-metadata-conformance.md) · [Overview](index.md) · [Strict profile](strict-profile.md) · [Annex overview](annex-overview.md)
 
-!!! note "Proposal"
-    Part of the [DDA semantic contract proposal](index.md) for QPX. Rules here are proposals for specification 1.4, not normative text. Bracketed ids such as [OPENMS-01](findings-psm.md#openms-01) link to the verified audit findings; code references are to `dev` at commit `32cbbdc`.
+!!! note "Annex: producer-neutral analysis"
+    Part of the annex of the [DDA semantic contract proposal](index.md) for QPX. Rules here are proposals for specification 1.4, not normative text, and they cover every producer. For OpenMS-written files the [strict profile](strict-profile.md) is the contract and wins where the two differ. Bracketed ids such as [OPENMS-01](findings-psm.md#openms-01) link to the verified audit findings; code references are to `dev` at commit `32cbbdc`.
 
 
 > **Decision in one line:** A normative `consumer-guide.md` merges all topic reader rules into one default profile, implemented by qpx's read API: decoys out; accepted rank-1 rows identify; transfers are never evidence and never combined with a measured own-run entry of the same precursor, run and label; signals and fractions are summed; the group is the protein; samples resolve exactly via `run.samples`; absent keys, null declaring columns and missing provenance parameters mean unknown; filters never silently return empty or unfiltered results; outputs record the policy applied.

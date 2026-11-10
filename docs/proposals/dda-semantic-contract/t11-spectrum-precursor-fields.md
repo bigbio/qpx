@@ -1,9 +1,9 @@
 # T11. Spectrum and precursor fields: m/z, charge, scan, retention time, ion mobility, run names and the canonical peptidoform
 
-[← T10](t10-protein-mapping.md) · [Overview](index.md) · [T12 →](t12-protein-groups.md)
+[← T10](t10-protein-mapping.md) · [Overview](index.md) · [Strict profile](strict-profile.md) · [Annex overview](annex-overview.md) · [T12 →](t12-protein-groups.md)
 
-!!! note "Proposal"
-    Part of the [DDA semantic contract proposal](index.md) for QPX. Rules here are proposals for specification 1.4, not normative text. Bracketed ids such as [OPENMS-01](findings-psm.md#openms-01) link to the verified audit findings; code references are to `dev` at commit `32cbbdc`.
+!!! note "Annex: producer-neutral analysis"
+    Part of the annex of the [DDA semantic contract proposal](index.md) for QPX. Rules here are proposals for specification 1.4, not normative text, and they cover every producer. For OpenMS-written files the [strict profile](strict-profile.md) is the contract and wins where the two differ. Bracketed ids such as [OPENMS-01](findings-psm.md#openms-01) link to the verified audit findings; code references are to `dev` at commit `32cbbdc`.
 
 
 > **Decision in one line:** `observed_mz` is the measured m/z of the claimed ion, calibration recorded in provenance; `calculated_mz` and `mass_error_ppm` are computed from the row, plus a typed `isotope_error`; `charge` ≥ 1; `scan` has a declared `scan_format`, no hashes, and a verbatim `spectrum_reference` beside it; `psm.rt` is on the acquisition clock; `ion_mobility` is 1/K0; one stem function names runs; the canonical peptidoform is validated.
@@ -55,6 +55,7 @@ The *claimed ion* is the precursor the row's identification asserts ([T02](t02-c
 
 **SPC-1 (MUST)** `observed_mz` is the measured m/z of the claimed ion as the identification used it.
 - Never computed from the row's `peptidoform` or `calculated_mz`, never a targeted extraction's theoretical m/z; null, not 0, when not measured.
+- OpenMS: the ProteomicsLFQ feature m/z is the theoretical value, and the measured deviation `masserror_ppm` is kept only with PIP-ECHO. Without it, the consensusXML route cannot recover the signal's measured m/z.
 - A value rebuilt from a tool's deviation starts from the tool's theoretical m/z, plus label masses that m/z omits.
 - Feature rows: the quantified MS1 signal's m/z when the tool reports one (multiplets: [T05](t05-feature-rows.md) FRW-10); else the identifying PSM's ([T06](t06-identifications-per-feature.md) FID-3) unless its `isotope_error` ≠ 0; else null.
 - The selected ion MAY go to cv_param `selected ion m/z` (MS:1000744).
@@ -138,8 +139,8 @@ The *claimed ion* is the precursor the row's identification asserts ([T02](t02-c
 | MaxQuant | psm `observed_mz` = m/z·(1 + ppm·10⁻⁶) + omitted label mass/z; provenance `observed_mz_calibration = recalibrated`; derive `isotope_error`. Skip NULL `Modified sequence` (counted). SPC-14(d). `scan` when msms `Mass analyzer` is FTMS/ITMS or SDRF files are `.raw`, else `unknown` |
 | FragPipe | Provenance `observed_mz_calibration`: `recalibrated` if `Calibrated Observed M/Z` differs from `Observed M/Z`, else `raw`. `isotope_error` from constants.py:116-142. One right-to-left `Spectrum` parser for psm, feature lookup and isobaric.py. psm `compensation_voltage`; feature CV null. `scan` for `.raw` inputs, else `unknown` |
 | Proteome Discoverer | Compute the mass error; derive `isotope_error`; `run_file_stem` on both paths; SPC-10; `scan` when Spectrum File is `.raw`, else `unknown` |
-| OpenMS consensusXML | Null, never 0.0. Feature `observed_mz` = run element ([T05](t05-feature-rows.md)), but null within 0.01 ppm of the hit's theoretical m/z (FeatureFinderIdentification). `[]` plus `spectrum_reference` instead of hashes; `spectrum=` is `nativeId`. Deltas from the modification's own mass, since normalize_peptidoform keeps residue masses. `original_RT` when present (OQ1) |
-| OpenMS `-out_qpx` | Write its `spectrum_reference` ([#259](https://github.com/bigbio/qpx/issues/259)), all components with `scan_format`, null m/z, charge ≥ 1 (seeds to [T07](t07-unidentified-features.md)'s view) |
+| OpenMS consensusXML | Null, never 0.0. Feature `observed_mz` = run element ([T05](t05-feature-rows.md)), but null within 0.01 ppm of the hit's theoretical m/z: the ProteomicsLFQ feature m/z is FeatureFinderIdentification's theoretical value, and the measured deviation `masserror_ppm` is kept only with PIP-ECHO (SPC-1). `[]` plus `spectrum_reference` instead of hashes; `spectrum=` is `nativeId`. Deltas from the modification's own mass, since normalize_peptidoform keeps residue masses. `psm.rt` is null when the file declares alignment: ProteomicsLFQ transforms identification RTs in place and stores no `original_RT` (SPC-11; [T05](t05-feature-rows.md) FRW-7) |
+| OpenMS `-out_qpx` | Verified at HEAD: no `spectrum_reference` column; `scan` is one integer or `[]`, never a hash; `scan_format` is `index`, `scan` or omitted; `observed_mz` NaN becomes 0.0; the LFQ feature m/z is theoretical; with alignment `psm.rt` is an aligned time. Needed: its `spectrum_reference` ([#259](https://github.com/bigbio/qpx/issues/259)), all components with `scan_format`, null m/z instead of 0.0 or a theoretical value, `psm.rt` on the acquisition clock from the original RT carried per feature handle (SPC-11), charge ≥ 1 (seeds to [T07](t07-unidentified-features.md)'s view). See the [OpenMS worklist](openms-worklist.md). |
 | mzIdentML | `qpx.core.scan.scan_from_native_id`; format from `SpectrumIDFormat`, bare integers without one `unknown`; `spectrum_reference`; MS-GF+ `IsotopeError`; SPC-14(b) |
 | CDAP | psm `rt` null (half-elution to feature, [T05](t05-feature-rows.md)); missing m/z null; missing charge drops the row; compute the mass error; `scan`; phosphoRS sites in `peptidoform`, probabilities in `modification_candidates` |
 | quantms/MSstats | OpenMS mass-shift fix; feature `scan_format` |
@@ -157,7 +158,7 @@ The *claimed ion* is the precursor the row's identification asserts ([T02](t02-c
 **SPC-R5 (MUST)** A null `observed_mz`, `rt`, `ion_mobility` or `compensation_voltage` means not measured. In files of 1.3 and earlier read 0 there and charge ≤ 0 as missing, and treat one-element scans of `openms-consensus` psm files without `scan_format` as possible hashes.
 
 ## Open questions for maintainers
-1. OpenMS ([T05](t05-feature-rows.md) OQ1): are ProteomicsLFQ PeptideIdentification RTs aligned when "Retention time alignment" is declared and `original_RT` absent? If so, `psm.rt` becomes null.
+1. *Resolved from the OpenMS source (default branch at 0707508; [T05](t05-feature-rows.md) question 1):* ProteomicsLFQ transforms feature RTs, the RTs of their identifications and of unassigned identifications in place when it aligns, and does not store `original_RT`. So in consensusXML written by ProteomicsLFQ with alignment, identification RTs are on the aligned clock, and the Python converter leaves `psm.rt` null (element RTs go to feature `rt_aligned`, [T05](t05-feature-rows.md) FRW-7). Only the native writer can supply acquisition-clock times, by carrying the original RT per feature handle.
 2. Is MaxQuant `Simple mass error [ppm]` the selected-ion deviation (848 ppm on an isotope pick)? It could fill MS:1000744.
 3. CDAP: is the claimed ion `QueryPrecursorMz` or `OriginalPrecursorMz` [[MZID_CDAP-18](findings-psm.md#mzid_cdap-18)]?
 4. Should feature carry `spectrum_reference`, so feature files can be `mixed`?

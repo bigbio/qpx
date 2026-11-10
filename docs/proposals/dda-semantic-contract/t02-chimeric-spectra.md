@@ -1,9 +1,9 @@
 # T02. Chimeric and co-isolated spectra
 
-[← T01](t01-psm-rows.md) · [Overview](index.md) · [T03 →](t03-filtering-state.md)
+[← T01](t01-psm-rows.md) · [Overview](index.md) · [Strict profile](strict-profile.md) · [Annex overview](annex-overview.md) · [T03 →](t03-filtering-state.md)
 
-!!! note "Proposal"
-    Part of the [DDA semantic contract proposal](index.md) for QPX. Rules here are proposals for specification 1.4, not normative text. Bracketed ids such as [OPENMS-01](findings-psm.md#openms-01) link to the verified audit findings; code references are to `dev` at commit `32cbbdc`.
+!!! note "Annex: producer-neutral analysis"
+    Part of the annex of the [DDA semantic contract proposal](index.md) for QPX. Rules here are proposals for specification 1.4, not normative text, and they cover every producer. For OpenMS-written files the [strict profile](strict-profile.md) is the contract and wins where the two differ. Bracketed ids such as [OPENMS-01](findings-psm.md#openms-01) link to the verified audit findings; code references are to `dev` at commit `32cbbdc`.
 
 
 > **Decision in one line:** One peptidoform per row, no ProForma `+`; a typed `psm.precursor_index` (1 = primary, ≥ 2 = co-isolated) with rank 1 per precursor; feature `secondary` = identified here only by secondary PSMs; a chimeric spectrum's reporters feed at most one feature (a plain MUST); no footer keys: a null index means unknown, and removed secondaries are recorded in provenance.
@@ -108,7 +108,7 @@ No footer key declares it. A producer that cannot ensure it, because it cannot t
 | FragPipe | CHI-5 on `Observed M/Z` (no tool marker). ion.tsv reporter sums: listed in converter-coverage as not ensuring CHI-11 |
 | Proteome Discoverer | CHI-5 on `m/z [Da]`; `Ambiguous` ties share an index. A chimeric scan's reporters go only to an index-1 feature ([PD-03](findings-cross.md#pd-03)), once across engines ([PD-04](findings-feature.md#pd-04)) |
 | OpenMS consensus | CHI-5 on PID MZ; a PID's hits share its index. Isobaric: one peptidoform per consensus feature, by FID-3 not `pids[0]` |
-| OpenMS `-out_qpx` | Same rules; not verified |
+| OpenMS `-out_qpx` | Verified at HEAD: several identifications on one spectrum with different peptidoforms stay separate rows, each with its own m/z (CHI-1, CHI-7); no `precursor_index` column. IsobaricWorkflow credits a spectrum's reporters to one peptidoform, which meets CHI-11. Needed: `precursor_index` per CHI-5. See the [OpenMS worklist](openms-worklist.md). |
 | mzIdentML | CHI-5 on `experimentalMassToCharge` |
 | CDAP | MS-GF+ searches one precursor: index 1. Ties are left out of features, which meets CHI-11 |
 | quantms/MSstats | No psm view. TMT: CHI-11 holds if no `(run_file_name, scan)` feeds two features; else keep the FID-3 first, or list the gap in converter-coverage |

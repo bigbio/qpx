@@ -1,6 +1,6 @@
 # Findings: feature view
 
-Part of the [DDA semantic contract proposal](index.md). Each entry is one verified finding from the audit of qpx `dev` at commit `32cbbdc` (specification 1.3). A skeptic re-checked every finding against the code; "partly confirmed" entries are true only as stated in their correction. `audit-run:` evidence refers to converting the repository's own fixtures (`tests/examples`) with that commit during the audit; those outputs are not committed.
+Part of the annex of the [DDA semantic contract proposal](index.md). Each entry is one verified finding from the audit of qpx `dev` at commit `32cbbdc` (specification 1.3). A skeptic re-checked every finding against the code; "partly confirmed" entries are true only as stated in their correction. `audit-run:` evidence refers to converting the repository's own fixtures (`tests/examples`) with that commit during the audit; those outputs are not committed.
 
 174 findings, grouped by audit area.
 

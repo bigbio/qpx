@@ -1,6 +1,9 @@
 # Converter and tooling worklist
 
-[Overview](index.md)
+[Overview](index.md) · [Annex overview](annex-overview.md) · [OpenMS work list](openms-worklist.md)
+
+!!! note "Annex"
+    Part of the annex of the [DDA semantic contract proposal](index.md). The OpenMS items below target the Python consensusXML converter. The work on the OpenMS native export, which has priority, is in the [OpenMS work list](openms-worklist.md).
 
 Every verified finding that is a defect in a converter, writer, validator, document or test, rather than an open semantic question. Each line names the rule of the proposal that settles it. Lines come from the completeness pass over all findings; follow the finding link for code references and evidence. Consumer-side defects (qpx read API, MuData export, mokume) are listed in [T14](t14-reader-contract.md#reader-rules).
 

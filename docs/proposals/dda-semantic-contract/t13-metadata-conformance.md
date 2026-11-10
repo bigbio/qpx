@@ -1,9 +1,9 @@
 # T13. Metadata, validation and conformance: making the contract checkable
 
-[← T12](t12-protein-groups.md) · [Overview](index.md) · [T14 →](t14-reader-contract.md)
+[← T12](t12-protein-groups.md) · [Overview](index.md) · [Strict profile](strict-profile.md) · [Annex overview](annex-overview.md) · [T14 →](t14-reader-contract.md)
 
-!!! note "Proposal"
-    Part of the [DDA semantic contract proposal](index.md) for QPX. Rules here are proposals for specification 1.4, not normative text. Bracketed ids such as [OPENMS-01](findings-psm.md#openms-01) link to the verified audit findings; code references are to `dev` at commit `32cbbdc`.
+!!! note "Annex: producer-neutral analysis"
+    Part of the annex of the [DDA semantic contract proposal](index.md) for QPX. Rules here are proposals for specification 1.4, not normative text, and they cover every producer. For OpenMS-written files the [strict profile](strict-profile.md) is the contract and wins where the two differ. Bracketed ids such as [OPENMS-01](findings-psm.md#openms-01) link to the verified audit findings; code references are to `dev` at commit `32cbbdc`.
 
 
 > **Decision in one line:** One registry (`footer.yaml`) defines the Parquet key-value footer as each file's declaration, adding exactly five keys (`acquisition_method`, `fdr_filter`, `unquantified_policy`, `intensity_quantity`, `intensity_processing`); other declarations are columns, fixed rules or provenance parameters; rewrites carry every key by its rule, merge keeps every input's provenance steps, and none relabels old rows with a new `qpx_version`; writers and `qpxc validate` share one check set with error, warning and info severities and `core`/`dda` profiles chosen by `--profile` (files claim none), so no allowed state fails `--conformance`; any change of meaning moves `qpx_version`.
@@ -156,7 +156,7 @@ Blank Carry cell: kept when all sources agree, else `unknown`.
 | Producer | Change needed |
 |---|---|
 | All converters | Stamp keys early or by the re-serializing add; add `--acquisition-method` |
-| CDAP, OpenMS consensusXML and `-out_qpx` | `dda` unless the SDRF differs (DDA-only workflows); OpenMS writes `psm_qvalue`, not `q-value` ([T04](t04-confidence-fields.md)) |
+| CDAP, OpenMS consensusXML and `-out_qpx` | `dda` unless the SDRF differs (DDA-only workflows); OpenMS writes `psm_qvalue`, not `q-value` ([T04](t04-confidence-fields.md)). The native writer (verified at HEAD) stamps `qpx_version` 1.1 and none of the five keys, and `ProteomicsLFQ -out_qpx` and `IsobaricWorkflow -out_qpx` write only feature, psm and pg (no run, sample or provenance view). See the [OpenMS worklist](openms-worklist.md). |
 | MaxQuant, PD | SDRF or option, else `unknown` (MaxDIA, PD DIA exist; Q3); record the tool version |
 | FragPipe | SDRF or option; `dda` for isobaric input; else `unknown`; record MSFragger and IonQuant versions |
 | mzIdentML, quantms-MSstats | SDRF or option, else `unknown` |

@@ -1,9 +1,9 @@
 # T01. PSM rows: grain, ranks, alternatives, ties, multi-engine hits and psm_id uniqueness
 
-[Overview](index.md) · [T02 →](t02-chimeric-spectra.md)
+[Overview](index.md) · [Strict profile](strict-profile.md) · [Annex overview](annex-overview.md) · [T02 →](t02-chimeric-spectra.md)
 
-!!! note "Proposal"
-    Part of the [DDA semantic contract proposal](index.md) for QPX. Rules here are proposals for specification 1.4, not normative text. Bracketed ids such as [OPENMS-01](findings-psm.md#openms-01) link to the verified audit findings; code references are to `dev` at commit `32cbbdc`.
+!!! note "Annex: producer-neutral analysis"
+    Part of the annex of the [DDA semantic contract proposal](index.md) for QPX. Rules here are proposals for specification 1.4, not normative text, and they cover every producer. For OpenMS-written files the [strict profile](strict-profile.md) is the contract and wins where the two differ. Bracketed ids such as [OPENMS-01](findings-psm.md#openms-01) link to the verified audit findings; code references are to `dev` at commit `32cbbdc`.
 
 
 > **Decision in one line:** One psm row per hypothesis per spectrum, unique on K = `(run_file_name, scan, peptidoform, charge)` with engines merged; a typed `rank` (the source's rank per precursor ion, ties share 1; null = unknown) and no footer key; rank stays out of the identity; only rank-1 rows are identifications.
@@ -108,7 +108,7 @@ Infrastructure:
 | Change | View | Type / values | Required | Breaking? |
 |---|---|---|---|---|
 | `rank` column | psm | int16, nullable, ≥ 1; optional column; null = unknown | Non-null whenever the source states a rank (PSM-4) | No: additive (a 1.3 `qpxc validate` warns `undeclared_column`, `footer_validation.py:139-145`) |
-| `rank` score | psm | Writer fills the typed column from it and removes the entry, exactly as [T04](t04-confidence-fields.md) CNF-6 does for q-values (one store; settles the rank part of [#377](https://github.com/bigbio/qpx/issues/377)). In 1.3 files the score is read as the rank. No rank on feature rows ([T04](t04-confidence-fields.md)) | – | **Yes** for readers that look up the score `rank` in 1.4 files |
+| `rank` score | psm | Writer fills the typed column from it and, in 1.4, keeps the entry with the same value (the validator checks equality), exactly as [T04](t04-confidence-fields.md) CNF-6 does for q-values. Removing the entry is deferred to the next minor version and announced in the changelog (settles the rank part of [#377](https://github.com/bigbio/qpx/issues/377)). In 1.3 files the score is read as the rank. No rank on feature rows ([T04](t04-confidence-fields.md)) | – | No in 1.4: lookups of the score `rank` keep working. **Yes** in the next minor version, when the entry is removed |
 | K unique for every `identity_source`; `psm.md:12-15` allowance removed; `identity.md:40` rewritten | psm | Spec text; the validator already checks K | Yes | **Yes** for producers: multi-SIL mzIdentML, MaxQuant K pairs, PD spelling variants |
 | `consensus_support` = engine count (OpenMS fraction → `consensusid_support`); engine prefixes replace `_2` suffixes | psm | Score names | – | **Yes**: OpenMS score names and meaning |
 | mzIdentML `psm_id` derived from K | psm | `identity_source=derived` | – | **Yes**: id values change; re-convert |
@@ -119,7 +119,7 @@ Infrastructure:
 | mzIdentML | `rank` from SII@rank (0 → null); PSM-9 needs a pre-pass (in the 1.2 XSD a SIL's cvParams follow its results; `document.py:44-62` streams results first); merge across SILs; derived `psm_id`, SII ids in cv_params; all ranks kept unless `--rank1-only` |
 | Proteome Discoverer | `rank` from `Rank`; no `Rank` gives null and a warning; partition on the canonical peptidoform; merge engine-prefixed scores and write `consensus_support`; pick per PSM-2; drop `rank` from feature scores (`feature_adapter.py:126`) |
 | OpenMS consensusXML | `rank` per PSM-3; merge cross-PID collisions (`psm_adapter.py:375-381`); engine-prefixed names; ConsensusID fraction → `consensusid_support`; link only same-peptidoform, same-charge, rank-1 target rows (`record_linking.py:30-33`) |
-| OpenMS `-out_qpx` / `qpxc convert openms` | C++ writer: same rules (not verified here). The Python upgrade (`qpx/converters/openms/converter.py`) keeps the source's `rank` or leaves it null |
+| OpenMS `-out_qpx` / `qpxc convert openms` | C++ writer, verified at HEAD: one row per PeptideIdentification top hit (ProteomicsLFQ keeps only the best hit, and one row per spectrum, peptidoform and charge), so K is unique; no `rank` column; score names are raw OpenMS keys. Needed: `rank = 1` on every row (PSM-4) and `scores.md` score names. The Python upgrade (`qpx/converters/openms/converter.py`) keeps the source's `rank` or leaves it null. See the [OpenMS worklist](openms-worklist.md). |
 | MaxQuant | `rank = 1`; merge every pair of rows repeating K (lowest PEP), SECPEP pairs included; [T02](t02-chimeric-spectra.md) marks SECPEP rows |
 | FragPipe | psm.tsv has no rank. Read fragpipe.workflow (new input): `msfragger.output_report_topN = 1` gives `rank = 1`, with DDA+ extra rows marked by [T02](t02-chimeric-spectra.md); without the file, null |
 | CDAP | `rank = 1`; AmbiguousMatch rows form an alternative group |
