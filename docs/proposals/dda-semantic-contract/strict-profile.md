@@ -5,7 +5,7 @@
 !!! warning "Status: proposal, not normative"
     This is the core of the [DDA semantic contract proposal](index.md), targeting specification 1.4.
 
-This profile states what a DDA dataset **written by OpenMS** contains: ProteomicsLFQ and IsobaricWorkflow with `-out_qpx`, as used by the quantms pipeline. It is strict on purpose. Every column listed is filled as stated, and no footer value is `unknown`, so that qpxui, the quantms.io portal and mokume can read these files with plain SQL on typed columns, without special cases.
+This profile states what a DDA dataset **written by OpenMS** contains: ProteomicsLFQ and IsobaricWorkflow with `-out_qpx`, as used by the quantms pipeline. It is strict on purpose. Every column listed is filled as stated, and nothing the dataset says about itself is `unknown`, so that qpxui, the quantms.io portal and mokume can read these files with plain SQL on typed columns, without special cases.
 
 OpenMS can meet this profile because it holds the information internally; the [OpenMS work list](openms-worklist.md) names the export changes needed. Files from other producers (MaxQuant, FragPipe, Proteome Discoverer, mzIdentML, CDAP, and the Python consensusXML converter) follow the relaxed rules in the [annex](index.md#annex). Where the annex and this page differ, this page wins for OpenMS-written files.
 
@@ -13,24 +13,67 @@ OpenMS can meet this profile because it holds the information internally; the [O
 
 | Requirement | Detail |
 |---|---|
-| Views | `psm`, `feature`, `pg`, `run`, `sample` and `provenance` are always written. |
+| Views | `psm`, `feature`, `pg`, `run`, `sample`, `provenance` and `ontology` are always written. |
 | Runs and samples | Every `run_file_name` used in psm, feature and pg has a row in `run`. Every `(run_file_name, label)` of an intensity entry resolves to exactly one sample through `run.samples`, by exact string equality. |
 | Unidentified features | Optional. OpenMS may write MS1 features without an identification as rows of the feature view, marked `identification_type = 'unidentified'`. Readers ignore them by default. See [feature rows](#feature-rows). |
 | Version | `qpx_version = 1.4`. |
 
-## Footer
+## Where the dataset says what it holds
 
-| Key | Views | Allowed values in this profile |
+The Parquet footer gets no new keys. Each statement about the data lives in the table whose job it is, so consumers read it with a plain `SELECT`:
+
+| Table | Job | What it holds |
 |---|---|---|
-| `acquisition_method` | psm, feature, pg | `dda` |
-| `fdr_filter` | psm, feature, pg | `none`, or thresholds at `psm`, `peptide` and `protein`, for example `psm:0.01;protein:0.01`. Never `applied` or `unknown`. |
-| `unquantified_policy` | feature, pg | `retained` |
-| `intensity_quantity` | feature, pg | `ms1_area`, `reporter_corrected` or `reporter_uncorrected` |
-| `intensity_processing` | feature, pg | feature: `none` or `normalized`. pg: `topn`, `sum` or `normalized`. |
+| `ontology` | What a column means | The kind of intensity, the level and scope of each q-value column, the calibration of `observed_mz` |
+| `run` | What a run is | The acquisition method of each run |
+| `provenance` | What was done to the rows | FDR cuts, whether unquantified rows were kept, decoy handling, match-between-runs, the profile claim |
+
+### ontology
+
+The ontology view gains a `properties` list (key and value) per row. A row is still one field of one view. An OpenMS-written dataset has at least these rows, with these properties:
+
+| Field | View | Property | Value in this profile |
+|---|---|---|---|
+| `intensity` | feature | `quantity` | `ms1_area`, `reporter_corrected` or `reporter_uncorrected` |
+| `intensity` | feature | `processing` | `none` or `normalized` |
+| `intensity` | pg | `quantity` | the same as on the feature view |
+| `intensity` | pg | `processing` | `topn`, `sum` or `normalized` |
+| `qvalue` | psm | `level`, `scope` | `psm`, `experiment` |
+| `psm_qvalue` | feature | `level`, `scope` | `psm`, `experiment` |
+| `peptide_qvalue` | feature | `level`, `scope` | `peptide`, `experiment` (row present when the column is filled) |
+| `global_qvalue` | pg | `level`, `scope` | `protein_group`, `experiment` (row present when the column is filled) |
+| `match_qvalue` | feature | `level` | `transfer` (row present when the column is filled) |
+| `observed_mz` | psm, feature | `calibration` | `raw` or `recalibrated` |
+
+Every score OpenMS writes to `additional_scores` has a row too, with its `level`. The row's term names the concept where one exists, for example MS:1001844 for a feature area.
+
+### run
+
+`run.acquisition_method` is `dda` on every run.
+
+### provenance
+
+Parameters are key and value on the step named:
+
+| Parameter | Step | Value in this profile |
+|---|---|---|
+| `psm_fdr`, `peptide_fdr`, `protein_fdr` | FDR filtering | The threshold that was applied at that level, or `none`. Never `applied`. |
+| `unquantified_rows` | The export step | `retained` |
+| `decoy_policy` | The export step | `retained` or `removed` |
+| `mbr_fdr` | Match-between-runs, when it ran | A threshold under PIP-ECHO, `none` otherwise |
+| `pg_grouping` | Protein inference | `dataset_inference` |
+| `conformance_profile` | The export step | `dda-strict` |
+
+A dataset claims this profile with `conformance_profile = dda-strict`. A merge keeps the claim only if every input dataset has it. A reader that needs a guarantee runs `qpxc validate --profile dda-strict`.
+
+### footer
+
+Only existing keys, with these values:
+
+| Key | Views | Value in this profile |
+|---|---|---|
 | `scan_format` | psm, feature | `scan`, `index` or `nativeId` |
 | `identity_composite` | feature | Label-free: `peptidoform, charge, run_file_name`. Isobaric: `peptidoform, charge, run_file_name, scan`. |
-
-The footer has no key that names the profile. A dataset claims it in the `provenance` view instead: the step that wrote the QPX files carries the parameter `conformance_profile = dda-strict`. Provenance is an ordinary table, so consumers read the claim with a plain `SELECT`. A merge keeps the claim only if every input dataset has it. A reader that needs a guarantee runs `qpxc validate --profile dda-strict`.
 
 ## What the profile fixes, so no declaration is needed
 
@@ -38,13 +81,9 @@ The footer has no key that names the profile. A dataset claims it in the `proven
 |---|---|
 | PSM rank | Only the best hit per precursor is exported. `rank` is always 1. |
 | FDR levels | OpenMS always estimates PSM-level FDR, so PSM q-values are always present. Peptide-level FDR (common for immunopeptidomics) and protein-level FDR are estimated when the analysis asks for them. A peptide or protein q-value column is filled exactly when FDR was estimated at its level, and is null on every row otherwise. |
-| Scope of PSM q-values | One estimate over the whole experiment. |
-| Protein grouping | One inference over the whole dataset, so a group is the same in every run. |
 | Primary intensity | The measured signal: the feature area for label-free data, the reporter-ion intensity for isobaric data. Protein quantities are OpenMS's own. |
 | Imputation | OpenMS imputes nothing. A value that OpenMS's own algorithm estimates, such as the area it derives when the elution-model fit fails, counts as measured. `imputed_labels` is `[]` and pg `is_imputed` is false. A tool that fills in values afterwards, such as mokume, flags them as imputed. |
 | Precursor-level FDR | OpenMS has none. `feature.precursor_qvalue` and `feature.global_qvalue` are null by definition. |
-
-Settings that vary between analyses go to the `provenance` view under fixed parameter names: `decoy_policy`, the FDR settings, whether match-between-runs ran and with which method, and `mbr_fdr` (a threshold under PIP-ECHO, `none` otherwise).
 
 ## psm rows
 
@@ -196,6 +235,16 @@ WHERE NOT p.is_decoy AND NOT p.contaminant
   AND r.run_file_name = p.grouped_runs[1]
   AND s.label = p.label
 GROUP BY p.pg_group_id, s.sample_accession;
+
+-- What kind of intensity does the feature view hold?
+SELECT p.key, p.value
+FROM ontology o, unnest(o.properties) AS t(p)
+WHERE o.field_name = 'intensity' AND o.view = 'feature';
+
+-- Which FDR cuts were applied, and does the dataset claim the strict profile?
+SELECT p.key, p.value
+FROM provenance v, unnest(v.parameters) AS t(p)
+WHERE p.key IN ('psm_fdr', 'peptide_fdr', 'protein_fdr', 'conformance_profile');
 ```
 
 For precursor quantities per sample, add the runs that are fractions of one sample. Technical replicates of one sample are combined by a method the reader names, not by summing.
@@ -205,7 +254,7 @@ For precursor quantities per sample, add the runs that are fractions of one samp
 Two annex rules were changed so that existing consumers keep working:
 
 - **Typed columns and score entries are both written in 1.4.** q-values and `rank` fill their typed columns and also stay in `additional_scores` with the same value. The entries are removed in a later minor version ([CNF-6](t04-confidence-fields.md)).
-- **A protein quantity that QPX computes may fill `pg.intensity`**, but only when the tool provides none in the whole file, and then with `intensity_processing = sum` ([INT-4](t09-intensities-missing-values.md)). This does not arise for OpenMS-written files, which carry OpenMS's own abundance.
+- **A protein quantity that QPX computes may fill `pg.intensity`**, but only when the tool provides none in the whole file, and then with the ontology property `processing = sum` ([INT-4](t09-intensities-missing-values.md)). This does not arise for OpenMS-written files, which carry OpenMS's own abundance.
 
 Two changes need consumer work:
 
@@ -236,4 +285,4 @@ The maintainers decided these points in [#383](https://github.com/bigbio/qpx/iss
 | Estimated values | A value the quantification tool's own algorithm estimates counts as measured; that is the tool's decision. A value added afterwards by another tool counts as imputed. |
 | Features per precursor | ProteomicsLFQ is taken to produce one feature per precursor in a run, so label-free files have one feature row per precursor and run. |
 | MS1-label multiplets | One feature row per multiplet with the light peptidoform and one intensity entry per channel. PSMs keep their labelled peptidoform. |
-| Profile claim | A provenance parameter, not a footer key. |
+| Where declarations live | No new footer keys. Column meanings go to the ontology view, the acquisition method to the run view, and processing steps to provenance, including the profile claim. |

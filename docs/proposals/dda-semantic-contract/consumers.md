@@ -13,7 +13,7 @@ The contract only helps if consumers can use it. This page is based on reading t
 - **Their only row filter is "not a decoy".** Every non-decoy row is treated as an accepted identification. No q-value threshold is applied anywhere.
 - **The portal ingests quantms (OpenMS) and quantmsdiann (DIA-NN) output and MSNet PSM bundles.** It ingests no MaxQuant, FragPipe or Proteome Discoverer files.
 
-So a rule reaches these consumers only if it reduces to a `WHERE` clause on typed columns. That is why the [strict profile](strict-profile.md) fills every column and gives one predicate per question.
+So a rule reaches these consumers only if it reduces to a `WHERE` clause on typed columns. For the same reason, what a dataset says about itself is kept in ordinary tables (ontology, run, provenance), not in Parquet footers. That is why the [strict profile](strict-profile.md) fills every column and gives one predicate per question.
 
 ## What is wrong today
 
@@ -58,7 +58,7 @@ Four rules of the first draft removed a value that these consumers filter on. Th
 | Draft rule | Effect on consumers | Resolution |
 |---|---|---|
 | q-values leave `additional_scores` once typed columns exist | The portal's evaluation checks and its planned atlas FDR look scores up by name | Both are written during 1.4 ([CNF-6](t04-confidence-fields.md)) |
-| A QPX-computed sum may not fill `pg.intensity` | Protein quantities go empty in both consumers for consensusXML conversions | Allowed when the tool gives none, declared as `intensity_processing = sum` ([INT-4](t09-intensities-missing-values.md)) |
+| A QPX-computed sum may not fill `pg.intensity` | Protein quantities go empty in both consumers for consensusXML conversions | Allowed when the tool gives none, declared with the ontology property `processing = sum` ([INT-4](t09-intensities-missing-values.md)) |
 | OpenMS's PSM-level value leaves `feature.peptide_qvalue` | q-value columns, filters and charts go empty | Consumers switch to `psm_qvalue`. The old column must not keep a value of the wrong level |
 | OpenMS's member-protein minimum leaves `pg.global_qvalue` | The portal's co-expression reads null as 1.0 and drops every protein | OpenMS writes a group-level `global_qvalue` whenever protein FDR was estimated. When it was not, the column is null on every row, and the portal must not read that as 1.0 |
 

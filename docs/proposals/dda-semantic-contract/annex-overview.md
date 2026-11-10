@@ -17,7 +17,7 @@ Some examples. Each number was measured on the repository's own fixtures with qp
 - `feature.precursor_qvalue` holds a run-level precursor FDR for DIA-NN, the best PSM's q-value for Proteome Discoverer and CDAP, and nothing for MaxQuant, FragPipe and OpenMS. ([INFRA-02](findings-feature.md#infra-02))
 - The meaning of MaxQuant `unique` depends on whether proteinGroups.txt was supplied. mokume reads `unique` as "group-specific" and drops 43,823 measured MaxQuant rows. ([MOKUME-01](findings-feature.md#mokume-01), [MOKUME-02](findings-feature.md#mokume-02))
 - One MaxQuant isotope pattern is credited in full to two or three peptidoforms (312 cases). On 83,413 rows, `rt` lies outside `[rt_start, rt_stop]` because the window is on another clock. ([MAXQUANT-08](findings-feature.md#maxquant-08), [MAXQUANT-10](findings-feature.md#maxquant-10))
-- No footer says whether a file was FDR-filtered, at which level or threshold, whether decoys or transfers were kept, or what kind of intensity it holds. Only the xic view declares its selection. ([INFRA-20](findings-cross.md#infra-20))
+- Nothing in a file says whether it was FDR-filtered, at which level or threshold, whether decoys or transfers were kept, or what kind of intensity it holds. Only the xic view declares its selection. ([INFRA-20](findings-cross.md#infra-20))
 
 In total the audit produced **443 verified findings**: 268 confirmed, 119 confirmed with a correction, and 56 added by the verifiers. None was refuted. They are collected in [Findings: PSM](findings-psm.md), [feature](findings-feature.md), [protein group](findings-pg.md) and [cross-view](findings-cross.md). The 174 converter and tooling defects among them are in the [worklist](converter-worklist.md).
 
@@ -57,7 +57,7 @@ There are three cases:
     - Readers ignore these rows by default; the test is `peptidoform IS NOT NULL`.
     - This keeps the placement agreed in [#229](https://github.com/bigbio/qpx/issues/229)/[#232](https://github.com/bigbio/qpx/issues/232) and settles [#378](https://github.com/bigbio/qpx/issues/378).
 2. **A row with an identity but no identifying PSM in its own run** is a transferred row, a multi-run unit row, or a row whose run has only PSMs of competing peptidoforms (`transferred` or null type, [FID-1](t06-identifications-per-feature.md)). A `direct` row whose identifying spectrum cannot be located looks the same ([FID-6](t06-identifications-per-feature.md)). In all these rows `scan` is empty and `id_run_file_name` is null, and only `identification_type` tells them apart. Readers never infer a transfer from those nulls ([FID-R3](t06-identifications-per-feature.md)).
-3. **An identified precursor without a quantity** is an identification-only row whose entries have a null intensity ([INT-6](t09-intensities-missing-values.md)). The footer key `unquantified_policy` says whether such rows were kept, so a missing row means "not identified" only when the producer says so ([UNI-6](t07-unidentified-features.md), [UNI-R4](t07-unidentified-features.md)).
+3. **An identified precursor without a quantity** is an identification-only row whose entries have a null intensity ([INT-6](t09-intensities-missing-values.md)). The provenance parameter `unquantified_rows` says whether such rows were kept, so a missing row means "not identified" only when the producer says so ([UNI-6](t07-unidentified-features.md), [UNI-R4](t07-unidentified-features.md)).
 
 ### How are MBR and identification in the same run told apart?
 
@@ -80,17 +80,17 @@ Each topic has its own page with the current state, options, numbered rules, sch
 |---|---|
 | [T01 PSM rows](t01-psm-rows.md) | One row per hypothesis per spectrum, unique on K = `(run_file_name, scan, peptidoform, charge)`, with multi-engine hits merged. A typed `rank` (per precursor ion; ties share 1; null means unknown). Rank stays out of the identity, and only rank-1 rows are identifications. |
 | [T02 Chimeric spectra](t02-chimeric-spectra.md) | One peptidoform per row, no `+`. Typed `psm.precursor_index`. `secondary` defined. A chimeric spectrum's reporters feed at most one feature. |
-| [T03 Filtering state](t03-filtering-state.md) | Every psm, feature and pg footer states its FDR cuts in one key, `fdr_filter`. Decoy, contaminant and unassigned-PSM handling go to provenance. `pass_threshold` is the source's acceptance, with its basis in provenance. qpxc still removes no rows by default. |
+| [T03 Filtering state](t03-filtering-state.md) | FDR cuts are recorded per level in provenance (`psm_fdr`, `peptide_fdr`, …), with decoy, contaminant and unassigned-PSM handling. `pass_threshold` is the source's acceptance, with its basis as ontology properties. qpxc still removes no rows by default. |
 | [T04 Confidence fields](t04-confidence-fields.md) | The column name fixes the level. New `feature.psm_qvalue`, so a best-PSM q-value is never promoted to precursor or peptide level. Typed columns are filled only from level-explicit names. Feature PEP is the identifying PSM's. `confident()` takes an explicit level and never returns a silently empty set. |
 | [T05 Feature rows](t05-feature-rows.md) | A row is one quantity of one precursor ion in one run or declared unit. A signal feeds at most one row. The `identity_composite` says whether keys repeat. New `grouped_runs` for unit rows. All times are in seconds: `rt`, `rt_start` and `rt_stop` on the run's acquisition clock, `rt_aligned` and `consensus_rt` on the tool's aligned clock. |
 | [T06 Identifications per feature](t06-identifications-per-feature.md) | 0..n supporting PSMs and at most one identifying PSM from the row's own run, chosen by a total order. `scan` is one spectrum. New `identification_conflict` and `consensus_feature_id`. Links are mandatory when a producer writes both views. |
-| [T07 Unidentified features](t07-unidentified-features.md) | Unidentified MS1 features may be stored in the feature view, marked `identification_type = 'unidentified'` with a null peptidoform; readers ignore them. The footer key `unquantified_policy` says whether identification-only rows were kept. |
+| [T07 Unidentified features](t07-unidentified-features.md) | Unidentified MS1 features may be stored in the feature view, marked `identification_type = 'unidentified'` with a null peptidoform; readers ignore them. The provenance parameter `unquantified_rows` says whether identification-only rows were kept. |
 | [T08 Match-between-runs](t08-match-between-runs.md) | `identification_type` alone gives the origin. Transfers carry no PSM and no run-level confidence. `match_*` is defined precisely. pg gains `identified_in_unit`. MBR settings go to provenance. |
-| [T09 Intensities and missing values](t09-intensities-missing-values.md) | The primary is the least-processed quantity of one kind per file, declared by `intensity_quantity` and `intensity_processing`. One entry per sample label (null = not quantified, 0 = measured zero). New `quant_spectrum_count`. A QPX roll-up is primary only when the tool gives no protein quantity. |
+| [T09 Intensities and missing values](t09-intensities-missing-values.md) | The primary is the least-processed quantity of one kind per file, declared by the ontology properties `quantity` and `processing` on the `intensity` rows. One entry per sample label (null = not quantified, 0 = measured zero). New `quant_spectrum_count`. A QPX roll-up is primary only when the tool gives no protein quantity. |
 | [T10 Protein mapping](t10-protein-mapping.md) | `protein_accessions` is the set of mapped entries. `pg_accessions` is one group's full membership or null. `anchor_protein` is a representative, never a key. New `group_unique`, from which `unique` is derived. A peptide is a decoy only if every entry is. Typed `contaminant` on psm and feature. Markers are kept verbatim. |
 | [T11 Spectrum and precursor fields](t11-spectrum-precursor-fields.md) | `observed_mz` is the measured m/z of the claimed ion, with its calibration recorded in provenance. `mass_error_ppm` is computed from the row; a typed `isotope_error` is added. `charge ≥ 1`. `scan_format` is required, with no hashes, and `spectrum_reference` sits beside `scan`. Ion mobility is 1/K0. One run-name function. The canonical peptidoform is validated. |
-| [T12 Protein groups](t12-protein-groups.md) | Row existence follows one table. Evidence is rank-1, non-transferred and not failing. Counts have fixed scopes. `pg_qvalue` is unit-level and `global_qvalue` analysis-level. A group is a decoy only if every member is. `unquantified_policy`; the grouping method goes to provenance. |
-| [T13 Metadata and conformance](t13-metadata-conformance.md) | One footer-key registry with five new keys, read from the key-value metadata. Rewrites carry every key by a rule. `acquisition_method`. Validation profiles `core` and `dda` with error, warning and info severities. Any change of meaning moves `qpx_version`. |
+| [T12 Protein groups](t12-protein-groups.md) | Row existence follows one table. Evidence is rank-1, non-transferred and not failing. Counts have fixed scopes. `pg_qvalue` is unit-level and `global_qvalue` analysis-level. A group is a decoy only if every member is. Whether unquantified rows were kept, and the grouping method, go to provenance. |
+| [T13 Metadata and conformance](t13-metadata-conformance.md) | No new footer keys. Declarations live in the ontology view (properties per field), the run view (`acquisition_method`) and provenance (fixed parameter names). Existing footer keys are read from the key-value metadata and carried by rule. Validation profiles `core` and `dda` with error, warning and info severities. Any change of meaning moves `qpx_version`. |
 | [T14 Reader contract](t14-reader-contract.md) | A normative `consumer-guide.md` and a default read profile. Decoys are excluded. Accepted rank-1 rows identify. Transfers are never evidence and are never combined with a measured own-run value. Signals and fractions are summed. The group is the protein. Samples resolve exactly through `run.samples`. Absent keys mean unknown. Outputs record the policy applied. |
 
 ## Principles
@@ -100,48 +100,88 @@ These principles govern every section:
 | | Principle |
 |---|---|
 | P-A | **One meaning per typed column.** If a producer cannot supply exactly that meaning, it writes null and puts its near-equivalent in `additional_scores`, `additional_intensities` or `cv_params` under a name that states its level. |
-| P-B | **Declare, don't filter silently.** Producers may keep or drop rows, but the file declares what was kept: in the footer when a reader's default behaviour depends on it, otherwise in provenance. Footer keys use closed vocabularies; an absent key means `unknown`, and readers assume neither way. The xic keys are the precedent. |
+| P-B | **Declare, don't filter silently.** Producers may keep or drop rows, but the dataset declares what was kept, in provenance, and what its columns mean, in the ontology view. Values come from closed vocabularies; an absent statement means unknown, and readers assume neither way. |
 | P-C | **Flags on rows over hidden policy.** Rank-n alternatives, co-identifications, transfers, imputed values, decoys and contaminants are marked by typed columns. |
 | P-D | **Null means unknown or not applicable.** No sentinels: no 0 m/z, no 1.0 q-value placeholders, no `''` or `'None'` peptidoforms, no hashes read as scans. |
 | P-E | **PSI terms as references only.** A PSI-MS term or a ProForma, mzIdentML or mzTab definition is cited where it pins down a meaning. Matching PSI formats is not a goal and never decides a rule. |
-| P-F | **Additive and versioned.** Rules target 1.4. New optional columns and footer keys come first, with a stricter conformance profile. Every breaking change is flagged. |
+| P-F | **Additive and versioned.** Rules target 1.4. New optional columns, ontology properties and provenance parameters come first, with a stricter conformance profile. Every breaking change is flagged. |
 | P-G | **Feasible for producers.** Every MUST can be met from the files converters actually read. Where a tool lacks the information, the rule says what to write. |
 | P-H | **Readers are part of the contract.** Every section ends with reader rules and the places where qpx and mokume violate them. |
 | P-I | **Minimal.** Use the smallest rule set that removes the ambiguity. |
 
-## Proposed footer keys
+## Where declarations live
 
-The footer holds only what a reader needs to interpret the rows: a key stays in the footer only if a reader's default behaviour depends on its value. That leaves five new keys. Every vocabulary also allows `unknown`, and an absent key means `unknown`. [T13 META-1](t13-metadata-conformance.md) holds the full registry, including the existing keys and the carry rules for merge and migrate.
+The Parquet footer gets **no new keys**. A statement about the data goes to the table whose job it is. All three are ordinary tables, so a consumer reads them with a plain `SELECT`; the two consumers reviewed read no footers today, and the portal's frontend SQL cannot.
 
-| Key | Views | Values | Owner |
+| Table | Job | What it holds |
+|---|---|---|
+| `ontology` | What a column means | Properties of a field: the kind of intensity and its processing, the level and scope of a confidence column, the basis of `pass_threshold`, the calibration of `observed_mz` |
+| `run` | What a run is | `acquisition_method` per run |
+| `provenance` | What was done to the rows | FDR cuts, whether unquantified rows were kept, decoy and contaminant handling, match-between-runs, the grouping method, the strict-profile claim |
+
+For other producers a property or parameter may be `unknown`, and an absent row, property or parameter means unknown. The [strict profile](strict-profile.md#where-the-dataset-says-what-it-holds) narrows the values for OpenMS. The full rules are in [T13 META-1](t13-metadata-conformance.md).
+
+### Ontology properties
+
+The ontology view gains a `properties` list (key and value) per row, the same structure `run.additional_terms` already uses.
+
+| Property | On the row for | Values | Owner |
 |---|---|---|---|
-| `acquisition_method` | psm, feature, pg | `dda`, `dia`, `prm`, `mixed` | [META-5](t13-metadata-conformance.md) |
-| `fdr_filter` | psm, feature, pg | `none`, or a `;`-separated list of `<level>:<value>` such as `psm:0.01;protein:0.01`. The level is `psm`, `precursor`, `peptide` or `protein`; the value is a threshold in (0, 1], `applied` (a cut on another statistic) or `unknown`. A level not listed had no cut. | [FLT-1](t03-filtering-state.md), [FLT-2](t03-filtering-state.md) |
-| `unquantified_policy` | feature, pg | `retained`, `removed` | [UNI-6](t07-unidentified-features.md), [PGV-4](t12-protein-groups.md) |
-| `intensity_quantity` | feature, pg, site | `ms1_area`, `ms1_apex`, `ms1_trigger`, `ms1`, `reporter_uncorrected`, `reporter_corrected`, `reporter` (correction unknown), `reporter_sn`, `fragment`, `none` | [INT-2](t09-intensities-missing-values.md) |
-| `intensity_processing` | feature, pg, site | `none`, `sum`, `topn`, `normalized`, `maxlfq`, `other`; the most processed step applied | [INT-2](t09-intensities-missing-values.md) |
-| `scan_format` (existing, extended) | psm, feature, mz | adds `mixed` (psm only) and `unknown`; required from 1.4 on psm, and on feature when any `scan` is non-empty | [SPC-7](t11-spectrum-precursor-fields.md) |
+| `quantity` | `intensity` (feature, pg, site) | `ms1_area`, `ms1_apex`, `ms1_trigger`, `ms1`, `reporter_uncorrected`, `reporter_corrected`, `reporter`, `reporter_sn`, `fragment`, `none` | [INT-2](t09-intensities-missing-values.md) |
+| `processing` | `intensity` (feature, pg, site) | `none`, `sum`, `topn`, `normalized`, `maxlfq`, `other`; the most processed step applied | [INT-2](t09-intensities-missing-values.md) |
+| `level` | every q-value, PEP, probability or FDR column or score; `pass_threshold` | `psm`, `precursor`, `peptide`, `protein`, `protein_group`, `gene_group`, `transfer`, `other` | [CNF-5](t04-confidence-fields.md), [FLT-8](t03-filtering-state.md) |
+| `scope` | `psm.qvalue`, `feature.psm_qvalue`, `feature.peptide_qvalue` | `run`, `experiment` | [CNF-3](t04-confidence-fields.md) |
+| `fdr` | `pass_threshold` (psm, pg) | a threshold in (0, 1] | [FLT-8](t03-filtering-state.md) |
+| `calibration` | `observed_mz` (psm, feature) | `raw`, `recalibrated` | [SPC-2](t11-spectrum-precursor-fields.md) |
 
-### Declarations that are not footer keys
+### Run view
 
-An earlier draft of this proposal had about 30 new footer keys. The others are replaced as follows:
+`run.acquisition_method` becomes required, with the values `dda`, `dia` or `prm` ([META-5](t13-metadata-conformance.md)). It is per run, so no `mixed` value is needed.
 
-| Earlier key | Replaced by |
-|---|---|
-| `psm_rank_policy` | The typed `rank` column; null means unknown ([PSM-4](t01-psm-rows.md)). |
-| `chimeric_policy` | The typed `precursor_index` column; null means unknown. Removing secondary PSMs is recorded in provenance ([CHI-10](t02-chimeric-spectra.md)). |
-| `feature_grain` | The `identity_composite`. With exactly `peptidoform, charge, run_file_name` there is at most one row per key; otherwise rows sharing a key are distinct signals ([FRW-3](t05-feature-rows.md)). |
-| `intensity_imputation` | Row encoding: `imputed_labels = []` means nothing imputed, null means unknown ([INT-9](t09-intensities-missing-values.md)). |
-| `mbr_policy` | `identification_type`, filled whenever the tool states the origin (null means unknown), and pg `identified_in_unit` ([MBR-8](t08-match-between-runs.md)). |
-| `psm_feature_link` | Links are mandatory when a producer writes both views; gaps are recorded in provenance ([FID-8](t06-identifications-per-feature.md), [FID-9](t06-identifications-per-feature.md)). |
-| `chimeric_quant_policy` | A fixed rule ([CHI-11](t02-chimeric-spectra.md)). |
-| `conformance_profile` | No footer key. A dataset claims the [strict profile](strict-profile.md#footer) with a provenance parameter of the same name; `qpxc validate --profile` checks ([META-7](t13-metadata-conformance.md)). |
-| `fdr_filter_psm`, `_precursor`, `_peptide`, `_protein` | Merged into `fdr_filter`. |
-| `unquantified_feature_policy`, `unquantified_pg_policy` | Merged into `unquantified_policy`. |
-| `intensity_normalization`, `intensity_rollup`, `reporter_correction` | Merged into `intensity_processing` and the reporter values of `intensity_quantity`. |
-| `unassigned_psm_policy`, `decoy_policy`, `contaminant_policy`, `pass_threshold_level`, `pass_threshold_fdr`, `psm_qvalue_scope`, `peptide_qvalue_scope`, `mbr_fdr`, `observed_mz_calibration`, `pg_grouping`, `unidentified_feature_policy` | Provenance parameters with the same names and values. Merges keep the provenance of every input ([META-4](t13-metadata-conformance.md)). |
+### Provenance parameters
 
-The cost is that some states can no longer be read from the file alone. For example, "secondary PSMs were removed" looks like "no chimeric search", and "unassigned PSMs were dropped" looks like "there were none". Readers who need these consult provenance.
+| Parameter | Step | Values | Owner |
+|---|---|---|---|
+| `psm_fdr`, `precursor_fdr`, `peptide_fdr`, `protein_fdr` | FDR filtering | a threshold in (0, 1], `applied` (a cut on another statistic), `none` | [FLT-1](t03-filtering-state.md), [FLT-2](t03-filtering-state.md) |
+| `unquantified_rows` | The step that wrote the files | `retained`, `removed` | [UNI-6](t07-unidentified-features.md), [PGV-4](t12-protein-groups.md) |
+| `decoy_policy`, `contaminant_policy` | Search or export step | `retained`, `removed`, `not_searched` | [FLT-10](t03-filtering-state.md), [FLT-11](t03-filtering-state.md) |
+| `include_unassigned_psms`, `rank1_only`, `chimeric_secondaries_removed` | Export step | `true`, `false` | [FLT-12](t03-filtering-state.md), [PSM-4](t01-psm-rows.md), [CHI-10](t02-chimeric-spectra.md) |
+| `mbr_fdr` | Match-between-runs | a threshold, `applied`, `none` | [MBR-9](t08-match-between-runs.md) |
+| `pg_grouping` | Protein inference | `dataset_inference`, `partial_inference`, `mapping_set` | [PGV-6](t12-protein-groups.md) |
+| `conformance_profile` | The step that wrote the files | `dda-strict` | [META-7](t13-metadata-conformance.md) |
+
+### Every key of the first draft, and where it ended up
+
+The first draft proposed about 30 footer keys. Each one was checked again against the three-table split.
+
+| First-draft key | Final home | Changed in this check? |
+|---|---|---|
+| `acquisition_method` | `run.acquisition_method`, required | Yes: was a footer key |
+| `fdr_filter_psm`, `_precursor`, `_peptide`, `_protein` | Provenance `psm_fdr`, `precursor_fdr`, `peptide_fdr`, `protein_fdr` | Yes: was one footer key, `fdr_filter` |
+| `unquantified_feature_policy`, `unquantified_pg_policy` | Provenance `unquantified_rows` | Yes: was one footer key, `unquantified_policy` |
+| `intensity_quantity`, `reporter_correction` | Ontology property `quantity` on the `intensity` rows | Yes: was a footer key |
+| `intensity_normalization`, `intensity_rollup` | Ontology property `processing` on the `intensity` rows | Yes: was a footer key, `intensity_processing` |
+| `psm_qvalue_scope`, `peptide_qvalue_scope` | Ontology property `scope` on the q-value rows | Yes: was in provenance, but it describes a column |
+| `pass_threshold_level`, `pass_threshold_fdr` | Ontology properties `level` and `fdr` on the `pass_threshold` rows | Yes: was in provenance, but it describes a column |
+| `observed_mz_calibration` | Ontology property `calibration` on the `observed_mz` rows | Yes: was in provenance, but it describes a column |
+| `unidentified_feature_policy` | Dropped. Unidentified features are marked rows of the feature view, so their presence is visible in the rows | Yes: was in provenance |
+| `psm_rank_policy` | The typed `rank` column; null means unknown. `rank1_only` in provenance | No |
+| `chimeric_policy` | The typed `precursor_index` column; null means unknown. `chimeric_secondaries_removed` in provenance | No |
+| `chimeric_quant_policy` | A fixed rule: a chimeric spectrum's reporters feed at most one feature ([CHI-11](t02-chimeric-spectra.md)) | No |
+| `feature_grain` | Derived from the existing `identity_composite` key ([FRW-3](t05-feature-rows.md)) | No |
+| `psm_feature_link` | Links are mandatory when a producer writes both views ([FID-8](t06-identifications-per-feature.md)); gaps go to provenance | No |
+| `intensity_imputation` | Row encoding: `imputed_labels = []` means nothing imputed, null means unknown ([INT-9](t09-intensities-missing-values.md)) | No |
+| `mbr_policy` | `identification_type` and pg `identified_in_unit`; whether MBR ran is the presence of a match-between-runs step in provenance | No |
+| `mbr_fdr` | Provenance | No |
+| `decoy_policy`, `contaminant_policy`, `unassigned_psm_policy`, `pg_grouping` | Provenance | No |
+| `conformance_profile` | Provenance | No |
+| `scan_format` | Existing footer key, extended ([SPC-7](t11-spectrum-precursor-fields.md)) | No |
+
+What the three-table split costs:
+
+- **A file copied out of its dataset loses these statements.** A footer travels with the file; the tables do not.
+- **Merging datasets with different meanings.** One ontology row per column cannot describe two sources, so the merge writes `unknown` for that property and warns.
+- **Validation is cross-file**, for example checking the ontology row for `intensity` against the feature file.
 
 ## New and changed columns
 
@@ -189,7 +229,7 @@ Additive changes come first. The following changes alter values or meanings and 
     - `id_run_file_name` is `run_file_name` or null, never a donor run ([FID-6](t06-identifications-per-feature.md)).
     - Target rows hold no decoy entries in `protein_accessions` ([PRT-2](t10-protein-mapping.md)).
     - `scan_format` gains `mixed` and `unknown`, and from 1.4 an absent key means `unknown` ([SPC-7](t11-spectrum-precursor-fields.md)).
-    - pg: a QPX roll-up may fill the primary only when the tool gives none, declared as `intensity_processing = sum` ([INT-4](t09-intensities-missing-values.md)). Counts get fixed scopes, `peptides` becomes nullable, `is_decoy` needs every member, `contaminant` may be null, rows follow tool units, and `pg_names` align with members ([PGV-5](t12-protein-groups.md), [PGV-7](t12-protein-groups.md), [PGV-10](t12-protein-groups.md), [PGV-12](t12-protein-groups.md)).
+    - pg: a QPX roll-up may fill the primary only when the tool gives none, declared with the ontology property `processing = sum` ([INT-4](t09-intensities-missing-values.md)). Counts get fixed scopes, `peptides` becomes nullable, `is_decoy` needs every member, `contaminant` may be null, rows follow tool units, and `pg_names` align with members ([PGV-5](t12-protein-groups.md), [PGV-7](t12-protein-groups.md), [PGV-10](t12-protein-groups.md), [PGV-12](t12-protein-groups.md)).
 - **Rows.**
     - Unidentified rows are marked `identification_type = 'unidentified'` and get a null peptidoform instead of `''` ([UNI-1](t07-unidentified-features.md)).
     - K-duplicate PSMs are merged ([PSM-2](t01-psm-rows.md)).
@@ -217,13 +257,13 @@ The harmonization pass left ten conflicts between sections open. One of them, on
 | Conflict | Decision |
 |---|---|
 | `rank` both as a typed column and as a score ([#377](https://github.com/bigbio/qpx/issues/377)) | Treat it like the q-values: the writer fills `psm.rank` from the score and keeps the entry during 1.4 ([CNF-6](t04-confidence-fields.md)). In 1.3 files the score is the rank. |
-| Scope (run vs experiment) of `fdr_filter` thresholds | No new footer key. The scope goes in the provenance filtering step as `<level>_fdr_scope` ([FLT-4](t03-filtering-state.md)). Readers that need it and find none follow [CNF-R3](t04-confidence-fields.md). |
+| Scope (run vs experiment) of the FDR thresholds | The scope goes in the provenance filtering step as `<level>_fdr_scope` ([FLT-4](t03-filtering-state.md)). Readers that need it and find none follow [CNF-R3](t04-confidence-fields.md). |
 | `PSM.confident()` versus the acceptance predicate | Two helpers with two meanings. `confident(t)` is a q-value filter at PSM level ([CNF-R4](t04-confidence-fields.md)). `accepted()` is the source's acceptance ([FLT-R4](t03-filtering-state.md)). Counts use `accepted()`. |
-| pg evidence: the producer counts `pass_threshold ≠ false`, the reader needs a declared cut | Keep the producer rule ([PGV-2](t12-protein-groups.md)) and require the pg footer to declare the cut behind it ([PGV-3](t12-protein-groups.md)). The two rules then agree. |
+| pg evidence: the producer counts `pass_threshold ≠ false`, the reader needs a declared cut | Keep the producer rule ([PGV-2](t12-protein-groups.md)) and require provenance to record the cut behind it ([PGV-3](t12-protein-groups.md)). The two rules then agree. |
 | Multi-run unit rows (FragPipe) and the identifying PSM | Unit rows name no identifying PSM. `id_run_file_name` stays "`run_file_name` or null" ([FID-1](t06-identifications-per-feature.md), [FRW-6](t05-feature-rows.md)). Supporting PSMs from member runs may still link. |
 | Merging files with different `scan_format` | Write `mixed` if every psm row has a `spectrum_reference`, else `unknown` with a warning ([SPC-7](t11-spectrum-precursor-fields.md), [META-4](t13-metadata-conformance.md)). |
 | PSM counts when `precursor_index` is null | Count once per spectrum and report the coverage. The count is a lower bound on identified precursors ([PSM-R2](t01-psm-rows.md)). |
-| Should the `dda` profile require rank-1-only PSM files, or reject `unknown` footer values? | No, not in 1.4. Requiring rank-1-only files would reverse [#241](https://github.com/bigbio/qpx/issues/241); rank is a typed column and readers count `rank = 1`. Rejecting `unknown` should wait until every qpx converter fills the keys. |
+| Should the `dda` profile require rank-1-only PSM files, or reject `unknown` declarations? | No, not in 1.4. Requiring rank-1-only files would reverse [#241](https://github.com/bigbio/qpx/issues/241); rank is a typed column and readers count `rank = 1`. Rejecting `unknown` should wait until every qpx converter fills the keys. |
 | MaxQuant `MULTI-MATCH-MSMS` | Keep it as `transferred` ([MBR-1](t08-match-between-runs.md)) until MaxQuant documentation or a fixture shows that its MS/MS identifies the peptide at PSM FDR. |
 
 ## Producer status today
@@ -247,7 +287,7 @@ Some current behaviour should be kept and written into the contract: the canonic
 
 This is the producer-neutral order from the first draft. The current order, which puts OpenMS and the consumers first, is on the [overview](index.md#order-of-work).
 
-1. **Plumbing, no change of meaning.** Add the footer registry, writers that keep the Arrow schema equal to the key-value footer, and readers and rewrites that read the key-value footer and carry keys by rule ([META-1](t13-metadata-conformance.md) to [META-4](t13-metadata-conformance.md)). Everything else depends on declarations surviving a merge.
+1. **Plumbing, no change of meaning.** Add the ontology `properties` list, the required `run.acquisition_method` and the fixed provenance parameter names; keep existing footer keys readable from the key-value footer and carry them by rule ([META-1](t13-metadata-conformance.md) to [META-4](t13-metadata-conformance.md)). Everything else depends on declarations surviving a merge.
 2. **Reader fixes that are wrong under any reading of 1.3.** These are in qpx's read API, the MuData export and mokume ([T14](t14-reader-contract.md)):
     - `confident()` mixing levels or returning empty sets;
     - direct and transferred cells summed;
@@ -296,7 +336,7 @@ The completeness pass checked every finding against the sections. The items belo
 | Unit of `peptide_qvalue` [CRITIC-34](findings-feature.md#critic-34) | Fix one meaning for `feature.peptide_qvalue` (probably per peptidoform); values of the other kind go under a named score. No footer key. | T04 |
 | Peptide-level confidence on psm rows [EXTERNAL-25](findings-psm.md#external-25) | No typed column. Reserved names stay in `additional_scores`, and CNF-6's removal applies only where a typed column exists. | T04 |
 | FDR competition unit when several rank-1 rows share a spectrum [EXTERNAL-08](findings-psm.md#external-08) | Q-values are FDR-valid only for the best row of each `(run, scan, precursor_index)` group. Provenance records the competition unit. | T04 |
-| pepmap filter state [MZID_CDAP-M2](findings-cross.md#mzid_cdap-m2), [CRITIC-57](findings-cross.md#critic-57) | Population is already set by [PRT-14](t10-protein-mapping.md) (target peptidoforms of rank-1 psm rows and of feature rows). Residual: pepmap's footer copies the psm filter keys (T03 open question 5). | T03, T10 |
+| pepmap filter state [MZID_CDAP-M2](findings-cross.md#mzid_cdap-m2), [CRITIC-57](findings-cross.md#critic-57) | Population is already set by [PRT-14](t10-protein-mapping.md) (target peptidoforms of rank-1 psm rows and of identified feature rows). The filter state is the dataset's, recorded in provenance, so pepmap needs no statement of its own. | T03, T10 |
 | What a group member is (MaxQuant subset proteins) [CRITIC-52](findings-pg.md#critic-52) | Define membership in the spec (indistinguishable proteins only, or with subsets); converters that cannot meet it say so. No footer key. | T12 |
 | Feature traceability to tool row ids [MAXQUANT-M2](findings-feature.md#maxquant-m2) | Optional `feature.source_feature_id` (string). Merged ids are joined with `;`. | T06 |
 | Absent optional column vs all-null column; stale 1.3 changelog [CRITIC-62](findings-cross.md#critic-62), [SPEC-32](findings-cross.md#spec-32) | An absent optional column means unknown on every row. The changelog lists every 1.3 column. | T13 |
