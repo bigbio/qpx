@@ -37,7 +37,7 @@ The footer has no key that names the profile. A dataset claims it in the `proven
 | Fact | Value for OpenMS-written files |
 |---|---|
 | PSM rank | Only the best hit per precursor is exported. `rank` is always 1. |
-| FDR levels | OpenMS estimates FDR at the levels the analysis asks for: PSM, peptide (common for immunopeptidomics) and protein. A typed q-value column is filled exactly when FDR was estimated at its level, and is null on every row otherwise. |
+| FDR levels | OpenMS always estimates PSM-level FDR, so PSM q-values are always present. Peptide-level FDR (common for immunopeptidomics) and protein-level FDR are estimated when the analysis asks for them. A peptide or protein q-value column is filled exactly when FDR was estimated at its level, and is null on every row otherwise. |
 | Scope of PSM q-values | One estimate over the whole experiment. |
 | Protein grouping | One inference over the whole dataset, so a group is the same in every run. |
 | Primary intensity | The measured signal: the feature area for label-free data, the reporter-ion intensity for isobaric data. Protein quantities are OpenMS's own. |
@@ -55,7 +55,7 @@ One row is one identified precursor of one MS/MS spectrum.
 | `run_file_name`, `scan`, `peptidoform`, `charge` | Unique together. `charge ≥ 1`. `scan` holds one spectrum, and `spectrum_reference` holds the native id. |
 | `rank` | Always 1. |
 | `precursor_index` | Never null. 1 for the spectrum's first precursor; 2, 3, … for co-isolated precursors identified in the same spectrum ([CHI-3](t02-chimeric-spectra.md)). |
-| `qvalue` | The PSM-level q-value. Filled whenever PSM-level FDR was estimated. |
+| `qvalue` | Never null. The PSM-level q-value; OpenMS always estimates PSM-level FDR. |
 | `posterior_error_probability` | Never null. |
 | `is_decoy` | Never null. True only if every protein the peptide maps to is a decoy. |
 | `contaminant` | Never null. |
@@ -77,7 +77,7 @@ The rules below apply to identified rows, that is every row except the optional 
 |---|---|
 | `peptidoform`, `sequence`, `charge` | Never null or empty. Canonical peptidoform. `charge ≥ 1`. |
 | `identification_type` | Never null: `direct`, `secondary` or `transferred` ([MBR-1](t08-match-between-runs.md)). The transfer status comes from OpenMS's own annotation of transferred runs. |
-| `scan`, `id_run_file_name`, `posterior_error_probability`, `psm_qvalue` | On `direct` and `secondary` rows: exactly one spectrum, `id_run_file_name = run_file_name`, and the PEP and `psm_qvalue` of that PSM. On `transferred` rows: `scan` is empty and the others are null. |
+| `scan`, `id_run_file_name`, `posterior_error_probability`, `psm_qvalue` | On `direct` and `secondary` rows: exactly one spectrum, `id_run_file_name = run_file_name`, and the PEP and `psm_qvalue` of that PSM, all non-null. On `transferred` rows: `scan` is empty and the others are null. |
 | `peptide_qvalue` | Filled whenever peptide-level FDR was estimated. |
 | `match_qvalue` | On `transferred` rows, non-null exactly when PIP-ECHO ran. Null on other rows. |
 | `intensities` | One entry per label that has a sample in the run. A null intensity means not quantified; 0 is never used for missing. A `transferred` row has at least one measured value. |
@@ -130,7 +130,7 @@ Each question a consumer asks is one `WHERE` clause on typed columns. `:t` is th
 
 Three points go with these predicates:
 
-- **A q-value level that was not estimated cannot be filtered on.** If a q-value column is null on every row, the reader filters at a level that exists and says so. For an analysis with peptide-level FDR only, that means `peptide_qvalue <= :t` on features and no q-value condition on protein groups. A reader never treats null as 1.0 and never drops every row silently.
+- **A q-value level that was not estimated cannot be filtered on.** If a q-value column is null on every row, the reader filters at a level that exists and says so. For an analysis without protein-level FDR, that means no q-value condition on protein groups; the PSM predicates always work. A reader never treats null as 1.0 and never drops every row silently.
 - **Transferred quantities are kept by default.** They improve quantification. Leaving them out is the reader's choice: add `identification_type <> 'transferred'`, or under PIP-ECHO keep those with `match_qvalue <= :t`.
 - **Protein groups are keyed on `pg_group_id`.** `anchor_protein` is for display only.
 
@@ -228,4 +228,3 @@ The maintainers decided these points in [#383](https://github.com/bigbio/qpx/iss
 
 - What OpenMS's protein quantification does with a direct and a transferred feature of the same precursor in one run, so that the feature rows still add up to the protein quantity after the transferred row is left out.
 - That ProteomicsLFQ never writes two direct features for one precursor in one run.
-- That PSM-level q-values are available whenever peptide-level FDR is the requested level.
