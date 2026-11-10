@@ -45,7 +45,7 @@ In the spec:
 | A. Status quo | No change | Co-identifications look like alternatives, ties or duplicates |
 | B. One row per spectrum with a `+`-joined `peptidoform` | ProForma 2.0 §7.2 | Breaks the per-peptide typed `charge`, scores, proteins and `feature_id`; no qpx converter writes it |
 | C. Boolean `is_chimeric` | Smallest | No representative; ties look like second precursors |
-| D. Co-identifications in `rank` (Sage; per-SIR mzIdentML) | No column; PSI wording | Rank filters drop valid identifications [[EXTERNAL-06](findings-psm.md#external-06)] |
+| D. Co-identifications in `rank` (Sage; per-SIR mzIdentML) | No column | Rank filters drop valid identifications [[EXTERNAL-06](findings-psm.md#external-06)] |
 | E. Role `none`/`primary`/`secondary` | Readable | Two `secondary` rows may be one precursor's tie or two precursors (CHIMERYS, PD, MaxQuant); readers fall back on m/z |
 | **E′. `precursor_index` with per-query rank ([T01](t01-psm-rows.md))** | Groups hypotheses by precursor; `= 1` / `> 1` filters; ties count once | New optional column; the producer picks index 1 when the tool does not |
 | **F1. Keep and define `secondary`** | Non-breaking; mokume already reads it as in-run | Mixes origin and role ([EXTERNAL-22](findings-feature.md#external-22)), which cannot combine within one run |
@@ -67,7 +67,7 @@ In the spec:
 - A non-chimeric spectrum has only index 1. Null means unknown.
 - A *secondary PSM* has index > 1; other sections use this term.
 
-**CHI-4 (MUST)** Rank follows [T01](t01-psm-rows.md) PSM-3: each co-isolated precursor is its own query, so its best hypothesis has rank 1. A per-spectrum tool rank goes to `<engine>_rank` (`sage_rank`). This deviates from mzIdentML's per-SIR rank, which would make rank filters drop correct identifications [[EXTERNAL-06](findings-psm.md#external-06)].
+**CHI-4 (MUST)** Rank follows [T01](t01-psm-rows.md) PSM-3: each co-isolated precursor is its own query, so its best hypothesis has rank 1. A per-spectrum tool rank goes to `<engine>_rank` (`sage_rank`). A per-spectrum rank (Sage, mzIdentML per SIR) would make rank filters drop correct identifications [[EXTERNAL-06](findings-psm.md#external-06)].
 
 **CHI-5 (MUST)** The index comes from the tool's marker where one exists (Producer changes). Otherwise the producer groups a spectrum's rank-1 rows by `observed_mz`: rows within the search's precursor tolerance (10 ppm if unknown) are one precursor. A rank > 1 row takes the index of the group its `observed_mz` matches, else null. Without `observed_mz` the index is null.
 
@@ -148,4 +148,3 @@ Violations:
 1. MaxQuant TMT: does an evidence row's reporter sum include MS/MS where it was a second peptide? A TMT fixture decides `exclusive` vs `unknown`.
 2. Do FragPipe DDA+ `Observed M/Z` and PD-with-CHIMERYS `m/z [Da]` give each co-identification its own precursor ([FRAGPIPE-03](findings-psm.md#fragpipe-03))? If not, CHI-5 merges them into ties and the producer must write `unknown`.
 3. Should index 1 go to the lowest PEP, which every producer can compute, or to the precursor nearest the isolation target, which needs mzML?
-4. Should QPX request PSI-MS terms for chimeric co-identification and the precursor index?

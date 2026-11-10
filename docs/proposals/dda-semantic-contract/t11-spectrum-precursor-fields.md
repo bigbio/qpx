@@ -43,7 +43,7 @@ These columns feed mass-accuracy QC, ML training, spectrum joins and identity (`
 | Option | For | Against |
 |---|---|---|
 | Instrument selected ion only | One physical value | MaxQuant lacks it; contradicts [T02](t02-chimeric-spectra.md) CHI-7, DDA+ |
-| **Value the identification used (mzIdentML `experimentalMassToCharge`), calibration declared** | PSI-aligned; every tool has it | Calibration varies (declared) |
+| **Value the identification used (mzIdentML `experimentalMassToCharge`), calibration declared** | Every tool has it | Calibration varies (declared) |
 | **Typed `isotope_error`** | Raw error kept, offset explained | One column |
 | Hash scans declared `surrogate` | Non-empty key | Sentinel (P-D) |
 | **`spectrum_reference` beside `scan`** | Lossless | Must key rows with empty `scan` |
@@ -112,7 +112,7 @@ The *claimed ion* is the precursor the row's identification asserts ([T02](t02-c
 
 **SPC-15 (MUST)** In `peptidoform` only residue and terminal tags and the `?` prefix are canonical, with bodies `UNIMOD:n`, `UNIMOD:n|±mass`, `±mass` or an SPC-14(c) name.
 - Labile `{}`, global `<>`, `/z`, `+` ([T02](t02-chimeric-spectra.md) CHI-1), `//`, `#g` groups, `( )` ranges and INFO are not; cross-links stay in `crosslinked_peptidoform`. scope.md:27 says "a subset of Base".
-- Residues as identified: no I↔L rewriting, no J/B/Z/X; ties are separate rows ([T01](t01-psm-rows.md) PSM-6). This departs from mzTab 1.0 §5.12.4 (J) because `calculated_mz` and identity need one residue.
+- Residues as identified: no I↔L rewriting, no J/B/Z/X; ties are separate rows ([T01](t01-psm-rows.md) PSM-6). `calculated_mz` and identity need one residue.
 - The site is the final localisation (phosphoRS, PTMProphet or MaxQuant PTM score over the engine's); an unlocalised delta takes `?`; `assigned = true` candidates match the peptidoform.
 - The untagged peptidoform equals `sequence`. These syntax and sequence checks (semantic_validation.py:85-88) move from `--semantic` to basic validation ([T07](t07-unidentified-features.md) UNI-1), so `''` and `'None'` fail there.
 

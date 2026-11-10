@@ -105,7 +105,7 @@ These principles govern every section:
 | P-B | **Declare, don't filter silently.** Producers may keep or drop rows, but the footer declares what was kept, using closed vocabularies. An absent key means `unknown`, and readers assume neither way. The xic keys are the precedent. |
 | P-C | **Flags on rows over hidden policy.** Rank-n alternatives, co-identifications, transfers, imputed values, decoys and contaminants are marked by typed columns. |
 | P-D | **Null means unknown or not applicable.** No sentinels: no 0 m/z, no 1.0 q-value placeholders, no `''` or `'None'` peptidoforms, no hashes read as scans. |
-| P-E | **Align with PSI** (mzIdentML 1.2, mzTab, ProForma 2.0, USI, PSI-MS CV) where a concept exists. Deviate only with a stated reason. |
+| P-E | **PSI terms as references only.** A PSI-MS term or a ProForma, mzIdentML or mzTab definition is cited where it pins down a meaning. Matching PSI formats is not a goal and never decides a rule. |
 | P-F | **Additive and versioned.** Rules target 1.4. New optional columns and footer keys come first, with a stricter conformance profile. Every breaking change is flagged. |
 | P-G | **Feasible for producers.** Every MUST can be met from the files converters actually read. Where a tool lacks the information, the rule says what to write. |
 | P-H | **Readers are part of the contract.** Every section ends with reader rules and the places where qpx and mokume violate them. |
@@ -266,21 +266,14 @@ Each section lists its own open questions. These are the ones that shape the con
 
 1. **Unidentified features.** Should they go to a separate view, as proposed, which reverses [#229](https://github.com/bigbio/qpx/issues/229)/[#232](https://github.com/bigbio/qpx/issues/232)? Or should they stay in `feature` with nullable identity columns? This also settles [#378](https://github.com/bigbio/qpx/issues/378). ([T07](t07-unidentified-features.md))
 2. **Transfers in quantities.** The default read profile keeps transferred quantities, de-duplicated and masked, because MaxQuant and IonQuant protein values include them. Should they be dropped by default, or weighted (mokume#117)? ([T14](t14-reader-contract.md), [T08](t08-match-between-runs.md))
-3. **Deviations from PSI.**
-    - Rank is per precursor ion, not per spectrum identification result ([CHI-4](t02-chimeric-spectra.md)).
-    - The ProForma `+` joiner is rejected ([CHI-1](t02-chimeric-spectra.md)).
-    - Target PSMs carry no decoy protein entries ([PRT-2](t10-protein-mapping.md)).
-    - `pass_threshold` is null under "no threshold" ([FLT-7](t03-filtering-state.md)).
-
-    Are these acceptable?
-4. **Conflicts.** Should loser rows of an identification conflict be MUST rather than MAY? Do co-eluting localisation isomers count as conflicts ([T06](t06-identifications-per-feature.md))?
-5. **`peptide_qvalue`.** Is it per stripped sequence (MS:1001868) or per peptidoform? A footer key `peptide_qvalue_unit` would declare it ([CRITIC-34](findings-feature.md#critic-34)).
-6. **2.0 clean-up.**
+3. **Conflicts.** Should loser rows of an identification conflict be MUST rather than MAY? Do co-eluting localisation isomers count as conflicts ([T06](t06-identifications-per-feature.md))?
+4. **`peptide_qvalue`.** Is it per stripped sequence (MS:1001868) or per peptidoform? A footer key `peptide_qvalue_unit` would declare it ([CRITIC-34](findings-feature.md#critic-34)).
+5. **2.0 clean-up.**
     - Retype `feature.pg_accessions` to `list<string>`.
     - Remove `unique`.
     - Move imputed values out of the primary slot.
     - Rename `feature.global_qvalue` to `precursor_global_qvalue` and `pg_qvalue` to `pg_unit_qvalue`.
-7. **Facts to confirm with tool authors or real exports.**
+6. **Facts to confirm with tool authors or real exports.**
     - MaxQuant `MULTI-MATCH-MSMS`.
     - FragPipe DDA+ and CHIMERYS per-precursor m/z.
     - PD `Found in Sample` and decoy content.

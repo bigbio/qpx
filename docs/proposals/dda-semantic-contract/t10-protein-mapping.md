@@ -55,14 +55,14 @@
 | | **Typed nullable `contaminant`** | P-C | New column |
 | Unknown membership | Anchor alone | Keeps the razor protein | Breaks `pg.md:75` |
 | | **Both null; `razor_protein` cv_param** | Keeps `pg.md:75` | Lookup in cv_params |
-| Decoy entries on target rows | Keep them (mzIdentML, mzTab) | P-E | Readers must parse |
-| | **Leave them out** | No parsing | Stated deviation |
+| Decoy entries on target rows | Keep them (as mzIdentML and mzTab do) | Lossless | Readers must parse |
+| | **Leave them out** | No parsing | Decoy mappings of target peptides are not in psm |
 | `pg_accessions` type | **Structs with null positions; `list<string>` in 2.0** | Non-breaking now | Two steps |
 
 ## Recommendation
 **PRT-1 (MUST)** `psm.protein_accessions` holds the distinct accessions of every entry the source maps the peptide to, including contaminant entries. Sources are mzIdentML PeptideEvidence, MaxQuant `Proteins`, FragPipe `Protein` + `Mapped Proteins`, PD `Protein Accessions`, OpenMS PeptideEvidence and the CDAP cell, with the engine's own matching (I/L). It holds no razor protein, group or inference ([#78](https://github.com/bigbio/qpx/issues/78)). Null means the source lists no entries (MaxQuant reverse hits); the value is never an empty list. Order carries no meaning: producers SHOULD sort by code point and permute `protein_starts` to match. Positions go to `protein_starts`, `pg_positions` or pepmap, never to cv_params.
 
-**PRT-2 (MUST)** Rows with `is_decoy = false` hold no decoy entry in `protein_accessions`, `pg_accessions` or `pg_positions`, nor does a target peptidoform's pepmap row. This narrows `psm.md:57` for target+decoy peptides and deviates from mzIdentML and mzTab so that target counts never include decoy proteins.
+**PRT-2 (MUST)** Rows with `is_decoy = false` hold no decoy entry in `protein_accessions`, `pg_accessions` or `pg_positions`, nor does a target peptidoform's pepmap row. This narrows `psm.md:57` for target+decoy peptides, so that target counts never include decoy proteins.
 
 **PRT-3 (MUST)** Accessions follow `pg.md:33,44-50`: the bare accession, with the database's decoy or contaminant marker kept verbatim as a prefix or suffix (`REV__P04114`, `rev_P12345`, `contam_P02768`, `CON__P04264`, `XXX_NP_005751.2`, `P12345_rev`). An entry is the same string in every view. Producers never strip a marker. They add one only to separate a decoy that the source merged with its target (DIA-NN `DECOY_`).
 
@@ -160,5 +160,5 @@ The anchor is a member of `pg_accessions`. On feature it is non-null exactly whe
 1. Retype `feature.pg_accessions` to `list<string>` in 2.0, when `unique` is removed?
 2. Does any PD export name a shared peptide's razor or quan group? If so, PRT-8 uses it.
 3. Should the tool's contaminant flag outrank the "any entry" rule? MaxQuant differs on 5 fixture rows, and [T12](t12-protein-groups.md) PGV-10 assumes the flag outranks it.
-4. Is PRT-2's deviation from mzIdentML and mzTab acceptable, or should decoy mappings get a separate column?
+4. Should decoy mappings of target peptides get a separate column (PRT-2)?
 5. Rename pepmap `pg_accessions` (evidence proteins) to `protein_accessions` in 2.0?

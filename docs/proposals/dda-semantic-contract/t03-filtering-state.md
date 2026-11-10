@@ -54,8 +54,8 @@
 | qpxc enforces 1% | Uniform | Reverses [#241](https://github.com/bigbio/qpx/issues/241)/#342; loses rescoring inputs |
 | `fdr_filter_level` / `_threshold` / `_metric` (registry draft) | 3 keys | One level per file; MaxQuant and Philosopher cut at several |
 | **`fdr_filter_<level>`** | One value per level, like mzTab `false_discovery_rate`; cumulative | 4 keys; a non-FDR cut collapses to `applied` |
-| `pass_threshold` = "passes 1% PSM FDR" | One meaning | Only PD could fill it; departs from PSI |
-| **`pass_threshold` = source acceptance, basis declared** | PSI-aligned; always fillable or null | Readers check the basis |
+| `pass_threshold` = "passes 1% PSM FDR" | One meaning | Only PD could fill it |
+| **`pass_threshold` = source acceptance, basis declared** | Always fillable or null | Readers check the basis |
 | **Decoys declared, never removed by qpx** | Feasible; [#342](https://github.com/bigbio/qpx/issues/342) | Readers filter `is_decoy` everywhere |
 
 ## Recommendation
@@ -93,7 +93,7 @@ An absent or off-vocabulary value means `unknown`. The [T13](t13-metadata-confor
 **FLT-7 (MUST)** `pass_threshold` values:
 - **`true`:** the source accepted the row under the criterion that `pass_threshold_level` and `pass_threshold_fdr` declare.
 - **`false`:** the source evaluated the row and it failed.
-- **`null`:** the source states no acceptance: no flag, or the mzIdentML Threshold is MS:1001494 "no threshold" (a deliberate deviation: mzIdentML requires the attribute, but a `true` without a threshold certifies nothing).
+- **`null`:** the source states no acceptance: no flag, or the mzIdentML Threshold is MS:1001494 "no threshold" (a `true` without a threshold certifies nothing).
 
 The flag ignores rank, decoy status and `precursor_index` ([T02](t02-chimeric-spectra.md)), so `true` never means "the spectrum's identification" (FLT-R4).
 

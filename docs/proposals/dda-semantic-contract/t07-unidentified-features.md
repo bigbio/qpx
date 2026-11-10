@@ -48,7 +48,7 @@ Readers mishandle legacy rows (UNI-R2): on a probe, `QualityControlView.metrics(
 - One OpenMS analysis gives feature views with or without unidentified rows, by route; "not detected", "unidentified" and "dropped" look alike.
 - The sentinels `''`, `'None'` and charge 0 enter peptide counts, MuData variables and id hashes; one such row disables id verification for the file.
 - FragPipe, PD and OpenMS make "identified, not quantified" look like "not identified"; MaxQuant and CDAP keep the difference, so MNAR-aware imputation gets producer-dependent input.
-- Unidentified features are real tool output [[EXTERNAL-15](findings-feature.md#external-15)]: MaxQuant allPeptides.txt, OpenMS `targeted_only=false` seeds, Dinosaur, Biosaur2, PSI QC term MS:4000093. mzTab-M keeps them in SMF (empty `SME_ID_REFS`) because identifications live in SME [[EXTERNAL-14](findings-feature.md#external-14)]. A QPX feature row carries its identification like an mzTab 1.0 PEP row (`sequence` mandatory), so SMF's counterpart is an identification-free view (P-E).
+- Unidentified features are real tool output [[EXTERNAL-15](findings-feature.md#external-15)]: MaxQuant allPeptides.txt, OpenMS `targeted_only=false` seeds, Dinosaur, Biosaur2, PSI QC term MS:4000093. mzTab-M keeps them in SMF (empty `SME_ID_REFS`) because identifications live in SME [[EXTERNAL-14](findings-feature.md#external-14)]. A QPX feature row carries its identification like an mzTab 1.0 PEP row (`sequence` mandatory), so SMF's counterpart is an identification-free view.
 
 ## Options considered
 | Option | For | Against |

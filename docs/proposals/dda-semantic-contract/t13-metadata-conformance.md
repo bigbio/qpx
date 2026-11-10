@@ -42,7 +42,7 @@
 | Option | For | Against |
 |---|---|---|
 | Provenance parameters | Exist (`provenance.md:65`) | Free text, unvalidated, per dataset not per file [[CRITIC-60](findings-cross.md#critic-60)] |
-| Registry of footer keys | Travel with the file. Precedents: xic keys, mzTab MTD, mzIdentML `Threshold` (P-E) | About 30 keys, each needing a carry rule |
+| Registry of footer keys | Travel with the file. Precedents: xic keys, mzTab MTD, mzIdentML `Threshold` | About 30 keys, each needing a carry rule |
 | Readers use `schema_arrow` | Current recipes | Misses late keys; DuckDB and Rust read key-value pairs |
 | `acquisition_method` only on `run` | No new key | Optional free text; needs an SDRF; absent from psm-only exports |
 | Profiles `core`/`dda` plus an optional claim | Testable; DIA and `unknown` still pass `core` (P-G); mirrors mzTab `mzTab-mode` | A claim can be false |

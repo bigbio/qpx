@@ -55,8 +55,8 @@ Infrastructure:
 | Rank-1 only is mandatory | Simplest for readers | Breaks [#241](https://github.com/bigbio/qpx/issues/241); rescoring needs rank>1 |
 | **All ranks allowed; typed `rank` plus a declared policy** | Lossless; one filter (`rank = 1`) for every producer | Readers must apply the filter |
 | Rank stays a score | No schema change | About 100x the read cost (`scores.md:38`); absent means "rank 1" or "unknown" depending on producer |
-| Rank per spectrum (literal mzIdentML SIR) | PSI wording | Sage, MaxQuant and DDA+ co-identifications become rank 2+, so a rank filter drops them [[EXTERNAL-06](findings-psm.md#external-06)] |
-| **Rank per precursor ion** | A co-identification is rank 1 for its own ion ([T02](t02-chimeric-spectra.md) CHI-4); equals mzIdentML for single-precursor spectra | Deviates from PSI on chimeric spectra; charges ranked in separate source queries stay rank 1 each |
+| Rank per spectrum (literal mzIdentML SIR) | Same as mzIdentML | Sage, MaxQuant and DDA+ co-identifications become rank 2+, so a rank filter drops them [[EXTERNAL-06](findings-psm.md#external-06)] |
+| **Rank per precursor ion** | A co-identification is rank 1 for its own ion ([T02](t02-chimeric-spectra.md) CHI-4); equals mzIdentML for single-precursor spectra | Charges ranked in separate source queries stay rank 1 each |
 | **Merged row per hypothesis ([#229](https://github.com/bigbio/qpx/issues/229) default)** | Unique key; matches mzTab 1.0 §5.12.1 | The top-level PEP comes from one engine or the source's combination |
 | Per-engine rows, `search_engine` in the composite ([#229](https://github.com/bigbio/qpx/issues/229) variant) | Engine-separate rows | New column; every count and join must deduplicate; conflicts with [#378](https://github.com/bigbio/qpx/issues/378) rule 5; never implemented |
 | Rank joins the composite ([#229](https://github.com/bigbio/qpx/issues/229) note) | Allows the same hypothesis twice | Legalises duplicates; rescoring changes ids; unneeded once equal K merge |

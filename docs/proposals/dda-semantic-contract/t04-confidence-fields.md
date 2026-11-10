@@ -68,7 +68,7 @@
 | `psm.posterior_error_probability` | PSM | – | CNF-7 |
 | `feature.psm_qvalue` (new) | identifying PSM ([T06](t06-identifications-per-feature.md)) | `psm_qvalue_scope` | MS:1002354 |
 | `feature.posterior_error_probability` | identifying PSM (DIA: precursor, CNF-8) | – | CNF-7 |
-| `feature.precursor_qvalue` | precursor (peptidoform, charge) | run | none (stated deviation) |
+| `feature.precursor_qvalue` | precursor (peptidoform, charge) | run | none |
 | `feature.global_qvalue` | precursor | experiment | none |
 | `feature.peptide_qvalue` | peptide | `peptide_qvalue_scope` | MS:1001868 (per stripped sequence; open question 2) |
 | `feature.channel_details.qvalue` | the label's precursor | run | none |
@@ -183,6 +183,5 @@ Current violations:
 ## Open questions for maintainers
 1. Should psm get a typed `peptide_qvalue` for producers that write only PSMs (mzIdentML, Sage) [[EXTERNAL-25](findings-psm.md#external-25)]?
 2. Is `peptide_qvalue` per peptidoform (PD peptide groups, DIA-NN `Peptidoform.Q.Value`) or per stripped sequence (as MS:1001868 defines it)? Fix one, or declare it in a key?
-3. Should QPX request PSI-MS terms for run-level and global precursor q-values?
-4. *Resolved in the overview:* the scope keys stay separate from [T03](t03-filtering-state.md); the scope of a filter cut goes in provenance ([T03](t03-filtering-state.md) FLT-4).
-5. Should `feature.global_qvalue` be renamed `precursor_global_qvalue` in 2.0?
+3. *Resolved in the overview:* the scope keys stay separate from [T03](t03-filtering-state.md); the scope of a filter cut goes in provenance ([T03](t03-filtering-state.md) FLT-4).
+4. Should `feature.global_qvalue` be renamed `precursor_global_qvalue` in 2.0?
