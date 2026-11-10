@@ -322,6 +322,19 @@ def _term_pairs(group: pd.DataFrame, column: str) -> list[tuple[str, str]]:
     return [pair for pair in pairs if pair[0]]
 
 
+def _extra_run_comment_columns(columns) -> dict[str, list[str]]:
+    """``x_sdrf_<name>`` for each unmapped ``comment[...]`` column, with the SDRF columns that fill it."""
+    extra: dict[str, list[str]] = {}
+    for column in columns:
+        match = re.fullmatch(r"comment\[(.+)\]", column)
+        if not match or column in _KNOWN_RUN_COMMENT_COLUMNS or column.startswith(_COL_MOD_PARAM):
+            continue
+        name = _normalize_char_name(f"characteristics[{match.group(1)}]")
+        if name:
+            extra.setdefault(f"x_sdrf_{name}", []).append(column)
+    return extra
+
+
 class SdrfConverter(BaseConverter):
     """Convert an SDRF TSV into ``sample.parquet`` and ``run.parquet``.
 
@@ -462,14 +475,7 @@ class SdrfConverter(BaseConverter):
         # Group by run file
         run_groups = sdrf_df.groupby("_run_file")
 
-        extra_comment_cols: dict[str, list[str]] = {}
-        for column in sdrf_df.columns:
-            match = re.fullmatch(r"comment\[(.+)\]", column)
-            if not match or column in _KNOWN_RUN_COMMENT_COLUMNS or column.startswith(_COL_MOD_PARAM):
-                continue
-            name = _normalize_char_name(f"characteristics[{match.group(1)}]")
-            if name:
-                extra_comment_cols.setdefault(f"x_sdrf_{name}", []).append(column)
+        extra_comment_cols = _extra_run_comment_columns(sdrf_df.columns)
         extra_column_names = sorted(extra_comment_cols)
 
         records: list[dict] = []
@@ -504,7 +510,7 @@ class SdrfConverter(BaseConverter):
         with RunWriter(output_path, creator=creator, extra_columns=extra_column_names) as writer:
             writer.write_batch(records)
 
-        self.logger.info(f"Wrote {len(records)} runs ({len(extra_column_names)} extra columns) to {output_path}")
+        self.logger.info("Wrote %d runs (%d extra columns) to %s", len(records), len(extra_column_names), output_path)
 
     def _run_acquisition_fields(self, group: pd.DataFrame) -> dict:
         """Extract acquisition fields as plain strings, with their resolved terms in ``additional_terms``."""
