@@ -146,6 +146,7 @@ The ontology view gains a `properties` list (key and value) per row, the same st
 | `unquantified_rows` | The step that wrote the files | `retained`, `removed` | [UNI-6](t07-unidentified-features.md), [PGV-4](t12-protein-groups.md) |
 | `decoy_policy`, `contaminant_policy` | Search or export step | `retained`, `removed`, `not_searched` | [FLT-10](t03-filtering-state.md), [FLT-11](t03-filtering-state.md) |
 | `include_unassigned_psms`, `rank1_only`, `chimeric_secondaries_removed` | Export step | `true`, `false` | [FLT-12](t03-filtering-state.md), [PSM-4](t01-psm-rows.md), [CHI-10](t02-chimeric-spectra.md) |
+| `match_between_runs` | Match-between-runs | `true`, `false` | [MBR-8](t08-match-between-runs.md) |
 | `mbr_fdr` | Match-between-runs | a threshold, `applied`, `none` | [MBR-9](t08-match-between-runs.md) |
 | `pg_grouping` | Protein inference | `dataset_inference`, `partial_inference`, `mapping_set` | [PGV-6](t12-protein-groups.md) |
 | `conformance_profile` | The step that wrote the files | `dda-strict` | [META-7](t13-metadata-conformance.md) |

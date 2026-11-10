@@ -93,7 +93,9 @@
 | `decoy_policy`, `contaminant_policy` | search or `format_conversion` step | `retained`, `removed`, `not_searched` | [T03](t03-filtering-state.md) FLT-10, FLT-11 |
 | `include_unassigned_psms`, `rank1_only`, `chimeric_secondaries_removed` | `format_conversion` | `true`, `false` | [T03](t03-filtering-state.md) FLT-12, [T01](t01-psm-rows.md) PSM-5, [T02](t02-chimeric-spectra.md) CHI-10 |
 | `skipped_rows_<view>`, `skipped_runs_psm`, `skipped_unidentified_features` | `format_conversion` | counts or run names | [T03](t03-filtering-state.md) FLT-6, [T06](t06-identifications-per-feature.md) FID-8, [T07](t07-unidentified-features.md) UNI-5 |
-| `mbr_fdr`, `mbr_peptide_fdr`, `mbr_protein_fdr` | `quantification` step that performed match-between-runs (its `step_name` is `match_between_runs`) | decimal, `applied`, `none` | [T08](t08-match-between-runs.md) MBR-9 |
+| `match_between_runs` | `quantification` step with `step_name` `match_between_runs`; written also when no transfer was made, so that `false` differs from unknown | `true`, `false` | [T08](t08-match-between-runs.md) MBR-8 |
+| `mbr_fdr`, `mbr_peptide_fdr`, `mbr_protein_fdr` | the same step, when it made transfers | decimal, `applied`, `none` | [T08](t08-match-between-runs.md) MBR-9 |
+| `transferred_rows_removed` | `format_conversion` (a qpxc option that drops transfers) | `true`, `false` | [T08](t08-match-between-runs.md) MBR-8 |
 | `pg_grouping` | `protein_inference` | `dataset_inference`, `partial_inference`, `mapping_set` | [T12](t12-protein-groups.md) PGV-6 |
 | `conformance_profile` | the step that wrote the QPX files | `dda-strict` | META-7 |
 
@@ -187,7 +189,7 @@
 | Producer | Change needed |
 |---|---|
 | All converters | Stamp the existing keys early or by the re-serializing add; write `run.acquisition_method` (add `--acquisition-method`), the reserved ontology properties and the fixed provenance parameters (META-1) |
-| CDAP, OpenMS consensusXML and `-out_qpx` | `dda` unless the SDRF differs (DDA-only workflows); OpenMS writes `psm_qvalue`, not `q-value` ([T04](t04-confidence-fields.md)). The native writer (verified at HEAD) stamps `qpx_version` 1.1, and `ProteomicsLFQ -out_qpx` and `IsobaricWorkflow -out_qpx` write only feature, psm and pg (no run, sample or provenance view, and so no ontology file): none of the META-1 declarations exists. See the [OpenMS worklist](openms-worklist.md). |
+| CDAP, OpenMS consensusXML and `-out_qpx` | `dda` on every run (DDA-only workflows); an SDRF that states another method is reported as a warning and does not change the value; OpenMS writes `psm_qvalue`, not `q-value` ([T04](t04-confidence-fields.md)). The native writer (verified at HEAD) stamps `qpx_version` 1.1, and `ProteomicsLFQ -out_qpx` and `IsobaricWorkflow -out_qpx` write only feature, psm and pg (no run, sample or provenance view, and so no ontology file): none of the META-1 declarations exists. See the [OpenMS worklist](openms-worklist.md). |
 | MaxQuant, PD | SDRF or option, else `unknown` (MaxDIA, PD DIA exist; Q3); record the tool version |
 | FragPipe | SDRF or option; `dda` for isobaric input; else `unknown`; record MSFragger and IonQuant versions |
 | mzIdentML, quantms-MSstats | SDRF or option, else `unknown` |

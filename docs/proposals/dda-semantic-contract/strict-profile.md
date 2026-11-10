@@ -61,6 +61,7 @@ Parameters are key and value on the step named:
 | `precursor_fdr` | FDR filtering | `none`, until OpenMS estimates a precursor-level FDR |
 | `unquantified_rows` | The export step | `retained` |
 | `decoy_policy`, `contaminant_policy` | The export step | `retained` or `removed` |
+| `match_between_runs` | Match-between-runs; the step is always written | `true` or `false`. `false` says that no transfer was made, which an absent step could not say. |
 | `mbr_fdr` | Match-between-runs, when it ran | A threshold under PIP-ECHO, `none` otherwise |
 | `pg_grouping` | Protein inference | `dataset_inference` |
 | `conformance_profile` | The export step | `dda-strict` |
