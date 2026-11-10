@@ -56,42 +56,19 @@ def _score_values(scores: pa.Array, wanted: Callable[[str], bool]) -> np.ndarray
 
 
 def fill_score_columns(table: pa.Table, columns: dict[str, Callable[[str], bool]]) -> pa.Table:
-    """Fill each null of the typed *columns* from ``additional_scores``.
-
-    Remove a score only when its normalized name equals a present typed column's
-    name and its value exactly equals that column's filled value. Aliases and
-    differing values stay in the list. Preserve null lists and newly empty lists.
-    """
+    """Fill each null of the typed *columns* from ``additional_scores``."""
     if "additional_scores" not in table.schema.names or not table.num_rows:
         return table
     scores = pa.concat_arrays(table.column("additional_scores").chunks)
-    available = {name: wanted for name, wanted in columns.items() if name in table.schema.names}
-    for name, wanted in available.items():
+    for name, wanted in columns.items():
         index = table.schema.get_field_index(name)
+        if index < 0:
+            continue
         derived = _score_values(scores, wanted)
         typed = pa.array(derived, mask=np.isnan(derived), type=table.schema.field(index).type)
         filled = pc.call_function("coalesce", [table.column(index), typed])
         table = table.set_column(index, table.schema.field(index), filled)
-    entries = scores.flatten()
-    if len(entries) == 0:
-        return table
-    encoded = pc.call_function("dictionary_encode", [entries.field("score_name")])
-    names = np.array([normalize_score_name(name) for name in encoded.dictionary.to_pylist()] + [""])
-    indices = encoded.indices.fill_null(-1).to_numpy(zero_copy_only=False)
-    parents = pc.call_function("list_parent_indices", [scores]).to_numpy()
-    numbers = entries.field("score_value").to_numpy(zero_copy_only=False)
-    drop = np.zeros(len(entries), dtype=bool)
-    for name in available:
-        values = table.column(name).to_numpy(zero_copy_only=False)
-        drop |= (names == name)[indices] & (numbers == values[parents])
-    if not drop.any():
-        return table
-    counts = np.bincount(parents[~drop], minlength=len(scores))
-    offsets = np.zeros(len(scores) + 1, dtype=scores.offsets.type.to_pandas_dtype())
-    np.cumsum(counts, out=offsets[1:])
-    rebuilt = type(scores).from_arrays(offsets, entries.filter(pa.array(~drop)), type=scores.type, mask=scores.is_null())
-    index = table.schema.get_field_index("additional_scores")
-    return table.set_column(index, table.schema.field(index), rebuilt)
+    return table
 
 
 def fill_irt(table: pa.Table) -> pa.Table:

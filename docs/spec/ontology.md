@@ -269,7 +269,7 @@ Sample metadata fields map to biological ontologies. These mappings are critical
 
 ## Score Fields {#scores}
 
-Score names used in `additional_scores` or the [typed q-value columns](scores.md#typed-q-value-columns) that have PSI-MS ontology mappings. In specification 1.3, a q-value matching a typed column's name and value is not duplicated in `additional_scores`. All QPX score names use **snake_case** -- the ontology name column shows the proper CV term.
+Score names used in `additional_scores` that have PSI-MS ontology mappings. All QPX score names use **snake_case** -- the ontology name column shows the proper CV term.
 
 | QPX Name (snake_case) | Ontology Name | Ontology Accession | Direction |
 |---|---|---|---|

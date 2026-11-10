@@ -272,16 +272,14 @@ class TestDiaNNFeatureConversion:
                 assert e is not None, "both m/z present but no mass error emitted"
                 assert abs(e - (o - c) / c * 1e6) < 0.5, f"{e} does not match the spec formula"
 
-    def test_precursor_qvalue_moves_to_typed_column(self, feature_table):
+    def test_precursor_qvalue_stays_in_additional_scores(self, feature_table):
         """DIA-NN Q.Value is not mislabeled as a peptide-level q-value."""
         assert all(value is None for value in feature_table.column("peptide_qvalue").to_pylist())
 
-        for value, scores in zip(
-            feature_table.column("precursor_qvalue").to_pylist(), feature_table.column("additional_scores").to_pylist()
-        ):
+        for scores in feature_table.column("additional_scores").to_pylist():
             by_name = {score["score_name"]: score["score_value"] for score in scores}
             assert "qvalue" not in by_name
-            assert "precursor_qvalue" not in by_name
+            value = by_name["precursor_qvalue"]
             assert 0.0 <= value <= 1.0, f"q-value out of range: {value}"
 
 
@@ -321,8 +319,7 @@ def test_plexdia_feature_collapses_channels_into_one_row(tmp_path):
     assert {entry["label"]: entry["intensity"] for entry in rows[0]["intensities"]} == {"L": 100.0, "H": 200.0}
     assert rows[0]["peptide_qvalue"] is None
     scores = {entry["score_name"]: entry["score_value"] for entry in rows[0]["additional_scores"]}
-    assert rows[0]["precursor_qvalue"] == pytest.approx(0.002)
-    assert "precursor_qvalue" not in scores
+    assert scores["precursor_qvalue"] == pytest.approx(0.002)
     assert rows[0]["representative_label"] == "L"
     assert [(entry["label"], entry["qvalue"]) for entry in rows[0]["channel_details"]] == [("H", 0.003), ("L", 0.002)]
     assert rows[0]["channel_details"][0]["rt"] == rows[0]["rt"]
@@ -858,7 +855,6 @@ def test_diann_feature_without_qvalue_converts_when_unfiltered(tmp_path):
     feature_rows = _feature_rows_single_run(tmp_path, rows)
 
     assert len(feature_rows) == 2
-    assert all(row["precursor_qvalue"] is None for row in feature_rows)
     assert all(all(score["score_name"] != "precursor_qvalue" for score in row["additional_scores"]) for row in feature_rows)
 
 

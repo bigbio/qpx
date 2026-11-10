@@ -123,7 +123,7 @@ Each entry in `pg_positions` contains:
     `pg_global_qvalue` and `peptide_qvalue` are **optional** — the column may be absent from the file entirely if the search engine does not provide that q-value. When present, individual values may be null.
 
 !!! warning "Which q-value to read"
-    `peptide_qvalue` is the canonical peptide-level q-value and is the field to read when filtering or reporting peptide-level FDR. DIA-NN does not report a peptide-level q-value: its precursor-level `Q.Value` is written to `precursor_qvalue`, and the DIA-NN converter leaves `peptide_qvalue` null.
+    `peptide_qvalue` is the canonical peptide-level q-value and is the field to read when filtering or reporting peptide-level FDR. DIA-NN does not report a peptide-level q-value: its precursor-level `Q.Value` remains in `additional_scores` under `precursor_qvalue`, and the DIA-NN converter leaves `peptide_qvalue` null.
 
     Other producer-specific q-values may also appear in `additional_scores`; use the documented score name and level rather than treating every q-value as peptide-level confidence.
 
@@ -226,7 +226,7 @@ Several fields in the feature view use structures shared across other QPX views:
   ],
   "additional_scores": [
     {
-      "score_name": "diann_lib_qvalue",
+      "score_name": "global_qvalue",
       "score_value": 0.0012,
       "higher_better": false
     }

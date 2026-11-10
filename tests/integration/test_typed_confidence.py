@@ -83,44 +83,6 @@ def test_a_value_the_producer_typed_wins(tmp_path):
     assert pq.read_table(path, columns=["peptide_qvalue"]).column("peptide_qvalue").to_pylist() == [0.001]
 
 
-@pytest.mark.parametrize(
-    "writer_class,make_record,column,alias",
-    [
-        (FeatureWriter, make_feature_record, "peptide_qvalue", "peptide_level_qvalue"),
-        (FeatureWriter, make_feature_record, "precursor_qvalue", "q_value"),
-        (FeatureWriter, make_feature_record, "global_qvalue", "diann_global_qvalue"),
-        (PsmWriter, make_psm_record, "qvalue", "percolator_q_value"),
-    ],
-)
-def test_writer_removes_only_duplicate_typed_qvalues(tmp_path, writer_class, make_record, column, alias):
-    """Canonical equal scores move to typed columns; aliases, differing values and null lists remain."""
-    inputs = [
-        (None, [_score(column, 0.01), _score(alias, 0.01)]),
-        (0.02, [_score(column, 0.03), _score(alias, 0.02)]),
-        (None, None),
-        (None, [_score(column, 0.04)]),
-        (None, []),
-        (None, [_score(column.upper(), 0.05)]),
-    ]
-    records = [
-        make_record(run_file_name=f"run{i}", additional_scores=scores, **{column: value})
-        for i, (value, scores) in enumerate(inputs)
-    ]
-    path = tmp_path / "typed.parquet"
-    with writer_class(path) as writer:
-        writer.write_batch(records)
-    table = pq.read_table(path)
-    assert table.column(column).to_pylist() == [0.01, 0.02, None, 0.04, None, 0.05]
-    assert table.column("additional_scores").to_pylist() == [
-        [_score(alias, 0.01)],
-        [_score(column, 0.03), _score(alias, 0.02)],
-        None,
-        [],
-        [],
-        [],
-    ]
-
-
 def _table(records):
     import pyarrow as pa
 
