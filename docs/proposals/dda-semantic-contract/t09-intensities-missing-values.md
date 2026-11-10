@@ -6,7 +6,7 @@
     Part of the annex of the [DDA semantic contract proposal](index.md) for QPX. Rules here are proposals for specification 1.4, not normative text, and they cover every producer. For OpenMS-written files the [strict profile](strict-profile.md) is the contract and wins where the two differ. Bracketed ids such as [OPENMS-01](findings-psm.md#openms-01) link to the verified audit findings; code references are to `dev` at commit `32cbbdc`.
 
 
-> **Decision in one line:** The primary holds the least-processed quantity the input exports, from one column per file, declared by two footer keys (`intensity_quantity`, `intensity_processing`). A feature row has one entry per sample label of its run (null = not quantified, 0 = measured zero, no entry = no sample); imputation is marked per row (`[]`/`false` = none, null = unknown). Isobaric sums state their spectrum count, and a QPX roll-up fills `pg.intensity` only when the tool provides no protein quantity in the whole file.
+> **Decision in one line:** The primary holds the least-processed quantity the input exports, from one column per file, declared by two ontology properties (`quantity`, `processing`) on the view's `intensity` row in `ontology.parquet`. A feature row has one entry per sample label of its run (null = not quantified, 0 = measured zero, no entry = no sample); imputation is marked per row (`[]`/`false` = none, null = unknown). Isobaric sums state their spectrum count, and a QPX roll-up fills `pg.intensity` only when the tool provides no protein quantity in the whole file.
 
 ## Questions a reader has
 - Is the primary an MS1 apex, area or trigger intensity, a reporter intensity or S/N, a sum, MaxLFQ? Raw, normalized or corrected? Can two files be pooled?
@@ -42,12 +42,12 @@ One column holds apex heights, areas, reporter S/N, sums over 1-9 spectra, norma
 | Option | For | Against |
 |---|---|---|
 | Raw only, else null | Strict P-A | FragPipe LFQ and DIA-NN 2.x pg lose every quantity |
-| **Least-processed, per file, declared** | Decidable from columns (P-G); one kind per file | Readers must read the footer |
+| **Least-processed, per file, declared** | Decidable from columns (P-G); one kind per file | Readers must read `ontology.parquet` |
 | Declare per row or per provenance step | Exists | Lost on merge; one step serves several views |
 | **One entry per sample label of the run** | Testable against `run.samples` | OpenMS, PD and FragPipe change |
 | Imputed values to additional | Primary = measured | Breaks 1.3 and mokume [[MOKUME-19](findings-feature.md#mokume-19)] |
 | **Typed spectrum count** | Testable | One column |
-| **QPX roll-up as pg primary, only when the file has no tool protein quantity** | pg never empty; consumers (qpxui, the quantms.io portal) read `pg.intensity` only | Amends intensities.md:3,196; needs `intensity_processing = sum` and a provenance step naming qpx |
+| **QPX roll-up as pg primary, only when the file has no tool protein quantity** | pg never empty; consumers (qpxui, the quantms.io portal) read `pg.intensity` only | Amends intensities.md:3,196; needs `processing = sum` and a provenance step naming qpx |
 
 ## Recommendation
 **INT-1 (MUST)** `feature.intensities[].intensity` and `pg.intensity` hold the least-processed quantity of one kind that the converter's input exports for the view. For features this is an MS1 or reporter signal; for pg, it is the tool's own protein quantity, and a tool's own top-N or sum roll-up counts as that base quantity. Only when the tool provides no protein quantity in the whole file may a QPX roll-up take its place (INT-4).
@@ -57,31 +57,31 @@ One column holds apex heights, areas, reporter S/N, sums over 1-9 spectra, norma
   3. normalized values;
   4. cross-run estimates (MaxLFQ).
 - The column is chosen once per file from column presence and settings, never per row or cell. A row without a value there gets null.
-- Ratios, logs, iBAQ and values labelled scaled (PD `Abundances (Scaled)`) are never primary. PD `Abundances (Grouped)` does not state its scaling. It is primary only without a per-file `Abundance`, declared `intensity_processing = unknown`.
+- Ratios, logs, iBAQ and values labelled scaled (PD `Abundances (Scaled)`) are never primary. PD `Abundances (Grouped)` does not state its scaling. It is primary only without a per-file `Abundance`, declared `processing = unknown`.
 - A stated deviation from P-A: the column means "the tool's base quantity", and INT-2 declares its kind; raw-only would empty FragPipe LFQ features and DIA-NN 2.x pg.
 - Replaces intensities.md:3,17-22,219, pg.md:54-60,110 and anndata.md:147. The site primary keeps site.md:112 and only declares itself (INT-2).
 
-**INT-2 (MUST)** Footer keys. An absent key means `unknown`, and any other value is an error. The keys are SHOULD on 1.4 files and MUST on feature and pg under the [T13](t13-metadata-conformance.md) profile ([T13](t13-metadata-conformance.md) V3). They are carried by [T13](t13-metadata-conformance.md) META-4's default rule: when sources disagree, the result is `unknown`, with a warning.
+**INT-2 (MUST)** Ontology properties. The `ontology.parquet` row of `intensity` (the struct field of `feature.intensities`, and the pg and site column) carries two properties in its `properties` list ([T13](t13-metadata-conformance.md) META-1), one row per view. No footer key is added. An absent property or row means unknown, and any other value is an error. The properties are SHOULD on 1.4 datasets and MUST for feature and pg under the [T13](t13-metadata-conformance.md) profile ([T13](t13-metadata-conformance.md) V3). A merge follows [T13](t13-metadata-conformance.md) META-4: when sources disagree, the result is `unknown`, with a warning.
 
-| Key | Views | Values |
+| Property | On the `intensity` row of | Values |
 |---|---|---|
-| `intensity_quantity` | feature, pg, site | `ms1_area` (MS:1001844), `ms1_apex` (MS:1001843), `ms1_trigger` (survey-scan precursor, MS:1003085), `ms1` (kind unstated), `reporter_uncorrected`, `reporter_corrected` (isotope-impurity correction not applied / applied; MS:1001847), `reporter` (MS:1001847, correction state unknown), `reporter_sn` (no PSI term), `fragment` (DIA), `none` (every intensity null), `unknown` |
-| `intensity_processing` | feature, pg, site | `none` (the measured signal, not normalized), `sum` (pg: a plain sum of measured signals), `topn`, `normalized`, `maxlfq`, `other`, `unknown`. If several apply, write the most processed: `maxlfq` > `normalized` > `topn` > `sum` > `none` |
+| `quantity` | feature, pg, site | `ms1_area` (MS:1001844), `ms1_apex` (MS:1001843), `ms1_trigger` (survey-scan precursor, MS:1003085), `ms1` (kind unstated), `reporter_uncorrected`, `reporter_corrected` (isotope-impurity correction not applied / applied; MS:1001847), `reporter` (MS:1001847, correction state unknown), `reporter_sn` (no PSI term), `fragment` (DIA), `none` (every intensity null), `unknown` |
+| `processing` | feature, pg, site | `none` (the measured signal, not normalized), `sum` (pg: a plain sum of measured signals), `topn`, `normalized`, `maxlfq`, `other`, `unknown`. If several apply, write the most processed: `maxlfq` > `normalized` > `topn` > `sum` > `none` |
 
-On pg, `intensity_quantity` names the signal the roll-up combines. Details go in provenance: the normalization method (`normalization`), the peptides summed (razor, unique or all), N for top-N, and qpx as the computing tool of a QPX roll-up (INT-4). Imputation has no key (INT-9). PSI-MS accessions were checked in OLS.
+The row's ontology term still names the concept where a term exists (MS:1001844 for an MS1 feature area, MS:1001847 for a reporter-ion intensity). On pg, `quantity` names the signal the roll-up combines. Details go in provenance: the normalization method (`normalization`), the peptides summed (razor, unique or all), N for top-N, and qpx as the computing tool of a QPX roll-up (INT-4). Imputation has no property (INT-9). PSI-MS accessions were checked in OLS.
 
-**INT-3 (MUST)** The keys supersede the provenance keys `isotope_corrected`/`normalization` and the cv_param `quantification_method`. Writers keep the provenance keys as tool settings and MAY keep the cv_param.
+**INT-3 (MUST)** The properties supersede the provenance keys `isotope_corrected`/`normalization` and the cv_param `quantification_method`. Writers keep the provenance keys as tool settings and MAY keep the cv_param.
 
-`qpxc migrate` writes a key only when it is certain:
-- from a cv_param that every quantified row shares (`PG.MaxLFQ` → `intensity_processing = maxlfq`);
+`qpxc migrate` writes a property only when it is certain:
+- from a cv_param that every quantified row shares (`PG.MaxLFQ` → `processing = maxlfq`);
 - from OpenMS IsobaricAnalyzer parameters.
 
-It never uses MaxQuant `isotope_corrected=false`, which is wrong for the site view and MQ 1.5 [[MAXQUANT-14](findings-cross.md#maxquant-14)] [[EXTERNAL-19](findings-feature.md#external-19)]. It applies INT-4 to primaries marked `unnormalized_unique_peptide_sum` and to pg files with `creator = cdap`. A file whose every quantity is such a QPX sum keeps it as the primary and gets `intensity_processing = sum` and a provenance step naming qpx. In a file that also holds a tool quantity, the QPX sums move to `additional_intensities`.
+It never uses MaxQuant `isotope_corrected=false`, which is wrong for the site view and MQ 1.5 [[MAXQUANT-14](findings-cross.md#maxquant-14)] [[EXTERNAL-19](findings-feature.md#external-19)]. It applies INT-4 to primaries marked `unnormalized_unique_peptide_sum` and to pg files with `creator = cdap`. A file whose every quantity is such a QPX sum keeps it as the primary and gets `processing = sum` and a provenance step naming qpx. In a file that also holds a tool quantity, the QPX sums move to `additional_intensities`.
 
 **INT-4 (MUST)** A quantity QPX computes (the OpenMS and CDAP pg sums) MAY fill `pg.intensity` only when the tool provides no protein quantity in the whole file. Consumers (qpxui, the quantms.io portal) read `pg.intensity` only, so such a file would otherwise look unquantified.
-- The file then declares `intensity_processing = sum`, with `intensity_quantity` naming the summed signal (INT-2), and the provenance step names qpx as the computing tool.
+- The pg `intensity` row then declares `processing = sum`, with `quantity` naming the summed signal (INT-2), and the provenance step names qpx as the computing tool.
 - A file never mixes tool quantities and QPX roll-ups in the primary column (INT-1: one column per file). Where the tool provides a quantity, a QPX sum goes only to `additional_intensities`, as `unnormalized_unique_peptide_sum` with a provenance step (intensities.md:196).
-- `intensity_quantity = none` is for files with no intensity at all.
+- `quantity = none` is for files with no intensity at all.
 
 This amends intensities.md:3,196 and resolves pg.md:240 and converter-coverage.md:107 [[OPENMS-24](findings-pg.md#openms-24)].
 
@@ -99,7 +99,7 @@ This amends intensities.md:3,196 and resolves pg.md:240 and converter-coverage.m
 | Quantified | A finite value ≥ 0 (0 per INT-7) |
 | Not quantified in this row | An entry with null `intensity` |
 | No sample in the run | No entry |
-| Not reported in the run | No row; [T07](t07-unidentified-features.md) `unquantified_policy` says why |
+| Not reported in the run | No row; provenance `unquantified_rows` ([T07](t07-unidentified-features.md) UNI-6) says why |
 
 A null entry beside a non-null one means the label was not detected (a channel below detection, a missing SILAC partner). An all-null row is identification-only ([T05](t05-feature-rows.md) FRW-5), such as a MaxQuant `MSMS` row, whose synthetic 60 s window [T05](t05-feature-rows.md) FRW-9 nulls [[MAXQUANT-09](findings-feature.md#maxquant-09)]. pg keeps pg.md:116-146.
 
@@ -133,21 +133,23 @@ A null entry beside a non-null one means the label was not detected (a channel b
 
 | Check | Severity |
 |---|---|
-| Off-vocabulary footer value; imputation flag on a null or absent entry; repeated or foreign additional label; count < 1, or > 1 with `quant_scan`/PIF; PIF ∉ [0,1]; `quant_ms_level` ∉ {2,3} [[VALIDATOR-22](findings-feature.md#validator-22)]; non-null intensity under `none`; a `pg.intensity` that provenance attributes to qpx without `intensity_processing = sum`, or in a file that also holds a tool protein quantity (INT-4); null-label pg row with an intensity [[VALIDATOR-28](findings-pg.md#validator-28)]; case variant of a registered name (1.4 files) | Error |
+| Off-vocabulary `quantity` or `processing` value; imputation flag on a null or absent entry; repeated or foreign additional label; count < 1, or > 1 with `quant_scan`/PIF; PIF ∉ [0,1]; `quant_ms_level` ∉ {2,3} [[VALIDATOR-22](findings-feature.md#validator-22)]; non-null intensity under `quantity = none`; a `pg.intensity` that provenance attributes to qpx without `processing = sum`, or in a file that also holds a tool protein quantity (INT-4); null-label pg row with an intensity [[VALIDATOR-28](findings-pg.md#validator-28)]; case variant of a registered name (1.4 files) | Error |
 | Non-finite or negative primary; non-finite additional value; negative linear-scale value | Error, also on write (qpx/writers/base.py:416 [[VALIDATOR-M4](findings-cross.md#validator-m4)]) |
 | Null or empty list; entry without a sample; sample label without an entry | Error under the profile, else warning |
-| Missing `intensity_quantity` or `intensity_processing`; a 0.0 primary from an INT-7 converter | Warning (missing keys are errors under the profile) |
-| `no_pg_quantity` (qpx/core/data/schema.py:297-313) under `none`; an unregistered name | Info |
+| An `intensity` row without `quantity` or `processing` when the view holds intensities; a 0.0 primary from an INT-7 converter | Warning (missing properties are errors under the profile) |
+| `no_pg_quantity` (qpx/core/data/schema.py:297-313) under `quantity = none`; an unregistered name | Info |
+
+The checks that read the properties run at dataset level, across the data file and `ontology.parquet`.
 
 ## Schema and footer changes
 | Change | View | Type / values | Required | Breaking? |
 |---|---|---|---|---|
 | `quant_spectrum_count` | feature | int32, null, ≥ 1 | SHOULD on reporter rows | No |
-| `intensity_quantity`, `intensity_processing` | feature, pg, site footers | INT-2 | SHOULD; MUST on feature and pg under the profile | No |
+| Properties `quantity`, `processing` on the `intensity` rows (feature, pg, site); no footer key | ontology | INT-2 | SHOULD; MUST for feature and pg under the profile | No |
 | Imputation per row: `imputed_labels = []` / `is_imputed = false` = none, null = unknown (INT-9) | feature, pg | Constraint | Producers that know write `[]`/`false` | No |
 | "Raw" promise withdrawn; one column per file (INT-1) | feature, pg | Constraint | Yes | Semantic: 1.3 files read as `unknown`; some FragPipe and DIA-NN pg cells → null |
 | Complete label set, no null list (INT-5) | feature | Constraint | Yes | Semantic: OpenMS, FragPipe TMT and PD gain null entries |
-| QPX roll-up as primary only in a file with no tool protein quantity, declared `intensity_processing = sum` with a provenance step naming qpx; never mixed with tool quantities (INT-4) | pg | Constraint | Yes | No for OpenMS-without-abundance and CDAP pg files: the QPX sum stays in `pg.intensity`. Semantic only for a file that mixed both: its QPX sums → null |
+| QPX roll-up as primary only in a file with no tool protein quantity, declared `processing = sum` with a provenance step naming qpx; never mixed with tool quantities (INT-4) | pg | Constraint | Yes | No for OpenMS-without-abundance and CDAP pg files: the QPX sum stays in `pg.intensity`. Semantic only for a file that mixed both: its QPX sums → null |
 | Renames (INT-12) | feature, pg | Registry | – | Yes for `lfq` readers; `migrate` renames |
 | `quantification_method`; provenance intensity keys | pg, provenance | Superseded as declarations; provenance keeps the details (INT-2) | – | No |
 
@@ -155,20 +157,20 @@ A null entry beside a non-null one means the label was not detected (a channel b
 | Producer | Change needed |
 |---|---|
 | MaxQuant | **Feature:** always `Intensity` (remove feature_adapter.py:521-525); `ms1`, or apex/area from a supplied mqpar.xml.<br>**TMT:** `Reporter intensity not corrected N` when present (MQ 1.5), else the plain column; `reporter_uncorrected` if a `corrected` column exists, else `reporter`. Count = largest `Reporter intensity count N`, null at 0. `quant_scan`/PIF only at `MS/MS count` = 1 (25 maxquant_simple rows have reporter count 1 but 2 MS/MS). `Reporter PIF` → `maxquant_reporter_pif`; MS1 `Intensity` → `ms1_intensity`; `MS/MS count` → `spectral_count`. Fail without a channel map.<br>**Other:** site `reporter_corrected`; pg processing `sum` (razor peptides, in provenance), `lfq` → `maxlfq`; `imputed_labels = []`, `is_imputed = false` |
-| FragPipe | IonQuant settings from an optional fragpipe.workflow (as [T08](t08-match-between-runs.md)): `normalization` → `intensity_processing` `normalized`/`none`; `intensitymode` 0/1/2 → `ms1_apex`/`ms1_area`/`ms1`; without it `unknown`/`ms1`. Null entries for all-zero ions ([T07](t07-unidentified-features.md)). TMT: `reporter`, count null; reject ratio TMT-Integrator reports [[FRAGPIPE-M4](findings-pg.md#fragpipe-m4)]. pg: `Intensity`, else `Total Intensity`, else MaxLFQ (`maxlfq`), per file; otherwise processing `unknown`; null rows for annotated TMT channels |
+| FragPipe | IonQuant settings from an optional fragpipe.workflow (as [T08](t08-match-between-runs.md)): `normalization` → `processing` `normalized`/`none`; `intensitymode` 0/1/2 → `ms1_apex`/`ms1_area`/`ms1`; without it `unknown`/`ms1`. Null entries for all-zero ions ([T07](t07-unidentified-features.md)). TMT: `reporter`, count null; reject ratio TMT-Integrator reports [[FRAGPIPE-M4](findings-pg.md#fragpipe-m4)]. pg: `Intensity`, else `Total Intensity`, else MaxLFQ (`maxlfq`), per file; otherwise processing `unknown`; null rows for annotated TMT channels |
 | Proteome Discoverer | SDRF labels only. Sum over distinct `(run, scan)`, with the count; `spectral_count` for TMT too; PIF null on sums. `ms1` (Precursor Abundance) or `ms1_trigger` (Intensity); `reporter`. pg: `Abundance` (not normalized; sum or top-N unstated) or Grouped, processing `unknown`; null rows for identified channels; imputation flags null |
-| CDAP | Count from distinct spectra; drop `psm_count`. LFQ `ms1_area`; TMT `reporter`. pg: CDAP reports no protein quantity, so the QPX sum stays in `pg.intensity`, declared `intensity_processing = sum` with a provenance step naming qpx (INT-4). Imputation: `imputed_labels = []` |
-| OpenMS consensus | Null entries for labels without an element > 0 (feature_adapter.py:358-361). Keys from IsobaricAnalyzer and ProteinQuantifier parameters. LFQ `ms1`; isobaric `reporter_corrected` or `reporter_uncorrected`, count 1. pg: the OpenMS abundance when the file has one; a file without any keeps the QPX sum in `pg.intensity`, declared `intensity_processing = sum` with a provenance step naming qpx (INT-4); never both in one file |
-| OpenMS -out_qpx | OpenMS writes the keys and the null entries. Verified at HEAD: none of the footer keys; intensity entries are non-nullable; IsobaricWorkflow sets reporters below `min_reporter_intensity` to 0 (null under INT-7); the pg primary is OpenMS's own abundance per (fraction group, label), so INT-4's roll-up never applies. `qpxc convert openms` derives keys only from a companion consensusXML, and adds null entries only with an SDRF. See the [OpenMS worklist](openms-worklist.md). |
+| CDAP | Count from distinct spectra; drop `psm_count`. LFQ `ms1_area`; TMT `reporter`. pg: CDAP reports no protein quantity, so the QPX sum stays in `pg.intensity`, declared `processing = sum` with a provenance step naming qpx (INT-4). Imputation: `imputed_labels = []` |
+| OpenMS consensus | Null entries for labels without an element > 0 (feature_adapter.py:358-361). Properties from IsobaricAnalyzer and ProteinQuantifier parameters. LFQ `ms1`; isobaric `reporter_corrected` or `reporter_uncorrected`, count 1. pg: the OpenMS abundance when the file has one; a file without any keeps the QPX sum in `pg.intensity`, declared `processing = sum` with a provenance step naming qpx (INT-4); never both in one file |
+| OpenMS -out_qpx | OpenMS writes an ontology file with the two properties, and the null entries. Verified at HEAD: only feature, psm and pg are written, so no ontology file carries the properties; intensity entries are non-nullable; IsobaricWorkflow sets reporters below `min_reporter_intensity` to 0 (null under INT-7); the pg primary is OpenMS's own abundance per (fraction group, label), so INT-4's roll-up never applies. `qpxc convert openms` derives the properties only from a companion consensusXML, and adds null entries only with an SDRF. See the [OpenMS worklist](openms-worklist.md). |
 | quantms-MSstats | NA → null entry, instead of aborting; 0 → null. `ms1` or `reporter`; isobaric count 1 |
-| mzIdentML | pg: `intensity_quantity = none` |
-| DIA-NN (pg) | `PG.Quantity` per file, else `PG.MaxLFQ` declared `intensity_processing = maxlfq` |
+| mzIdentML | pg: `quantity = none` |
+| DIA-NN (pg) | `PG.Quantity` per file, else `PG.MaxLFQ` declared `processing = maxlfq` |
 
 ## Reader rules
-- **INT-R1 (MUST)** Pool primaries across files only when `intensity_quantity` and `intensity_processing` are equal and known (neither `unknown` nor `reporter`, whose correction state is unknown); otherwise warn. Violations: `merge()` (qpx/core/dataset_merge.py:276-291); mokume, which reads only the `qpx.struct_lists` footer.
+- **INT-R1 (MUST)** Pool primaries across datasets only when the `quantity` and `processing` properties of their `intensity` rows are equal and known (neither absent, `unknown` nor `reporter`, whose correction state is unknown); otherwise warn. Violations: `merge()` (qpx/core/dataset_merge.py:276-291); mokume, which reads only the `qpx.struct_lists` footer key and no ontology file.
 - **INT-R2 (MUST)** Read missing values per INT-6. A null is never 0, and a 0 is never "not quantified", though a reader MAY treat it as censored. Violations, all treating zeros as missing: qpx/cli/transform/quantify.py:269; `no_pg_quantity` (qpx/core/data/schema.py:306); mokume (mokume:python/mokume/io/feature.py:212,749; low impact [[MOKUME-18](findings-feature.md#mokume-18)]).
 - **INT-R3 (MUST)** Exclude imputed values from measured statistics, or carry a mask; a null flag is unknown, not measured (INT-9). Violations: `ds.intensity` (qpx/core/dataset_queries.py:124-137), qpx/core/data/feature.py:56-116, quantify.py:261-272; mokume ignores `pg.is_imputed`. Compliant: MuData `imputed_mask`, mokume's `imputed_labels` filter (mokume:python/mokume/io/_qpx.py:6-10).
-- **INT-R4 (MUST)** Never re-correct `reporter_corrected` values, and warn on `reporter`. Violation: mokume:rust/crates/mokume-pipeline/src/tmt.rs:88-114.
+- **INT-R4 (MUST)** Read the `quantity` property of the `intensity` row before correcting reporters: never re-correct `reporter_corrected` values, and warn on `reporter` or an absent property. Violation: mokume:rust/crates/mokume-pipeline/src/tmt.rs:88-114.
 - **INT-R5 (MUST)** Never attribute a row-scope name to a label's sample. Violation: qpx/mudata.py:192-206.
 - **INT-R6 (SHOULD)** Compare reporter rows whose spectrum counts differ only through within-row channel proportions, never as absolute sums.
 

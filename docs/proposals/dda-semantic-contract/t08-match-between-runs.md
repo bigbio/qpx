@@ -98,12 +98,12 @@ Any accepted own-run identification wins over transfer.
 
 **MBR-8 (MUST)** No footer key declares the transfer state; rows and provenance carry it:
 - `identification_type` is filled whenever the tool states the origin or every row rests on own-run identifications (MBR-2); pg `identified_in_unit` whenever the source states it (MBR-10). Null = unknown.
-- Whether the tool made transfers goes in the provenance `match_between_runs` step: parameter `match_between_runs` = `true`/`false` (as `docs/spec/provenance.md:187`), with the settings of MBR-9.
+- Whether the tool made transfers goes in the provenance `match_between_runs` step (a `quantification` step with that `step_name`): parameter `match_between_runs` = `true`/`false` (as `docs/spec/provenance.md:187`), with the settings of MBR-9.
 - A qpxc option that drops transfers records provenance option `transferred_rows_removed = true` ([T03](t03-filtering-state.md) FLT-5).
 
 Unless provenance records `match_between_runs = false`, identified pg rows may include transferred signal. Merges keep every input's provenance steps ([T13](t13-metadata-conformance.md) META-4).
 
-**MBR-9 (MUST)** The `match_between_runs` step parameter `mbr_fdr` follows [T03](t03-filtering-state.md) FLT-2 at the transfer level (a precursor ion in a run): decimal x = every transfer had a tool-estimated FDR ≤ x (IonQuant `--ionfdr`), so non-null `match_qvalue` ≤ x; `applied` = a non-FDR cut (RT and m/z windows are not cuts); `none` = no error control; `unknown`. Peptide- and protein-level transfer FDRs and tolerances are parameters of the same step (`mbr_peptide_fdr`, `mbr_protein_fdr`, `mbr_rt_tolerance`; precedent `docs/spec/provenance.md:187-188`). Per-row `match_qvalue` stays (MBR-4).
+**MBR-9 (MUST)** The `match_between_runs` step parameter `mbr_fdr` follows [T03](t03-filtering-state.md) FLT-2 at the transfer level (a precursor ion in a run): decimal x = every transfer had a tool-estimated FDR ≤ x (IonQuant `--ionfdr`), so non-null `match_qvalue` ≤ x; `applied` = a non-FDR cut (RT and m/z windows are not cuts); `none` = no error control; an absent parameter means unknown. Peptide- and protein-level transfer FDRs and tolerances are parameters of the same step (`mbr_peptide_fdr`, `mbr_protein_fdr`, `mbr_rt_tolerance`; precedent `docs/spec/provenance.md:187-188`). Per-row `match_qvalue` stays (MBR-4).
 
 **MBR-10 (MUST)** New pg column `identified_in_unit` (bool, nullable), filled whenever the source states it: `true` = evidence in the unit as [T12](t12-protein-groups.md) PGV-2 defines it; `false` = the row exists only for a non-null quantity; null = unknown. [T12](t12-protein-groups.md) PGV-1 adopts it.
 
@@ -117,15 +117,15 @@ Unless provenance records `match_between_runs = false`, identified pg rows may i
 | `identification_type` enum, MBR-1 text (`feature.md:145`, `feature.yaml:210-214`), checked on both write paths | feature | `direct`, `transferred`, `secondary`, `unidentified` ([T07](t07-unidentified-features.md) UNI-2), null | Non-null when the tool states the origin or every row is own-run (MBR-2); `unidentified` on every unidentified row | Yes for writers with other values (none in qpx); `MULTI-MATCH-MSMS` rows lose scan, run, PEP |
 | `match_*` definitions (`feature.yaml:215-234`) | feature | `match_qvalue` float64 [0, 1] | Optional | **Yes**: physical type ([T04](t04-confidence-fields.md) CNF-9) |
 | `match_score` = transfer score; MaxQuant value → `maxquant_match_score` | feature | – | – | **Yes**, semantic: 1.3 MaxQuant files hold the donor score (MBR-R7) |
-| `match_between_runs` step: `match_between_runs`, `mbr_fdr`, `mbr_peptide_fdr`, `mbr_protein_fdr`, `mbr_rt_tolerance`; option `transferred_rows_removed` (MBR-8, MBR-9) | provenance | `match_between_runs`: `true`, `false`; `mbr_fdr`: decimal, `applied`, `none`, `unknown` | Optional | No |
+| `match_between_runs` step: `match_between_runs`, `mbr_fdr`, `mbr_peptide_fdr`, `mbr_protein_fdr`, `mbr_rt_tolerance`; option `transferred_rows_removed` (MBR-8, MBR-9) | provenance | `match_between_runs`: `true`, `false`; `mbr_fdr`: decimal, `applied`, `none` (absent = unknown) | Optional | No |
 | `identified_in_unit` | pg | bool, nullable | Non-null whenever the source states it (MBR-10) | No |
 | Edit `feature.md:138`, `producer-guide.md:26`, `pg.md:131-135,291`, `anndata.md:153`, `converter-coverage.md:55,199-203`, `provenance.md:187-188` | docs | – | – | No |
 
 ## Producer changes
 | Producer | Change needed |
 |---|---|
-| MaxQuant | Map Types by token: `*MATCH*` transferred, `*SECPEP` secondary, other `*MSMS*` direct, else null with warning; keep `maxquant_type`. Null run, scan, PEP by type (feature_adapter.py:655-657); dedup by type (:264). Move `Match score`. Drop isobaric MBR rows without reporters, counted. pg: "By MS/MS" → `true`, "By matching" → `false`. Provenance `match_between_runs` from parameters.txt; `mbr_fdr` from parameters.txt if stated, else `unknown` |
-| FragPipe | Provenance `mbr_fdr` = `ionquant.ionfdr` from a supplied fragpipe.workflow when MBR is on, else `unknown`. pg per [T12](t12-protein-groups.md) PGV-2 |
+| MaxQuant | Map Types by token: `*MATCH*` transferred, `*SECPEP` secondary, other `*MSMS*` direct, else null with warning; keep `maxquant_type`. Null run, scan, PEP by type (feature_adapter.py:655-657); dedup by type (:264). Move `Match score`. Drop isobaric MBR rows without reporters, counted. pg: "By MS/MS" → `true`, "By matching" → `false`. Provenance `match_between_runs` from parameters.txt; `mbr_fdr` from parameters.txt if stated, else not recorded |
+| FragPipe | Provenance `mbr_fdr` = `ionquant.ionfdr` from a supplied fragpipe.workflow when MBR is on, else not recorded. pg per [T12](t12-protein-groups.md) PGV-2 |
 | OpenMS (qpxc; `-out_qpx` upstream) | A run listed in the consensus feature's `mbr_transfer_map_indices` → transferred; `match_qvalue` from `mbr_transfer_qvalues` (PIP-ECHO). Without the meta value, MBR-2's fallback using the removed-PID index (feature_adapter.py:573-613): the IDConflictResolver case becomes `transferred` + `identification_conflict`. pg: `identified_in_unit` = a group PSM in the unit (pg_adapter.py:453-465). Native writer (verified): HEAD writes no `identification_type` or `match_*`, and its pg evidence counts every run the feature was quantified in, transfers included; the unmerged [#378](https://github.com/bigbio/qpx/issues/378) branch adds `identification_type` (direct, transferred, null) and `match_qvalue` (float32, from PIP-ECHO). See the [OpenMS worklist](openms-worklist.md). |
 | Proteome Discoverer | Features keep `direct`. pg: `identified_in_unit` from `Found in Sample` (`Peak Found` → `false`), else null |
 | CDAP; mzIdentML (pg only) | Provenance `match_between_runs = false`; pg `identified_in_unit = true` |
@@ -143,7 +143,7 @@ Unless provenance records `match_between_runs = false`, identified pg rows may i
 
 **MBR-R5 (MUST)** Choose and record the transfer policy (keep, drop, `match_qvalue ≤ t`) separately from confidence filters, which never drop transfers merely for null values ([T04](t04-confidence-fields.md) CNF-R5). Whether to use transferred quantities is the reader's choice. The default keeps them, because they improve quantification ([T14](t14-reader-contract.md) RDR-4); filtering them out is optional.
 
-**MBR-R6 (SHOULD)** When provenance `mbr_fdr` is `none`, `unknown` or absent, warn and offer to drop transfers. Transfer weights (mokume#117) use only `identification_type`, `match_qvalue` and provenance `mbr_fdr`, never `match_score` or donor scores.
+**MBR-R6 (SHOULD)** When provenance `mbr_fdr` is `none` or absent, warn and offer to drop transfers. Transfer weights (mokume#117) use only `identification_type`, `match_qvalue` and provenance `mbr_fdr`, never `match_score` or donor scores.
 
 **MBR-R7 (MUST)** In files with `qpx_version` < 1.4: `match_score` from `creator = maxquant` is the donor's Andromeda score; a `transferred` row is transferred even with scan, run or PEP; Spectronaut `transferred` means imputed (use `imputed_labels`).
 

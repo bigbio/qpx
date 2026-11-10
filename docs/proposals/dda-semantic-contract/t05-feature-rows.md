@@ -185,12 +185,12 @@ Under `precursor_run`, duplicates are an error. Current violations:
 
 **FRW-R5 (MUST)** A label is a channel, never a run name. mokume's "label = run" layout (mokume:python/mokume/io/feature.py:605-643; mokume:rust/crates/mokume-io/src/qpx.rs:528-539) is allowed only behind a legacy flag.
 
-**FRW-R6 (MUST)** Quantified-feature counts include only identified rows with a non-null entry; unidentified rows are excluded ([T07](t07-unidentified-features.md) UNI-R1). Identification counts follow [T08](t08-match-between-runs.md) MBR-R3. A missing feature row means "not identified" only under `unquantified_policy = retained` ([T07](t07-unidentified-features.md) UNI-R4). qpx/views/api.py:25 counts MaxQuant `MSMS` rows as features.
+**FRW-R6 (MUST)** Quantified-feature counts include only identified rows with a non-null entry; unidentified rows are excluded ([T07](t07-unidentified-features.md) UNI-R1). Identification counts follow [T08](t08-match-between-runs.md) MBR-R3. A missing feature row means "not identified" only when provenance states `unquantified_rows = retained` ([T07](t07-unidentified-features.md) UNI-R4). qpx/views/api.py:25 counts MaxQuant `MSMS` rows as features.
 
 **FRW-R7 (MUST)** Compare times across runs only through `rt_aligned`, and join spectra on 60 × `mz.scan_start_time`. Link multiplet PSMs through `psm.feature_id`. Read the window clock from FRW-7 only in 1.4 or migrated files.
 
 ## Open questions for maintainers
 1. *Resolved from the OpenMS source (default branch at 0707508):* ProteomicsLFQ transforms feature RTs, the RTs of their identifications and of unassigned identifications in place when it aligns, and does not store `original_RT`. So in consensusXML written by ProteomicsLFQ with alignment, element and identification RTs are on the aligned clock [[OPENMS-M3](findings-feature.md#openms-m3)]: the Python converter writes them to `rt_aligned` and leaves `rt` and `psm.rt` ([T11](t11-spectrum-precursor-fields.md)) null. Only the native writer can supply acquisition-clock times, by carrying the original RT per feature handle (FRW-7, FRW-8).
-2. Should MaxQuant `MSMS` rows collapse to one per key? That would drop 8,731 rows that sit beside a quantified row, and it interacts with [T07](t07-unidentified-features.md)'s `unquantified_policy`.
+2. Should MaxQuant `MSMS` rows collapse to one per key? That would drop 8,731 rows that sit beside a quantified row, and it interacts with [T07](t07-unidentified-features.md)'s provenance parameter `unquantified_rows`.
 3. Should `quantification_unit_id` be canonical (runs joined by `;`, as views.md:212 names units) instead of the tool's experiment name? FragPipe ids would change.
 4. Does FragPipe `combined_ion` report a per-experiment apex RT [[FRAGPIPE-17](findings-feature.md#fragpipe-17)]?

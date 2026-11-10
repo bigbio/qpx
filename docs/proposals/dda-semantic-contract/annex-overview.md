@@ -325,6 +325,16 @@ Correcting the OpenMS facts in the topic sections left three points open:
 2. **Detecting mixed protein quantities.** [INT-4](t09-intensities-missing-values.md) forbids a file that mixes tool quantities and QPX sums in `pg.intensity`, but nothing on a row says which kind it holds, so the validator cannot check it.
 3. **Feature m/z fallback.** [SPC-1](t11-spectrum-precursor-fields.md) lets a feature fall back to its identifying PSM's m/z, while the OpenMS producer rows say null. One of the two should change.
 
+### Loose ends from moving declarations out of the footer
+
+These concern other producers, not OpenMS-written datasets, where every value is known.
+
+1. **One `unquantified_rows` value for two views.** Some converters keep unquantified protein rows but drop unquantified feature rows. A single parameter cannot say that. The likely fix is one parameter per view.
+2. **FDR cuts are dataset-wide.** A cut applied to one view only (Spectronaut cuts features but not protein groups) cannot be stated with `<level>_fdr`.
+3. **Unknown is expressed by absence.** A producer that honestly does not know its FDR cut or the basis of `pass_threshold` leaves the statement out, and then fails the `dda` validation profile, which requires it.
+4. **Merging provenance.** An input without a provenance view leaves no step behind, so its unknown state is invisible after a merge. Only the FDR cuts and the grouping method have a rule for combining differing inputs.
+5. **Datasets without a run view** (PSM-only mzIdentML conversions) cannot state the acquisition method.
+
 ## Residual items
 
 The completeness pass checked every finding against the sections. The items below are not yet written into a section. Each has a suggested decision and the section that would own it.

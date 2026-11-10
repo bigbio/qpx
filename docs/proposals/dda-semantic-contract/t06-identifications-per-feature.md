@@ -55,7 +55,7 @@
 | **Integer `consensus_feature_id`** | Covers every measured case | New column |
 
 ## Recommendation
-Scope: identified DDA rows ([T13](t13-metadata-conformance.md) `acquisition_method = dda`, or a DDA run under `mixed`). DIA keeps scan.md:111. An unidentified row ([T07](t07-unidentified-features.md) UNI-3) has no peptidoform, no identifying or supporting PSM and no link; of the rules below only FID-11 applies to it.
+Scope: identified DDA rows, that is rows of runs whose `run.acquisition_method` is `dda` ([T13](t13-metadata-conformance.md) META-5). DIA keeps scan.md:111. An unidentified row ([T07](t07-unidentified-features.md) UNI-3) has no peptidoform, no identifying or supporting PSM and no link; of the rules below only FID-11 applies to it.
 
 Definitions:
 - A *quantified signal* is the MS1 peak or multiplet, or the reporter spectrum, that gives a row its intensities.
@@ -86,7 +86,7 @@ Nulls sort last. [T01](t01-psm-rows.md) PSM-2 and [T02](t02-chimeric-spectra.md)
 
 **FID-8 (MUST)** A producer that writes both views writes `psm.feature_id` on every supporting PSM it exports (including when it builds features from PSMs). The validator checks it.
 - A producer that cannot cover every run (e.g. a single FragPipe psm.tsv) records the uncovered runs in provenance `skipped_runs_psm`.
-- Each non-empty `feature.scan` resolves to exactly one psm row by FID-R1, unless a declared psm filter (a `psm` entry in [T03](t03-filtering-state.md) `fdr_filter`) removed it.
+- Each non-empty `feature.scan` resolves to exactly one psm row by FID-R1, unless a declared psm filter (a cut stated by provenance `psm_fdr`, [T03](t03-filtering-state.md) FLT-1) removed it.
 - `--no-include-unassigned-psms` keeps identifying PSMs [[OPENMS-21](findings-cross.md#openms-21)].
 
 **FID-9 (MUST)** No footer key states link completeness. By FID-8, links in a 1.4 file are complete (every exported supporting PSM is linked to a row it supports), except in runs listed in provenance `skipped_runs_psm`. A psm-only export (mzIdentML) has no links.
@@ -115,7 +115,7 @@ Nulls sort last. [T01](t01-psm-rows.md) PSM-2 and [T02](t02-chimeric-spectra.md)
 | `id_run_file_name` ∈ {`run_file_name`, null}; drop "(may differ)" (`feature.md:138`) | feature | – | – | **Yes** for pre-[#378](https://github.com/bigbio/qpx/issues/378) OpenMS `-out_qpx` files with donor runs (FID-R7) |
 | PEP and scores per FID-4 | feature | – | – | Values change (PD, OpenMS); OpenMS peptide-level PEP null per [T04](t04-confidence-fields.md) |
 | Delete the `psm.md:286` sentence (with [T04](t04-confidence-fields.md)); `data-model.md:166` → `id_run_file_name + scan` | docs | – | – | No |
-| Validator ([T13](t13-metadata-conformance.md) V5, V6; errors under `dda`, else warnings): FID-1, 5, 6, 7, 10, 11 invariants; FID-8 links and resolution outside runs in `skipped_runs_psm` (warning when `fdr_filter` has a `psm` entry). Warning: a linked same-run PSM with lower PEP than the identifying one | psm, feature | – | – | New findings |
+| Validator ([T13](t13-metadata-conformance.md) V5, V6; errors under `dda`, else warnings): FID-1, 5, 6, 7, 10, 11 invariants; FID-8 links and resolution outside runs in `skipped_runs_psm` (warning when provenance `psm_fdr` states a cut). Warning: a linked same-run PSM with lower PEP than the identifying one | psm, feature | – | – | New findings |
 
 ## Producer changes
 | Producer | Change needed |

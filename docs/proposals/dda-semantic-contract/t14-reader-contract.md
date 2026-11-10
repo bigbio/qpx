@@ -6,7 +6,7 @@
     Part of the annex of the [DDA semantic contract proposal](index.md) for QPX. Rules here are proposals for specification 1.4, not normative text, and they cover every producer. For OpenMS-written files the [strict profile](strict-profile.md) is the contract and wins where the two differ. Bracketed ids such as [OPENMS-01](findings-psm.md#openms-01) link to the verified audit findings; code references are to `dev` at commit `32cbbdc`.
 
 
-> **Decision in one line:** A normative `consumer-guide.md` merges all topic reader rules into one default profile, implemented by qpx's read API: decoys and unidentified rows out; accepted rank-1 rows identify; transfers are never evidence and never combined with a measured own-run entry of the same precursor, run and label; signals and fractions are summed; the group is the protein; samples resolve exactly via `run.samples`; absent keys, null declaring columns and missing provenance parameters mean unknown; filters never silently return empty or unfiltered results; outputs record the policy applied.
+> **Decision in one line:** A normative `consumer-guide.md` merges all topic reader rules into one default profile, implemented by qpx's read API: decoys and unidentified rows out; accepted rank-1 rows identify; transfers are never evidence and never combined with a measured own-run entry of the same precursor, run and label; signals and fractions are summed; the group is the protein; samples resolve exactly via `run.samples`; absent ontology properties, missing provenance parameters, absent footer keys and null declaring columns mean unknown; filters never silently return empty or unfiltered results; outputs record the policy applied.
 
 ## Questions a reader has
 - Which rows drop by default: decoys, null `is_decoy`, rank > 1, failing, unidentified, transferred, contaminants?
@@ -17,7 +17,7 @@
 - Group or anchor? What does `unique` mean?
 - `run.samples` or SDRF? Normalised labels?
 - How are spectra, PSMs, peptides, groups, spectral counts counted?
-- What does an absent footer key mean?
+- What does an absent declaration (ontology property, provenance parameter, footer key) mean?
 
 ## What happens today
 - Readers MUST filter decoys (docs/spec/pg.md:99-103). The group, never its anchor, is the analyte (pg.md:66-67, data-model.md:159).
@@ -31,7 +31,7 @@
 
 | Producer | Behaviour | Findings |
 |---|---|---|
-| MaxQuant, FragPipe | Filtered upstream, but with no typed q-value, a null `pass_threshold` and no filter key. `feature.confident()` keeps 0 of 243,821 MaxQuant rows | [[MAXQUANT-05](findings-psm.md#maxquant-05), -26, [FRAGPIPE-02](findings-psm.md#fragpipe-02), [VALIDATOR-07](findings-feature.md#validator-07)] |
+| MaxQuant, FragPipe | Filtered upstream, but with no typed q-value, a null `pass_threshold` and no stated cut. `feature.confident()` keeps 0 of 243,821 MaxQuant rows | [[MAXQUANT-05](findings-psm.md#maxquant-05), -26, [FRAGPIPE-02](findings-psm.md#fragpipe-02), [VALIDATOR-07](findings-feature.md#validator-07)] |
 | mzIdentML (Mascot) | 11,517 rows have `pass_threshold = true` and a null `qvalue`. `psm.confident()` keeps 0 of 13,386 | [[MZID_CDAP-M1](findings-psm.md#mzid_cdap-m1), [VALIDATOR-06](findings-psm.md#validator-06)] |
 | MaxQuant | 9,272 target (peptidoform, charge, run) keys (9,337 with decoys) have both a measured direct row and a measured transferred row. In 799 of them the transferred value is larger | [[MOKUME-09](findings-feature.md#mokume-09)] |
 
@@ -47,16 +47,23 @@ Producer declarations ([T01](t01-psm-rows.md)–[T13](t13-metadata-conformance.m
 | B. Strict defaults (q ≤ 0.01, no transfers, no contaminants) | Conservative | Drops MBR quantities the producer's protein values include; unusable without q-values; hides rows [#241](https://github.com/bigbio/qpx/issues/241) keeps |
 | C. Pass-through (decoys only) | Simple | Keeps double and rank-inflated counts |
 | **D. Guide + default profile + tri-state filters + policy record** | One meaning per call; testable | Changes documented API results |
-| E. Refuse files with unknown keys | Forces declaration | 1.3 files unreadable |
+| E. Refuse files with unknown declarations | Forces declaration | 1.3 files unreadable |
 
 D, with warnings and upper bounds from E and opt-in filters from B.
 
 ## Recommendation
 **RDR-1 (MUST)** `docs/spec/consumer-guide.md` is the normative reader contract, added to [T13](t13-metadata-conformance.md) META-12 (producer-guide.md stays informative). It lists every topic reader rule (the `<prefix>-R<n>` rules of [T01](t01-psm-rows.md)–[T13](t13-metadata-conformance.md)) and RDR-2–14; a topic rule wins over the guide. qpx/core/data, qpx/views, qpx/core/dataset_queries.py, qpx/mudata.py and `qpxc transform` conform.
 
-**RDR-2 (MUST)** Footer keys are read per META-R1–R3: key-value metadata, per file, shards combined by META-4; absent or off-vocabulary means `unknown` (off-vocabulary warns); never inferred from data (FLT-R1). `file_metadata` returns every registry key, `unknown` filled in. Declarations that are not footer keys come from their columns (`rank`, `precursor_index`, `identification_type`, `identified_in_unit`, `imputed_labels`, `is_imputed`), from `identity_composite`, or from provenance step parameters of the row's source (META-4); the table at the end of Reader rules says what a missing one means.
+**RDR-2 (MUST)** Declarations are read from the table that holds them (META-R1–R3); absent or off-vocabulary means unknown (off-vocabulary warns); never inferred from data (FLT-R1).
+- **Ontology properties** (`level`, `scope`, `fdr`, `quantity`, `processing`, `calibration`): from the `ontology.parquet` row of the field, by `(field_name, view)`.
+- **`run.acquisition_method`**: per run, from the run view.
+- **Provenance parameters**: from the steps of the row's source (META-4).
+- **Existing footer keys** (`scan_format`, `identity_composite` and the rest of META-1): key-value metadata, per file, shards combined by META-4. `file_metadata` returns every registry key, `unknown` filled in. No 1.4 declaration is a new footer key.
+- **Columns**: `rank`, `precursor_index`, `identification_type`, `identified_in_unit`, `imputed_labels`, `is_imputed`.
 
-**RDR-3 (MUST)** A threshold filter (q-value at an explicit level, `pass_threshold`, `match_qvalue`) classes rows as pass, fail or unassessable: null, and not settled by `fdr_filter` or a provenance-stated `pass_threshold` basis (FLT-R3, CNF-R1). It returns the pass rows, reports the unassessable count and the keys used, and raises an error if every row is unassessable. When a q-value column is null on every row and `fdr_filter` does not settle it, FDR was not estimated at that level ([T04](t04-confidence-fields.md) CNF-2) and filtering at that level is not available: the error says so and names the levels that have q-values, and the reader filters at a level that exists. It never reads a null as 1.0 and never drops every row silently. On a transferred row, a column [T04](t04-confidence-fields.md) CNF-8 leaves null is not unassessable: the row passes through to the transfer policy and is reported apart (CNF-R5, MBR-R5). A null flag follows its owner rule: `rank` → PSM-R3 (upper bounds), `is_decoy` → PRT-R2 (invalid file), `contaminant` → PRT-R3 (unknown), `identification_type` → MBR-R2.
+The table at the end of Reader rules says what a missing one means.
+
+**RDR-3 (MUST)** A threshold filter (q-value at an explicit level, `pass_threshold`, `match_qvalue`) classes rows as pass, fail or unassessable: null, and not settled by a provenance `<level>_fdr` or by the `pass_threshold` basis its ontology row states (FLT-R3, CNF-R1). It returns the pass rows, reports the unassessable count and the declarations used, and raises an error if every row is unassessable. When a q-value column is null on every row and `<level>_fdr` does not settle it, FDR was not estimated at that level ([T04](t04-confidence-fields.md) CNF-2) and filtering at that level is not available: the error says so and names the levels that have q-values, and the reader filters at a level that exists. It never reads a null as 1.0 and never drops every row silently. On a transferred row, a column [T04](t04-confidence-fields.md) CNF-8 leaves null is not unassessable: the row passes through to the transfer policy and is reported apart (CNF-R5, MBR-R5). A null flag follows its owner rule: `rank` → PSM-R3 (upper bounds), `is_decoy` → PRT-R2 (invalid file), `contaminant` → PRT-R3 (unknown), `identification_type` → MBR-R2.
 
 **RDR-4 (MUST)** The default profile is below. Caller overrides are recorded (RDR-13).
 
@@ -110,7 +117,7 @@ Under an `unknown` filter state, counts are upper bounds (FLT-R5).
 
 **RDR-10 (MUST)** Null is not 0, and an unstored MuData cell is not 0 (anndata.md:101). A stored 0 is measured. Imputed values stay flagged. Values the reader fills in appear only beside a mask.
 
-**RDR-11 (MUST)** Readers check `qpx_version` and `file_type` (META-R4). Below 1.4, every 1.4 key is `unknown` (META-2), and the legacy clauses apply:
+**RDR-11 (MUST)** Readers check `qpx_version` and `file_type` (META-R4). Below 1.4, every 1.4 declaration is unknown (META-2), and the legacy clauses apply:
 - PSM-R1: the score `rank`;
 - [T02](t02-chimeric-spectra.md): `direct` may include secondary-only rows;
 - CNF-R6, FRW-R7, FID-R7, MBR-R7 and SPC-R5;
@@ -127,11 +134,11 @@ Under an `unknown` filter state, counts are upper bounds (FLT-R5).
 - `protein_key`, `sample_source`;
 - `unassessable`, `contract_version`.
 
-Source keys follow META-R7. `qpx_include_decoys` and `qpx_duplicates` remain as aliases.
+Source keys and declarations follow META-R7. `qpx_include_decoys` and `qpx_duplicates` remain as aliases.
 
 **RDR-14 (SHOULD)** `tests/examples/reader_contract/` holds tiny datasets with expected counts and matrices. qpx CI runs them, and mokume can too. The cases are:
 - direct and transferred entries on one key, with the direct entry quantified and unquantified;
-- a null q-value under `fdr_filter` `psm:0.01`;
+- a null q-value under provenance `psm_fdr = 0.01`;
 - rank-2 rows and tied rank-1 rows;
 - labels that differ only in case;
 - a 0 and an imputed value;
@@ -142,7 +149,7 @@ Source keys follow META-R7. `qpx_include_decoys` and `qpx_duplicates` remain as 
 ## Schema and footer changes
 | Change | View | Type / values | Required | Breaking? |
 |---|---|---|---|---|
-| No new Parquet footer keys; `consumer-guide.md`; recipes read the KV footer; views.md:212 → group | docs | – | – | No |
+| No new Parquet footer keys; `consumer-guide.md`; recipes read the KV footer for the existing keys, and `ontology.parquet`, the run view and provenance for the declarations; views.md:212 → group | docs | – | – | No |
 | `qpx_read_policy` | `uns`; table sidecar | JSON | SHOULD | No |
 | `transferred_mask` layer (pg: `identified_in_unit = false`) | MuData | sparse 0/1 | SHOULD with transfers | No |
 | `contaminant` column | MuData var, `intensity()` | bool, null | SHOULD | No |
@@ -155,10 +162,10 @@ Source keys follow META-R7. `qpx_include_decoys` and `qpx_duplicates` remain as 
 ## Producer changes
 | Producer | Change needed |
 |---|---|
-| qpx writers | Keys visible in `ARROW:schema` (META-3, FLT-13): `_add_footer_metadata` (qpx/writers/base.py:359-365) and the close-time `identity_source` stamp (:462-463) re-serialize it, like `_set_scan_format` (:367-383) |
-| All converters | Write the [T03](t03-filtering-state.md), [T07](t07-unidentified-features.md), [T09](t09-intensities-missing-values.md), [T12](t12-protein-groups.md) and [T13](t13-metadata-conformance.md) footer keys, and the columns and provenance parameters [T01](t01-psm-rows.md)–[T12](t12-protein-groups.md) use instead of keys; until then default counts are upper bounds |
-| MaxQuant, FragPipe, mzIdentML | Declare acceptance (`pass_threshold`, `fdr_filter`; FLT-9); `applied` (e.g. `psm:applied`) when the threshold is unknown |
-| `qpxc migrate` | Write only the keys that META-4 lists |
+| qpx writers | Existing keys visible in `ARROW:schema` (META-3): `_add_footer_metadata` (qpx/writers/base.py:359-365) and the close-time `identity_source` stamp (:462-463) re-serialize it, like `_set_scan_format` (:367-383) |
+| All converters | Write the ontology properties ([T03](t03-filtering-state.md), [T04](t04-confidence-fields.md), [T09](t09-intensities-missing-values.md), [T11](t11-spectrum-precursor-fields.md)), `run.acquisition_method` ([T13](t13-metadata-conformance.md)) and the provenance parameters ([T03](t03-filtering-state.md), [T07](t07-unidentified-features.md), [T08](t08-match-between-runs.md), [T12](t12-protein-groups.md)), beside the columns [T01](t01-psm-rows.md)–[T12](t12-protein-groups.md) define; until then default counts are upper bounds |
+| MaxQuant, FragPipe, mzIdentML | Declare acceptance (`pass_threshold` with its ontology basis; provenance `<level>_fdr`; FLT-9); `applied` (e.g. `psm_fdr = applied`) when the threshold is unknown |
+| `qpxc migrate` | Write only the declarations that META-4 allows |
 
 ## Reader rules
 RDR-1–14 above are the normative reader rules. Current violations:
@@ -180,7 +187,7 @@ RDR-1–14 above are the normative reader rules. Current violations:
 | RDR-9 | qpx/views/api.py:139-151 | `ModificationView` counts every rank and threshold: Deamidated 4,323 vs 926 accepted [[VALIDATOR-M3](findings-psm.md#validator-m3)] | accepted rows |
 | RDR-9 | qpx/views/api.py:21-29, 172-183, 247-268; qpx/converters/summary.py:109-131 | Count transfers, ID-only rows, rank > 1, every pg row (via `grouped_runs[1]`), decoy accessions | RDR-9, or label as row counts |
 | RDR-10 | quantify.py:269; qpx/core/data/schema.py:306; qpx/core/dataset_queries.py:124-137 | Zeros dropped or read as "no quantity"; imputed values unflagged | keep zeros; mask |
-| RDR-2/3 | mokume:python/mokume/io/feature.py:185-197 | No filter key read, though `parquet_kv_metadata` is used (mokume:python/mokume/io/_qpx.py:35-38) | read `fdr_filter` and the [T03](t03-filtering-state.md)/T08 provenance parameters |
+| RDR-2/3 | mokume:python/mokume/io/feature.py:185-197 | No filtering state read; only `parquet_kv_metadata` is queried (mokume:python/mokume/io/_qpx.py:35-38) | read the [T03](t03-filtering-state.md)/T08 provenance parameters (`<level>_fdr` included) |
 | RDR-3 | mokume:python/mokume/io/_qpx.py:13-46; mokume:python/mokume/preprocessing/filters/peptide.py:403-409; mokume:rust/crates/mokume-pipeline/src/lib.rs:6966-6972 | Typed column used only when it has no nulls; nulls dropped silently; score filters drop transfers [[MOKUME-21](findings-feature.md#mokume-21), -22, -M3] | tri-state |
 | RDR-4 | mokume:python/mokume/core/contaminants.py:8; mokume:python/mokume/pipeline/stages.py:436-438; mokume:rust/crates/mokume-pipeline/src/lib.rs:8461, 8902-8909 | Substring matching; null decoy read as target | typed flags |
 | RDR-5 | mokume:python/mokume/io/feature.py:560-643; mokume:rust/crates/mokume-io/src/qpx.rs:493-524; mokume:rust/crates/mokume-core/src/config.rs:172-180 | Type ignored (Python) or inferred from `id_run_file_name` (Rust); `keep` unrecorded | read; de-duplicate; record |
@@ -190,29 +197,29 @@ RDR-1–14 above are the normative reader rules. Current violations:
 | RDR-8 | mokume:python/mokume/io/feature.py:44-79, 605-643, 743-746; mokume:rust/crates/mokume-io/src/sdrf.rs:108-146 | `run.samples` ignored; lowercasing; label as run; mixture from names; TMT collapses without SDRF [[MOKUME-12](findings-cross.md#mokume-12), -13, -14, -28] | RDR-8 |
 | RDR-9 | mokume:rust/crates/mokume-io/src/psm.rs:14-25; mokume:rust/crates/mokume-pipeline/src/spectral_count.rs:158-208 | No rank or threshold; counts rows; no label | RDR-9 |
 | RDR-4/7/8 | mokume:python/mokume/tissuemap/loader.py:51, 56, 203-262, 360 | Anchor key; null decoy kept; positional aliases; TMT126/131 fallback; first sample | `channel_role` |
-| INT-R4 | mokume:rust/crates/mokume-pipeline/src/tmt.rs:88-114 | `--tmt-impurity` ignores the input's correction state [[MOKUME-26](findings-feature.md#mokume-26)] | check `intensity_quantity` (`reporter_corrected`) |
+| INT-R4 | mokume:rust/crates/mokume-pipeline/src/tmt.rs:88-114 | `--tmt-impurity` ignores the input's correction state [[MOKUME-26](findings-feature.md#mokume-26)] | check the ontology property `quantity` (`reporter_corrected`) |
 
 **When a declaration is absent, null or `unknown`, a reader MUST:**
 
 | Declaration (owner) | Behaviour |
 |---|---|
-| `fdr_filter` ([T03](t03-filtering-state.md)) | Treat a null typed value as unassessable (FLT-R3); report counts as upper bounds (FLT-R5) |
-| `unquantified_policy` ([T07](t07-unidentified-features.md), [T12](t12-protein-groups.md)) | Never read a missing row as "unquantified" or "not identified" (FRW-R6, PGV-R2) |
-| `intensity_quantity`, `intensity_processing` ([T09](t09-intensities-missing-values.md)) | Warn before pooling files (INT-R1); never re-correct silently, and warn on `reporter` (INT-R4) |
-| `scan_format` ([T11](t11-spectrum-precursor-fields.md)) | Up to 1.3, absent means `scan` (SPC-7). From 1.4, `unknown` means join on `spectrum_reference`, or on `scan` only if `rt` agrees (SPC-R2) |
-| `acquisition_method` ([T13](t13-metadata-conformance.md)) | Use `run.acquisition_method`. Otherwise apply DDA rules only if the caller asserts DDA, and record it (META-R5) |
+| Provenance `psm_fdr`, `precursor_fdr`, `peptide_fdr`, `protein_fdr` ([T03](t03-filtering-state.md) FLT-1) | Treat a null typed value as unassessable (FLT-R3); report counts as upper bounds (FLT-R5) |
+| Provenance `unquantified_rows` ([T07](t07-unidentified-features.md) UNI-6, [T12](t12-protein-groups.md) PGV-4) | Never read a missing row as "unquantified" or "not identified" (FRW-R6, PGV-R2) |
+| Ontology properties `quantity`, `processing` on the `intensity` rows ([T09](t09-intensities-missing-values.md) INT-2) | Warn before pooling datasets (INT-R1); never re-correct silently, and warn on `reporter` (INT-R4) |
+| Footer key `scan_format` ([T11](t11-spectrum-precursor-fields.md)) | Up to 1.3, absent means `scan` (SPC-7). From 1.4, `unknown` means join on `spectrum_reference`, or on `scan` only if `rt` agrees (SPC-R2) |
+| `run.acquisition_method` ([T13](t13-metadata-conformance.md) META-5) | For a run with `unknown`, or without a run view, apply DDA rules only if the caller asserts DDA, and record it (META-R5) |
 | `rank` column ([T01](t01-psm-rows.md) PSM-4) | Count `rank = 1`; with a null rank, counts are upper bounds (PSM-R3) |
 | `precursor_index`, `quant_scan` ([T02](t02-chimeric-spectra.md) CHI-10, CHI-11) | Read a null index as unknown, never 1 (CHI-R7); count spectra by scan (CHI-R1); de-duplicate reporter roll-ups on `quant_scan` wherever it is set (CHI-R6) |
 | `identity_composite` ([T05](t05-feature-rows.md) FRW-3) | Derive the grain; a missing composite is the `peak` default. Apply RDR-5, then sum rows sharing a natural key, except under `precursor_run` or `precursor_unit` (FRW-R1/R2) |
 | PSM links, provenance `skipped_runs_psm` ([T06](t06-identifications-per-feature.md) FID-9) | Treat links in 1.4 files as complete except in listed runs; there, never read a missing link as "not supporting" (FID-R2) |
 | Unidentified rows in the feature file, provenance `skipped_unidentified_features` ([T07](t07-unidentified-features.md) UNI-5) | Compute an identification rate only when the file holds unidentified rows and none were skipped (UNI-R3) |
-| `identification_type`, `identified_in_unit`, provenance `match_between_runs` step ([T08](t08-match-between-runs.md) MBR-8, MBR-9) | Report null types as unknown unless provenance settles them (MBR-R2); a null `identified_in_unit` gives upper bounds (PGV-R1); when `mbr_fdr` is `none`, `unknown` or absent, warn and offer to drop transfers (MBR-R6) |
+| `identification_type`, `identified_in_unit`, provenance `match_between_runs` step ([T08](t08-match-between-runs.md) MBR-8, MBR-9) | Report null types as unknown unless provenance settles them (MBR-R2); a null `identified_in_unit` gives upper bounds (PGV-R1); when `mbr_fdr` is `none` or absent, warn and offer to drop transfers (MBR-R6) |
 | `imputed_labels`, `is_imputed` ([T09](t09-intensities-missing-values.md) INT-9) | Read a null flag as unknown, not measured: exclude or mask (INT-R3) |
-| Provenance `pass_threshold_level`, `pass_threshold_fdr` ([T03](t03-filtering-state.md) FLT-8) | Treat `pass_threshold = true` as an FDR cut at t only if they state an FDR level and a value ≤ t (FLT-R4) |
+| Ontology properties `level`, `fdr` on the `pass_threshold` row ([T03](t03-filtering-state.md) FLT-8) | Treat `pass_threshold = true` as an FDR cut at t only if they state an FDR level and a value ≤ t (FLT-R4) |
 | Provenance `decoy_policy`, `contaminant_policy` ([T03](t03-filtering-state.md) FLT-10, FLT-11) | Exclude `is_decoy = true` anyway, and filter contaminants by the typed flag (FLT-R2, FLT-R6); estimate FDR only under `decoy_policy = retained` |
 | Provenance `include_unassigned_psms` ([T03](t03-filtering-state.md) FLT-12) | Under `false`, never read a PSM missing from the psm view as "not identified" |
-| Provenance `psm_qvalue_scope`, `peptide_qvalue_scope` ([T04](t04-confidence-fields.md) CNF-3) | Report no experiment-wide FDR (CNF-R3) |
-| Provenance `observed_mz_calibration` ([T11](t11-spectrum-precursor-fields.md) SPC-2) | Treat `unknown` as a calibration state of its own: never pool its mass errors with `raw` or `recalibrated` files (SPC-R3) |
+| Ontology property `scope` on the q-value rows ([T04](t04-confidence-fields.md) CNF-3) | Report no experiment-wide FDR (CNF-R3) |
+| Ontology property `calibration` on the `observed_mz` rows ([T11](t11-spectrum-precursor-fields.md) SPC-2) | Treat unknown as a calibration state of its own: never pool its mass errors with `raw` or `recalibrated` datasets (SPC-R3) |
 | Provenance `pg_grouping` ([T12](t12-protein-groups.md) PGV-6) | Pivot `pg_group_id` across units only under `dataset_inference` or `mapping_set`; otherwise warn (PGV-R5) |
 
 ## Open questions for maintainers
