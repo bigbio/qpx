@@ -102,7 +102,7 @@ The maintainers decided these points in [#383](https://github.com/bigbio/qpx/iss
 |---|---|
 | A transferred row beside a quantified direct row of the same precursor and run | OpenMS leaves the transferred row out, so there is one row per precursor and run. |
 | Unidentified features | They may be stored in the feature view, optionally, marked `identification_type = 'unidentified'`. Readers ignore them. There is no separate view. This keeps [#229](https://github.com/bigbio/qpx/issues/229)/[#232](https://github.com/bigbio/qpx/issues/232) and settles [#378](https://github.com/bigbio/qpx/issues/378). |
-| Protein FDR | Not always estimated. OpenMS sometimes estimates only peptide-level FDR, for example for immunopeptidomics. A q-value column is null when its level was not estimated. This holds for every producer. |
+| FDR levels | PSM-level FDR is always estimated, so PSM q-values are always present. Protein-level FDR is not: OpenMS sometimes stops at peptide-level FDR, for example for immunopeptidomics. A peptide or protein q-value column is null when its level was not estimated. This holds for every producer. |
 | Transferred quantities | Kept by default, because they improve quantification. Filtering them out is the reader's choice. |
 | Estimated values | A value the quantification tool's own algorithm estimates counts as measured; that is the tool's decision. A value added afterwards by another tool, such as mokume, counts as imputed. |
 | Profile claim | A provenance parameter, not a footer key. |
