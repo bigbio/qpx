@@ -48,7 +48,7 @@ Where OpenMS states a transfer: the consensus feature annotation `mbr_transfer_m
 | 7 | psm: `rank = 1`, `precursor_index`, `spectrum_reference`, `isotope_error`, `compensation_voltage`; `scan_format = nativeId` with multi-part ids. | Correct counts for chimeric spectra; timsTOF and FAIMS data. | The hashed scans in `psm_adapter.py:49-71` |
 | 8 | Isobaric rows: `quant_scan`, `quant_ms_level`, `parent_ion_fraction`, `quant_spectrum_count = 1`. | Purity filtering. | `quant_scan.py` |
 | 9 | `identification_conflict`, `consensus_feature_id`, `spectral_count`. | Traceability across runs. | `feature_dedup.py` |
-| 10 | Leave out a transferred feature when the same precursor has a quantified direct feature in that run, and record the count in provenance. | One row per precursor and run; readers that sum or count rows are correct. | – |
+| 10 | Guarantee one feature row per precursor and run for label-free data. ProteomicsLFQ already produces one feature per precursor in a run; as a safeguard the export writes only the direct feature if a transferred one ever exists beside it, and records the count in provenance. | Readers that sum or count rows are correct. | – |
 | 11 | Identification-only feature rows from identifications that support no quantified feature, with `unquantified_policy = retained`. | "Identified but not quantified" can be told from "not identified". | – |
 | 12 | Later, algorithm work: a transfer score and the differences to the donor from PIP-ECHO; an FDR for transfers made by the linker; precursor-level q-values; rank-1 ties. | Fills `match_*` and `precursor_qvalue`. | – |
 
@@ -63,5 +63,4 @@ The maintainers take ProteomicsLFQ to produce one feature per precursor in a run
 - MS1-label handling (MS1LabeledWorkflow, FeatureFinderMultiplex).
 - How OpenMS records which group a shared peptide is assigned to.
 - Whether search adapters set a chimeric hit's m/z to the co-isolated ion, and whether that m/z was recalibrated.
-- What the protein quantification does with a direct and a transferred feature of the same precursor in one run. This matters for item 10.
 - How FDR cuts applied before ProteomicsLFQ in the quantms pipeline are recorded.
