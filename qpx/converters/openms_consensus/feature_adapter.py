@@ -633,9 +633,9 @@ def _best_removed_per_run(pids, removed, map_info, cf_runs, resolve_run) -> list
     return best
 
 
-def _feature_peptide_fields(cf, hit, enzyme) -> dict:
-    """Build peptide, precursor and localisation fields shared by all runs."""
-    seq_obj = hit.getSequence()
+def _feature_peptide_fields(cf, hit, enzyme, seq_obj=None) -> dict:
+    """Build peptide, precursor and localisation fields from the supplied sequence or the hit's."""
+    seq_obj = hit.getSequence() if seq_obj is None else seq_obj
     peptidoform = to_proforma(seq_obj)
     sequence = seq_obj.toUnmodifiedString()
     additional_scores, site_scores = localization_scores(hit)
@@ -681,8 +681,8 @@ def _identified_labels_by_run(pids, map_info, cf_runs, resolve_run, ms1) -> dict
 def _multiplet_fields(record: dict, entry: dict, lightest: str | None) -> dict:
     """Position of an MS1-label multiplet row: its lightest measured partner.
 
-    ``calculated_mz`` is the unlabelled peptide's, so a mass error exists only when
-    that partner is the run's lightest channel.
+    ``calculated_mz`` is the run's lightest partner's, including any label, so a
+    mass error exists only when that channel is measured.
     """
     measured_lightest = next(iter(entry["labels"]), None) == lightest
     return {
@@ -749,6 +749,9 @@ def feature_records_for_cf(
         }
         if ms1:
             lightest = next(iter(ms1.run_labels(run)), None)
+            seq_obj = ms1.lightest_sequence(hit, run)
+            if seq_obj is not None:
+                record.update(_feature_peptide_fields(cf, hit, enzyme, seq_obj))
             record.update(_multiplet_fields(record, entry, lightest))
             record["identified_labels"] = identified.get(run)
             record["channel_details"] = [entry["channels"][label] for label in sorted(entry["channels"])]

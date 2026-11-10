@@ -1037,8 +1037,9 @@ peptide assignments keep this field null.
     One feature row per multiplet per run, one `intensities` entry per channel. A
     two-plex calls its non-light channel `SILAC heavy` and a three-plex is
     light/medium/heavy, as the native OpenMS writer does; labels that cannot be
-    resolved stop the conversion. The feature peptidoform is the peptide identity
-    MS1LabeledWorkflow reports, without labels, also for dimethyl and mTRAQ.
+    resolved stop the conversion. The feature peptidoform is the lightest partner's:
+    unlabelled for SILAC, with the lightest label for dimethyl and mTRAQ, restored
+    from `MS1Label:labeled_sequence` and that channel's `channel_description`.
     `observed_mz` and `rt` are the lightest measured partner's; when that is not the
     run's lightest channel, `mass_error_ppm` is null. A PSM is the partner the
     spectrum was matched with (`MS1Label:labeled_sequence`), with `psm.label`, and
