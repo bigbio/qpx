@@ -3,7 +3,7 @@
 [Overview](index.md) · [Strict profile](strict-profile.md) · [Consumers](consumers.md) · [OpenMS work list](openms-worklist.md)
 
 !!! note "Review report"
-    One of three reviews of the [DDA semantic contract proposal](index.md), made by reading bigbio/quantms-portal at `728f5e4` and its backend at `c562424`. It is kept as written by the reviewer. It predates the restructuring around the strict profile, so some of its recommendations are already applied. Rule ids refer to the topic sections T01 to T14.
+    One of three reviews of the [DDA semantic contract proposal](index.md), made by reading bigbio/quantms-portal at `728f5e4` and its backend at `c562424`. It is kept as written by the reviewer. It predates the restructuring around the strict profile and the decisions taken afterwards, so parts of it are superseded: it still speaks of footer keys (the proposal now adds none; see [where a dataset says what it holds](strict-profile.md#where-the-dataset-says-what-it-holds)) and of a separate view for unidentified features (they stay in the feature view as marked rows). It also lists as open some points decided since; see [Decisions taken](index.md#decisions-taken). Where it differs from the [strict profile](strict-profile.md), the strict profile holds. Rule ids refer to the topic sections T01 to T14.
 
 Path prefixes used below:
 - `BE/` = `quantms-portal-backend:src/quantms_portal_backend/`

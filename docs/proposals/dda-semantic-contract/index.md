@@ -11,7 +11,7 @@ QPX fixes column names, types and nullability. It does not yet fix what the rows
 
 The contract is built around two priorities set by the maintainers:
 
-1. **Consumers must work well with QPX.** qpxui and the quantms.io portal read typed columns with SQL and little else. A rule counts only if it lets them get correct numbers that way.
+1. **Consumers must work well with QPX.** qpxui and the quantms.io portal read typed columns with SQL and little else; mokume is the third consumer. A rule counts only if it lets them get correct numbers that way.
 2. **OpenMS is the producer that matters most.** The maintainers control its export, so it can be made exact. Support for MaxQuant, mzIdentML and other converters comes second.
 
 ## How the proposal is organised
@@ -45,7 +45,7 @@ Each number was measured on the repository's own fixtures with qpx `dev`, unless
 These are the answers under the [strict profile](strict-profile.md). The annex has the general rules.
 
 **How many identifications per feature?**
-One feature row is one precursor (peptidoform and charge) in one run. A `direct` or `secondary` row has exactly one identifying PSM from its own run, and that PSM supplies the row's `scan`, PEP and `psm_qvalue`. Other PSMs of the same precursor in that run link to the row through `psm.feature_id`. A `transferred` row has no PSM.
+For label-free data one feature row is one precursor (peptidoform and charge) in one run, and there is exactly one row per precursor and run. Isobaric data has one row per quantified reporter spectrum. A `direct` or `secondary` row has exactly one identifying PSM from its own run, and that PSM supplies the row's `scan`, PEP and `psm_qvalue`. Other PSMs of the same precursor in that run link to the row through `psm.feature_id`. A `transferred` row has no PSM.
 
 **What if the spectrum is chimeric?**
 Each co-isolated precursor identified in a spectrum is its own psm row. The rows share `run_file_name` and `scan` and differ in `precursor_index` (1, 2, …). Each has rank 1. A chimeric spectrum's reporter ions feed at most one feature.
@@ -72,21 +72,21 @@ The [strict profile](strict-profile.md#where-the-dataset-says-what-it-holds) lis
 
 1. **OpenMS export.** Merge the [#378](https://github.com/bigbio/qpx/issues/378) branch, then export the PSM q-value. These two give consumers correct identification counts and a working confidence filter. The remaining steps are in the [OpenMS work list](openms-worklist.md), tracked as [OpenMS/OpenMS#10869](https://github.com/OpenMS/OpenMS/issues/10869).
 2. **Consumer fixes that do not depend on new files.**
-    - qpxui: read the pg view in its current layout.
-    - Portal: key protein groups one way.
+    - qpxui: read the pg view in its current layout ([bigbio/qpxui#25](https://github.com/bigbio/qpxui/issues/25)).
+    - Portal: key protein groups one way ([bigbio/quantms-portal-backend#83](https://github.com/bigbio/quantms-portal-backend/issues/83)).
     - Both: stop treating a null `is_decoy` as a target.
 3. **Declarations in qpx.** The ontology `properties` list, the required `run.acquisition_method` and the fixed provenance parameter names, kept through merge and migrate ([T13](t13-metadata-conformance.md)).
 4. **Strict-profile validation.** `qpxc validate --profile dda-strict` and the provenance claim, with fixtures written by OpenMS, and the reference queries as shared reader tests for qpx, qpxui, the portal and mokume.
-5. **Consumer predicates.** Each consumer adopts the predicates of the [strict profile](strict-profile.md#reading-these-files).
+5. **Consumer predicates.** Each consumer adopts the predicates of the [strict profile](strict-profile.md#reading-these-files). For mokume the list is in [bigbio/mokume#122](https://github.com/bigbio/mokume/issues/122).
 6. **Other producers.** The converter work in the annex, by producer.
 
-Deferred until a consumer needs them: writing unidentified features, conflict flags, the `match_*` details beyond `match_qvalue`, most spectrum-field rules, and the rules that exist only for other producers.
+Deferred until a consumer needs them: writing unidentified features, the `match_*` details beyond `match_qvalue`, most spectrum-field rules, and the rules that exist only for other producers.
 
 ## Annex
 
 The annex keeps the full producer-neutral analysis. It matters for three reasons:
 
-- **Other producers.** Files converted from MaxQuant, FragPipe, Proteome Discoverer, mzIdentML, CDAP or consensusXML cannot always fill every column. The annex says what they write instead: null, or `unknown` in the footer.
+- **Other producers.** Files converted from MaxQuant, FragPipe, Proteome Discoverer, mzIdentML, CDAP or consensusXML cannot always fill every column. The annex says what they write instead: null, or `unknown` (or no statement) in the ontology, run and provenance tables.
 - **Evidence.** Every rule in the strict profile traces back to findings there.
 - **Readers of mixed data.** The reader rules in [T14](t14-reader-contract.md) say how to handle files that are not strict.
 

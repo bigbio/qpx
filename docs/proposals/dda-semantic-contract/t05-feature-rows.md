@@ -75,8 +75,8 @@ This replaces data-model.md:64,74, feature.md:301, producer-guide.md:12 and conv
 
 | Grain | Composite | Rows per natural key | Producers |
 |---|---|---|---|
-| `precursor_run` | Exactly `peptidoform, charge, run_file_name`, plus `compensation_voltage` when the tool separates CVs | At most one per `(peptidoform, charge, run_file_name, compensation_voltage)` | DIA-NN, Spectronaut, CDAP, PD; quantms label-free and DIA-NN inputs |
-| `peak` | Any other | Any number. Each is one MS1 peak or multiplet, or one MS/MS spectrum whose precursor peak the tool did not detect (MaxQuant `MSMS`) | MaxQuant; OpenMS LFQ and MS1 labels |
+| `precursor_run` | Exactly `peptidoform, charge, run_file_name`, plus `compensation_voltage` when the tool separates CVs | At most one per `(peptidoform, charge, run_file_name, compensation_voltage)` | DIA-NN, Spectronaut, CDAP, PD; quantms label-free and DIA-NN inputs; OpenMS native output for label-free and MS1-label data ([strict profile](strict-profile.md)) |
+| `peak` | Any other | Any number. Each is one MS1 peak or multiplet, or one MS/MS spectrum whose precursor peak the tool did not detect (MaxQuant `MSMS`) | MaxQuant; OpenMS consensusXML, LFQ and MS1 labels |
 | `spectrum` | Any other | Any number. Each is one reporter quantification spectrum | quantms and OpenMS isobaric |
 | `precursor_unit` | Starts with `quantification_unit_id` | At most one per `(quantification_unit_id, peptidoform, charge, compensation_voltage)` | FragPipe |
 
@@ -88,7 +88,7 @@ The composite does not tell `peak` from `spectrum`; readers treat both alike (FR
 |---|---|
 | `precursor_run` | Exactly `peptidoform, charge, run_file_name`, plus `compensation_voltage` when the tool separates CVs |
 | `precursor_unit` | `quantification_unit_id, peptidoform, charge, compensation_voltage` |
-| `peak`, `spectrum` | Those three columns plus the tool-reported locators of the signal: MaxQuant `rt_start, rt_stop, scan`; OpenMS `rt, observed_mz, consensus_rt`; quantms `rt, scan` |
+| `peak`, `spectrum` | Those three columns plus the tool-reported locators of the signal: MaxQuant `rt_start, rt_stop, scan`; OpenMS consensusXML `rt, observed_mz, consensus_rt`; quantms `rt, scan` |
 
 - The composite never holds a value chosen by the converter's best-PSM rule, such as PD's `rt` today or OpenMS `scan` under [T06](t06-identifications-per-feature.md) FID-5.
 - Rows are grouped on the canonical peptidoform.
@@ -148,7 +148,7 @@ When a unit has several runs, its rows have null `rt`, `rt_aligned`, `rt_start` 
 | `grouped_runs` | feature | `list<string>`, nullable, optional | Under `precursor_unit` | No |
 | Text for `rt`, the window and `run_file_name` (feature.md:65-70,89; feature.yaml:255-260) | feature | doc | – | **Meaning change** for 1.3 MaxQuant windows (calibrated). Applies from `qpx_version` 1.4; `qpxc migrate` shifts 1.3 windows by `rt − rt_aligned`, both in the file |
 | `compensation_voltage` null without FAIMS (feature.md:76; feature.yaml:128-132) | feature | doc | – | **Yes**: FragPipe values and `feature_id` |
-| Composites and locator values | feature footer | – | – | **`feature_id` changes**: PD and quantms label-free (composite), MaxQuant (window values), OpenMS (`observed_mz`; `rt` null when the file was aligned; `scan` dropped) |
+| Composites and locator values | feature footer | – | – | **`feature_id` changes**: PD and quantms label-free (composite), MaxQuant (window values), OpenMS consensusXML (`observed_mz`; `rt` null when the file was aligned; `scan` dropped) |
 
 ## Producer changes
 | Producer | Change needed |
@@ -157,7 +157,7 @@ When a unit has several runs, its rows have null `rt`, `rt_aligned`, `rt_start` 
 | FragPipe | Grain `precursor_unit` (current composite). `grouped_runs` on every row, ordered per [T12](t12-protein-groups.md) PGV-5, never re-sorted (pg_adapter.py:96). Null CV without FAIMS (feature_adapter.py:519). Apex RT of one-run units, if `combined_ion` has one (unverified) |
 | Proteome Discoverer | Grain `precursor_run`; composite `peptidoform, charge, run_file_name`; group on the canonical peptidoform (feature_adapter.py:16-20). Summed TMT rows: null PIF, `quant_spectrum_count` ([T09](t09-intensities-missing-values.md)) |
 | OpenMS consensusXML | Grain `peak`, or `spectrum` for isobaric data. Lightest dimethyl or mTRAQ label inline (:638-639), and fix convert.md:1038-1040. `observed_mz` is the run element's m/z, else null (:645); the ProteomicsLFQ element m/z is theoretical, so it is null there ([T11](t11-spectrum-precursor-fields.md) SPC-1). Composite per FRW-4. When the file declares alignment, element RTs are aligned times: they go to `rt_aligned`, and `rt` is null (FRW-7, FRW-8). `rt_start` and `rt_stop` are null, because the hulls are cleared (FRW-9) |
-| OpenMS `-out_qpx` | Upstream declares a `peak` or `spectrum` composite per FRW-4; `qpxc convert openms` already copies `identity_composite` (qpx/converters/openms/converter.py:182-220). Verified at HEAD: no `rt_aligned` or `consensus_rt` column (the unmerged [#378](https://github.com/bigbio/qpx/issues/378) branch adds `consensus_rt`); with alignment `rt` is the aligned time; `rt_start`/`rt_stop` are `rt ± width/2`. Needed: carry the original RT per feature handle, so that `rt` is on the acquisition clock and the aligned time goes to `rt_aligned` (FRW-7), and keep the hull bounds (FRW-9). See the [OpenMS worklist](openms-worklist.md). |
+| OpenMS `-out_qpx` | Upstream declares the composite of the [strict profile](strict-profile.md): `peptidoform, charge, run_file_name` for label-free data (grain `precursor_run`, exactly one row per precursor and run; how OpenMS resolves an internal direct/transferred pair is decided in the OpenMS export) and `peptidoform, charge, run_file_name, scan` for isobaric data (`spectrum`); `qpxc convert openms` already copies `identity_composite` (qpx/converters/openms/converter.py:182-220). Verified at HEAD: no `rt_aligned` or `consensus_rt` column (the unmerged [#378](https://github.com/bigbio/qpx/issues/378) branch adds `consensus_rt`); with alignment `rt` is the aligned time; `rt_start`/`rt_stop` are `rt ± width/2`. Needed: carry the original RT per feature handle, so that `rt` is on the acquisition clock and the aligned time goes to `rt_aligned` (FRW-7), and keep the hull bounds (FRW-9). See the [OpenMS worklist](openms-worklist.md). |
 | quantms MSstats | `spectrum` for isobaric inputs. `precursor_run` with composite `peptidoform, charge, run_file_name` for label-free and DIA-NN inputs |
 | CDAP | Grain `precursor_run` (current composite). `rt` 0.00 becomes null (feature_adapter.py:321) |
 | DIA-NN, Spectronaut | None: the current composite gives `precursor_run`. mzIdentML: none |

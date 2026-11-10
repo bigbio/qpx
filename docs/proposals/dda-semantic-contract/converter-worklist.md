@@ -14,7 +14,7 @@ Every verified finding that is a defect in a converter, writer, validator, docum
 - [ ] [MAXQUANT-01](findings-feature.md#maxquant-01): MULTI-MATCH-MSMS rows typed transferred keep run, scan, PEP ([MBR-3](t08-match-between-runs.md)); also [SPEC-M1](findings-feature.md#spec-m1), [MOKUME-M5](findings-feature.md#mokume-m5), [CRITIC-M4](findings-feature.md#critic-m4), [EXTERNAL-10](findings-feature.md#external-10)
 - [ ] [MAXQUANT-02](findings-feature.md#maxquant-02): Types outside the six-key map (TIMS-*, ISO-SECPEP) silently null; token map + cv_param maxquant_type ([MBR-2](t08-match-between-runs.md))
 - [ ] [MAXQUANT-03](findings-psm.md#maxquant-03): SECPEP twins with equal peptidoform/charge duplicate psm_id; merge ([PSM-2](t01-psm-rows.md), [CHI-6](t02-chimeric-spectra.md))
-- [ ] [MAXQUANT-05](findings-psm.md#maxquant-05): FDR-cut msms written with null pass_threshold and no fdr_filter_psm ([FLT-9](t03-filtering-state.md))
+- [ ] [MAXQUANT-05](findings-psm.md#maxquant-05): FDR-cut msms written with null pass_threshold and no provenance `psm_fdr` ([FLT-9](t03-filtering-state.md))
 - [ ] [MAXQUANT-06](findings-cross.md#maxquant-06): tool version, PSM/protein FDR and MBR setting not recorded ([META-11](t13-metadata-conformance.md), [FLT-1](t03-filtering-state.md), [MBR-8](t08-match-between-runs.md))
 - [ ] [MAXQUANT-08](findings-feature.md#maxquant-08): one isotope pattern credited in full to 2-3 peptidoforms ([FID-10](t06-identifications-per-feature.md))
 - [ ] [MAXQUANT-09](findings-feature.md#maxquant-09): MS/MS-only rows carry a synthetic 60 s window ([FRW-9](t05-feature-rows.md))
@@ -42,7 +42,7 @@ Every verified finding that is a defect in a converter, writer, validator, docum
 23 items.
 
 - [ ] [EXTERNAL-12](findings-feature.md#external-12): IonQuant transfer FDR/probability not written to match_* / mbr_fdr ([MBR-4](t08-match-between-runs.md), [MBR-9](t08-match-between-runs.md))
-- [ ] [FRAGPIPE-01](findings-psm.md#fragpipe-01): pre-filtered psm.tsv with null pass_threshold and no filter keys ([FLT-9](t03-filtering-state.md))
+- [ ] [FRAGPIPE-01](findings-psm.md#fragpipe-01): pre-filtered psm.tsv with null pass_threshold and no provenance `<level>_fdr` parameters ([FLT-9](t03-filtering-state.md))
 - [ ] [FRAGPIPE-02](findings-psm.md#fragpipe-02): PEP = 1-Probability labelled percolator:PEP whatever the validator ([CNF-7](t04-confidence-fields.md))
 - [ ] [FRAGPIPE-04](findings-psm.md#fragpipe-04): dotted run names truncate run_file_name, empty scan, duplicate psm_id ([SPC-13](t11-spectrum-precursor-fields.md))
 - [ ] [FRAGPIPE-06](findings-psm.md#fragpipe-06): calibrated observed m/z written without a calibration declaration ([SPC-2](t11-spectrum-precursor-fields.md))
@@ -104,7 +104,7 @@ Every verified finding that is a defect in a converter, writer, validator, docum
 
 30 items.
 
-- [ ] [OPENMS-03](findings-psm.md#openms-03): significance_threshold unread, no filter keys written; MAY derive pass_threshold as 'other' ([FLT-1](t03-filtering-state.md), [FLT-9](t03-filtering-state.md))
+- [ ] [OPENMS-03](findings-psm.md#openms-03): significance_threshold unread, no provenance `<level>_fdr` parameters written; MAY derive pass_threshold as 'other' ([FLT-1](t03-filtering-state.md), [FLT-9](t03-filtering-state.md))
 - [ ] [OPENMS-04](findings-psm.md#openms-04): peptide q-values and 1.0 placeholders written to psm.qvalue; write null ([CNF-2](t04-confidence-fields.md))
 - [ ] [OPENMS-05](findings-feature.md#openms-05): PSM-level q-value in feature.peptide_qvalue; move to feature.psm_qvalue ([CNF-2](t04-confidence-fields.md), [CNF-6](t04-confidence-fields.md)); also [INFRA-03](findings-feature.md#infra-03), [MOKUME-M1](findings-feature.md#mokume-m1)
 - [ ] [OPENMS-06](findings-feature.md#openms-06): feature PEP/q from the run's first PID or the best PSM of another run ([FID-3](t06-identifications-per-feature.md), [FID-4](t06-identifications-per-feature.md))
@@ -122,7 +122,7 @@ Every verified finding that is a defect in a converter, writer, validator, docum
 - [ ] [OPENMS-21](findings-cross.md#openms-21): --no-include-unassigned-psms drops PSMs that features reference ([FID-8](t06-identifications-per-feature.md))
 - [ ] [OPENMS-22](findings-cross.md#openms-22): is_decoy from target_decoy in psm/feature, from accession prefix in pg ([PRT-4](t10-protein-mapping.md), [PRT-5](t10-protein-mapping.md))
 - [ ] [OPENMS-23](findings-pg.md#openms-23): pg evidence from any rank, decoys and the consensus feature's runs ([PGV-2](t12-protein-groups.md))
-- [ ] [OPENMS-24](findings-pg.md#openms-24): QPX-computed sum written as pg primary when no abundance ([INT-4](t09-intensities-missing-values.md))
+- [ ] [OPENMS-24](findings-pg.md#openms-24): QPX-computed sum written as pg primary without declaration; declare ontology `processing = sum` and a provenance step naming qpx, never mixed with a tool quantity ([INT-4](t09-intensities-missing-values.md))
 - [ ] [OPENMS-25](findings-pg.md#openms-25): pg.global_qvalue = min member-protein q-value; move to protein_global_qvalue ([PGV-8](t12-protein-groups.md))
 - [ ] [OPENMS-26](findings-pg.md#openms-26): analysis-wide peptide/feature counts repeated on every unit row ([PGV-7](t12-protein-groups.md))
 - [ ] [OPENMS-27](findings-feature.md#openms-27): anchor_protein without membership for ungrouped single-accession peptides ([PRT-11](t10-protein-mapping.md))
@@ -131,9 +131,9 @@ Every verified finding that is a defect in a converter, writer, validator, docum
 - [ ] [OPENMS-31](findings-cross.md#openms-31): OpenMS -out_qpx upgrade passes rows through unnormalised and keeps only 4 footer keys ([META-4](t13-metadata-conformance.md))
 - [ ] [OPENMS-M1](findings-psm.md#openms-m1): PEP primary score lost; score type 'fdr' relabelled q-value ([CNF-2](t04-confidence-fields.md), [CNF-7](t04-confidence-fields.md))
 - [ ] [OPENMS-M2](findings-feature.md#openms-m2): precursor-runs with an accepted ID but no positive element get no identification-only row ([UNI-6](t07-unidentified-features.md), [UNI-7](t07-unidentified-features.md))
-- [ ] [OPENMS-M3](findings-feature.md#openms-m3): element/PID RT clock unverified though alignment declared; aligned times go to rt_aligned ([FRW-7](t05-feature-rows.md), [SPC-11](t11-spectrum-precursor-fields.md))
+- [ ] [OPENMS-M3](findings-feature.md#openms-m3): ProteomicsLFQ aligns element and PID RTs in place and keeps no original; aligned times go to rt_aligned, rt and psm.rt are null ([FRW-7](t05-feature-rows.md), [SPC-11](t11-spectrum-precursor-fields.md))
 - [ ] [OPENMS-M4](findings-psm.md#openms-m4): PIDs without resolvable run or spectrum reference dropped without count ([FLT-6](t03-filtering-state.md))
-- [ ] [OPENMS-M5](findings-cross.md#openms-m5): OpenMS -out_qpx keeps unidentified seeds (charge 0) in feature; move to unidentified_feature ([UNI-3](t07-unidentified-features.md), [UNI-8](t07-unidentified-features.md))
+- [ ] [OPENMS-M5](findings-cross.md#openms-m5): OpenMS -out_qpx writes unidentified seeds with an empty peptidoform and charge 0; mark them `identification_type = 'unidentified'` with null peptidoform, sequence and charge, in the feature view ([UNI-3](t07-unidentified-features.md), [UNI-8](t07-unidentified-features.md))
 
 ## mzIdentML
 
@@ -169,7 +169,7 @@ Every verified finding that is a defect in a converter, writer, validator, docum
 - [ ] [MZID_CDAP-26](findings-pg.md#mzid_cdap-26): PSM- and peptide-level q-values written as pg scores ([PGV-8](t12-protein-groups.md))
 - [ ] [MZID_CDAP-29](findings-psm.md#mzid_cdap-29): psm.feature_id never filled although features aggregate PSMs ([FID-8](t06-identifications-per-feature.md))
 - [ ] [MZID_CDAP-M3](findings-cross.md#mzid_cdap-m3): contaminant entries lose identity; pg.contaminant hard-coded false ([PRT-6](t10-protein-mapping.md), [PGV-10](t12-protein-groups.md))
-- [ ] [MZID_CDAP-M4](findings-pg.md#mzid_cdap-m4): QPX reporter sum written as pg primary ([INT-4](t09-intensities-missing-values.md))
+- [ ] [MZID_CDAP-M4](findings-pg.md#mzid_cdap-m4): QPX reporter sum written as pg primary without declaration; declare ontology `processing = sum` and a provenance step naming qpx, never mixed with a tool quantity ([INT-4](t09-intensities-missing-values.md))
 - [ ] [MZID_CDAP-M5](findings-pg.md#mzid_cdap-m5): total_sequences counts features, not sequences ([PGV-7](t12-protein-groups.md))
 - [ ] [MZID_CDAP-M6](findings-psm.md#mzid_cdap-m6): phosphoRS localisation ignored in peptidoform and candidates ([SPC-15](t11-spectrum-precursor-fields.md))
 

@@ -147,7 +147,7 @@ Infrastructure:
 - The MuData export (`qpx/mudata.py`) does not read psm.
 
 ## Open questions for maintainers
-1. Should `qpxc validate --profile dda` require `rank = 1` on every row, or accept all ranks ([#241](https://github.com/bigbio/qpx/issues/241)) and rely on PSM-R1 ([#378](https://github.com/bigbio/qpx/issues/378) "where do you stop")?
+1. *Resolved in the overview and by the strict profile:* `qpxc validate --profile dda` accepts all ranks ([#241](https://github.com/bigbio/qpx/issues/241)) and readers rely on PSM-R1; only OpenMS-written files (`--profile dda-strict`) have `rank = 1` on every row.
 2. Should a typed `search_engines list<string>` replace parsing prefixes and PD's `identifying_node` [[CRITIC-12](findings-psm.md#critic-12)]?
 3. FragPipe: is psm.tsv always top-1 per query, DDA+ aside? Then fragpipe.workflow is not needed.
 4. PD `PSM Ambiguity` (Selected/Rejected) resolves ties: cv_param, or mark Rejected rows?

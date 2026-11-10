@@ -3,9 +3,9 @@
 [Overview](index.md) · [Strict profile](strict-profile.md) · [Consumers](consumers.md) · [OpenMS work list](openms-worklist.md)
 
 !!! note "Review report"
-    One of three reviews of the [DDA semantic contract proposal](index.md), made by reading bigbio/qpxui at `ddeda63`. It is kept as written by the reviewer. It predates the restructuring around the strict profile, so some of its recommendations are already applied. Rule ids refer to the topic sections T01 to T14.
+    One of three reviews of the [DDA semantic contract proposal](index.md), made by reading bigbio/qpxui at `ddeda63`. It is kept as written by the reviewer. It predates the restructuring around the strict profile and the decisions taken afterwards, so parts of it are superseded: it still speaks of footer keys (the proposal now adds none; see [where a dataset says what it holds](strict-profile.md#where-the-dataset-says-what-it-holds)) and of a separate view for unidentified features (they stay in the feature view as marked rows). It also lists as open some points decided since; see [Decisions taken](index.md#decisions-taken). Where it differs from the [strict profile](strict-profile.md), the strict profile holds. Rule ids refer to the topic sections T01 to T14.
 
-Nothing was edited or pushed. qpxui citations are relative to the qpxui repository root (HEAD `ddeda63`). Rule ids come from the topic sections T01 to T14 and the reduced-footer revision.
+Nothing was edited or pushed. qpxui citations are relative to the qpxui repository root (HEAD `ddeda63`). Rule ids come from the topic sections T01 to T14 and the reduced-footer revision of that time (five new footer keys, since replaced: the proposal now adds none).
 
 ## Bottom line
 

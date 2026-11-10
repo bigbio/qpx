@@ -7,6 +7,8 @@
 
 The contract only helps if consumers can use it. This page is based on reading the source of qpxui (`bigbio/qpxui` at `ddeda63`) and of the quantms.io portal (`bigbio/quantms-portal` at `728f5e4` and its backend at `c562424`). Nothing was run against live data. The full reviews are in [review-qpxui.md](review-qpxui.md) and [review-portal.md](review-portal.md).
 
+mokume is the third consumer. It was covered by the audit, not by these two reviews: where its reading departs from the spec and the proposal is listed in the [reader contract](t14-reader-contract.md) and tracked as [bigbio/mokume#122](https://github.com/bigbio/mokume/issues/122).
+
 ## How they read QPX
 
 - **Both read typed columns with DuckDB and almost nothing else.** qpxui reads one footer key (`qpx.sort_order`). The portal reads none. Neither reads provenance, `qpx_version`, `rank`, `pass_threshold`, `identification_type` or `imputed_labels`. The portal's frontend SQL cannot read footers at all.
@@ -32,12 +34,12 @@ So a rule reaches these consumers only if it reduces to a `WHERE` clause on type
 
 Two defects are in the consumers themselves and are independent of the contract:
 
-- **qpxui reads the pg view in the 1.0 layout** (a `run_file_name` column and an `intensities` list). On pg files of 1.1 or later it silently loses protein quantities, per-run protein rows and group counts (`src/lib/queries/quant.ts:16-20`, `src/lib/queries/proteins.ts:21`).
-- **The portal uses three different protein-group keys** (the raw accession list, the sorted list and the anchor), so one dataset shows three different group counts (`apps/qpx_explore/store.py:471`, `qpx_stats.py:228`, `apps/qpx_explore/store.py:951`).
+- **qpxui reads the pg view in the 1.0 layout** (a `run_file_name` column and an `intensities` list). On pg files of 1.1 or later it silently loses protein quantities, per-run protein rows and group counts (`src/lib/queries/quant.ts:16-20`, `src/lib/queries/proteins.ts:21`). Filed as [bigbio/qpxui#25](https://github.com/bigbio/qpxui/issues/25).
+- **The portal uses three different protein-group keys** (the raw accession list, the sorted list and the anchor), so one dataset shows three different group counts (`apps/qpx_explore/store.py:471`, `qpx_stats.py:228`, `apps/qpx_explore/store.py:951`). Filed as [bigbio/quantms-portal-backend#83](https://github.com/bigbio/quantms-portal-backend/issues/83).
 
 ## What consumers change
 
-With files that follow the strict profile, each consumer needs about seven predicates. The exact SQL is in the [strict profile](strict-profile.md#reading-these-files).
+With files that follow the strict profile, each consumer needs the nine changes in the table below. The exact SQL is in the [strict profile](strict-profile.md#reading-these-files).
 
 | Change | qpxui | Portal |
 |---|---|---|
@@ -64,7 +66,7 @@ Four rules of the first draft removed a value that these consumers filter on. Th
 
 Which route produced the portal's current quantms files, and whether their `pg.intensity` is an OpenMS abundance or a QPX sum, could not be established. One query on those files would settle how urgent the second and fourth rows are.
 
-One decision adds consumer work. A q-value column is null on every row when FDR was not estimated at its level, which is legitimate, for example for immunopeptidomics analyses with peptide-level FDR only. Consumers must then filter at a level that exists and say so, instead of dropping every row.
+One decision adds consumer work. A q-value column is null on every row when FDR was not estimated at its level, which is legitimate: for example, the protein q-value of an immunopeptidomics analysis that stops at peptide-level FDR. PSM q-values are always present. Consumers must then filter at a level that exists and say so, instead of dropping every row.
 
 ## What the contract does not give consumers yet
 
@@ -77,4 +79,4 @@ One decision adds consumer work. A q-value column is null on every row when FDR 
 
 ## What these consumers do not need
 
-Neither consumer uses the following, so they are deferred in the [order of work](index.md#order-of-work): the chimeric precursor index beyond counting spectra, the links from PSMs to features, conflict flags, unidentified feature rows (which they only need to skip), the `match_*` details, most spectrum-field rules, and every rule that exists only for MaxQuant, FragPipe, Proteome Discoverer, mzIdentML or CDAP.
+Neither consumer uses the following, so they are deferred in the [order of work](index.md#order-of-work): unidentified feature rows (which they only need to skip), the `match_*` details, most spectrum-field rules, and every rule that exists only for MaxQuant, FragPipe, Proteome Discoverer, mzIdentML or CDAP.

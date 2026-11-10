@@ -80,7 +80,7 @@ Any accepted own-run identification wins over transfer.
 **MBR-3 (MUST)** A transferred row:
 - has no identifying or supporting PSM, so `scan = []`, null `id_run_file_name`, no `psm.feature_id` link ([T06](t06-identifications-per-feature.md) FID-1, FID-5 to FID-7) and `spectral_count`, where written, 0 (FID-12); a `MULTI-MATCH-MSMS` scan MAY go to cv_params;
 - has the confidence columns [T04](t04-confidence-fields.md) CNF-8 sets: null PEP, `psm_qvalue`, `precursor_qvalue` and run-scope `peptide_qvalue`, no `psm`-level `additional_scores`; experiment-scope q-values MAY be filled;
-- has null `identified_labels`;
+- names no MS/MS-identified label: `identified_labels` is null, or `[]` on a multiplet row of an MS1-labelled run, where the [strict profile](strict-profile.md) requires the column to be non-null;
 - carries the `rt`, `observed_mz` and intensities of the matched signal here ([T05](t05-feature-rows.md) FRW-8, [T11](t11-spectrum-precursor-fields.md) SPC-1);
 - has at least one non-null entry whose label is not in `imputed_labels`; other labels per [T09](t09-intensities-missing-values.md) INT-5. A transfer without a measured value (isobaric MBR rows without reporters, andes#148 zeros, [T09](t09-intensities-missing-values.md) INT-7) is not written and is counted in `skipped_rows_feature` ([T03](t03-filtering-state.md) FLT-6).
 
@@ -94,7 +94,7 @@ Any accepted own-run identification wins over transfer.
 
 **MBR-6 (MUST)** `imputed_labels`/`is_imputed` say whether a value was measured, `identification_type` only where the identity came from; neither sets the other. A transferred quantity comes from the quantification tool's own algorithm, so it counts as measured unless the tool itself marks it as imputed ([T09](t09-intensities-missing-values.md) INT-9).
 
-**MBR-7 (MUST)** Rows of different types sharing `(peptidoform, charge, run_file_name, compensation_voltage)` are distinct signals and stay separate; two rows known to be one peak become one row with the own-run type ([T05](t05-feature-rows.md) FRW-2). De-duplication ranks `direct` > `secondary` > `transferred` by `identification_type`, never by the raw tool string. The OpenMS strict profile goes further and requires that OpenMS does not write a transferred row beside a quantified direct row of the same precursor and run ([strict profile](strict-profile.md)).
+**MBR-7 (MUST)** Rows of different types sharing `(peptidoform, charge, run_file_name, compensation_voltage)` are distinct signals and stay separate; two rows known to be one peak become one row with the own-run type ([T05](t05-feature-rows.md) FRW-2). De-duplication ranks `direct` > `secondary` > `transferred` by `identification_type`, never by the raw tool string. The OpenMS strict profile goes further: label-free OpenMS output has exactly one feature row per precursor (peptidoform, charge) and run, so a precursor is either identified in the run or transferred, never both, and no transferred row stands beside a direct row. How OpenMS resolves an internal direct/transferred pair is decided in the OpenMS export ([strict profile](strict-profile.md)).
 
 **MBR-8 (MUST)** No footer key declares the transfer state; rows and provenance carry it:
 - `identification_type` is filled whenever the tool states the origin or every row rests on own-run identifications (MBR-2); pg `identified_in_unit` whenever the source states it (MBR-10). Null = unknown.
@@ -158,5 +158,5 @@ Current violations:
 1. Does a `MULTI-MATCH-MSMS` MS/MS ever identify its own peptidoform at PSM FDR? Then MBR-1 makes it `direct` (also [T06](t06-identifications-per-feature.md) question 2).
 2. No producer fills a transfer-quality `match_score`: deprecate it at the next breaking release (P-I), or add typed donor fields ([EXTERNAL-11](findings-feature.md#external-11))?
 3. Keep MaxQuant isobaric MBR rows with only `ms1_intensity` ([T09](t09-intensities-missing-values.md) INT-11), relaxing MBR-3?
-4. `build_mudata` default: in-run precedence (R4) or an error on duplicates?
+4. *Resolved by the maintainer's decision on transferred quantities ([T14](t14-reader-contract.md) open question 1, RDR-5):* the `build_mudata` default keeps transferred quantities and applies in-run precedence (R4) to a direct and a transferred row of one key, instead of raising.
 5. Which MaxQuant versions control transfer FDR (coxdocs defines `Match q-value`; the fixture's is empty), and which parameter says so? DIA library transfer needs its own definition.

@@ -58,8 +58,9 @@ Parameters are key and value on the step named:
 | Parameter | Step | Value in this profile |
 |---|---|---|
 | `psm_fdr`, `peptide_fdr`, `protein_fdr` | FDR filtering | The threshold that was applied at that level, or `none`. Never `applied`. |
+| `precursor_fdr` | FDR filtering | `none`, until OpenMS estimates a precursor-level FDR |
 | `unquantified_rows` | The export step | `retained` |
-| `decoy_policy` | The export step | `retained` or `removed` |
+| `decoy_policy`, `contaminant_policy` | The export step | `retained` or `removed` |
 | `mbr_fdr` | Match-between-runs, when it ran | A threshold under PIP-ECHO, `none` otherwise |
 | `pg_grouping` | Protein inference | `dataset_inference` |
 | `conformance_profile` | The export step | `dda-strict` |
@@ -244,7 +245,7 @@ WHERE o.field_name = 'intensity' AND o.view = 'feature';
 -- Which FDR cuts were applied, and does the dataset claim the strict profile?
 SELECT p.key, p.value
 FROM provenance v, unnest(v.parameters) AS t(p)
-WHERE p.key IN ('psm_fdr', 'peptide_fdr', 'protein_fdr', 'conformance_profile');
+WHERE p.key IN ('psm_fdr', 'precursor_fdr', 'peptide_fdr', 'protein_fdr', 'conformance_profile');
 ```
 
 For precursor quantities per sample, add the runs that are fractions of one sample. Technical replicates of one sample are combined by a method the reader names, not by summing.
@@ -253,7 +254,7 @@ For precursor quantities per sample, add the runs that are fractions of one samp
 
 Two annex rules were changed so that existing consumers keep working:
 
-- **Typed columns and score entries are both written in 1.4.** q-values and `rank` fill their typed columns and also stay in `additional_scores` with the same value. The entries are removed in a later minor version ([CNF-6](t04-confidence-fields.md)).
+- **Typed columns and score entries are both written in 1.4.** q-values and `rank` fill their typed columns and also stay in `additional_scores` with the same value. The entries are removed in the next minor version ([CNF-6](t04-confidence-fields.md)).
 - **A protein quantity that QPX computes may fill `pg.intensity`**, but only when the tool provides none in the whole file, and then with the ontology property `processing = sum` ([INT-4](t09-intensities-missing-values.md)). This does not arise for OpenMS-written files, which carry OpenMS's own abundance.
 
 Two changes need consumer work:
@@ -286,3 +287,4 @@ The maintainers decided these points in [#383](https://github.com/bigbio/qpx/iss
 | Features per precursor | ProteomicsLFQ is taken to produce one feature per precursor in a run, so label-free files have one feature row per precursor and run. |
 | MS1-label multiplets | One feature row per multiplet with the light peptidoform and one intensity entry per channel. PSMs keep their labelled peptidoform. |
 | Where declarations live | No new footer keys. Column meanings go to the ontology view, the acquisition method to the run view, and processing steps to provenance, including the profile claim. |
+| PSI alignment | Not a goal. PSI terms are cited only where they pin down a meaning. |

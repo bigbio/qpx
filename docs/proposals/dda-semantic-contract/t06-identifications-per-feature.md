@@ -91,14 +91,14 @@ Nulls sort last. [T01](t01-psm-rows.md) PSM-2 and [T02](t02-chimeric-spectra.md)
 
 **FID-9 (MUST)** No footer key states link completeness. By FID-8, links in a 1.4 file are complete (every exported supporting PSM is linked to a row it supports), except in runs listed in provenance `skipped_runs_psm`. A psm-only export (mzIdentML) has no links.
 
-**FID-10 (MUST)** Conflicts: the case of [T05](t05-feature-rows.md) FRW-2 (a signal feeds at most one row) in which several peptidoforms claim one MS1 signal; reporter spectra follow [T02](t02-chimeric-spectra.md) CHI-11. A *conflict* exists when the source assigns the row's signal to several peptidoforms, or every supporting PSM has a rank-1 tie with another peptidoform ([T01](t01-psm-rows.md) PSM-6). Then:
+**FID-10 (MUST)** Conflicts: the case of [T05](t05-feature-rows.md) FRW-2 (a signal feeds at most one row) in which several peptidoforms claim one MS1 signal; reporter spectra follow [T02](t02-chimeric-spectra.md) CHI-11. A *conflict* exists when (a) the source assigns the row's signal to several peptidoforms, or (b) every supporting PSM has a rank-1 tie with another peptidoform ([T01](t01-psm-rows.md) PSM-6). Then:
 - The signal stays on the source's resolution, else on the peptidoform whose best PSM sorts first under FID-3, over the whole `consensus_feature_id` when there is one.
 - That row and every loser row written set `identification_conflict = true`. Losers MAY appear with null intensities (intensities.md:123); otherwise their PSMs keep a null `feature_id`.
 - A producer that drops the signal counts the rows in provenance ([T03](t03-filtering-state.md) FLT-6).
 
 `false` = checked, none found; null = not checked. Co-identifications ([T02](t02-chimeric-spectra.md)) and MS1-label partners are not conflicts under (b); one MS1 signal credited to two co-identified peptidoforms is a conflict under (a) ([T02](t02-chimeric-spectra.md) CHI-11).
 
-**FID-11 (SHOULD)** `consensus_feature_id` (int64, nullable; owned here, answering [T05](t05-feature-rows.md) question 3) carries one integer on every run row split from one cross-run entity of the source: an OpenMS ConsensusFeature (map position allowed) or an IonQuant `combined_ion` row; null elsewhere.
+**FID-11 (SHOULD)** `consensus_feature_id` (int64, nullable; owned here) carries one integer on every run row split from one cross-run entity of the source: an OpenMS ConsensusFeature (map position allowed) or an IonQuant `combined_ion` row; null elsewhere.
 - Unique within the file; relayout may renumber it consistently, merge namespaces it, migrate keeps it.
 - Unidentified rows ([T07](t07-unidentified-features.md) UNI-3) carry it under the same rule. The rows of one id are either all unidentified or all identified, because a signal that cross-run linking ties to a peptidoform is `transferred`, not unidentified ([T07](t07-unidentified-features.md)).
 - Within one id, rows with a non-null intensity share one peptidoform, at most one per `run_file_name`.
@@ -113,7 +113,7 @@ Nulls sort last. [T01](t01-psm-rows.md) PSM-2 and [T02](t02-chimeric-spectra.md)
 | `skipped_runs_psm` (FID-8) | psm provenance | list of `run_file_name` | When some runs are not linked | No |
 | `scan` = one spectrum; check feature scan_format (`qpx/core/data/schema.py:134-139`, [T11](t11-spectrum-precursor-fields.md)); edit `feature.md:26-28,139,301`, `scan.md:90-92,120,123-124`, `feature.yaml:98-101` | feature | `list<int32>` unchanged | – | **Yes**: openms-consensus arrays and derived ids change |
 | `id_run_file_name` ∈ {`run_file_name`, null}; drop "(may differ)" (`feature.md:138`) | feature | – | – | **Yes** for pre-[#378](https://github.com/bigbio/qpx/issues/378) OpenMS `-out_qpx` files with donor runs (FID-R7) |
-| PEP and scores per FID-4 | feature | – | – | Values change (PD, OpenMS); OpenMS peptide-level PEP null per [T04](t04-confidence-fields.md) |
+| PEP and scores per FID-4 | feature | – | – | Values change (PD, OpenMS); the peptide-level PEP of the OpenMS consensusXML converter becomes null per [T04](t04-confidence-fields.md) |
 | Delete the `psm.md:286` sentence (with [T04](t04-confidence-fields.md)); `data-model.md:166` → `id_run_file_name + scan` | docs | – | – | No |
 | Validator ([T13](t13-metadata-conformance.md) V5, V6; errors under `dda`, else warnings): FID-1, 5, 6, 7, 10, 11 invariants; FID-8 links and resolution outside runs in `skipped_runs_psm` (warning when provenance `psm_fdr` states a cut). Warning: a linked same-run PSM with lower PEP than the identifying one | psm, feature | – | – | New findings |
 

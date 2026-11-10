@@ -2,6 +2,8 @@
 
 Part of the annex of the [DDA semantic contract proposal](index.md). Each entry is one verified finding from the audit of qpx `dev` at commit `32cbbdc` (specification 1.3). A skeptic re-checked every finding against the code; "partly confirmed" entries are true only as stated in their correction. `audit-run:` evidence refers to converting the repository's own fixtures (`tests/examples`) with that commit during the audit; those outputs are not committed.
 
+The "Suggested" line of an entry is the auditor's suggestion at the time of the audit, not a decision. Some suggestions name footer keys or a separate view for unidentified features, which the proposal no longer uses. What was decided is in the [strict profile](strict-profile.md) and the topic sections.
+
 116 findings, grouped by audit area.
 
 ## OpenMS converters
