@@ -85,6 +85,20 @@ _LABEL_MOD = re.compile(r"(?i)^(?:label:|dimethyl|mtraq)")
 _DURATION = re.compile(r"(?i)(\d+(?:\.\d+)?)\s*(h|hr|hours?|m|min|mins|minutes?|s|sec|seconds?)?")
 _SECONDS_PER_UNIT = {"h": 3600.0, "m": 60.0, "s": 1.0}
 _COL_MOD_PARAM = "comment[modification parameter"  # prefix, may have ]s suffix
+_KNOWN_RUN_COMMENT_COLUMNS = {
+    _COL_DATA_FILE,
+    _COL_LABEL,
+    _COL_FRACTION,
+    _COL_TECH_REP,
+    _COL_INSTRUMENT,
+    _COL_ENZYME,
+    _COL_DISSOC,
+    _COL_ACQUISITION,
+    _COL_GRADIENT,
+    _COL_CHANNEL_ROLE,
+    _COL_REFERENCE_CHANNEL,
+    _COL_MIXTURE,
+}
 
 # Sample fields the schema requires; a blank value becomes "not available" rather than losing the views
 _REQUIRED_SAMPLE_FIELDS = {
@@ -448,6 +462,20 @@ class SdrfConverter(BaseConverter):
         # Group by run file
         run_groups = sdrf_df.groupby("_run_file")
 
+        extra_comment_cols: dict[str, list[str]] = {}
+        for column in sdrf_df.columns:
+            match = re.fullmatch(r"comment\[(.+)\]", column)
+            if (
+                not match
+                or column in _KNOWN_RUN_COMMENT_COLUMNS
+                or column.startswith(_COL_MOD_PARAM)
+            ):
+                continue
+            name = _normalize_char_name(f"characteristics[{match.group(1)}]")
+            if name:
+                extra_comment_cols.setdefault(f"x_sdrf_{name}", []).append(column)
+        extra_column_names = sorted(extra_comment_cols)
+
         records: list[dict] = []
         for run_file, group in run_groups:
             run_file = str(run_file)
@@ -473,12 +501,14 @@ class SdrfConverter(BaseConverter):
                 "label_definitions": self._label_definitions(group),
                 "gradient_length": _gradient_seconds(group),
             }
+            for output_column, source_columns in extra_comment_cols.items():
+                rec[output_column] = _merge_characteristic_values(group, source_columns)
             records.append(rec)
 
-        with RunWriter(output_path, creator=creator) as writer:
+        with RunWriter(output_path, creator=creator, extra_columns=extra_column_names) as writer:
             writer.write_batch(records)
 
-        self.logger.info(f"Wrote {len(records)} runs to {output_path}")
+        self.logger.info(f"Wrote {len(records)} runs ({len(extra_column_names)} extra columns) to {output_path}")
 
     def _run_acquisition_fields(self, group: pd.DataFrame) -> dict:
         """Extract acquisition fields as plain strings, with their resolved terms in ``additional_terms``."""

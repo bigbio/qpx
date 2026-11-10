@@ -43,6 +43,9 @@ Run columns describe technical and instrument-related properties of the data acq
 | `comment[proteomics data acquisition method]` | `acquisition_method` (plain string; also resolved into `additional_terms` as ONTOLOGY_TERM) | run.parquet |
 | `comment[dissociation method]` | `dissociation_method` (plain string; the term is in `additional_terms`) | run.parquet |
 | `comment[modification parameters]` | `modification_parameters` (as list of MODIFICATION) | run.parquet |
+| Other `comment[X]` columns | `x_sdrf_<x>` (lower-case snake case) | run.parquet |
+
+Unmapped SDRF comment columns are retained as nullable string extension columns on each run. For example, `comment[roi id]` becomes `x_sdrf_roi_id`.
 
 ### Factor Columns
 
