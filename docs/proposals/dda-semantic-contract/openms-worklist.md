@@ -54,6 +54,8 @@ Where OpenMS states a transfer: the consensus feature annotation `mbr_transfer_m
 
 **Effect on qpx.** `qpx/converters/openms_consensus/` (about 4,100 lines) becomes a legacy path for existing consensusXML files. `qpx/converters/openms/` (about 750 lines) shrinks to validation and adding SDRF sample metadata. `qpx/converters/quantms_msstats/` (about 710 lines) is not needed for OpenMS-produced data.
 
+The maintainers take ProteomicsLFQ to produce one feature per precursor in a run. The strict profile relies on that; it was not checked against the source here.
+
 ## Not verified from source
 
 - Whether a protein group's probability after protein FDR is a group-level q-value, as the writer assumes.
@@ -61,6 +63,5 @@ Where OpenMS states a transfer: the consensus feature annotation `mbr_transfer_m
 - MS1-label handling (MS1LabeledWorkflow, FeatureFinderMultiplex).
 - How OpenMS records which group a shared peptide is assigned to.
 - Whether search adapters set a chimeric hit's m/z to the co-isolated ion, and whether that m/z was recalibrated.
-- Whether ProteomicsLFQ can write two direct features for one precursor in one run.
 - What the protein quantification does with a direct and a transferred feature of the same precursor in one run. This matters for item 10.
 - How FDR cuts applied before ProteomicsLFQ in the quantms pipeline are recorded.

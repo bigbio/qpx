@@ -105,6 +105,7 @@ The maintainers decided these points in [#383](https://github.com/bigbio/qpx/iss
 | FDR levels | PSM-level FDR is always estimated, so PSM q-values are always present. Protein-level FDR is not: OpenMS sometimes stops at peptide-level FDR, for example for immunopeptidomics. A peptide or protein q-value column is null when its level was not estimated. This holds for every producer. |
 | Transferred quantities | Kept by default, because they improve quantification. Filtering them out is the reader's choice. |
 | Estimated values | A value the quantification tool's own algorithm estimates counts as measured; that is the tool's decision. A value added afterwards by another tool, such as mokume, counts as imputed. |
+| Features per precursor | ProteomicsLFQ is taken to produce one feature per precursor in a run, so label-free files have one feature row per precursor and run. |
 | Profile claim | A provenance parameter, not a footer key. |
 | PSI alignment | Not a goal. PSI terms are cited only where they pin down a meaning. |
 | Footer | Five new keys. Everything else is a typed column, a fixed rule or a provenance parameter. |
