@@ -44,7 +44,7 @@ Filtering on a nested score reads about 100 times the data of a flat column, and
 | `feature.precursor_qvalue` | Precursor, per run | `precursor_qvalue`, `qvalue`, `q_value`, `psm_level_qvalue` |
 | `feature.global_qvalue` | Precursor, per experiment | `global_qvalue` |
 
-A column stays null when the source has no such score, and the score stays in `additional_scores`.
+A column stays null when the source has no such score. In specification 1.3, a score whose `snake_case` name equals a typed column's name and whose value exactly equals that column's filled value is written only in the flat column, not in `additional_scores`. Aliases such as `q_value`, `psm_level_qvalue` and `percolator_q_value` stay in the list because their names record the source; a same-name score with a different value also stays.
 
 ### Recommended score names
 
@@ -53,7 +53,7 @@ The following score names are commonly used across QPX views. All names are `sna
 | Score name | Typical view(s) | Direction | Description |
 | ---------- | ---------------- | --------- | ----------- |
 | `posterior_error_probability` | PSM | lower is better | Posterior error probability — probability that the PSM is incorrect. Ranges 0.0–1.0. This is a **top-level field** in the PSM view, not stored in `additional_scores` |
-| `global_qvalue` | PSM, Feature | lower is better | Global q-value at the experiment level |
+| `global_qvalue` | PSM, Feature | lower is better | Global q-value at the experiment level; on a feature, read the `global_qvalue` column |
 | `pg_global_qvalue` | PSM, Feature | lower is better | Protein group global q-value used to filter at the protein group level |
 | `rank` | PSM | lower is better | Rank of the peptide in the search engine results (1 = best) |
 | `comet_xcorr` | PSM | higher is better | Cross-correlation score from the Comet search engine |
@@ -63,7 +63,7 @@ The following score names are commonly used across QPX views. All names are `sna
 | `msgf_spec_evalue` | PSM | lower is better | Spectral E-value from MS-GF+ |
 | `sage_hyperscore` | PSM | higher is better | Hyperscore from Sage search engine |
 | `parent_ion_fraction` | PSM | higher is better | Fraction of the isolation window's signal from the target precursor, 0-1 (MaxQuant `PIF`, FragPipe `Purity`, CDAP `PrecursorPurity`); on a feature it is the column of that name |
-| `precursor_qvalue` | Feature | lower is better | Run-level precursor q-value (`Q.Value`), as emitted by the DIA-NN converter |
+| `precursor_qvalue` | Feature | lower is better | Run-level precursor q-value (`Q.Value`), written to the `precursor_qvalue` column by the DIA-NN converter; an exact duplicate is not kept in `additional_scores` |
 | `pg_qvalue` | Feature | lower is better | Run-level protein-group q-value, as emitted by the DIA-NN converter |
 | `pg_pep` | PG | lower is better | Protein-group posterior error probability (`PG.PEP`), as emitted by the DIA-NN converter |
 | `diann_lib_qvalue` | Feature | lower is better | Library q-value from DIA-NN |
@@ -78,9 +78,9 @@ The following score names are commonly used across QPX views. All names are `sna
     When adding tool-specific scores, use `snake_case` with the tool name as prefix: `{tool}_{score}`. For example, `comet_xcorr`, `diann_cscore`, `sage_hyperscore`. Register the mapping to the proper ontology term in `ontology.parquet` (see [Ontology Mapping](ontology.md)).
 
 !!! warning "Names in this table are the ones producers actually write"
-    Earlier revisions listed `diann_qvalue` and `diann_global_qvalue`, which no converter emits — the DIA-NN converter writes `precursor_qvalue`, `global_qvalue` and `pg_qvalue`. The table now records the emitted names so a consumer can match on them.
+    Earlier revisions listed `diann_qvalue` and `diann_global_qvalue`, which no converter emits — the DIA-NN converter writes the `precursor_qvalue` and `global_qvalue` columns and keeps `pg_qvalue` in `additional_scores`. The table records the emitted names so a consumer can match on them.
 
-    `feature.peptide_qvalue` is reserved for peptide-level confidence. DIA-NN `Q.Value` is precursor-level, so it remains in `additional_scores` under `precursor_qvalue` and must not be copied into `feature.peptide_qvalue`.
+    `feature.peptide_qvalue` is reserved for peptide-level confidence. DIA-NN `Q.Value` is precursor-level, so it is written to `feature.precursor_qvalue` and must not be copied into `feature.peptide_qvalue`.
 
 ### Protein-level additional scores
 

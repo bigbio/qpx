@@ -57,7 +57,7 @@ The Feature view captures quantified peptide features with intensity data. Featu
 | `pg_positions` | --- | --- | --- | --- |
 | `run_file_name` | Raw file | Run | First raw file of the experiment (experiment_annotation.tsv or SDRF) | Reference / Run resolved through SDRF |
 
-DIA-NN `Q.Value` is precursor-level and is stored in `additional_scores` as `precursor_qvalue`; it is not mapped to the peptide-level `peptide_qvalue` field.
+DIA-NN `Q.Value` is precursor-level and is written to the `precursor_qvalue` column; it is not mapped to the peptide-level `peptide_qvalue` field.
 
 MaxQuant `unique` follows the group the feature takes. With proteinGroups.txt, it is true when the peptide is in a single group (`Protein group IDs` names one id) and that group has one protein; a shared peptide carries its razor group and is false. Without proteinGroups.txt, or for a row whose `Protein group IDs` do not resolve, the group falls back to `Leading proteins`, which lists one leader per group, so the group's size is unknown: `unique` is then true when the peptide maps to a single protein (`Proteins`), or, without that column, when it is in a single group of any size. In ontology.parquet the feature `pg_accessions` and `anchor_protein` name the column they were read from: `Protein IDs` and `Majority protein IDs` (proteinGroups.txt) when `Protein group IDs` resolve, otherwise `Leading proteins` and `Leading razor protein`.
 
