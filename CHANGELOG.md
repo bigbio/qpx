@@ -162,7 +162,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A namespaced merge rewrites `feature.pg_ids` and `feature.psm_ids` into the same source namespace as the referenced rows.
 - Out-of-core abundance matrices pivot through a temporary view, avoiding DuckDB binder errors; abundance and semantic-check queries avoid chained lateral `UNNEST` that crashes the DuckDB 1.5.0 optimizer.
 - The duplicate-intensity-label check uses DuckDB 2.0-compatible lambda syntax instead of failing to run under DuckDB 2.0.
-- `gene-map` and `migrate` preserve the `qpx.mantissa_bits` footer when rewriting rounded views.
+- `gene-map` and `migrate` preserve the `qpx.mantissa_bits` footer when rewriting rounded views; `merge` keeps it only when every input of an output file declares the same value.
 - `convert cdap` computes `calculated_mz` for canonical signed mass shifts instead of leaving it null as it did for `CHEMMOD` masses.
 - `qpxc validate` reports a PSM label absent from its linked feature's `identified_labels` as `label_not_identified`.
 - The canonical peptidoform implementation decodes UTF-8 and Latin-1 modification names and synonyms returned as bytes by pyopenms 3.5 on Python 3.10.

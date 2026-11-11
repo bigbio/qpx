@@ -15,6 +15,7 @@ import pyarrow.parquet as pq
 from qpx._version import __version__
 from qpx.core.data.schema import SOURCE_DATASET_COLUMN
 from qpx.core.sql import validate_identifier
+from qpx.transforms.mantissa import MANTISSA_BITS_FOOTER_KEY
 from qpx.writers.xic import XIC_FOOTER_KEYS
 
 if TYPE_CHECKING:
@@ -237,7 +238,7 @@ class _Merge:
         struct = getattr(self._datasets[index], name)
         first = str(struct.file_paths[0]) if struct.file_paths else ""
         if first.endswith(".parquet") and not first.startswith("s3://") and "*" not in first:
-            return pq.read_schema(first).metadata or {}
+            return pq.read_metadata(first).metadata or {}
         return {}
 
     def _composite_groups(self, name: str, sources: list[int]) -> dict[tuple[str, ...] | None, list[int]]:
@@ -249,14 +250,13 @@ class _Merge:
             groups.setdefault(composite, []).append(index)
         return groups
 
-    def _keep_trace_selection(self, writer, name: str, members: list[int]) -> None:
-        """Keep the xic footer keys that every source of *members* states with one value; call before any row."""
-        if name != "xic":
-            return
+    def _keep_shared_footer(self, writer, name: str, members: list[int]) -> None:
+        """Keep rounding and xic trace-selection keys that every source of *members* states with one value."""
+        keys = (MANTISSA_BITS_FOOTER_KEY, *XIC_FOOTER_KEYS) if name == "xic" else (MANTISSA_BITS_FOOTER_KEY,)
         footers = [self._footer(name, index) for index in members]
         shared = {
             key: footers[0][key]
-            for key in XIC_FOOTER_KEYS
+            for key in keys
             if key in footers[0] and all(footer.get(key) == footers[0][key] for footer in footers)
         }
         if shared:
@@ -314,7 +314,7 @@ class _Merge:
         for number, (composite, members) in enumerate(groups.items()):
             file_prefix = self._prefix if len(groups) == 1 else f"{self._prefix}-{number + 1}"
             with self._writer(name, self._output_dir / f"{file_prefix}{suffix}", composite, extra) as writer:
-                self._keep_trace_selection(writer, name, members)
+                self._keep_shared_footer(writer, name, members)
                 for index in members:
                     sql = self._deduplicated_rows(name, index, first_source) if dedupe else self._rows_sql(name, index)
                     self._write_batches(writer, sql)
