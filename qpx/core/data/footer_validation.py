@@ -111,7 +111,7 @@ def stale_identity_issues(engine, query: str, view, columns: list[str], footers,
     id_field = view.primary_key[0]
     if any(meta.get(b"identity_source", b"derived") != b"derived" for _, meta in footers):
         message = f"Not all {id_field} values are derived (footer identity_source), so they were not re-derived"
-        return [_issue(view.view_name, "identity_not_checked", "warning", id_field, message)]
+        return [_issue(view.view_name, "identity_not_checked", "info", id_field, message)]
     selected = ", ".join(validate_identifier(name) for name in (id_field, *composite))
     reader = engine.connection.sql(sql_build("SELECT $selected FROM ($query)", selected=selected, query=query))
     rows = stale = 0

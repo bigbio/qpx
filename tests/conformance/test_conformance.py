@@ -129,6 +129,24 @@ def test_the_guide_dataset_conforms(golden):
     assert result.exit_code == 0, result.output
 
 
+def test_relayouted_dataset_conforms_with_provided_ids(request, tmp_path):
+    """Provided ordinal ids are informational for both dataset and single-file conformance."""
+    source = request.getfixturevalue("golden")
+    folder = tmp_path / "sorted"
+    result = CliRunner().invoke(
+        qpx_main,
+        ["transform", "relayout", "--dataset", str(source), "--output-folder", str(folder)],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+
+    for arguments in (["--dataset-path", str(folder)], ["--file", str(folder / "mytool.psm.parquet")]):
+        result = CliRunner().invoke(qpx_main, ["validate", *arguments, "--conformance"])
+        assert result.exit_code == 0, result.output
+        assert "  INFO " in result.output
+        assert "WARN " not in result.output
+
+
 @pytest.mark.parametrize("name", DEFECTS)
 def test_a_single_defect_fails_conformance(name, golden, tmp_path):
     view, mutate = DEFECTS[name]

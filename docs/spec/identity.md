@@ -20,7 +20,7 @@ So do not join across datasets on an id or on a natural key (`peptidoform`, `cha
 | `identity_hash_version` | Version of the bytes and the hash below; currently `1` |
 | `identity_source` | `derived`: the writer hashed every id from the composite. `provided`: every id came with its row, from a producer or an earlier file, or was numbered by `qpxc transform relayout`. `mixed`: some of each. Absent before specification 1.3 |
 
-`qpxc validate --check-identity` re-derives the ids of a `derived` file and reports those that differ. Files of one view that declare different composites or hash versions get a `mixed_identity` warning, because equal rows do not have equal ids.
+`qpxc validate --check-identity` re-derives the ids of a `derived` file and reports those that differ. A file with `provided` or `mixed` ids gets an `identity_not_checked` info notice: its ids are not re-derived, and the notice does not fail `--conformance`. Files of one view that declare different composites or hash versions get a `mixed_identity` warning, because equal rows do not have equal ids.
 
 ## Composites
 
