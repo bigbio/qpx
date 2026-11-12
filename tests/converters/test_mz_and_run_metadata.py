@@ -173,7 +173,7 @@ def test_channel_role_mixture_and_gradient_length(tmp_path):
     ],
 )
 def test_run_acquisition_start_keeps_first_valid_sdrf_text(tmp_path, values, expected):
-    """SDRF acquisition dates retain their precision and ignore missing-value sentinels."""
+    """SDRF acquisition dates retain their precision, ignore missing-value sentinels and are no extension column."""
     rows = [
         _base_row(f"S{i}", "a.raw", label, **{"comment[acquisition date]": value})
         for i, (label, value) in enumerate(zip(("TMT126", "TMT127N"), values))
@@ -182,7 +182,9 @@ def test_run_acquisition_start_keeps_first_valid_sdrf_text(tmp_path, values, exp
     output = tmp_path / "x.run.parquet"
     with SdrfConverter() as converter:
         converter.convert(str(path), run_output=str(output))
-    assert pq.read_table(output)["acquisition_start"].to_pylist() == [expected]
+    table = pq.read_table(output)
+    assert table["acquisition_start"].to_pylist() == [expected]
+    assert "x_sdrf_acquisition_date" not in table.column_names
 
 
 def test_run_acquisition_start_without_sources_is_null(tmp_path):
