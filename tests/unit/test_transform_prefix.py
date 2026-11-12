@@ -4,7 +4,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from qpx.transforms.sdrf_updater import update_metadata
+from qpx.transforms.sdrf_updater import _check_protected_changes, update_metadata
 from qpx.transforms.utils import discover_qpx_file_prefix
 
 
@@ -48,3 +48,13 @@ def test_update_metadata_preserves_discovered_prefix(tmp_path, monkeypatch):
     assert (tmp_path / "openms.run.parquet.bak").is_file()
     assert not (tmp_path / "quantms.sample.parquet").exists()
     assert not (tmp_path / "quantms.run.parquet").exists()
+
+
+def test_protected_check_compares_sdrf_values_as_text(tmp_path):
+    """Renaming source name 001 to 1 changes the sample-run-label mapping."""
+    header = "source name\tcomment[data file]\tcomment[label]\n"
+    old, new = tmp_path / "old.sdrf.tsv", tmp_path / "new.sdrf.tsv"
+    old.write_text(header + "001\ta.raw\tlabel free sample\n")
+    new.write_text(header + "1\ta.raw\tlabel free sample\n")
+
+    assert any("sample-run-label mapping changed" in warning for warning in _check_protected_changes(old, new))

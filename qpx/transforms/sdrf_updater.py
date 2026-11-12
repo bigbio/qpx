@@ -35,7 +35,7 @@ def _read_sdrf_normalized(path: str | Path) -> "pd.DataFrame":
     """Read SDRF and normalize column names to lowercase."""
     import pandas as pd
 
-    df = pd.read_csv(path, sep="\t")
+    df = pd.read_csv(path, sep="\t", dtype=str, keep_default_na=False, na_values=[""])
     df.columns = [c.lower().strip() for c in df.columns]
     return df
 
