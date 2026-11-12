@@ -44,6 +44,9 @@ Run columns describe technical and instrument-related properties of the data acq
 | `comment[acquisition date]` | `acquisition_start` (first valid value per run, preserved verbatim) | run.parquet |
 | `comment[dissociation method]` | `dissociation_method` (plain string; the term is in `additional_terms`) | run.parquet |
 | `comment[modification parameters]` | `modification_parameters` (as list of MODIFICATION) | run.parquet |
+| Other `comment[X]` columns | `x_sdrf_<x>` (lower-case snake case) | run.parquet |
+
+Unmapped SDRF comment columns are retained as nullable string extension columns on each run. For example, `comment[roi id]` becomes `x_sdrf_roi_id`.
 
 `acquisition_start` is optional and nullable. SDRF missing values such as `not available` and `not applicable` are ignored. Only `qpxc convert sdrf --mzml-dir` also reads mzML `run/@startTimeStamp`, and only when the SDRF has no valid value for that run. Both sources are saved as text without parsing, timezone conversion or added time components; see [Run Metadata](run.md#per-run-fields).
 
