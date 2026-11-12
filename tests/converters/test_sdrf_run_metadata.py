@@ -52,6 +52,23 @@ def test_only_sentinel_modification_columns_leave_none(tmp_path):
     assert run["modification_parameters"] is None
 
 
+def test_unrecognized_comment_columns_are_kept_per_run(tmp_path):
+    """Unmapped SDRF comments become run extension columns rather than being dropped."""
+    rows, _ = _convert_sdrf(
+        tmp_path,
+        ["source name", "comment[data file]", "comment[label]", "comment[roi id]", "comment[plate identifier]"],
+        [
+            ["S1", "run_01.raw", "label free sample", "R7", "plate A"],
+            ["S2", "run_02.raw", "label free sample", "R10", "plate B"],
+        ],
+    )
+
+    assert [(row["x_sdrf_roi_id"], row["x_sdrf_plate_identifier"]) for row in rows] == [
+        ("R7", "plate A"),
+        ("R10", "plate B"),
+    ]
+
+
 def test_zero_padded_source_names_are_preserved_in_sample_and_run_outputs(tmp_path):
     """Source names remain distinct text identifiers, while biological replicates are integers."""
     sdrf = tmp_path / "zero_padded.sdrf.tsv"
