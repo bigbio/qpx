@@ -249,19 +249,8 @@ def _run_samples(group: pd.DataFrame, run_file: str) -> list[dict]:
         sample_acc = str(row.get(_COL_SOURCE_NAME, ""))
         _add_unique_run_label(seen_labels, run_file, label, sample_acc, label_raw)
 
-        bio_rep = None
-        if _COL_BIO_REP in row and pd.notna(row[_COL_BIO_REP]):
-            try:
-                bio_rep = int(row[_COL_BIO_REP])
-            except (ValueError, TypeError):
-                bio_rep = None
-
-        tech_rep = None
-        if _COL_TECH_REP in row and pd.notna(row[_COL_TECH_REP]):
-            try:
-                tech_rep = int(row[_COL_TECH_REP])
-            except (ValueError, TypeError):
-                tech_rep = None
+        bio_rep = _replicate_number(row[_COL_BIO_REP]) if _COL_BIO_REP in row and pd.notna(row[_COL_BIO_REP]) else None
+        tech_rep = _replicate_number(row[_COL_TECH_REP]) if _COL_TECH_REP in row and pd.notna(row[_COL_TECH_REP]) else None
 
         samples.append(
             {
@@ -306,6 +295,15 @@ def _term_pairs(group: pd.DataFrame, column: str) -> list[tuple[str, str]]:
     values = [str(value) for value in _collect_column_values(group, column) if pd.notna(value)]
     pairs = ((_extract_nt(value), _extract_ac(value)) for value in values)
     return [pair for pair in pairs if pair[0]]
+
+
+def _replicate_number(value: str) -> int | None:
+    """An SDRF replicate as an integer: ``1`` and ``1.0`` give 1, other text and fractions None."""
+    try:
+        number = float(value)
+    except ValueError:
+        return None
+    return int(number) if number.is_integer() else None
 
 
 class SdrfConverter(BaseConverter):
