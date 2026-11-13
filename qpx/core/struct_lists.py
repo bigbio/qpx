@@ -210,20 +210,74 @@ def restore_table(con, table: pa.Table, layouts: dict[str, list[dict]]) -> pa.Ta
     return table
 
 
-def restore_items(con, files: str, column_types: dict[str, str]) -> list[str]:
-    """Select items reading the struct lists that the footer of *files* (SQL) declares back as lists."""
-    if not any(column_types.get(column, "").startswith("STRUCT") for column in STRUCT_LIST_COLUMNS):
-        return []
+def is_struct(column_type: str) -> bool:
+    """Whether the DuckDB *column_type* is a struct; a list or array of structs ends with ``]``."""
+    return column_type.startswith("STRUCT") and not column_type.endswith("]")
+
+
+def footer_layouts(con, files: str) -> dict[str, dict[str, list[dict]]]:
+    """The struct-list layouts that the footers of the Parquet *files* (SQL) declare, by file name."""
     rows = con.execute(
         sql_build(
-            "SELECT decode(value) FROM parquet_kv_metadata($files) WHERE key = '$key' LIMIT 1",
+            "SELECT file_name, decode(value) FROM parquet_kv_metadata($files) WHERE key = '$key'",
             files=files,
             key=STRUCT_LISTS_FOOTER_KEY.decode(),
         )
     ).fetchall()
-    layouts = json.loads(rows[0][0]) if rows else {}
+    return {name: json.loads(value) for name, value in rows}
+
+
+def layout_groups(con, files: str) -> list[tuple[list[str], dict[str, list[dict]]]]:
+    """The Parquet *files* (SQL), in file order, in groups that one ``read_parquet`` reads as each file alone.
+
+    The files of a group declare the same struct-list layouts in their footers
+    (``{}`` for none), store the fields of those structs as the same types, and
+    hold the same struct-list columns as structs without a layout. Read together,
+    a ``FLOAT`` field would widen to another file's ``DOUBLE``, which changes the
+    string of a ``cv_value`` (``52.822754`` reads ``52.82275390625``), and a struct
+    next to a list of one column fails once the column is read.
+    """
+    names = [row[0] for row in con.execute(sql_build("SELECT file FROM glob($files)", files=files)).fetchall()]
+    declared = footer_layouts(con, files)
+    if not declared.keys() <= set(names):
+        raise ValueError(f"Cannot match the footers of {', '.join(sorted(declared.keys() - set(names)))} to the files read")
+    columns = ", ".join(_literal(column) for column in STRUCT_LIST_COLUMNS)
+    # The physical type of each struct-list leaf, by its path: ('cv_params, irt', 'FLOAT').
+    leaves: dict[str, list[tuple[str, str]]] = {}
+    if declared:
+        for name, path, kind in con.execute(
+            sql_build(
+                "SELECT DISTINCT file_name, path_in_schema, type FROM parquet_metadata($files) "
+                "WHERE split_part(path_in_schema, ', ', 1) IN ($columns) ORDER BY ALL",
+                files=files,
+                columns=columns,
+            )
+        ).fetchall():
+            leaves.setdefault(name, []).append((path, kind))
+    # The struct-list columns each file holds as a struct: a group node that is no list.
+    structs: dict[str, set[str]] = {}
+    for name, column in con.execute(
+        sql_build(
+            "SELECT file_name, name FROM parquet_schema($files) WHERE name IN ($columns) "
+            "AND num_children > 0 AND converted_type IS NULL AND repetition_type <> 'REPEATED'",
+            files=files,
+            columns=columns,
+        )
+    ).fetchall():
+        structs.setdefault(name, set()).add(column)
+    groups: dict[str, tuple[list[str], dict]] = {}
+    for name in names:
+        layouts = declared.get(name, {})
+        stored = [leaf for leaf in leaves.get(name, []) if leaf[0].split(", ")[0] in layouts]
+        bare = sorted(structs.get(name, set()) - layouts.keys())
+        groups.setdefault(json.dumps([layouts, stored, bare], sort_keys=True), ([], layouts))[0].append(name)
+    return list(groups.values())
+
+
+def restore_items(layouts: dict[str, list[dict]], column_types: dict[str, str]) -> list[str]:
+    """Select items reading the struct lists of *layouts* that *column_types* (DuckDB) holds as structs back as lists."""
     return [
         restore_sql(column, layouts[column])
         for column in STRUCT_LIST_COLUMNS
-        if column in layouts and column_types.get(column, "").startswith("STRUCT")
+        if column in layouts and is_struct(column_types.get(column, ""))
     ]

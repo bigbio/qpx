@@ -75,6 +75,8 @@ See the full YAML schema in [`xic.yaml`](schemas/xic.yaml).
 | `additional_scores` | Trace-level producer scores that do not depend on a specific feature | `array[struct]` | Optional |
 | `cv_params` | Trace-specific controlled-vocabulary metadata; run-level extraction settings belong in run/provenance metadata | `array[struct]` | Optional |
 
+`qpxc transform relayout` can store `additional_scores` and `cv_params` as a struct with one field per name ([Struct lists](serialization.md#struct-lists)).
+
 ## Tracing one entity through QPX
 
 ```mermaid

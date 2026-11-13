@@ -171,6 +171,7 @@ Several fields in the feature view use structures shared across other QPX views:
 - For details on `intensities` and `additional_intensities`, see [Intensities](intensities.md).
 - For details on `additional_scores` and score semantics, see [Scores](scores.md).
 - For details on `cv_params` usage and recommended terms, see [Scores & CV Terms](scores.md).
+- For `additional_scores`, `cv_params` and `additional_intensities` stored by `qpxc transform relayout` as a struct with one field per name (per label and name for `additional_intensities`), see [Struct lists](serialization.md#struct-lists).
 
 ## Example
 

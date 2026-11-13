@@ -143,6 +143,7 @@ Several fields in the PSM view use structures shared across other QPX views:
 - For details on the `modifications` field structure, see [Modifications](modifications.md).
 - For details on `additional_scores` and score semantics, see [Scores](scores.md).
 - For details on `cv_params` usage and recommended terms, see [Scores & CV Terms](scores.md).
+- For `additional_scores` and `cv_params` stored by `qpxc transform relayout` as a struct with one field per name, see [Struct lists](serialization.md#struct-lists).
 
 !!! note "A null `feature_id` means no linked feature"
     `feature_id` records a PSM's feature link in the exported dataset. A null

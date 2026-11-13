@@ -74,6 +74,8 @@ Each CV param struct contains:
 | `name` | Name of the CV term (e.g., from PSI-MS or other ontologies) | `string` |
 | `value` | Value associated with the CV term | `string` |
 
+`qpxc transform relayout` can store `cv_params` as a struct with one field per name ([Struct lists](serialization.md#struct-lists)).
+
 ## Example
 
 An MS2 spectrum with a single precursor ion:
