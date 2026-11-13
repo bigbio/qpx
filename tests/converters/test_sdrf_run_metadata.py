@@ -52,6 +52,65 @@ def test_only_sentinel_modification_columns_leave_none(tmp_path):
     assert run["modification_parameters"] is None
 
 
+def test_unrecognized_comment_columns_are_kept_per_run(tmp_path):
+    """Unmapped SDRF comments become run extension columns rather than being dropped."""
+    rows, _ = _convert_sdrf(
+        tmp_path,
+        ["source name", "comment[data file]", "comment[label]", "comment[roi id]", "comment[plate identifier]"],
+        [
+            ["S1", "run_01.raw", "label free sample", "R7", "plate A"],
+            ["S2", "run_02.raw", "label free sample", "R10", "plate B"],
+        ],
+    )
+
+    assert [(row["x_sdrf_roi_id"], row["x_sdrf_plate_identifier"]) for row in rows] == [
+        ("R7", "plate A"),
+        ("R10", "plate B"),
+    ]
+
+
+def test_zero_padded_source_names_are_preserved_in_sample_and_run_outputs(tmp_path):
+    """Source names remain distinct text identifiers, while biological replicates are integers."""
+    sdrf = tmp_path / "zero_padded.sdrf.tsv"
+    sdrf.write_text(
+        "source name\tcharacteristics[organism]\tcharacteristics[organism part]\t"
+        "characteristics[biological replicate]\tcomment[fraction identifier]\t"
+        "comment[data file]\tcomment[label]\n"
+        "001\tHomo sapiens\tliver\t1\t01\tA_001.raw\tlabel free sample\n"
+        "01\tHomo sapiens\tliver\t2\t02\tA_002.raw\tlabel free sample\n",
+        encoding="utf-8",
+    )
+    sample_path = tmp_path / "sample.parquet"
+    run_path = tmp_path / "run.parquet"
+
+    with SdrfConverter() as converter:
+        converter.convert(str(sdrf), sample_output=str(sample_path), run_output=str(run_path))
+
+    samples = pq.read_table(sample_path).to_pylist()
+    runs = pq.read_table(run_path).to_pylist()
+    assert {sample["sample_accession"] for sample in samples} == {"001", "01"}
+    assert [(run["samples"][0]["sample_accession"], run["samples"][0]["biological_replicate"]) for run in runs] == [
+        ("001", 1),
+        ("01", 2),
+    ]
+    assert [run["fraction"] for run in runs] == ["01", "02"]
+
+
+@pytest.mark.parametrize(("value", "expected"), [("1", 1), ("1.0", 1), ("2.5", None), ("x", None)])
+def test_replicates_written_as_whole_decimals_are_integers(tmp_path, value, expected):
+    """A spreadsheet export writes replicate 1 as 1.0; a fraction or text is no replicate number."""
+    columns = [
+        "source name",
+        "comment[data file]",
+        "comment[label]",
+        "characteristics[biological replicate]",
+        "comment[technical replicate]",
+    ]
+    runs, _ = _convert_sdrf(tmp_path, columns, [["S1", "run_01.raw", "label free sample", value, value]])
+    sample = runs[0]["samples"][0]
+    assert (sample["biological_replicate"], sample["technical_replicate"]) == (expected, expected)
+
+
 @pytest.mark.parametrize(
     ("sdrf_value", "expected"),
     [

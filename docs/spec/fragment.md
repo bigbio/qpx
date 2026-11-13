@@ -27,17 +27,18 @@ File: `{PREFIX}.fragment.parquet`. One row per fragment of a feature, channel an
 
 ## Producers
 
-| | DIA-NN `--fragments` | Spectronaut `--fragments` |
-|---|---|---|
-| `fragment_index` | Position in `Fragment.Quant.Raw` | --- |
-| `ion_type`, `fragment_charge`, `neutral_loss`, `mz` | `Fragment.Info`, where the report has it; else null, and the position is all that names the fragment | `F.FrgIon`, `F.Charge`, `F.FrgLossType`, `F.TheoreticalMz` |
-| `intensity` | `Fragment.Quant.Raw` | `F.PeakArea` |
-| `corrected_intensity` | `Fragment.Quant.Corrected` | `F.NormalizedPeakArea` |
-| `correlation` | `Fragment.Correlations` | --- |
-| `observed_mz`, `peak_height`, `excluded` | --- | `F.MeasuredMz`, `F.PeakHeight`, `F.ExcludedFromQuantification` |
-| `additional_scores` | --- | `F.InterferenceScore`, `F.Log10SignalToNoise`, `F.MeasuredRelativeIntensity`, `F.PredictedRelativeIntensity`, `F.CalibratedMassAccuracy (PPM)` |
+| | DIA-NN 1.x `--fragments` | DIA-NN 2.x `--fragments` | Spectronaut `--fragments` |
+|---|---|---|---|
+| `fragment_index` | Position in `Fragment.Quant.Raw` | `Fr.N.Index` + 1 | --- |
+| `ion_type`, `fragment_charge`, `neutral_loss`, `mz` | `Fragment.Info`, where the report has it; else null, and the position is all that names the fragment | `Fr.N.Id` | `F.FrgIon`, `F.Charge`, `F.FrgLossType`, `F.TheoreticalMz` |
+| `intensity` | `Fragment.Quant.Raw` | --- | `F.PeakArea` |
+| `corrected_intensity` | `Fragment.Quant.Corrected` | --- | `F.NormalizedPeakArea` |
+| `correlation` | `Fragment.Correlations` | --- | --- |
+| `peak_height` | --- | `Fr.N.Quantity` | `F.PeakHeight` |
+| `observed_mz`, `excluded` | --- | --- | `F.MeasuredMz`, `F.ExcludedFromQuantification` |
+| `additional_scores` | --- | `Fr.N.Score` as `diann_fragment_score` | `F.InterferenceScore`, `F.Log10SignalToNoise`, `F.MeasuredRelativeIntensity`, `F.PredictedRelativeIntensity`, `F.CalibratedMassAccuracy (PPM)` |
 
-DIA-NN lists every library fragment, with 0 for one it did not measure. A fragment with neither quantity has no row, so `fragment_index` can skip values.
+DIA-NN 1.x lists every library fragment, with 0 for one it did not measure. DIA-NN 2.x writes them only when run with `--export-quant`, as one `Fr.N.Index`, `Fr.N.Id`, `Fr.N.Quantity` and `Fr.N.Score` group of columns per fragment: `Fr.N.Index` is the 0-based position in the library's fragment list, `Fr.N.Quantity` the fragment's peak height, not normalised, and `Fr.N.Score` the quality of its extracted elution profile; an empty `Fr.N.Id` is an unused slot. A fragment with no quantity has no row, so `fragment_index` can skip values.
 
 ## Targeted runs
 

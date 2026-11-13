@@ -20,7 +20,7 @@ So do not join across datasets on an id or on a natural key (`peptidoform`, `cha
 | `identity_hash_version` | Version of the bytes and the hash below; currently `1` |
 | `identity_source` | `derived`: the writer hashed every id from the composite. `provided`: every id came with its row, from a producer or an earlier file, or was numbered by `qpxc transform relayout`. `mixed`: some of each. Absent before specification 1.3 |
 
-`qpxc validate --check-identity` re-derives the ids of a `derived` file and reports those that differ. Files of one view that declare different composites or hash versions get a `mixed_identity` warning, because equal rows do not have equal ids.
+`qpxc validate --check-identity` re-derives the ids of a `derived` file and reports those that differ. A file with `provided` or `mixed` ids gets an `identity_not_checked` info notice: its ids are not re-derived, and the notice does not fail `--conformance`. Files of one view that declare different composites or hash versions get a `mixed_identity` warning, because equal rows do not have equal ids.
 
 ## Composites
 
@@ -28,12 +28,15 @@ So do not join across datasets on an id or on a natural key (`peptidoform`, `cha
 |------|----------|----------------------|
 | `psm` | schema default | `run_file_name, scan, peptidoform, charge` |
 | `feature` | schema default | `peptidoform, charge, run_file_name, rt` |
-| `feature` | DIA-NN, Spectronaut, CDAP | `peptidoform, charge, run_file_name` |
+| `feature` | DIA-NN | `peptidoform, charge, run_file_name, is_decoy, is_library_decoy` |
+| `feature` | Spectronaut, CDAP | `peptidoform, charge, run_file_name` |
 | `feature` | MaxQuant | `peptidoform, charge, run_file_name, rt_start, rt_stop, scan` |
 | `feature` | quantms MSstats | `run_file_name, peptidoform, charge, rt, scan` |
 | `feature` | FragPipe `combined_ion` | `quantification_unit_id, peptidoform, charge, compensation_voltage` |
 | `feature` | `qpxc convert openms-consensus` | `peptidoform, charge, run_file_name, rt, scan, observed_mz, consensus_rt` |
 | `pg` | schema default | `pg_accessions, grouped_runs, label` |
+
+DIA-NN files written before specification 1.3 declare `peptidoform, charge, run_file_name`; in them a library decoy's peptidoform starts with `^`.
 
 OpenMS `-out_qpx` files declare their own composite in the footer, and `qpxc convert openms` re-derives ids with that composite. The two OpenMS routes declare different feature composites, so their `feature_id` values differ for the same data.
 

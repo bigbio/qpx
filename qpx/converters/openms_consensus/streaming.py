@@ -28,25 +28,15 @@ from typing import NamedTuple
 
 import numpy as np
 import pyopenms as oms
-from defusedxml.ElementTree import iterparse
 
-
-def _is_gzip(path: str) -> bool:
-    with open(path, "rb") as handle:
-        return handle.read(2) == b"\x1f\x8b"
-
-
-def _iterparse(path: str, events: tuple[str, ...]):
-    """``iterparse`` over a consensusXML file, decompressing gzip transparently."""
-    with gzip.open(path, "rb") if _is_gzip(path) else open(path, "rb") as source:
-        yield from iterparse(source, events=events)
+from qpx.core.files import is_gzip, iterparse_xml
 
 
 def exceeds_xml_size(path: str, limit: int) -> bool:
     """Whether the consensusXML, decompressed, is larger than *limit* bytes."""
     if Path(path).stat().st_size > limit:
         return True
-    if not _is_gzip(path):
+    if not is_gzip(path):
         return False
     # gzip stores the decompressed size modulo 4 GiB, so count it up to the limit.
     decompressed = 0
@@ -142,7 +132,7 @@ def read_provenance_header(path: str) -> ProvenanceHeader:
     instead of walking the whole header.
     """
     header = ProvenanceHeader([], [], [])
-    for event, el in _iterparse(path, events=("start", "end")):
+    for event, el in iterparse_xml(path, events=("start", "end")):
         tag = _localname(el.tag)
         if event == "start" and tag in ("UnassignedPeptideIdentification", "mapList", "consensusElementList"):
             break
@@ -491,7 +481,7 @@ class StreamingConsensusMap:
 
     def _parse_header(self) -> None:
         header = _IdentificationHeader()
-        for event, el in _iterparse(self._path, events=("start", "end")):
+        for event, el in iterparse_xml(self._path, events=("start", "end")):
             tag = _localname(el.tag)
             if (event, tag) == ("end", "map"):
                 self._headers[int(el.attrib["id"])] = _ColHeader(
@@ -580,7 +570,7 @@ class StreamingConsensusMap:
     def iter_identifications(self, *, include_assigned: bool = True):
         """Stream identification context without constructing feature/sub-feature objects."""
         root = elements = None
-        for event, el in _iterparse(self._path, events=("start", "end")):
+        for event, el in iterparse_xml(self._path, events=("start", "end")):
             tag = _localname(el.tag)
             if event == "start":
                 root = el if root is None else root
@@ -604,7 +594,7 @@ class StreamingConsensusMap:
         order, ``("unassigned", PeptideIdentification)``. The converter uses
         one traversal for identification context and another for all output views."""
         root = elements = None
-        for event, el in _iterparse(self._path, events=("start", "end")):
+        for event, el in iterparse_xml(self._path, events=("start", "end")):
             tag = _localname(el.tag)
             if event == "start":
                 root = el if root is None else root

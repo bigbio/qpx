@@ -22,6 +22,8 @@ def write_fragment_view(conn, sql: str, output_path: str, feature_composite: Seq
                 continue
             identified = FeatureWriter.derive_ids(table.select(list(feature_composite)), feature_composite)
             table = table.append_column("feature_id", identified.column("feature_id"))
+            # A composite column that is not a fragment field (DIA-NN is_decoy, is_library_decoy) only feeds the id.
+            table = table.drop_columns([name for name in feature_composite if name not in writer.arrow_schema.names])
             writer.write_table(writer.align_table_to_schema(table))
             rows += table.num_rows
     return rows

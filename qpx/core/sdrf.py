@@ -147,7 +147,7 @@ class SDRFHandler:
         :param sdrf_file: SDRF file
         """
         try:
-            sdrf_table = pd.read_csv(sdrf_file, sep="\t", header=0)
+            sdrf_table = pd.read_csv(sdrf_file, sep="\t", header=0, dtype=str, keep_default_na=False, na_values=[""])
             sdrf_table.columns = sdrf_table.columns.str.lower()
             # Normalize common SDRF column name variants
             col_renames = {}

@@ -2,6 +2,7 @@ name: run
 file_type: run_file
 primary_key: [run_file_name]
 doc: "MS acquisition run metadata, one row per run"
+extra_columns: true
 
 fields:
   run_accession:
@@ -71,3 +72,8 @@ fields:
     nullable: true
     optional: true
     doc: "Length of the LC gradient (seconds), from comment[gradient length]"
+  acquisition_start:
+    type: string
+    nullable: true
+    optional: true
+    doc: "Run acquisition start, verbatim from comment[acquisition date] or mzML startTimeStamp; no timezone conversion"

@@ -6,8 +6,8 @@ import pytest
 from defusedxml import ElementTree
 
 from qpx.converters.openms_consensus import conversion
-from qpx.converters.openms_consensus import streaming as stream_reader
 from qpx.converters.openms_consensus.conversion import _stream_feature_psm
+from qpx.core import files
 from qpx.core.data.identity import derive_id
 from tests.converters.test_openms_consensus_merged_ids import (
     _HEADER,
@@ -162,14 +162,14 @@ def test_streaming_uses_one_context_pass_and_one_output_pass(tmp_path, monkeypat
         root.remove(pid)
         root.append(pid)
     source.write_text(ElementTree.tostring(root, encoding="unicode"))
-    parse = stream_reader.iterparse
+    parse = files.iterparse
     completed = []
 
     def count_complete_parses(*args, **kwargs):
         yield from parse(*args, **kwargs)
         completed.append(True)
 
-    monkeypatch.setattr(stream_reader, "iterparse", count_complete_parses)
+    monkeypatch.setattr(files, "iterparse", count_complete_parses)
     _, written = _convert(tmp_path, str(source), True)
     assert len(completed) == 2
     feature = next(rec for rec in _rows(written, "feature") if rec["peptidoform"] == "PEPTIDEK")

@@ -74,6 +74,18 @@ def test_silac_psm_is_the_matched_partner(tmp_path, streaming):
     }
 
 
+def test_dimethyl_feature_is_the_lightest_labeled_partner(tmp_path, streaming):
+    """The light dimethyl label supplies the feature identity, mass and PSM link."""
+    views = _convert(tmp_path, "MS1LabeledWorkflow_18_dimethyl_out", streaming)
+    [feature] = views["feature"]
+    [psm] = views["psm"]
+    assert feature["peptidoform"] == "[UNIMOD:36]-GSLDVFTEPNYGAR"
+    assert feature["modifications"] == psm["modifications"]
+    assert feature["calculated_mz"] == pytest.approx(feature["observed_mz"], rel=5e-6)
+    assert abs(feature["mass_error_ppm"]) < 5
+    assert psm["feature_id"] == feature["feature_id"]
+
+
 def test_silac_pg_is_openms_abundance_per_channel(tmp_path, streaming):
     views = _convert(tmp_path, "MS1LabeledWorkflow_6_ratios_out", streaming)
     unit = ("FeatureFinderMultiplex_2_input",)

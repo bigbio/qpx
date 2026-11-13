@@ -43,6 +43,7 @@ _CV_MAPPINGS = [
     ("Predicted.IM", "predicted_im"),
     ("Predicted.iIM", "predicted_iim"),
     ("iIM", "iim"),
+    ("Precursor.Lib.Index", "diann_precursor_lib_index"),
 ]
 
 # Ion mobility fields and cv columns. For data acquired without ion mobility
@@ -210,8 +211,8 @@ def _build_ion_mobility_select_parts(resolved: dict, report_cols: set[str]) -> l
     return parts
 
 
-# The proteins each target peptidoform maps to. A DIA-NN decoy precursor has
-# its target's sequence, so decoy rows are left out.
+# The proteins each target peptidoform maps to. A DIA-NN decoy precursor carries
+# a mutated sequence under its parent's proteins, so decoy rows are left out.
 _PEPMAP_SQL = """
     SELECT lk.peptidoform,
            any_value(lk.sequence) AS sequence,
@@ -265,6 +266,21 @@ def _qvalue_filter_sql(qvalue_threshold: Optional[float], qv_col: str | None) ->
     return qvalue_filter
 
 
+def decoy_flag_sql(resolved: dict, has_decoy_col: bool) -> str:
+    """The is_decoy expression over report rows ``r``: the decoy column, else a decoy prefix of the protein group.
+
+    A decoy's sequence can equal a target's (the decoy of one tubulin isoform is another isoform's peptide),
+    so the flag is part of the feature identity.
+    """
+    if has_decoy_col:
+        return f'CAST(r."{resolved["decoy"]}" AS BOOLEAN)'
+    pg_col = resolved["pg_accessions"]
+    return (
+        f"(starts_with(r.\"{pg_col}\", 'DECOY_') OR starts_with(r.\"{pg_col}\", 'decoy_') "
+        f"OR starts_with(r.\"{pg_col}\", 'rev_') OR starts_with(r.\"{pg_col}\", 'REV_'))"
+    )
+
+
 def _build_core_select_parts(
     resolved: dict,
     report_cols: set[str],
@@ -290,14 +306,11 @@ def _build_core_select_parts(
     # DIA-NN does not report a peptide-level q-value.
     parts.append("NULL::DOUBLE AS peptide_qvalue")
 
-    pg_col = resolved["pg_accessions"]
-    if has_decoy_col:
-        parts.append(f'CAST(r."{resolved["decoy"]}" AS BOOLEAN) AS is_decoy')
-    else:
-        parts.append(
-            f"(starts_with(r.\"{pg_col}\", 'DECOY_') OR starts_with(r.\"{pg_col}\", 'decoy_') "
-            f"OR starts_with(r.\"{pg_col}\", 'rev_') OR starts_with(r.\"{pg_col}\", 'REV_')) AS is_decoy"
-        )
+    parts.append(f"{decoy_flag_sql(resolved, has_decoy_col)} AS is_decoy")
+    # DIA-NN 2.x marks a decoy searched from the spectral library with ^. Its sequence is
+    # the decoy the search engine generates from the same parent, so it can share
+    # peptidoform, charge and run with that generated decoy; the flag is part of the identity.
+    parts.append(f"starts_with(r.\"{resolved['modified_sequence']}\", '^') AS is_library_decoy")
 
     parts.append("CAST(lk.calculated_mz AS FLOAT) AS calculated_mz")
 

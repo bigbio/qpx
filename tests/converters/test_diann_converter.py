@@ -272,14 +272,16 @@ class TestDiaNNFeatureConversion:
                 assert e is not None, "both m/z present but no mass error emitted"
                 assert abs(e - (o - c) / c * 1e6) < 0.5, f"{e} does not match the spec formula"
 
-    def test_precursor_qvalue_stays_in_additional_scores(self, feature_table):
+    def test_precursor_qvalue_moves_to_typed_column(self, feature_table):
         """DIA-NN Q.Value is not mislabeled as a peptide-level q-value."""
         assert all(value is None for value in feature_table.column("peptide_qvalue").to_pylist())
 
-        for scores in feature_table.column("additional_scores").to_pylist():
+        for value, scores in zip(
+            feature_table.column("precursor_qvalue").to_pylist(), feature_table.column("additional_scores").to_pylist()
+        ):
             by_name = {score["score_name"]: score["score_value"] for score in scores}
             assert "qvalue" not in by_name
-            value = by_name["precursor_qvalue"]
+            assert "precursor_qvalue" not in by_name
             assert 0.0 <= value <= 1.0, f"q-value out of range: {value}"
 
 
@@ -319,7 +321,8 @@ def test_plexdia_feature_collapses_channels_into_one_row(tmp_path):
     assert {entry["label"]: entry["intensity"] for entry in rows[0]["intensities"]} == {"L": 100.0, "H": 200.0}
     assert rows[0]["peptide_qvalue"] is None
     scores = {entry["score_name"]: entry["score_value"] for entry in rows[0]["additional_scores"]}
-    assert scores["precursor_qvalue"] == pytest.approx(0.002)
+    assert rows[0]["precursor_qvalue"] == pytest.approx(0.002)
+    assert "precursor_qvalue" not in scores
     assert rows[0]["representative_label"] == "L"
     assert [(entry["label"], entry["qvalue"]) for entry in rows[0]["channel_details"]] == [("H", 0.003), ("L", 0.002)]
     assert rows[0]["channel_details"][0]["rt"] == rows[0]["rt"]
@@ -855,6 +858,7 @@ def test_diann_feature_without_qvalue_converts_when_unfiltered(tmp_path):
     feature_rows = _feature_rows_single_run(tmp_path, rows)
 
     assert len(feature_rows) == 2
+    assert all(row["precursor_qvalue"] is None for row in feature_rows)
     assert all(all(score["score_name"] != "precursor_qvalue" for score in row["additional_scores"]) for row in feature_rows)
 
 
@@ -1011,6 +1015,62 @@ def test_diann_feature_ion_mobility_is_null_without_ion_mobility_data(tmp_path):
     fields, cv = ion_mobility(rows["PEPTIDER"])
     assert fields == pytest.approx((0.95, 0.93, 0.97))
     assert cv == {"iim": "0.9", "predicted_im": "0.96", "predicted_iim": "0.91"}
+
+
+def test_diann_library_decoys_drop_the_caret_and_keep_distinct_ids(tmp_path):
+    """DIA-NN 2.x writes a library decoy with ^ and the decoy sequence generated from its parent.
+
+    Two PXD019777 reports with --report-decoys held 119 and 362 (sequence, charge, run) keys
+    shared by a library decoy and a target or a generated decoy; the first four rows below
+    come from them. A BXD mouse report had a generated decoy with a target's sequence, the
+    decoy of one tubulin isoform being another's peptide (third row). The ^ is not a residue,
+    and is_decoy with is_library_decoy keeps the feature ids apart.
+    """
+    shared = {"Run": "run_A", "Precursor.Charge": 2, "Genes": "G1", "Q.Value": 0.001, "Precursor.Quantity": 100.0}
+
+    def row(modified, protein, decoy, lib_index):
+        stripped = re.sub(r"\(.*?\)|\^", "", modified)
+        return {
+            **shared,
+            "Protein.Group": protein,
+            "Modified.Sequence": modified,
+            "Stripped.Sequence": stripped,
+            "Precursor.Id": f"{modified}2",
+            "Decoy": decoy,
+            "Precursor.Lib.Index": lib_index,
+        }
+
+    report = [
+        row("AILMDLEPGTMDSVR", "P29514", 0, 3630),
+        row("^AILMDLEPGTMDSVR", "P29513", 1, 87366),
+        row("AILMDLEPGTMDSVR", "P29513", 1, 2830),
+        row("AHGFVDALER", "Q96I24", 1, 1956),
+        row("^AHGFVDALER", "Q96I24", 1, 88890),
+        row("^(UniMod:1)MEPSM(UniMod:35)K", "P1", 1, 87214),
+    ]
+    features = _feature_rows_single_run(tmp_path, report)
+
+    assert len({feature["feature_id"] for feature in features}) == len(report)
+    by_key = {(f["peptidoform"], f["is_decoy"], f["is_library_decoy"]): f for f in features}
+    assert set(by_key) == {
+        ("AILMDLEPGTMDSVR", False, False),
+        ("AILMDLEPGTMDSVR", True, True),
+        ("AILMDLEPGTMDSVR", True, False),
+        ("AHGFVDALER", True, False),
+        ("AHGFVDALER", True, True),
+        ("[UNIMOD:1]-MEPSM[UNIMOD:35]K", True, True),
+    }
+    lib_index = {
+        key: {entry["cv_name"]: entry["cv_value"] for entry in feature["cv_params"]}["diann_precursor_lib_index"]
+        for key, feature in by_key.items()
+    }
+    assert lib_index[("AHGFVDALER", True, False)] == "1956"
+    assert lib_index[("AHGFVDALER", True, True)] == "88890"
+    modified = by_key[("[UNIMOD:1]-MEPSM[UNIMOD:35]K", True, True)]
+    sites = {
+        (mod["accession"], pos["position"], pos["amino_acid"]) for mod in modified["modifications"] for pos in mod["positions"]
+    }
+    assert ("UNIMOD:35", 5, "M") in sites
 
 
 def test_diann_feature_warns_on_runs_missing_ms_info(tmp_path, caplog):

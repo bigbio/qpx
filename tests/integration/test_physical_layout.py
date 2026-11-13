@@ -325,3 +325,41 @@ def test_relayout_states_fragment_ids_as_provided_once_their_features_are_renumb
     with Dataset(str(tmp_path / "sorted")) as dataset:
         result = dataset.validate(["fragment"], strict=True, check_identity=True)["fragment"]
     assert not [issue for issue in result.issues if issue.check == "stale_identity"]
+
+
+def test_relayout_sorts_the_traces_and_rounds_their_measurements(tmp_path):
+    """xic is sorted by peptidoform, charge, transition, run and label; intensities keep 12 bits, times 16."""
+    source = _linked_dataset(tmp_path / "ds")
+    raw = [100.123456, 200.654321, 150.0]
+    with XicWriter(source / "ds.xic.parquet") as writer:
+        writer.write_batch(
+            [
+                {**make_xic_record(1, peptidoform=peptide, run_file_name=run), "intensity": raw}
+                for peptide, run in (("CCCK", "run_02"), ("AAAK", "run_02"), ("CCCK", "run_01"), ("AAAK", "run_01"))
+            ]
+        )
+
+    _relayout(source, tmp_path / "sorted")
+
+    table = pq.read_table(tmp_path / "sorted" / "ds.xic.parquet")
+    order = [(row["peptidoform"], row["run_file_name"]) for row in table.to_pylist()]
+    assert order == [("AAAK", "run_01"), ("AAAK", "run_02"), ("CCCK", "run_01"), ("CCCK", "run_02")]
+    assert table.schema.metadata[b"qpx.sort_order"] == b"peptidoform,charge,transition,run_file_name,label"
+    plan = json.loads(table.schema.metadata[b"qpx.mantissa_bits"])
+    assert (plan["intensity"], plan["rt"]) == (12, 16)
+    rounded = round_table(pq.read_table(source / "ds.xic.parquet"), plan).column("intensity").to_pylist()
+    assert table.column("intensity").to_pylist() == rounded
+    assert rounded[0] != pq.read_table(source / "ds.xic.parquet").column("intensity").to_pylist()[0]
+
+
+def test_relayout_asks_for_the_order_of_a_view_without_a_default(tmp_path):
+    source = _linked_dataset(tmp_path / "ds")
+    target = tmp_path / "sorted"
+
+    result = CliRunner().invoke(
+        qpx_main, ["transform", "relayout", "--dataset", str(source), "--output-folder", str(target), "--view", "fragment"]
+    )
+
+    assert result.exit_code != 0
+    assert "fragment has no default sort order" in result.output
+    assert not target.exists()

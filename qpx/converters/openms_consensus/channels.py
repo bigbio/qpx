@@ -180,6 +180,8 @@ class Ms1Channels:
         channels = channels_by_column(cm)
         self.by_map = {idx: label for idx, label in labels.items() if is_ms1_label(label)}
         self.by_run_channel = {(runs[idx], channels[idx]): label for idx, label in self.by_map.items()}
+        headers = cm.getColumnHeaders()
+        self._headers_by_label = {(runs[idx], label): headers[idx] for idx, label in self.by_map.items()}
 
     def __bool__(self) -> bool:
         return bool(self.by_map)
@@ -196,6 +198,23 @@ class Ms1Channels:
     def run_labels(self, run: str) -> list[str]:
         """The labels of one run, lightest first."""
         return [label for (other, _), label in sorted(self.by_run_channel.items()) if other == run]
+
+    def lightest_sequence(self, hit, run: str):
+        """Restore removed dimethyl/mTRAQ sites with the run's lightest label; otherwise return None."""
+        lightest = next(iter(self.run_labels(run)), "")
+        if not lightest.startswith(("DIMETHYL", "MTRAQ")) or not hit.metaValueExists(LABELED_SEQUENCE):
+            return None
+        sequence = hit.getSequence()
+        labeled = matched_sequence(hit)
+        modification = str(self._headers_by_label[(run, lightest)].getMetaValue("channel_description"))
+        if labeled.hasNTerminalModification() and not sequence.hasNTerminalModification():
+            sequence.setNTerminalModification(modification)
+        for position in range(sequence.size()):
+            if labeled[position].isModified() and not sequence[position].isModified():
+                sequence.setModification(position, modification)
+        if labeled.hasCTerminalModification() and not sequence.hasCTerminalModification():
+            sequence.setCTerminalModification(modification)
+        return sequence
 
 
 def evidence_ratios_by_run(cf, ms1) -> dict[str, list[dict]]:

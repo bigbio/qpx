@@ -21,12 +21,14 @@ from qpx.writers.encoding import ROW_GROUP_ROWS, SampledParquetWriter, row_group
 
 # Protein and peptide lookups read feature, pg and psm, and run-by-run processing reads mz.
 # Rows of one peptide sit together, which also makes feature and psm about a third
-# smaller on TMT data; pg keeps a group's runs together for the same reason.
+# smaller on TMT data; pg keeps a group's runs together for the same reason. The traces of
+# one transition across runs have similar shapes, so xic sorts them next to each other.
 DEFAULT_SORT_KEYS = {
     "feature": ("anchor_protein", "peptidoform", "charge", "run_file_name"),
     "pg": ("anchor_protein", "grouped_runs", "label"),
     "psm": ("peptidoform", "charge", "run_file_name", "scan"),
     "mz": ("run_file_name", "scan"),
+    "xic": ("peptidoform", "charge", "transition", "run_file_name", "label"),
 }
 SORT_ORDER_FOOTER_KEY = b"qpx.sort_order"
 

@@ -62,6 +62,46 @@ def test_diann_unmeasured_fragments_have_no_row_and_named_ones_are_parsed(tmp_pa
     assert rows[1]["corrected_intensity"] == 29.0
 
 
+def test_diann_2_export_quant_columns_become_rows(tmp_path):
+    """DIA-NN 2.x --export-quant writes Fr.N.Index/Id/Quantity/Score, the quantity being a peak height."""
+    frame = pd.read_csv(_DIANN, sep="\t", nrows=1).drop(
+        columns=["Fragment.Quant.Raw", "Fragment.Quant.Corrected", "Fragment.Correlations"]
+    )
+    slots = [(0, "y7^1/826.4", 10.0, 0.9), (2, "b2-H2O^2/100.1", 30.0, -0.2), (3, "y3^1/300.5", 0.0, 0.5), (-1, "", 0.0, 0.0)]
+    for n, (index, name, quantity, score) in enumerate(slots):
+        frame[f"Fr.{n}.Index"], frame[f"Fr.{n}.Id"] = index, name
+        frame[f"Fr.{n}.Quantity"], frame[f"Fr.{n}.Score"] = quantity, score
+    report = tmp_path / "report.tsv"
+    frame.to_csv(report, sep="\t", index=False)
+
+    assert _diann(report, tmp_path)
+
+    rows = pq.read_table(tmp_path / "x.fragment.parquet").sort_by("fragment_index").to_pylist()
+    assert [row["fragment_index"] for row in rows] == [1, 3]
+    assert rows[0]["ion_type"] == "y7" and rows[0]["fragment_charge"] == 1
+    assert rows[0]["mz"] == pytest.approx(826.4)
+    assert rows[0]["peak_height"] == 10.0 and rows[0]["intensity"] is None
+    assert rows[1]["neutral_loss"] == "H2O" and rows[1]["fragment_charge"] == 2
+    assert rows[1]["additional_scores"] == [{"score_name": "diann_fragment_score", "score_value": -0.2, "higher_better": True}]
+
+
+@pytest.mark.parametrize("prefix", ["^", ""])
+def test_diann_decoy_fragments_link_to_their_own_feature(tmp_path, prefix):
+    """A decoy with a target's peptidoform, a DIA-NN 2.x library decoy (^) or a generated one, is its own feature."""
+    frame = pd.read_csv(_DIANN, sep="\t", nrows=1)
+    decoy = frame.assign(**{column: prefix + frame[column] for column in ("Modified.Sequence", "Precursor.Id")})
+    report = tmp_path / "report.tsv"
+    pd.concat([frame.assign(Decoy=0), decoy.assign(Decoy=1)]).to_csv(report, sep="\t", index=False)
+
+    assert _diann(report, tmp_path)
+
+    features = pq.read_table(tmp_path / "x.feature.parquet", columns=["feature_id", "is_decoy"]).to_pylist()
+    assert sorted(feature["is_decoy"] for feature in features) == [False, True]
+    assert len({feature["feature_id"] for feature in features}) == 2
+    linked = set(pq.read_table(tmp_path / "x.fragment.parquet", columns=["feature_id"]).column(0).to_pylist())
+    assert linked == {feature["feature_id"] for feature in features}
+
+
 def test_a_report_without_fragments_writes_nothing(tmp_path):
     frame = pd.read_csv(_DIANN, sep="\t", nrows=2).drop(columns=["Fragment.Quant.Raw"])
     report = tmp_path / "report.tsv"
@@ -69,6 +109,22 @@ def test_a_report_without_fragments_writes_nothing(tmp_path):
 
     assert not _diann(report, tmp_path)
     assert not (tmp_path / "x.fragment.parquet").exists()
+
+
+def test_diann_q_value_threshold_keeps_the_fragments_of_kept_features(tmp_path):
+    frame = pd.read_csv(_DIANN, sep="\t", nrows=2)
+    frame["Q.Value"] = [0.02, 0.001]
+    report = tmp_path / "report.tsv"
+    frame.to_csv(report, sep="\t", index=False)
+
+    with DiannFeatureAdapter() as adapter:
+        adapter.convert(diann_report=str(report), output_path=str(tmp_path / "x.feature.parquet"), qvalue_threshold=0.01)
+        assert adapter.write_fragments(str(tmp_path / "x.fragment.parquet"), qvalue_threshold=0.01)
+
+    features = pq.read_table(tmp_path / "x.feature.parquet", columns=["feature_id"]).column(0).to_pylist()
+    assert len(features) == 1
+    linked = set(pq.read_table(tmp_path / "x.fragment.parquet", columns=["feature_id"]).column(0).to_pylist())
+    assert linked == set(features)
 
 
 def test_spectronaut_rows_keep_each_fragment(tmp_path):

@@ -37,6 +37,8 @@ _PRODUCER_FEATURE_COMPOSITES = {
     "quantms-msstats": ("run_file_name", "peptidoform", "charge", "rt", "scan"),
     "fragpipe": ("quantification_unit_id", "peptidoform", "charge", "compensation_voltage"),
 }
+# These producers supply PSM ids that cannot be re-derived from the persisted columns.
+_PRODUCER_PSM_IDS = {"mzidentml"}
 # Non-conformant label-free labels of 1.0.2: an erratum, not an older vocabulary.
 _LABEL_ERRATA = {"raw": "LFQ", "precursor_area": "LFQ"}
 _FILE_LEVEL_DATASET_COLUMNS = ("file_checksums", "file_row_counts", "file_sizes_bytes", "total_structures", "packaged_at")
@@ -182,7 +184,7 @@ def _followed(value, new_ids: dict[int, int], field: str):
 
 
 def _follow_ids(pairs: list[tuple[dict, dict]], references: dict[str, dict[int, int]], keep_psm_ids: bool) -> None:
-    """Give each migrated row the new ids its references hold; a provided psm_id stays."""
+    """Give each migrated row the new ids its references hold; mzIdentML PSM ids stay."""
     for record, row in pairs:
         if keep_psm_ids:
             row["psm_id"] = record["psm_id"]
@@ -208,7 +210,7 @@ def _migrate_view(view: str, source: Path, target: Path, ids: dict[str, dict[int
     writer_class, _ = Dataset.writer_for(view)
     migrate_row = _ROW_MIGRATIONS.get(view, lambda record: [record])
     footer = _footer(source)
-    keep_ids = view == "psm" and footer.get(b"identity_source") == b"provided"
+    keep_ids = view == "psm" and footer.get(b"creator", b"").decode() in _PRODUCER_PSM_IDS
     references = {column: ids.get(referenced, {}) for column, referenced in _ID_REFERENCES.get(view, {}).items()}
     old_ids = []
     rows = 0
@@ -254,10 +256,11 @@ def migrate_dataset(source: Path, output: Path) -> dict[str, int]:
     """Write *source* under the current specification to the new folder *output*.
 
     Returns the rows written per view. Views keep their file names. Ids are derived
-    again, the columns that hold them, such as `psm.feature_id` and `site.pg_id`,
-    follow them, and labels and peptidoforms take their canonical spelling. A fixed
-    modification the old file left out cannot be recovered: re-convert from the
-    source files to get one.
+    again, except for mzIdentML psm_id values that cannot be reproduced from the
+    stored columns. The columns that hold ids, such as `psm.feature_id` and
+    `site.pg_id`, follow them, and labels and peptidoforms take their canonical
+    spelling. A fixed modification the old file left out cannot be recovered:
+    re-convert from the source files to get one.
     """
     source, output = Path(source), Path(output)
     output.mkdir(parents=True, exist_ok=False)

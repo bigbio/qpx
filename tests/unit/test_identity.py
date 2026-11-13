@@ -464,7 +464,11 @@ def test_check_identity_skips_provided_ids(tmp_path):
 
     with qpx.open_dataset(str(tmp_path)) as dataset:
         result = dataset.validate(["psm"], strict=True, check_identity=True)["psm"]
-    assert any(issue.check == "identity_not_checked" for issue in result.warnings)
+    issues = [issue for issue in result.issues if issue.check == "identity_not_checked"]
+    assert len(issues) == 1 and issues[0].severity == "info"
+    assert not any(issue.check == "identity_not_checked" for issue in result.warnings)
+    assert result.is_valid
+    assert "1 info" in result.summary
     assert not any(issue.check == "stale_identity" for issue in result.issues)
 
 

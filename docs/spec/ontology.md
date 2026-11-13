@@ -269,7 +269,7 @@ Sample metadata fields map to biological ontologies. These mappings are critical
 
 ## Score Fields {#scores}
 
-Score names used in `additional_scores` that have PSI-MS ontology mappings. All QPX score names use **snake_case** -- the ontology name column shows the proper CV term.
+Score names used in `additional_scores` or the [typed q-value columns](scores.md#typed-q-value-columns) that have PSI-MS ontology mappings. In specification 1.3, a q-value matching a typed column's name and value is not duplicated in `additional_scores`. All QPX score names use **snake_case** -- the ontology name column shows the proper CV term.
 
 | QPX Name (snake_case) | Ontology Name | Ontology Accession | Direction |
 |---|---|---|---|
@@ -318,7 +318,7 @@ Fields defined by QPX without standardized ontology terms.
 | `parent_ion_fraction` | Score | Fraction of target peak intensity in the isolation window |
 | `glycan_score` | Score | Score of the glycan composition assignment (higher is better) |
 | `glycan_qvalue` | Score | Q-value of the glycan composition assignment (lower is better) |
-| `precursor_quantification_score` | Score | QuantUMS-derived quantification confidence: 1.0 / (1.0 + SD). In the `cv_params` of DIA-NN files from QPX 1.2 and earlier; now written only as the score `diann_quantity_quality` |
+| `precursor_quantification_score` | Score | QuantUMS-derived quantification confidence: 1.0 / (1.0 + SD). In the `cv_params` of DIA-NN files from qpx 1.3.0 and earlier; qpx 1.4.0 writes it only as the score `diann_quantity_quality` |
 
 ---
 

@@ -47,7 +47,7 @@ does not imply that the quantity could never be derived.
 | Field | DIA-NN | OpenMS consensusXML |
 | ------- | -------- | --------------------- |
 | `missed_cleavages` | Calculated from the peptide sequence and the SDRF enzyme. Null when the enzyme is unavailable or unsupported. | Calculated from the peptide sequence and the SDRF enzyme, falling back to `SearchParameters.enzyme`. Null when the enzyme is unavailable or unsupported. |
-| `cv_params` | Tool-specific metrics such as `proteotypic`, `irt`, `predicted_irt` and `iim`, when reported; `Quantity.Quality` is only the score `diann_quantity_quality`. `iim`, `predicted_im` and `predicted_iim` are each left out where DIA-NN reports 0. For data without ion mobility, `Predicted.IM` and `Predicted.iIM` are 0; DIA-NN 1.8 also writes `iIM` = 0, while DIA-NN 2.x reports a library `iIM`, which is kept. | The `MS1Label:*` label state of an MS1-labelled multiplet. Otherwise null: the converter has no corresponding source metrics to put in this field. These are separate from `pg.cv_params`. |
+| `cv_params` | Tool-specific metrics such as `proteotypic`, `irt`, `predicted_irt`, `iim` and `diann_precursor_lib_index` (`Precursor.Lib.Index`), when reported; `Quantity.Quality` is only the score `diann_quantity_quality`. `iim`, `predicted_im` and `predicted_iim` are each left out where DIA-NN reports 0. For data without ion mobility, `Predicted.IM` and `Predicted.iIM` are 0; DIA-NN 1.8 also writes `iIM` = 0, while DIA-NN 2.x reports a library `iIM`, which is kept. | The `MS1Label:*` label state of an MS1-labelled multiplet. Otherwise null: the converter has no corresponding source metrics to put in this field. These are separate from `pg.cv_params`. |
 | `pg_global_qvalue` | Read from `Global.PG.Q.Value`, when present. | The resolved protein group's global q-value, using the same derivation as `pg.global_qvalue`. Null when the group is ambiguous or has no declared q-value. |
 | `gg_accessions` / `gg_names` | Gene symbols from `Genes`, when present. | Gene symbols parsed from `GN=` in protein-hit descriptions, through the resolved protein group. Null when that annotation is absent or the group cannot be resolved. The converter does not read a FASTA to add missing genes. |
 | `ion_mobility` | `IM` (and `IM.Start` / `IM.Stop` for `ion_mobility_start` / `ion_mobility_stop`), when present. For data acquired without ion mobility, DIA-NN reports 0 for every precursor; a 0 is written as null. | Not populated. |
@@ -56,7 +56,7 @@ does not imply that the quantity could never be derived.
 | `parent_ion_fraction` / `quant_scan` / `quant_ms_level` | Not provided. | `quant_precursor_purity`, else `precursor_purity`; `scan_id`; and 2 or 3 from whether `id_scan_id` equals `scan_id`, null without `id_scan_id`. |
 | `id_run_file_name` | The normalized report run name. | The resolved run of a direct identification of the exported peptide with a spectrum reference. Null for transferred features without their own identification, unresolved origins or conflicting peptide assignments. |
 | `pg_positions` | Not populated from the report, which has no peptide-to-protein coordinates. Filled from a FASTA with `--fasta` or `qpxc transform protein-properties`: every one-based occurrence in each group member. | Known peptide-evidence `start` / `end` coordinates, converted from zero-based inclusive to one-based inclusive. For a resolved protein group, positions on its members; for a peptide shared across inferred groups (null `pg_accessions`), positions on every evidence protein, since each entry names its own protein. Null when no usable positions remain. A FASTA is not needed for coordinates already recorded in consensusXML. |
-| `peptide_qvalue` | Null: DIA-NN `Q.Value` is precursor-level and is stored as `precursor_qvalue` in `additional_scores`. | Read from an identification score explicitly declared to be a q-value/FDR. Null without a suitable identification in that run; raw search scores are not substituted. |
+| `peptide_qvalue` | Null: DIA-NN `Q.Value` is precursor-level and is written to the `precursor_qvalue` column. | Read from an identification score explicitly declared to be a q-value/FDR. Null without a suitable identification in that run; raw search scores are not substituted. |
 | `intensities` / `additional_intensities` | `Precursor.Quantity`; `PG.MaxLFQ`, `Precursor.Normalised` and `Ms1.Area` as `pg_maxlfq`, `normalize_intensity` and `ms1_area`. DIA-NN writes 0 for a quantity it did not measure: an unquantified precursor or channel keeps its label with a null `intensity`, and a 0 additional intensity is left out. | The consensus feature's per-map sub-feature intensities; a map element with intensity ≤ 0 has no entry. `additional_intensities` holds the ratios of an MS1-labelled multiplet; otherwise it is not populated. |
 
 Protein-group ambiguity includes shared peptides spanning multiple inferred
@@ -81,8 +81,15 @@ Further DIA-NN feature fields:
   stays in `cv_params`.
 - **Pepmap.** `feature.pg_accessions` holds the peptide's protein group
   (`Protein.Group`); the pepmap view lists every protein in `Protein.Ids` for each
-  converted target peptidoform, without positions. Decoy rows, which carry their
-  target's sequence, are left out.
+  converted target peptidoform, without positions. Decoy rows, which carry a
+  mutated sequence under their parent's proteins, are left out.
+- **Library decoys.** DIA-NN 2.x prefixes a decoy searched from the spectral
+  library (a first-pass decoy kept in an empirical library) with `^` in
+  `Modified.Sequence` and `Precursor.Id`; its sequence is the decoy generated
+  from the same parent. The `^` is left out of `peptidoform` and the row has
+  `is_library_decoy` = true. A decoy's sequence can equal a target's, so
+  `is_decoy` and `is_library_decoy` are both part of the feature identity. A generated decoy shares
+  `diann_precursor_lib_index` with its target; a library decoy has its own.
 - **plexDIA.** A report with a `Channel` column gives one row per multiplet, with
   one `intensities` entry per channel. With an SDRF, a channel matches the
   `comment[label]` of the same name or the plexDIA label DIA-NN calls by that
