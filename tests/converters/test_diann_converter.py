@@ -1017,6 +1017,62 @@ def test_diann_feature_ion_mobility_is_null_without_ion_mobility_data(tmp_path):
     assert cv == {"iim": "0.9", "predicted_im": "0.96", "predicted_iim": "0.91"}
 
 
+def test_diann_library_decoys_drop_the_caret_and_keep_distinct_ids(tmp_path):
+    """DIA-NN 2.x writes a library decoy with ^ and the decoy sequence generated from its parent.
+
+    Two PXD019777 reports with --report-decoys held 119 and 362 (sequence, charge, run) keys
+    shared by a library decoy and a target or a generated decoy; the first four rows below
+    come from them. A BXD mouse report had a generated decoy with a target's sequence, the
+    decoy of one tubulin isoform being another's peptide (third row). The ^ is not a residue,
+    and is_decoy with is_library_decoy keeps the feature ids apart.
+    """
+    shared = {"Run": "run_A", "Precursor.Charge": 2, "Genes": "G1", "Q.Value": 0.001, "Precursor.Quantity": 100.0}
+
+    def row(modified, protein, decoy, lib_index):
+        stripped = re.sub(r"\(.*?\)|\^", "", modified)
+        return {
+            **shared,
+            "Protein.Group": protein,
+            "Modified.Sequence": modified,
+            "Stripped.Sequence": stripped,
+            "Precursor.Id": f"{modified}2",
+            "Decoy": decoy,
+            "Precursor.Lib.Index": lib_index,
+        }
+
+    report = [
+        row("AILMDLEPGTMDSVR", "P29514", 0, 3630),
+        row("^AILMDLEPGTMDSVR", "P29513", 1, 87366),
+        row("AILMDLEPGTMDSVR", "P29513", 1, 2830),
+        row("AHGFVDALER", "Q96I24", 1, 1956),
+        row("^AHGFVDALER", "Q96I24", 1, 88890),
+        row("^(UniMod:1)MEPSM(UniMod:35)K", "P1", 1, 87214),
+    ]
+    features = _feature_rows_single_run(tmp_path, report)
+
+    assert len({feature["feature_id"] for feature in features}) == len(report)
+    by_key = {(f["peptidoform"], f["is_decoy"], f["is_library_decoy"]): f for f in features}
+    assert set(by_key) == {
+        ("AILMDLEPGTMDSVR", False, False),
+        ("AILMDLEPGTMDSVR", True, True),
+        ("AILMDLEPGTMDSVR", True, False),
+        ("AHGFVDALER", True, False),
+        ("AHGFVDALER", True, True),
+        ("[UNIMOD:1]-MEPSM[UNIMOD:35]K", True, True),
+    }
+    lib_index = {
+        key: {entry["cv_name"]: entry["cv_value"] for entry in feature["cv_params"]}["diann_precursor_lib_index"]
+        for key, feature in by_key.items()
+    }
+    assert lib_index[("AHGFVDALER", True, False)] == "1956"
+    assert lib_index[("AHGFVDALER", True, True)] == "88890"
+    modified = by_key[("[UNIMOD:1]-MEPSM[UNIMOD:35]K", True, True)]
+    sites = {
+        (mod["accession"], pos["position"], pos["amino_acid"]) for mod in modified["modifications"] for pos in mod["positions"]
+    }
+    assert ("UNIMOD:35", 5, "M") in sites
+
+
 def test_diann_feature_warns_on_runs_missing_ms_info(tmp_path, caplog):
     """A report Run without a matching *_ms_info.parquet must be warned about.
 

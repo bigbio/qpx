@@ -12,7 +12,8 @@ import re
 from typing import NamedTuple
 
 from qpx.converters.openms_consensus.channels import channels_by_column, list_value, ratio_name
-from qpx.converters.openms_consensus.streaming import _iterparse, _localname, _user_params
+from qpx.converters.openms_consensus.streaming import _localname, _user_params
+from qpx.core.files import iterparse_xml
 
 _GROUP_PARAM = re.compile(r"^indistinguishable_proteins_(\d+)$")
 _PREFIX = "indistinguishable_proteins_{}_fraction_group_level_"
@@ -53,7 +54,7 @@ def read_protein_quant(path: str) -> list[ProteinQuant]:
     """Fraction-group abundances and ratios per protein group; empty when the file has none."""
     protein_hits: dict[str, str] = {}
     quants: list[ProteinQuant] = []
-    for event, el in _iterparse(path, events=("start", "end")):
+    for event, el in iterparse_xml(path, events=("start", "end")):
         tag = _localname(el.tag)
         if event == "start" and tag in _HEADER_END:
             break

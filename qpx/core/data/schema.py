@@ -298,8 +298,9 @@ def pg_quantity_issues(con, query: str, structure: str) -> list[ValidationIssue]
     """Warn when the labelled (quantification) rows of a pg view carry no positive intensity.
 
     A converter that finds no protein quantity in its source writes every
-    intensity null (or, before QPX 1.3, 0); the view is valid but holds no
-    abundance. Identification-only rows have no label and are not counted.
+    intensity null; some converters before qpx 1.4.0 wrote 0 instead. The view
+    is valid but holds no abundance. Identification-only rows have no label
+    and are not counted.
     """
     labelled, quantified = con.execute(
         sql_build(

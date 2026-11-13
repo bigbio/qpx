@@ -79,6 +79,46 @@ def test_normalizer_moves_entry_names_to_pg_names(tmp_path):
     assert table.column("pg_names").to_pylist() == [["A_HUMAN", "B_HUMAN"], None, ["kept"]]
 
 
+@pytest.mark.parametrize(
+    "view, sort_order, keep_order",
+    [
+        ("feature", b"anchor_protein,peptidoform,charge,run_file_name", False),
+        ("psm", b"peptidoform,charge,run_file_name,scan", True),
+        ("psm", b"protein_accessions,peptidoform,charge", False),
+    ],
+)
+def test_normalizer_drops_only_accession_sort_orders(tmp_path, view, sort_order, keep_order):
+    """Accession rewrites drop accession sort orders but keep unrelated ones and rounding metadata."""
+    source = tmp_path / f"in.{view}.parquet"
+    accessions = ["sp|Q15149|PLEC_HUMAN", "tr|P04114|APOB_HUMAN"]
+    column = "anchor_protein" if view == "feature" else "protein_accessions"
+    values = accessions if view == "feature" else [[accession] for accession in accessions]
+    table = pa.table(
+        {
+            column: values,
+            "peptidoform": ["ANOTHERK", "PEPTIDEK"],
+            "charge": [2, 2],
+            "run_file_name": ["run_01", "run_01"],
+            "scan": [[1], [2]],
+            "rt": [1.0, 2.0],
+        }
+    )
+    with pq.ParquetWriter(source, table.schema) as writer:
+        writer.write_table(table)
+        writer.add_key_value_metadata({b"qpx.sort_order": sort_order, b"qpx.mantissa_bits": b'{"rt":16}'})
+
+    output = tmp_path / f"out.{view}.parquet"
+    result = normalize_parquet(source, output)
+
+    assert result["accessions_changed"] == 2
+    normalized = pq.read_table(output)
+    expected = ["Q15149", "P04114"] if view == "feature" else [["Q15149"], ["P04114"]]
+    assert normalized.column(column).to_pylist() == expected
+    footer = pq.read_metadata(output).metadata
+    assert footer.get(b"qpx.sort_order") == (sort_order if keep_order else None)
+    assert footer[b"qpx.mantissa_bits"] == b'{"rt":16}'
+
+
 def test_modification_name_is_the_unimod_title_without_metadata():
     _, modifications = from_proforma("AC[UNIMOD:4]K", "ACK")
     assert [(entry["name"], entry["accession"]) for entry in modifications] == [("Carbamidomethyl", "UNIMOD:4")]

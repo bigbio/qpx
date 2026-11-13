@@ -35,6 +35,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from qpx.core.files import MZML_EXTENSIONS, resolve_mzml_path
 from qpx.core.scan import scan_format_from_native_id, scan_from_native_id
 
 logger = logging.getLogger(__name__)
@@ -335,9 +336,6 @@ class SpectraMappingTransform:
         mapper.write_mz_parquet(dataset, "output.mz.parquet")
     """
 
-    # Common mzML file extensions to try
-    MZML_EXTENSIONS = [".mzML", ".mzml", ".MZML", ".mzML.gz", ".mzml.gz", ".MZML.gz"]
-
     def __init__(
         self,
         mzml_directory: Union[str, Path],
@@ -359,31 +357,6 @@ class SpectraMappingTransform:
         self._cache = _MzMLCache()
         self._acquisition_starts: dict[str, str] = {}
 
-    def _resolve_mzml_path(self, run_file_name: str) -> Optional[Path]:
-        """
-        Resolve a run file name to an mzML file path.
-
-        Tries the run file name with common mzML extensions in the configured
-        directory.
-
-        Args:
-            run_file_name: Run file name (without extension).
-
-        Returns:
-            Path to the mzML file, or None if not found.
-        """
-        for ext in self.MZML_EXTENSIONS:
-            candidate = self._mzml_dir / f"{run_file_name}{ext}"
-            if candidate.exists():
-                return candidate
-
-        # Also try the name as-is (might already have extension)
-        candidate = self._mzml_dir / run_file_name
-        if candidate.exists():
-            return candidate
-
-        return None
-
     def get_spectrum(
         self,
         run_file_name: str,
@@ -400,7 +373,7 @@ class SpectraMappingTransform:
             Tuple of (num_peaks, mz_array, intensity_array).
             Returns (0, empty_array, empty_array) if scan or file not found.
         """
-        mzml_path = self._resolve_mzml_path(run_file_name)
+        mzml_path = resolve_mzml_path(self._mzml_dir, run_file_name)
         if mzml_path is None:
             logger.warning(f"mzML file not found for run: {run_file_name}")
             return 0, np.array([], dtype=np.float32), np.array([], dtype=np.float32)
@@ -431,7 +404,7 @@ class SpectraMappingTransform:
         Returns:
             List of (num_peaks, mz_array, intensity_array) tuples.
         """
-        mzml_path = self._resolve_mzml_path(run_file_name)
+        mzml_path = resolve_mzml_path(self._mzml_dir, run_file_name)
         if mzml_path is None:
             logger.warning(f"mzML file not found for run: {run_file_name}")
             empty = np.array([], dtype=np.float32)
@@ -547,7 +520,7 @@ class SpectraMappingTransform:
         total_spectra = 0
         with MzWriter(output_path) as writer:
             for run_name in run_file_names:
-                mzml_path = self._resolve_mzml_path(run_name)
+                mzml_path = resolve_mzml_path(self._mzml_dir, run_name)
                 if mzml_path is None:
                     logger.warning("Skipping run %s: mzML file not found", run_name)
                     continue
@@ -603,7 +576,7 @@ class SpectraMappingTransform:
     def _discover_mzml_files(self) -> list[Path]:
         """List all mzML files (including ``.gz``) in the configured directory."""
         found: set[Path] = set()
-        for ext in self.MZML_EXTENSIONS:
+        for ext in MZML_EXTENSIONS:
             found.update(self._mzml_dir.glob(f"*{ext}"))
         return sorted(found)
 

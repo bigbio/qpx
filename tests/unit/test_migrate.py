@@ -9,7 +9,9 @@ from qpx.cli.main import qpx_main
 from qpx.core.data.identity import derive_composite_id
 from qpx.transforms.migrate import migrate_dataset
 from qpx.version import QPX_SPEC_VERSION
-from tests.conftest import make_xic_record
+from qpx.writers import ProteoformWriter, PsmWriter, SiteWriter
+from tests.conftest import make_psm_record, make_xic_record
+from tests.unit.test_site_proteoform import make_proteoform_record, make_site_record
 
 RUN = "run_01"
 PROTEIN = "P12345"
@@ -195,14 +197,61 @@ def test_a_site_follows_the_new_pg_and_psm_ids(old_dataset, tmp_path):
     assert (row["pg_id"], row["best_psm_id"]) == (pg_id, psm_id)
 
 
-def test_a_provided_psm_id_is_kept(old_dataset, tmp_path):
+def test_a_mzidentml_psm_id_is_kept(old_dataset, tmp_path):
+    """mzIdentML PSM ids cannot be reproduced from the persisted composite columns."""
     feature = pq.read_table(old_dataset / "old.feature.parquet").to_pylist()[0]
     psm = {key: feature[key] for key in ("sequence", "peptidoform", "charge", "is_decoy", "run_file_name", "scan")}
-    _write(old_dataset / "old.psm.parquet", [{**psm, "psm_id": 11}], extra_metadata={b"identity_source": b"provided"})
+    _write(
+        old_dataset / "old.psm.parquet",
+        [{**psm, "psm_id": 11}],
+        creator=b"mzidentml",
+        extra_metadata={b"identity_source": b"provided"},
+    )
     out = tmp_path / "new"
     migrate_dataset(old_dataset, out)
 
     assert pq.read_table(out / "old.psm.parquet").to_pylist()[0]["psm_id"] == 11
+
+
+def test_relayouted_ids_are_derived_again_and_references_follow(dataset_dir, tmp_path):
+    """Migration re-hashes ordinal PSM ids and follows feature, site and proteoform links."""
+    feature = pq.read_table(dataset_dir / "exp.feature.parquet").to_pylist()[0]
+    pg_id = pq.read_table(dataset_dir / "exp.pg.parquet").column("pg_id")[0].as_py()
+    with PsmWriter(dataset_dir / "exp.psm.parquet", creator="diann") as writer:
+        writer.write_batch([{**make_psm_record(), "feature_id": feature["feature_id"]}])
+    psm_id = pq.read_table(dataset_dir / "exp.psm.parquet").column("psm_id")[0].as_py()
+    for view, writer_class, record in (
+        ("site", SiteWriter, make_site_record(protein_accession=PROTEIN, family=PROTEIN)),
+        ("proteoform", ProteoformWriter, make_proteoform_record(family=PROTEIN, accession=f"{PROTEIN}-1", kind="isoform")),
+    ):
+        with writer_class(dataset_dir / f"exp.{view}.parquet") as writer:
+            writer.write_batch([{**record, "pg_id": pg_id, "best_psm_id": psm_id}])
+
+    folder = tmp_path / "sorted"
+    result = CliRunner().invoke(
+        qpx_main,
+        ["transform", "relayout", "--dataset", str(dataset_dir), "--output-folder", str(folder)],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+    assert pq.read_table(folder / "exp.psm.parquet").column("psm_id").to_pylist() == [1]
+    out = tmp_path / "new"
+    migrate_dataset(folder, out)
+
+    for view, id_column in (("feature", "feature_id"), ("pg", "pg_id"), ("psm", "psm_id")):
+        path = out / f"exp.{view}.parquet"
+        table = pq.read_table(path)
+        footer = pq.read_metadata(path).metadata
+        assert footer[b"identity_source"] == b"derived"
+        composite = tuple(footer[b"identity_composite"].decode().split(","))
+        assert table.column(id_column).to_pylist() == [derive_composite_id(row, composite) for row in table.to_pylist()]
+    psm = pq.read_table(out / "exp.psm.parquet").to_pylist()[0]
+    features = pq.read_table(out / "exp.feature.parquet").to_pylist()
+    assert psm["feature_id"] == next(row["feature_id"] for row in features if row["sequence"] == psm["sequence"])
+    pg_id = pq.read_table(out / "exp.pg.parquet").column("pg_id")[0].as_py()
+    for view in ("site", "proteoform"):
+        row = pq.read_table(out / f"exp.{view}.parquet").to_pylist()[0]
+        assert (row["pg_id"], row["best_psm_id"]) == (pg_id, psm["psm_id"])
 
 
 def test_the_command_refuses_an_existing_folder(old_dataset, tmp_path):

@@ -123,7 +123,7 @@ def validate_cmd(
 
 
 def _passes(result, conformance: bool) -> bool:
-    return result.is_valid and not (conformance and result.issues)
+    return result.is_valid and not (conformance and result.warnings)
 
 
 def _validate_single_file(file_path: Path, semantic: bool, check_identity: bool, conformance: bool):
@@ -172,6 +172,6 @@ def _print_result(result):
     """Print a single ValidationResult to stdout."""
     click.echo(f"\n{result.summary}")
     for issue in result.issues:
-        marker = "ERROR" if issue.severity == "error" else "WARN "
+        marker = {"error": "ERROR", "warning": "WARN ", "info": "INFO "}[issue.severity]
         col_info = f" [{issue.column}]" if issue.column else ""
         click.echo(f"  {marker}{col_info}: {issue.message}")

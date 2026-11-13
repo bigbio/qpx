@@ -62,6 +62,16 @@ MANTISSA_BITS = {
         "drift_time": 16,
         "ion_mobility_array": 16,
     },
+    "xic": {
+        "intensity": 12,
+        "rt": 16,
+        "rt_start": 16,
+        "rt_stop": 16,
+        "target_rt": 16,
+        "target_ion_mobility": 16,
+        "ion_mobility_start": 16,
+        "ion_mobility_stop": 16,
+    },
 }
 
 _MANTISSA = {32: (23, np.uint32), 64: (52, np.uint64)}

@@ -312,6 +312,12 @@ class TestDiannToProforma:
         result = to_proforma("(UniMod:1)PEPTM(UniMod:35)IDEC(UniMod:4)K")
         assert result == "[UNIMOD:1]-PEPTM[UNIMOD:35]IDEC[UNIMOD:4]K"
 
+    def test_library_decoy_prefix_is_not_a_residue(self):
+        """DIA-NN 2.x marks a library decoy with ^, which is not a residue."""
+        from qpx.converters.diann.constants import to_proforma
+
+        assert to_proforma("^(UniMod:1)MEPSM(UniMod:35)K") == "[UNIMOD:1]-MEPSM[UNIMOD:35]K"
+
 
 # ---------------------------------------------------------------------------
 # FragPipe adapter tests

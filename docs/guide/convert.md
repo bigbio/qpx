@@ -824,6 +824,8 @@ A single `mz.parquet` with one row per spectrum:
 
 Convert SDRF metadata files to QPX sample and run parquet format.
 
+`run.acquisition_start` keeps the first valid `comment[acquisition date]` per run. The optional `--mzml-dir` reads mzML `run/@startTimeStamp` headers for runs without an SDRF date. SDRF takes precedence; text, fractional seconds and timezone suffixes are preserved without parsing, timezone conversion or added time components. This mzML source is currently available only with `qpxc convert sdrf --mzml-dir`.
+
 ### Description {#sdrf-description}
 
 ```python exec="1" html="1" session="doc_utils"
@@ -1035,8 +1037,9 @@ peptide assignments keep this field null.
     One feature row per multiplet per run, one `intensities` entry per channel. A
     two-plex calls its non-light channel `SILAC heavy` and a three-plex is
     light/medium/heavy, as the native OpenMS writer does; labels that cannot be
-    resolved stop the conversion. The feature peptidoform is the peptide identity
-    MS1LabeledWorkflow reports, without labels, also for dimethyl and mTRAQ.
+    resolved stop the conversion. The feature peptidoform is the lightest partner's:
+    unlabelled for SILAC, with the lightest label for dimethyl and mTRAQ, restored
+    from `MS1Label:labeled_sequence` and that channel's `channel_description`.
     `observed_mz` and `rt` are the lightest measured partner's; when that is not the
     run's lightest channel, `mass_error_ppm` is null. A PSM is the partner the
     spectrum was matched with (`MS1Label:labeled_sequence`), with `psm.label`, and

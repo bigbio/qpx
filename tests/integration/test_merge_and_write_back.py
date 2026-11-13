@@ -147,6 +147,33 @@ class TestMergeCollisions:
         assert b"xic_qvalue_threshold" not in footer
         assert footer[b"xic_rt_unit"] == b"seconds"
 
+    @pytest.mark.parametrize("view", ["feature", "pg"])
+    @pytest.mark.parametrize("other_bits", [12, 16, None])
+    def test_merge_keeps_only_shared_mantissa_bits(self, dataset_dir, tmp_path, view, other_bits):
+        """Keep a rounding declaration only when both input files state the same bytes."""
+        sources = []
+        column = "mass_error_ppm" if view == "feature" else "intensity"
+        for (name, accession), bits in zip((("one", "PXD000001"), ("two", "PXD000002")), (12, other_bits)):
+            target = _copy(dataset_dir, tmp_path, name, accession)
+            path = target / f"exp.{view}.parquet"
+            table = pq.read_table(path)
+            with pq.ParquetWriter(path, table.schema) as writer:
+                writer.write_table(table)
+                if bits is not None:
+                    writer.add_key_value_metadata({b"qpx.mantissa_bits": f'{{"{column}":{bits}}}'.encode()})
+            sources.append(target)
+
+        with (
+            qpx.open_dataset(str(sources[0])) as first,
+            qpx.open_dataset(str(sources[1])) as second,
+            qpx.DatasetCollection([first, second]) as collection,
+        ):
+            collection.merge(tmp_path / "merged", structures=[view], on_collision="namespace")
+
+        footer = pq.read_schema(next((tmp_path / "merged").glob(f"*.{view}.parquet"))).metadata
+        expected = f'{{"{column}":12}}'.encode() if other_bits == 12 else None
+        assert footer.get(b"qpx.mantissa_bits") == expected
+
     def test_dedupe_identical_drops_copies(self, two_copies, tmp_path):
         first, _, collection = two_copies
         output = tmp_path / "merged"

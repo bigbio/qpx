@@ -37,7 +37,11 @@ def to_proforma(modified_sequence: str, mod_masses: tuple[tuple[str, float], ...
     A modification named in *mod_masses* (the ``--fixed-mod`` / ``--var-mod``
     declarations of the DIA-NN log, which ``--original-mods`` reports keep by
     name) is resolved from its declared mass; other names are resolved through
-    Unimod. The (SILAC) channel tag is dropped.
+    Unimod. The (SILAC) channel tag is dropped. DIA-NN 2.x prefixes a decoy
+    searched from the spectral library (a first-pass decoy kept in an empirical
+    library) with ``^``, which is not part of the sequence and is dropped::
+
+        ^(UniMod:1)MEPSK          -> [UNIMOD:1]-MEPSK
 
     Args:
         modified_sequence: The ``Modified.Sequence`` value from DIA-NN output.
@@ -49,6 +53,7 @@ def to_proforma(modified_sequence: str, mod_masses: tuple[tuple[str, float], ...
     if not modified_sequence:
         return ""
 
+    modified_sequence = modified_sequence.removeprefix("^")
     masses = dict(mod_masses)
     mods: list[tuple[int, str]] = []
     plain_chars: list[str] = []

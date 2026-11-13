@@ -40,10 +40,11 @@ from qpx.writers.pepmap import PepMapWriter
 logger = logging.getLogger(__name__)
 
 # Producer-specific feature identity composite (bigbio/qpx#229). DIA-NN reports one
-# feature per precursor per run, so the measured key is just peptidoform + charge +
-# run (all in feature.yaml). Passed to FeatureWriter so feature_id hashes exactly
+# feature per precursor per run, so the measured key is peptidoform + charge + run,
+# with the two decoy flags because a decoy's sequence can equal a target's or another
+# decoy's (all in feature.yaml). Passed to FeatureWriter so feature_id hashes exactly
 # these columns instead of the schema default.
-_FEATURE_IDENTITY_COMPOSITE = ("peptidoform", "charge", "run_file_name")
+_FEATURE_IDENTITY_COMPOSITE = ("peptidoform", "charge", "run_file_name", "is_decoy", "is_library_decoy")
 
 
 def _ms_info_scans(values: pd.Series) -> pd.Series:
@@ -173,10 +174,13 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
         self.logger.info(f"DIA-NN feature conversion complete -> {output_path}")
 
     def write_fragments(self, output_path: str, qvalue_threshold: Optional[float] = None) -> bool:
-        """Write the ``Fragment.Quant.*`` lists of the report as the fragment view; False when it has none."""
+        """Write the report's fragment quantities as the fragment view; False when it has none.
+
+        DIA-NN 1.x has them in ``Fragment.Quant.*``, 2.x in ``Fr.N.*`` when run with ``--export-quant``.
+        """
         sql = build_fragment_sql(self._resolved, self._get_report_columns(), self._channel_col, qvalue_threshold)
         if sql is None:
-            self.logger.warning("The report has no Fragment.Quant.Raw column: no fragment view")
+            self.logger.warning("The report has no Fragment.Quant.Raw or Fr.N.* (--export-quant) columns: no fragment view")
             return False
         rows = write_fragment_view(self._conn, sql, output_path, _FEATURE_IDENTITY_COMPOSITE, creator="diann")
         self.logger.info("Wrote %d fragment rows to %s", rows, output_path)

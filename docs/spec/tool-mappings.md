@@ -42,6 +42,7 @@ The Feature view captures quantified peptide features with intensity data. Featu
 | `peptidoform` | Modified sequence, plus the fixed modifications MaxQuant leaves out (SDRF, else parameters.txt or summary.txt; the isobaric label from the SDRF channel labels) | Modified.Sequence | Modified Peptide | PeptideSequence (ProForma-normalized) |
 | `charge` | Charge | Precursor.Charge | --- | Charge / PrecursorCharge |
 | `is_decoy` | Reverse | Decoy (`--report-decoys`), else accession prefix | --- | ProteinName prefix |
+| `is_library_decoy` | --- | `^` prefix of Modified.Sequence (2.x) | --- | --- |
 | `peptide_qvalue` | --- | --- | --- | --- |
 | `calculated_mz` | From the peptidoform (`Mass` when a modification has no known mass) | From the peptidoform | Calculated M/Z (psm.tsv), else M/Z | --- |
 | `observed_mz` | m/z × (1 + Mass error [ppm] × 10⁻⁶); evidence.txt `m/z` is theoretical without isobaric labels, and its mass error includes them | Precursor.Mz + Ms1.Apex.Mz.Delta (2.x); `Precursor.Mz` is theoretical | Calibrated Observed M/Z (psm.tsv); `M/Z` is theoretical | --- |

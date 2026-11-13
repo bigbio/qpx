@@ -21,6 +21,7 @@ import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
 from qpx.converters.utils import canonical_accession, uniprot_entry_name
+from qpx.transforms.relayout import SORT_ORDER_FOOTER_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -149,7 +150,10 @@ def normalize_parquet(
         try:
             keep_names = direction == "forward"
             _rewrite_view(
-                parquet_path, staging, lambda table: _normalize_table(table, changes, keep_names), _identity_footer(parquet)
+                parquet_path,
+                staging,
+                lambda table: _normalize_table(table, changes, keep_names),
+                _normalization_footer(parquet),
             )
             os.replace(staging, output_path)
         finally:
@@ -184,12 +188,16 @@ def normalize_dataset_accessions(dataset_dir: Path, prefix: str) -> int:
     return sum(bool(normalize_parquet(f, f)["distinct_changed"]) for f in accession_view_files(dataset_dir, prefix))
 
 
-def _identity_footer(parquet: pq.ParquetFile) -> dict[bytes, bytes] | None:
-    """Footer keys for a rewrite that changes accessions: ids hashed from them no longer re-derive."""
-    declared = (parquet.schema_arrow.metadata or {}).get(b"identity_composite", b"").decode()
-    if set(declared.split(",")) & {*_SCALAR_ACCESSION_COLUMNS, *_LIST_ACCESSION_COLUMNS}:
-        return {b"identity_source": b"provided"}
-    return None
+def _normalization_footer(parquet: pq.ParquetFile) -> dict[bytes, bytes | None]:
+    """Accession rewrites invalidate accession-derived ids and accession sort orders."""
+    metadata = parquet.metadata.metadata or {}
+    columns = {*_SCALAR_ACCESSION_COLUMNS, *_LIST_ACCESSION_COLUMNS}
+    footer: dict[bytes, bytes | None] = {}
+    if set(metadata.get(b"identity_composite", b"").decode().split(",")) & columns:
+        footer[b"identity_source"] = b"provided"
+    if set(metadata.get(SORT_ORDER_FOOTER_KEY, b"").decode().split(",")) & columns:
+        footer[SORT_ORDER_FOOTER_KEY] = None
+    return footer
 
 
 def _scan_accessions(parquet: pq.ParquetFile) -> tuple[dict[str, int], set[str]]:

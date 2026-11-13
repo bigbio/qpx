@@ -109,7 +109,11 @@ def _write_diann_views(converter, options: dict, prefix: str) -> None:
     type=float,
 )
 @_output_folder_option
-@click.option("--fragments", is_flag=True, help="Also write Fragment.Quant.* as the fragment view")
+@click.option(
+    "--fragments",
+    is_flag=True,
+    help="Also write the fragment view, from Fragment.Quant.* (1.x) or Fr.N.* (2.x --export-quant)",
+)
 @_output_prefix_option
 @click.option(
     "--pg-matrix-path",

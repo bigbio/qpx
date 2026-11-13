@@ -47,7 +47,7 @@ does not imply that the quantity could never be derived.
 | Field | DIA-NN | OpenMS consensusXML |
 | ------- | -------- | --------------------- |
 | `missed_cleavages` | Calculated from the peptide sequence and the SDRF enzyme. Null when the enzyme is unavailable or unsupported. | Calculated from the peptide sequence and the SDRF enzyme, falling back to `SearchParameters.enzyme`. Null when the enzyme is unavailable or unsupported. |
-| `cv_params` | Tool-specific metrics such as `proteotypic`, `irt`, `predicted_irt` and `iim`, when reported; `Quantity.Quality` is only the score `diann_quantity_quality`. `iim`, `predicted_im` and `predicted_iim` are each left out where DIA-NN reports 0. For data without ion mobility, `Predicted.IM` and `Predicted.iIM` are 0; DIA-NN 1.8 also writes `iIM` = 0, while DIA-NN 2.x reports a library `iIM`, which is kept. | The `MS1Label:*` label state of an MS1-labelled multiplet. Otherwise null: the converter has no corresponding source metrics to put in this field. These are separate from `pg.cv_params`. |
+| `cv_params` | Tool-specific metrics such as `proteotypic`, `irt`, `predicted_irt`, `iim` and `diann_precursor_lib_index` (`Precursor.Lib.Index`), when reported; `Quantity.Quality` is only the score `diann_quantity_quality`. `iim`, `predicted_im` and `predicted_iim` are each left out where DIA-NN reports 0. For data without ion mobility, `Predicted.IM` and `Predicted.iIM` are 0; DIA-NN 1.8 also writes `iIM` = 0, while DIA-NN 2.x reports a library `iIM`, which is kept. | The `MS1Label:*` label state of an MS1-labelled multiplet. Otherwise null: the converter has no corresponding source metrics to put in this field. These are separate from `pg.cv_params`. |
 | `pg_global_qvalue` | Read from `Global.PG.Q.Value`, when present. | The resolved protein group's global q-value, using the same derivation as `pg.global_qvalue`. Null when the group is ambiguous or has no declared q-value. |
 | `gg_accessions` / `gg_names` | Gene symbols from `Genes`, when present. | Gene symbols parsed from `GN=` in protein-hit descriptions, through the resolved protein group. Null when that annotation is absent or the group cannot be resolved. The converter does not read a FASTA to add missing genes. |
 | `ion_mobility` | `IM` (and `IM.Start` / `IM.Stop` for `ion_mobility_start` / `ion_mobility_stop`), when present. For data acquired without ion mobility, DIA-NN reports 0 for every precursor; a 0 is written as null. | Not populated. |
@@ -81,8 +81,15 @@ Further DIA-NN feature fields:
   stays in `cv_params`.
 - **Pepmap.** `feature.pg_accessions` holds the peptide's protein group
   (`Protein.Group`); the pepmap view lists every protein in `Protein.Ids` for each
-  converted target peptidoform, without positions. Decoy rows, which carry their
-  target's sequence, are left out.
+  converted target peptidoform, without positions. Decoy rows, which carry a
+  mutated sequence under their parent's proteins, are left out.
+- **Library decoys.** DIA-NN 2.x prefixes a decoy searched from the spectral
+  library (a first-pass decoy kept in an empirical library) with `^` in
+  `Modified.Sequence` and `Precursor.Id`; its sequence is the decoy generated
+  from the same parent. The `^` is left out of `peptidoform` and the row has
+  `is_library_decoy` = true. A decoy's sequence can equal a target's, so
+  `is_decoy` and `is_library_decoy` are both part of the feature identity. A generated decoy shares
+  `diann_precursor_lib_index` with its target; a library decoy has its own.
 - **plexDIA.** A report with a `Channel` column gives one row per multiplet, with
   one `intensities` entry per channel. With an SDRF, a channel matches the
   `comment[label]` of the same name or the plexDIA label DIA-NN calls by that

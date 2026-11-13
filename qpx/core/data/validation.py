@@ -18,7 +18,7 @@ class ValidationIssue:
 
     structure: str
     check: str  # "missing_column" | "type_mismatch" | "null_values" | "duplicate_pk"
-    severity: str  # "error" | "warning"
+    severity: str  # "error" | "warning" | "info"
     column: str | None
     message: str
 
@@ -47,15 +47,18 @@ class ValidationResult:
 
     @property
     def summary(self) -> str:
-        """The structure name, VALID or INVALID, and the error and warning counts."""
+        """The structure name, VALID or INVALID, and the error, warning and info counts."""
         n_err = len(self.errors)
         n_warn = len(self.warnings)
+        n_info = sum(i.severity == "info" for i in self.issues)
         status = "VALID" if self.is_valid else "INVALID"
         parts = []
         if n_err:
             parts.append(f"{n_err} error{'s' if n_err != 1 else ''}")
         if n_warn:
             parts.append(f"{n_warn} warning{'s' if n_warn != 1 else ''}")
+        if n_info:
+            parts.append(f"{n_info} info")
         detail = f" ({', '.join(parts)})" if parts else ""
         return f"{self.structure}: {status}{detail}"
 
