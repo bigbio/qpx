@@ -94,7 +94,7 @@ def build_fragment_sql(
     slots = _slots_sql(report_cols)
     if "Fragment.Quant.Raw" not in report_cols and not slots:
         return None
-    qvalue_col = resolved.get("qvalue") if resolved.get("qvalue") in report_cols else None
+    qvalue_col = resolved.get("precursor_qvalue") if resolved.get("precursor_qvalue") in report_cols else None
     label, _, channel_join = _build_channel_sql_parts(channel_col, qvalue_col, report_cols.__contains__)
     charge = validate_identifier(resolved["charge"])
     modified = validate_identifier(resolved["modified_sequence"])

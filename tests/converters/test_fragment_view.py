@@ -111,6 +111,22 @@ def test_a_report_without_fragments_writes_nothing(tmp_path):
     assert not (tmp_path / "x.fragment.parquet").exists()
 
 
+def test_diann_q_value_threshold_keeps_the_fragments_of_kept_features(tmp_path):
+    frame = pd.read_csv(_DIANN, sep="\t", nrows=2)
+    frame["Q.Value"] = [0.02, 0.001]
+    report = tmp_path / "report.tsv"
+    frame.to_csv(report, sep="\t", index=False)
+
+    with DiannFeatureAdapter() as adapter:
+        adapter.convert(diann_report=str(report), output_path=str(tmp_path / "x.feature.parquet"), qvalue_threshold=0.01)
+        assert adapter.write_fragments(str(tmp_path / "x.fragment.parquet"), qvalue_threshold=0.01)
+
+    features = pq.read_table(tmp_path / "x.feature.parquet", columns=["feature_id"]).column(0).to_pylist()
+    assert len(features) == 1
+    linked = set(pq.read_table(tmp_path / "x.fragment.parquet", columns=["feature_id"]).column(0).to_pylist())
+    assert linked == set(features)
+
+
 def test_spectronaut_rows_keep_each_fragment(tmp_path):
     with SpectronautFeatureAdapter() as adapter:
         adapter.convert(spectronaut_report=str(_SPECTRONAUT), output_path=str(tmp_path / "x.feature.parquet"))
