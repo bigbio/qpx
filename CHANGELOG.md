@@ -62,6 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- A score that a typed q-value column (`feature.precursor_qvalue`, `peptide_qvalue`, `global_qvalue`, `psm.qvalue`) holds under the same name and value is no longer repeated in `additional_scores`. DIA-NN `Q.Value` is now only in `feature.precursor_qvalue`; readers that looked it up in the list must read the column.
 - **The PSM identity composite is `[run_file_name, scan, peptidoform, charge]`**, the order agreed in #229. Every derived `psm_id` changes and now equals the id OpenMS writes for the same row.
 - `qpxc transform normalize-accessions` also normalizes `psm.protein_accessions` and the pepmap, which it left behind so that PSM-to-pg matching fell from 148/148 to 27/148, and marks a pg file `identity_source=provided`, since its `pg_id` values stay and no longer re-derive.
 - DIA-NN feature `additional_intensities`: `maxlfq` is now `pg_maxlfq`, a protein-level value, and `precursor_normalised` is `normalize_intensity`.
