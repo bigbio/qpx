@@ -1073,54 +1073,6 @@ def test_diann_library_decoys_drop_the_caret_and_keep_distinct_ids(tmp_path):
     assert ("UNIMOD:35", 5, "M") in sites
 
 
-@pytest.mark.parametrize("suffix", [".parquet", ".tsv"])
-def test_diann_first_pass_report_marks_direct_and_transferred_features(tmp_path, suffix):
-    """A feature the first MBR pass identified in the same run at q <= 0.01 is direct, any other transferred.
-
-    A decoy's sequence can equal a target's, so it is matched on the decoy flag too.
-    """
-    from qpx.converters.diann.feature_adapter import DiannFeatureAdapter
-
-    def row(run, sequence, decoy, qvalue):
-        return {
-            "Run": run,
-            "Protein.Group": "P1",
-            "Genes": "G1",
-            "Modified.Sequence": sequence,
-            "Stripped.Sequence": sequence,
-            "Precursor.Charge": 2,
-            "Decoy": decoy,
-            "Q.Value": qvalue,
-            "Precursor.Quantity": 100.0,
-        }
-
-    report = [row("run_A", "PEPTIDEK", 0, 0.001), row("run_B", "PEPTIDEK", 0, 0.001)]
-    report += [row("run_A", "PEPTIDER", 0, 0.001), row("run_A", "ELVISK", 1, 0.001)]
-    first_pass = [row("run_A", "PEPTIDEK", 0, 0.002), row("run_B", "PEPTIDEK", 0, 0.03)]
-    first_pass += [row("run_B", "PEPTIDER", 0, 0.001), row("run_A", "ELVISK", 0, 0.001)]
-    report_path, first_pass_path = tmp_path / "report.tsv", tmp_path / f"report-first-pass{suffix}"
-    pd.DataFrame(report).to_csv(report_path, sep="\t", index=False)
-    if suffix == ".parquet":
-        pd.DataFrame(first_pass).to_parquet(first_pass_path)
-    else:
-        pd.DataFrame(first_pass).to_csv(first_pass_path, sep="\t", index=False)
-
-    def converted(**options):
-        output_path = tmp_path / "out.feature.parquet"
-        with DiannFeatureAdapter() as adapter:
-            adapter.convert(diann_report=str(report_path), output_path=str(output_path), **options)
-        rows = pq.read_table(output_path).to_pylist()
-        return {(r["run_file_name"], r["peptidoform"]): (r["identification_type"], r["id_run_file_name"]) for r in rows}
-
-    assert converted(first_pass_report=str(first_pass_path)) == {
-        ("run_A", "PEPTIDEK"): ("direct", "run_A"),
-        ("run_B", "PEPTIDEK"): ("transferred", None),
-        ("run_A", "PEPTIDER"): ("transferred", None),
-        ("run_A", "ELVISK"): ("transferred", None),
-    }
-    assert set(converted().values()) == {(None, "run_A"), (None, "run_B")}
-
-
 def test_diann_feature_warns_on_runs_missing_ms_info(tmp_path, caplog):
     """A report Run without a matching *_ms_info.parquet must be warned about.
 

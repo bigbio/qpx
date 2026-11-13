@@ -66,14 +66,10 @@ _BATCH_SQL = """
         AND r.$seq_col = lk.sequence
         AND r.$chg_col = lk.charge
     $channel_join
-    $first_pass_join
     WHERE r.$run_col IN ({run_placeholders})
       $qvalue_filter
       AND r.$pg_col IS NOT NULL
     """
-
-# A first-pass identification at most this q-value makes a feature `direct` (DIA-NN's default --qvalue).
-FIRST_PASS_QVALUE = 0.01
 
 
 _CHANNEL_ROWS_SQL = """
@@ -257,35 +253,6 @@ def build_pepmap_sql(resolved: dict, report_cols: set[str], qvalue_threshold: Op
     )
 
 
-def first_pass_ids_sql(resolved: dict, first_pass_cols: set[str], reader: str) -> str:
-    """The (run, precursor, decoy) keys a DIA-NN first-pass report identified at q <= FIRST_PASS_QVALUE."""
-    return sql_build(
-        """CREATE TEMP TABLE first_pass_ids AS
-        SELECT DISTINCT r.$run_col AS run, r.$mod_col AS modified_sequence, r.$chg_col AS charge, $decoy AS decoy
-        FROM $reader r
-        WHERE r.$qv_col <= $threshold""",
-        run_col=validate_identifier(resolved["run_file_name"]),
-        mod_col=validate_identifier(resolved["modified_sequence"]),
-        chg_col=validate_identifier(resolved["charge"]),
-        qv_col=validate_identifier(resolved["precursor_qvalue"]),
-        decoy=decoy_flag_sql(resolved, resolved.get("decoy") in first_pass_cols),
-        reader=reader,
-        threshold=str(FIRST_PASS_QVALUE),
-    )
-
-
-def _first_pass_join_sql(resolved: dict, has_decoy_col: bool) -> str:
-    """Join each report row to its first-pass identification in the same run, if any."""
-    return sql_build(
-        """LEFT JOIN first_pass_ids fp
-          ON fp.run = r.$run_col AND fp.modified_sequence = r.$mod_col AND fp.charge = r.$chg_col AND fp.decoy = $decoy""",
-        run_col=validate_identifier(resolved["run_file_name"]),
-        mod_col=validate_identifier(resolved["modified_sequence"]),
-        chg_col=validate_identifier(resolved["charge"]),
-        decoy=decoy_flag_sql(resolved, has_decoy_col),
-    )
-
-
 def _qvalue_filter_sql(qvalue_threshold: Optional[float], qv_col: str | None) -> str:
     """Build the opt-in precursor q-value filter."""
     qvalue_filter = ""
@@ -363,7 +330,6 @@ def _build_core_select_parts(
 def _build_metadata_select_parts(
     resolved: dict,
     report_cols: set[str],
-    first_pass: bool,
 ) -> list[str]:
     """Build SQL SELECT parts for feature metadata columns."""
     has_column = report_cols.__contains__
@@ -402,15 +368,7 @@ def _build_metadata_select_parts(
     parts.append(f"{genes_expr} AS gg_names")
 
     run_col = "r." + validate_identifier(resolved["run_file_name"])
-    # With the first-pass report of an MBR search, a precursor that pass identified in
-    # this run is `direct`; one only the second pass reports was matched with the
-    # library built from the other runs (`transferred`, without an identifying run).
-    if first_pass:
-        parts.append(f"CASE WHEN fp.run IS NOT NULL THEN {run_name_sql(run_col)} END AS id_run_file_name")
-        parts.append("CASE WHEN fp.run IS NOT NULL THEN 'direct' ELSE 'transferred' END AS identification_type")
-    else:
-        parts.append(f"{run_name_sql(run_col)} AS id_run_file_name")
-        parts.append("NULL::VARCHAR AS identification_type")
+    parts.append(f"{run_name_sql(run_col)} AS id_run_file_name")
 
     for field in ("rt_start", "rt_stop"):
         column = resolved.get(field)
@@ -429,7 +387,6 @@ def _build_batch_sql(
     qvalue_threshold: Optional[float],
     channel_col: str | None,
     target_schema: pa.Schema,
-    first_pass: bool,
 ) -> str:
     """Build the SQL query template for batch processing.
 
@@ -449,13 +406,14 @@ def _build_batch_sql(
 
     has_column = report_cols.__contains__
     parts = _build_core_select_parts(r, report_cols, has_decoy_col, pg_group)
-    parts.extend(_build_metadata_select_parts(r, report_cols, first_pass))
+    parts.extend(_build_metadata_select_parts(r, report_cols))
 
     # --- Nested: intensities ---
     label_expr, channel_helper_parts, channel_join = _build_channel_sql_parts(channel_col, qv_col, has_column)
+    int_col = r["intensity"]
     # A precursor DIA-NN reports without a quantity (0) keeps its label with a
     # null intensity.
-    parts.append(f"[STRUCT_PACK(label := {label_expr}, intensity := {_quantity_sql(r['intensity'])})] AS intensities")
+    parts.append(f"[STRUCT_PACK(label := {label_expr}, intensity := {_quantity_sql(int_col)})] AS intensities")
 
     # --- Nested columns built by helpers ---
     parts.append(_build_additional_intensities_sql(r, has_column, label_expr))
@@ -476,6 +434,8 @@ def _build_batch_sql(
     # Precursor Q.Value filter is opt-in (bigbio/qpx#241). With no threshold
     # the report is converted as reported (DIA-NN already FDR-filters it);
     # only apply the cutoff when a threshold is explicitly provided.
+    qvalue_filter = _qvalue_filter_sql(qvalue_threshold, qv_col)
+
     row_sql = sql_build(
         _BATCH_SQL,
         select_clause=",\n        ".join(parts),
@@ -483,9 +443,8 @@ def _build_batch_sql(
         seq_col=validate_identifier(seq_col),
         chg_col=validate_identifier(chg_col),
         channel_join=channel_join,
-        first_pass_join=_first_pass_join_sql(r, has_decoy_col) if first_pass else "",
         run_col=validate_identifier(run_col),
-        qvalue_filter=_qvalue_filter_sql(qvalue_threshold, qv_col),
+        qvalue_filter=qvalue_filter,
         pg_col=validate_identifier(pg_col),
     )
 
@@ -562,6 +521,7 @@ def _aggregate_channel_rows_sql(row_sql: str, target_schema: pa.Schema) -> str:
         "irt",
         # Producer-specific optional fields not emitted by DIA-NN.
         "identified_labels",
+        "identification_type",
         "match_score",
         "match_qvalue",
         "match_rt_delta",
