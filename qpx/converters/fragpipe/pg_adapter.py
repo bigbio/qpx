@@ -134,7 +134,8 @@ def require_label_free(sdrf_path: str | None) -> None:
     if experiment_type in ("TMT", "iTRAQ"):
         raise ValueError(
             f"FragPipe {experiment_type} reporter-ion quantities are not converted: combined_ion.tsv and "
-            "combined_protein.tsv hold MS1 intensities, which would be written as label-free. Convert each plex's ion.tsv and protein.tsv with --annotation-file, or psm.tsv only."
+            "combined_protein.tsv hold MS1 intensities, which would be written as label-free. "
+            "Convert each plex's ion.tsv and protein.tsv with --annotation-file, or psm.tsv only."
         )
 
 

@@ -3,7 +3,7 @@
 from qpx.core.data.base import BaseStructure
 from qpx.core.data.loader import load_schema
 
-FragmentSchema = load_schema("fragment")
+FragmentSchema = load_schema("fragment")  # pylint: disable=invalid-name
 
 
 class Fragment(BaseStructure):

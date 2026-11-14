@@ -73,7 +73,7 @@ _EVIDENCE_IDS = "__evidence_ids"
 _FEATURE_IDENTITY_COMPOSITE = ("peptidoform", "charge", "run_file_name", "rt_start", "rt_stop", "scan")
 
 
-class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
+class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):  # pylint: disable=too-many-instance-attributes
     """Convert MaxQuant ``evidence.txt`` to ``feature.parquet``.
 
     Usage::

@@ -3,7 +3,7 @@
 from qpx.core.data.base import BaseStructure
 from qpx.core.data.loader import load_schema
 
-ProteinSchema = load_schema("protein")
+ProteinSchema = load_schema("protein")  # pylint: disable=invalid-name
 
 
 class Protein(BaseStructure):

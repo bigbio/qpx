@@ -236,7 +236,7 @@ class _SubFeature:
     def getIntensity(self) -> float:
         return self._it
 
-    def getMZ(self) -> float:
+    def getMZ(self) -> float:  # pylint: disable=invalid-name
         """Element m/z (pyopenms accessor name)."""
         return self._mz
 
