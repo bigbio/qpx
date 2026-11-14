@@ -79,7 +79,7 @@ class DatasetCollection:
         labels = _source_labels(self.datasets)
         for name in {name for ds in self.datasets for name in ds.available_structures}:
             selects = " UNION ALL BY NAME ".join(
-                f"SELECT {self._source_key(f'{name}_{i}', label)}* FROM {_quoted(f'{name}_{i}')}"
+                sql_build("SELECT $key* FROM $view", key=self._source_key(f"{name}_{i}", label), view=_quoted(f"{name}_{i}"))
                 for i, (label, ds) in enumerate(zip(labels, self.datasets))
                 if name in ds.available_structures
             )
