@@ -89,6 +89,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Writers checked the primary key of the closed file only for views with an identity composite. `mz`, `xic`, `sample`, `run` and the other views now get the same check, multi-column keys included: a duplicate key warns and a null key raises.
+- `qpxc convert mz` read a run twice when its directory held `run.mzML` together with `run.mzML.gz` or `run.mzml`, writing every spectrum of it twice. It now stops before reading and names the conflicting files.
 - A DIA-NN library decoy (`^` in `Modified.Sequence`) gets a valid ProForma `peptidoform`: the `^` was read as a residue, so the peptidoform was not ProForma and every modification sat one position off. In a PXD019777 report with `--report-decoys`, 4,738 of 7,499 decoy rows are library decoys.
 - `qpxc validate` accepts a struct without the nullable members a later specification added at its end, so a run view written before `run.samples[].channel_role` and `mixture` stays valid.
 - DIA-NN 2.x `Ms2.Scan`, written only with `--export-quant`, selects the feature's scan as `MS2.Scan` does in 1.8. Checked against a 2.5.1 report and its mzML: all 18,655 rows point at an MS2 spectrum at the reported RT whose isolation window holds the precursor.

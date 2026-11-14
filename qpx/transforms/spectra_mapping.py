@@ -574,11 +574,18 @@ class SpectraMappingTransform:
         return output_path
 
     def _discover_mzml_files(self) -> list[Path]:
-        """List all mzML files (including ``.gz``) in the configured directory."""
+        """List mzML files (including ``.gz``), rejecting names that resolve to the same run."""
         found: set[Path] = set()
         for ext in MZML_EXTENSIONS:
             found.update(self._mzml_dir.glob(f"*{ext}"))
-        return sorted(found)
+        paths = sorted(found)
+        by_run: dict[str, list[Path]] = {}
+        for path in paths:
+            by_run.setdefault(self._mzml_run_name(path), []).append(path)
+        conflicts = [f"{run}: {', '.join(map(str, files))}" for run, files in by_run.items() if len(files) > 1]
+        if conflicts:
+            raise ValueError("Multiple mzML files have the same run name: " + "; ".join(conflicts))
+        return paths
 
     @staticmethod
     def _mzml_run_name(mzml_path: Path) -> str:

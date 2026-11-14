@@ -12,6 +12,7 @@ import shutil
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
+from click.testing import CliRunner
 
 pytest.importorskip("pyopenms")
 
@@ -122,6 +123,41 @@ def test_from_dir_reads_gzip(tmp_path):
     assert table.num_rows == 1
     assert table.column("run_file_name").to_pylist() == ["run_b"]
     assert table.column("scan").to_pylist() == [[10]]
+
+
+@pytest.mark.parametrize("extension", [".mzML.gz", ".mzml"])
+def test_convert_mz_rejects_duplicate_run_names(tmp_path, monkeypatch, extension):
+    """Conflicting run names fail before any spectra are read or output is created."""
+    from qpx.cli.convert.mz import convert_mz_cmd
+    from qpx.transforms.spectra_mapping import SpectraMappingTransform
+
+    directory = tmp_path / "mzml"
+    directory.mkdir()
+    _make_mini_mzml(directory / "run_a.mzML", [(2, 1, 60.0)])
+    shutil.copyfile(directory / "run_a.mzML", directory / "run_b.mzML")
+    for run in ("run_a", "run_b"):
+        plain = directory / f"{run}.mzML"
+        duplicate = directory / f"{run}{extension}"
+        if extension.endswith(".gz"):
+            with plain.open("rb") as source, gzip.open(duplicate, "wb") as target:
+                shutil.copyfileobj(source, target)
+        else:
+            shutil.copyfile(plain, duplicate)
+    monkeypatch.setattr(
+        SpectraMappingTransform,
+        "_write_mzml_spectra",
+        lambda *args, **kwargs: pytest.fail("Spectra must not be read before run names are checked"),
+    )
+    output = tmp_path / "out.mz.parquet"
+    result = CliRunner().invoke(convert_mz_cmd, ["--mzml-dir", str(directory), "--output", str(output)])
+
+    assert result.exit_code != 0
+    assert isinstance(result.exception, ValueError)
+    for run in ("run_a", "run_b"):
+        assert f"{run}:" in str(result.exception)
+        assert f"{run}.mzML" in str(result.exception)
+        assert f"{run}{extension}" in str(result.exception)
+    assert not output.exists()
 
 
 def test_from_dir_empty_raises(tmp_path):
