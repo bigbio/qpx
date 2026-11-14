@@ -194,7 +194,13 @@ class _Merge:
         """SQL of a source's rows as they are written."""
         columns = self._columns(name, index)
         select = self._namespaced_select(columns, index) if self._on_collision == "namespace" else "*"
-        return f'SELECT {select}, {_literal(self._labels[index])} AS {SOURCE_COLUMN} FROM "{name}_{index}"'
+        return sql_build(
+            "SELECT $select, $label AS $column FROM $view",
+            select=select,
+            label=_literal(self._labels[index]),
+            column=SOURCE_COLUMN,
+            view=_quoted(f"{name}_{index}"),
+        )
 
     def _deduplicated_rows(self, name: str, index: int, first: bool) -> str:
         """Rows of a source not already written; a key seen with different values raises."""
@@ -384,7 +390,7 @@ class _Merge:
     def _write_ontology_view(self) -> None:
         """One row per field and view; the tools and columns that report it are joined."""
         sources = self._sources("ontology")
-        union = " UNION ALL BY NAME ".join(f'SELECT * FROM "ontology_{i}"' for i in sources)
+        union = " UNION ALL BY NAME ".join(sql_build("SELECT * FROM $view", view=_quoted(f"ontology_{i}")) for i in sources)
         firsts = ", ".join(f"first({column}) AS {column}" for column in _ONTOLOGY_FIRST)
         conflicts = self._conn.execute(
             sql_build(
