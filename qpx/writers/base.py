@@ -445,7 +445,7 @@ class BaseWriter:
         self.write_table(table)
 
     def close(self):
-        """Flush buffered rows, close the file, and validate its identity PK.
+        """Flush buffered rows, close the file, and validate its schema primary key.
 
         A write that already failed is never promoted, however close() is reached.
         """
@@ -533,20 +533,20 @@ class BaseWriter:
         self._log_validation_warnings(_scan_format_issues(declared, count, "psm", "warning"))
 
     def _validate_identity_uniqueness(self) -> None:
-        """Reject duplicate or null identity ids across the complete output file."""
-        id_field = self._id_field
-        if id_field is None:
-            return
-        quoted_id = validate_identifier(id_field)
+        """Warn on duplicate primary keys and reject null keys across the complete output file."""
+        primary_key = self._schema_class.primary_key
+        quoted_keys = [validate_identifier(field) for field in primary_key]
+        id_field = ", ".join(primary_key)
         query = sql_build(
             """
             SELECT
                 COUNT(*) AS total_count,
-                COUNT(DISTINCT $id_field) AS unique_count,
-                COUNT(*) FILTER (WHERE $id_field IS NULL) AS null_count
+                COUNT(DISTINCT ($primary_key)) AS unique_count,
+                COUNT(*) FILTER (WHERE $null_key) AS null_count
             FROM read_parquet(?)
             """,
-            id_field=quoted_id,
+            primary_key=", ".join(quoted_keys),
+            null_key=" OR ".join(f"{field} IS NULL" for field in quoted_keys),
         )
         connection = create_connection()
         try:
