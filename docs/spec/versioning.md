@@ -180,7 +180,7 @@ Re-converting from the source files is the better route: it also picks up conver
 - **m/z sentinels.** `observed_mz` and `calculated_mz` of `0.0` meant not reported and become null.
 - **`mz.scan`.** Wrap an `int32` in a one-element list.
 
-A migration cannot recover what the old file left out: fixed modifications missing from a MaxQuant peptidoform, the columns added since, or a `.h5mu`, which is built again from the views. On a DIA-NN dataset written by QPX 1.0.2, every `feature_id` and `pg_id` of the migrated files equals those of a new conversion of the same report.
+A migration cannot recover source values the old file left out, such as fixed modifications missing from a MaxQuant peptidoform. `.h5ad` and `.h5mu` files are not migrated; rebuild them from the migrated views. On a DIA-NN dataset written by QPX 1.0.2, every `feature_id` and `pg_id` of the migrated files equals those of a new conversion of the same report.
 
 ## Software Provider
 
@@ -207,8 +207,8 @@ Both fields are free-text strings in the Parquet metadata.
 | 1.1 | 1.1 | Yes | Exact match |
 | 1.1 | 1.0 | No\* | 1.0 core files lack the mandatory identity-ID columns, and 1.0 PG uses scalar `run_file_name`; re-convert the dataset. |
 | 1.0 | 1.1 | No | 1.1 adds mandatory identity-ID columns and replaces PG `run_file_name` with `grouped_runs`; a strict 1.0 reader cannot read it. |
-| 1.3 | 1.2 | Yes\* | Same columns; identities of rewritten peptidoforms differ, so do not merge 1.2 and 1.3 files of one dataset |
-| 1.2 | 1.3 | Yes\* | Same columns; see the 1.3 changelog for value changes |
+| 1.3 | 1.2 | Yes\* | Existing 1.2 columns remain readable; 1.3 adds optional fields and views and changes identity and value conventions. Do not merge 1.2 and 1.3 files of one dataset |
+| 1.2 | 1.3 | Partly | New optional fields may be ignored, but struct-list files require a reader that understands `qpx.struct_lists`; identity and value conventions also differ |
 | 1.2 | 1.1 | Yes | 1.2 only adds views and optional columns |
 | 1.1 | 1.2 | Partly | A 1.1 reader ignores the new views and optional columns, but 1.1 validation reports run, MZ and PSM files that leave out columns 1.1 requires. |
 | 2.0 | 1.0–1.3 | Maybe | Major version change; check migration guide |
