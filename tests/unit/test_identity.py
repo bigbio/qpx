@@ -9,8 +9,8 @@ import pytest
 
 from qpx.core.data import FeatureSchema, PgSchema, PsmSchema
 from qpx.core.data.identity import canonical, derive_composite_id, derive_id
-from qpx.writers import FeatureWriter, PgWriter, PsmWriter
-from tests.conftest import make_feature_record, make_pg_record, make_psm_record
+from qpx.writers import FeatureWriter, MzWriter, OntologyWriter, PgWriter, PsmWriter, SampleWriter
+from tests.conftest import make_feature_record, make_ontology_record, make_pg_record, make_psm_record, make_sample_record
 
 
 def test_derive_id_is_deterministic():
@@ -227,6 +227,57 @@ def test_writer_warns_on_duplicate_identity_across_batches(tmp_path, caplog):
 
     assert path.exists()
     assert "Primary key (feature_id) has 1 duplicate row" in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("writer_cls", "records", "primary_key"),
+    [
+        (
+            MzWriter,
+            [
+                {
+                    "id": "run_01:scan=1",
+                    "run_file_name": "run_01",
+                    "scan": [1],
+                    "ms_level": 1,
+                    "centroid": True,
+                    "scan_start_time": 1.0,
+                    "total_ion_current": 10.0,
+                    "mz": [100.0],
+                    "intensity": [10.0],
+                }
+            ]
+            * 2,
+            "id",
+        ),
+        (SampleWriter, [make_sample_record(), make_sample_record()], "sample_accession"),
+        (
+            OntologyWriter,
+            [
+                make_ontology_record(),
+                make_ontology_record(view="psm"),
+                make_ontology_record(field_name="charge"),
+                make_ontology_record(),
+            ],
+            "field_name, view",
+        ),
+    ],
+    ids=["mz", "sample", "ontology"],
+)
+def test_writer_warns_on_duplicate_primary_key_without_identity(tmp_path, caplog, writer_cls, records, primary_key):
+    """Natural and multi-column keys warn across batches without dropping duplicate rows."""
+    path = tmp_path / "duplicate.parquet"
+    with caplog.at_level(logging.WARNING):
+        with writer_cls(path, batch_size=1) as writer:
+            for record in records:
+                writer.write_batch([dict(record)])
+
+    assert path.exists()
+    table = pq.read_table(path)
+    assert table.num_rows == len(records)
+    key_columns = primary_key.split(", ")
+    assert table.select(key_columns).to_pylist() == [{column: record[column] for column in key_columns} for record in records]
+    assert f"Primary key ({primary_key}) has 1 duplicate row(s) ({len(records) - 1} unique out of {len(records)})" in caplog.text
 
 
 def test_override_provided_id_stashes_to_cv_params(tmp_path):
