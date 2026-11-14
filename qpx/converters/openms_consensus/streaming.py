@@ -28,25 +28,15 @@ from typing import NamedTuple
 
 import numpy as np
 import pyopenms as oms
-from defusedxml.ElementTree import iterparse
 
-
-def _is_gzip(path: str) -> bool:
-    with open(path, "rb") as handle:
-        return handle.read(2) == b"\x1f\x8b"
-
-
-def _iterparse(path: str, events: tuple[str, ...]):
-    """``iterparse`` over a consensusXML file, decompressing gzip transparently."""
-    with gzip.open(path, "rb") if _is_gzip(path) else open(path, "rb") as source:
-        yield from iterparse(source, events=events)
+from qpx.core.files import is_gzip, iterparse_xml
 
 
 def exceeds_xml_size(path: str, limit: int) -> bool:
     """Whether the consensusXML, decompressed, is larger than *limit* bytes."""
     if Path(path).stat().st_size > limit:
         return True
-    if not _is_gzip(path):
+    if not is_gzip(path):
         return False
     # gzip stores the decompressed size modulo 4 GiB, so count it up to the limit.
     decompressed = 0
@@ -63,7 +53,7 @@ def _localname(tag: str) -> str:
 
 
 def _f32(value: str | float) -> float:
-    """Parse to float32 then back to float, matching pyopenms's ``float`` storage.
+    """Parse to float32 then back to float, matching pyopenms's ``float`` storage of an intensity.
 
     OpenMS stores sub-feature intensities as C++ ``float`` (32-bit); reading the
     XML string as a 64-bit Python float would keep digits pyopenms rounds away, so
@@ -102,14 +92,28 @@ def _se_engines(search_meta: dict[str, str]) -> list[tuple[str, str]]:
     return [(key[3:], value) for key, value in search_meta.items() if key.startswith("SE:")]
 
 
-def _software(element) -> tuple[str, str, str] | None:
-    """A ``dataProcessing`` element's software as (name, version, processing action); None without a name."""
+# Parameters that say how a tool was run on this machine, not what it computed.
+_EXECUTION_PARAMETERS = {"in", "out", "log", "debug", "threads", "no_progress", "test", "force", "ini", "write_ini"}
+
+
+def _tool_parameters(element) -> tuple[tuple[str, str], ...]:
+    """The ``parameter: <name>`` user params of a ``dataProcessing`` element, without the execution ones."""
+    prefix = "parameter: "
+    return tuple(
+        (name.removeprefix(prefix), value)
+        for name, value in _user_params(element).items()
+        if name.startswith(prefix) and name.removeprefix(prefix) not in _EXECUTION_PARAMETERS
+    )
+
+
+def _software(element) -> tuple[str, str, str, tuple[tuple[str, str], ...]] | None:
+    """A ``dataProcessing`` element's software as (name, version, processing action, parameters); None without a name."""
     software = next((child for child in element if _localname(child.tag) == "software"), None)
     if software is None or not software.attrib.get("name"):
         return None
     action = next((child for child in element if _localname(child.tag) == "processingAction"), None)
     action_name = action.attrib.get("name", "") if action is not None else ""
-    return software.attrib["name"], software.attrib.get("version", ""), action_name
+    return software.attrib["name"], software.attrib.get("version", ""), action_name, _tool_parameters(element)
 
 
 class ProvenanceHeader(NamedTuple):
@@ -117,7 +121,7 @@ class ProvenanceHeader(NamedTuple):
 
     search_engines: list[tuple[str, str]]
     original_search_engines: list[tuple[str, str]]
-    data_processing: list[tuple[str, str, str]]
+    data_processing: list[tuple[str, str, str, tuple[tuple[str, str], ...]]]
 
 
 def read_provenance_header(path: str) -> ProvenanceHeader:
@@ -128,7 +132,7 @@ def read_provenance_header(path: str) -> ProvenanceHeader:
     instead of walking the whole header.
     """
     header = ProvenanceHeader([], [], [])
-    for event, el in _iterparse(path, events=("start", "end")):
+    for event, el in iterparse_xml(path, events=("start", "end")):
         tag = _localname(el.tag)
         if event == "start" and tag in ("UnassignedPeptideIdentification", "mapList", "consensusElementList"):
             break
@@ -152,14 +156,6 @@ def read_provenance_header(path: str) -> ProvenanceHeader:
 # ---------------------------------------------------------------------------
 
 
-class _ColHeader:
-    __slots__ = ("filename", "label")
-
-    def __init__(self, filename: str, label: str):
-        self.filename = filename
-        self.label = label
-
-
 class _MetaMixin:
     """metaValueExists / getMetaValue backed by a ``_meta`` dict of strings."""
 
@@ -170,6 +166,13 @@ class _MetaMixin:
 
     def getMetaValue(self, key: str):
         return self._meta.get(key)
+
+
+class _ColHeader(_MetaMixin):
+    def __init__(self, filename: str, label: str, meta: dict[str, str]):
+        self.filename = filename
+        self.label = label
+        self._meta = meta
 
 
 class _PrecursorPosition(NamedTuple):
@@ -216,12 +219,13 @@ class _PeptideIdentification(_MetaMixin):
 
 
 class _SubFeature:
-    __slots__ = ("_map", "_rt", "_it")
+    __slots__ = ("_map", "_rt", "_it", "_mz")
 
-    def __init__(self, map_index: int, rt: float, intensity: float):
+    def __init__(self, map_index: int, rt: float, intensity: float, mz: float):
         self._map = map_index
         self._rt = rt
         self._it = intensity
+        self._mz = mz
 
     def getMapIndex(self) -> int:
         return self._map
@@ -232,15 +236,19 @@ class _SubFeature:
     def getIntensity(self) -> float:
         return self._it
 
+    def getMZ(self) -> float:  # pylint: disable=invalid-name
+        """Element m/z (pyopenms accessor name)."""
+        return self._mz
 
-class _ConsensusFeature:
-    __slots__ = ("_charge", "_mz", "_rt", "_subs", "_pids", "_quality", "_uid")
 
-    def __init__(self, charge, position: _PrecursorPosition, subs, pids, quality=0.0, uid=0):
+class _ConsensusFeature(_MetaMixin):
+    __slots__ = ("_charge", "_position", "_subs", "_pids", "_quality", "_uid", "_meta")
+
+    def __init__(self, charge, position: _PrecursorPosition, subs, pids, quality=0.0, uid=0, meta=None):
+        self._meta = meta or {}
         self._uid = uid
         self._charge = charge
-        self._mz = position.mz
-        self._rt = position.rt
+        self._position = position
         self._subs = subs
         self._pids = pids
         self._quality = quality
@@ -257,12 +265,12 @@ class _ConsensusFeature:
         return self._uid
 
     def getMZ(self):
-        return self._mz
+        return self._position.mz
 
     @property
     def consensus_rt(self):
         """Parent ConsensusFeature retention time."""
-        return self._rt
+        return self._position.rt
 
     def getFeatureList(self):
         return self._subs
@@ -336,8 +344,11 @@ class _ProteinIdentification:
 
 
 def _parse_hit_score(attrs: dict[str, str]) -> float:
-    """Use NaN for absent scores; adapters normalize it to None, not zero."""
-    return _f32(attrs.get("score") or "nan")
+    """Use NaN for absent scores; adapters normalize it to None, not zero.
+
+    The hit stores it as pyopenms does, so both readers agree on any version.
+    """
+    return float(attrs.get("score") or "nan")
 
 
 def _parse_protein_hit(element) -> oms.ProteinHit:
@@ -413,14 +424,16 @@ def _parse_consensus_element(el, ph_to_acc: dict[str, str]) -> _ConsensusFeature
                             int(e.attrib["map"]),
                             float(e.attrib.get("rt") or 0.0),
                             _f32(e.attrib.get("it") or 0.0),  # intensity is float32 in OpenMS
+                            float(e.attrib.get("mz") or 0.0),
                         )
                     )
         elif tag == "PeptideIdentification":
             pids.append(_parse_peptide_id(child, ph_to_acc))
     # quality is a C++ float in OpenMS, like the sub-feature intensities
     uid = el.attrib.get("id", "").removeprefix("e_")
+    quality = _f32(el.attrib.get("quality") or 0.0)
     return _ConsensusFeature(
-        charge, _PrecursorPosition(mz, rt), subs, pids, _f32(el.attrib.get("quality") or 0.0), int(uid) if uid.isdigit() else 0
+        charge, _PrecursorPosition(mz, rt), subs, pids, quality, int(uid) if uid.isdigit() else 0, _user_params(el)
     )
 
 
@@ -468,10 +481,12 @@ class StreamingConsensusMap:
 
     def _parse_header(self) -> None:
         header = _IdentificationHeader()
-        for event, el in _iterparse(self._path, events=("start", "end")):
+        for event, el in iterparse_xml(self._path, events=("start", "end")):
             tag = _localname(el.tag)
             if (event, tag) == ("end", "map"):
-                self._headers[int(el.attrib["id"])] = _ColHeader(el.attrib.get("name", ""), el.attrib.get("label", ""))
+                self._headers[int(el.attrib["id"])] = _ColHeader(
+                    el.attrib.get("name", ""), el.attrib.get("label", ""), _user_params(el)
+                )
                 el.clear()
             elif (event, tag) == ("end", "SearchParameters"):
                 # The enzyme used for the search; needed to count missed cleavages.
@@ -554,16 +569,20 @@ class StreamingConsensusMap:
 
     def iter_identifications(self, *, include_assigned: bool = True):
         """Stream identification context without constructing feature/sub-feature objects."""
-        for _, el in _iterparse(self._path, events=("end",)):
+        root = elements = None
+        for event, el in iterparse_xml(self._path, events=("start", "end")):
             tag = _localname(el.tag)
-            if tag == "UnassignedPeptideIdentification":
+            if event == "start":
+                root = el if root is None else root
+                elements = el if tag == "consensusElementList" else elements
+            elif tag == "UnassignedPeptideIdentification":
                 yield "unassigned", _parse_peptide_id(el, self._ph_to_acc)
-                el.clear()
+                root.clear()
             elif tag == "PeptideIdentification" and include_assigned:
                 yield "assigned", _parse_peptide_id(el, self._ph_to_acc)
                 el.clear()
             elif tag == "consensusElement":
-                el.clear()
+                elements.clear()
 
     def __iter__(self):
         for kind, obj in self.iter_all():
@@ -574,16 +593,18 @@ class StreamingConsensusMap:
         """Single pass yielding ``("element", ConsensusFeature)`` then, in file
         order, ``("unassigned", PeptideIdentification)``. The converter uses
         one traversal for identification context and another for all output views."""
-        depth_in_list = False
-        for event, el in _iterparse(self._path, events=("start", "end")):
+        root = elements = None
+        for event, el in iterparse_xml(self._path, events=("start", "end")):
             tag = _localname(el.tag)
-            if event == "start" and tag == "consensusElementList":
-                depth_in_list = True
-            elif event == "end" and tag == "consensusElementList":
-                depth_in_list = False
-            elif event == "end" and tag == "consensusElement" and depth_in_list:
+            if event == "start":
+                root = el if root is None else root
+                elements = el if tag == "consensusElementList" else elements
+            elif tag == "consensusElementList":
+                elements = None
+            elif tag == "consensusElement" and elements is not None:
                 yield "element", _parse_consensus_element(el, self._ph_to_acc)
-                el.clear()
-            elif event == "end" and tag == "UnassignedPeptideIdentification":
+                # Detach the element: a cleared child still costs memory per row.
+                elements.clear()
+            elif tag == "UnassignedPeptideIdentification":
                 yield "unassigned", _parse_peptide_id(el, self._ph_to_acc)
-                el.clear()
+                root.clear()

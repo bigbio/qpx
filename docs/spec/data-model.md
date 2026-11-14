@@ -20,11 +20,11 @@ Define these once; the rest of the spec uses them consistently.
 |------|------------|----------|
 | **run** | One MS acquisition — one raw file that was measured on the instrument. One row per run. | `run.parquet` (PK `run_file_name`) |
 | **run_file_name** | The raw data file name **without extension** (e.g. `S1_Frontal_1`). The universal join key from the identification/quantification views back to `run`. | `run`, `feature`, `psm`, `mz` |
-| **run_accession** | Unique run identifier = SDRF **assay name**. Human/design label for the run. | `run.run_accession` |
+| **run_accession** | Run identifier. Converters write the run file stem, not the SDRF **assay name**. | `run.run_accession` |
 | **sample** | A biological specimen (= SDRF **source name**). One row per sample. | `sample.parquet` (PK `sample_accession`) |
 | **source name** | SDRF term for the biological sample; becomes `sample_accession`. | SDRF → `sample` |
 | **channel** | A physically distinguishable measurement track within one run. LFQ has one channel; TMT-10plex has ten reporter-ion channels; plexDIA has one per plex label. | concept |
-| **label** | The **canonical name of a channel** (`LFQ`, `TMT126`, `iTRAQ114`, …). This is the string that ties a quantity to a sample. For LFQ there is exactly one label, `"LFQ"`. For TMT/iTRAQ/plexDIA each channel is a distinct label mapping to a distinct sample. | `run.samples[].label`, `feature.intensities[].label`, `pg.label` |
+| **label** | The **canonical name of a channel** (`LFQ`, `TMT126`, `ITRAQ114`, …). This is the string that ties a quantity to a sample. For LFQ there is exactly one label, `"LFQ"`. For TMT/iTRAQ/plexDIA each channel is a distinct label mapping to a distinct sample. | `run.samples[].label`, `feature.intensities[].label`, `pg.label` |
 | **fraction** | A fractionated portion of one sample. Fractions of one sample share the same (source, biological replicate, technical replicate) and differ **only** in `run.fraction`. Each fraction is a separate run/raw file. | `run.fraction` |
 | **grouped_runs** | The **set of raw files aggregated into one quantification unit** — the fractions of one sample+channel context, aggregated together. `list<string>` of `run_file_name`. Single-element for unfractionated or DIA data. | `pg.grouped_runs` |
 | **quantification unit** | The thing a protein quantity is measured *over*: one `grouped_runs` set. A protein abundance exists per quantification unit, **not** per single raw file, because a protein quantity only emerges after aggregating its peptides across the sample's fractions. | `pg` (one row per `(pg_accessions, grouped_runs, label)`) |
@@ -32,7 +32,7 @@ Define these once; the rest of the spec uses them consistently.
 | **entity ID** | Mandatory opaque primary key for a PSM, Feature, or protein-group row: `psm_id`, `feature_id`, or `pg_id`. It may be supplied by the producer or derived by QPX from the file's footer-declared `identity_composite`. | `psm`, `feature`, `pg` |
 | **anchor_protein** | The representative (leading) protein of a protein group. On `feature` it is an annotation used for semantic protein mapping; the Feature-to-PG association is a **computed softlink** (`Dataset.link_feature_pg()`), not a persisted column. On `pg` it is descriptive; full `pg_accessions` membership participates in the default identity composite. | `feature`, `pg` |
 | **intensities** | Primary/raw abundance measurements. On **feature** a `list<{label, intensity}>` (one element per channel). On **pg** it is **flattened** to a scalar `label` + `intensity`, one row per label. | `feature.intensities`, `pg.label`/`pg.intensity` |
-| **additional_intensities** | Tool-computed derived values (normalized, LFQ, iBAQ, MaxLFQ) read from upstream output — never computed by QPX. | `feature`, `pg` |
+| **additional_intensities** | Derived values (normalized, LFQ, iBAQ, MaxLFQ) read from upstream output, or added later under their own name with a provenance step ([Derived quantities](intensities.md#derived-quantities)). | `feature`, `pg` |
 
 !!! warning "label is per-channel, grouped_runs is per-quantification-unit — they are orthogonal"
     A quantity is pinned by **both** a `grouped_runs` set (which fractions were
@@ -60,7 +60,7 @@ graph LR
 - **run** — one raw file was acquired on the instrument.
 - **PSM** — a search engine matched a single MS/MS spectrum (one `scan`) to a
   peptidoform. PK `psm_id`; schema-default identity composite
-  `[peptidoform, charge, run_file_name, scan]`. Primarily DDA.
+  `[run_file_name, scan, peptidoform, charge]`. Primarily DDA.
 - **feature** — one quantified chromatographic peak: a peptidoform+charge in one
   run, with an intensity per channel. PK `feature_id`; schema-default identity
   composite `[peptidoform, charge, run_file_name, rt]`, which converters may
@@ -245,7 +245,7 @@ The invariant that keeps this sound:
     Validation reports a feature or pg label that matches no sample of its runs,
     or several, and a label repeated within a feature row, as errors.
 
-Worked example (unnest the run, match the label):
+Worked example (flatten the run samples, match the label):
 
 ```sql
 -- protein abundance per sample, from the flattened pg + run
@@ -306,6 +306,10 @@ The **Required** column of each view's field table says whether a column must be
 
 In the YAML schemas, `required: true` marks *yes* and `optional: true` marks *optional*; a field with neither is *no*. `qpxc validate` reports a missing *yes* or *no* column as an error and accepts a file without an *optional* column.
 
+A numeric field may declare `minimum` and/or `maximum`, also on a field of a struct type (the `intensity` of each `intensities` entry). Values outside the range, NaN and infinite values are invalid; null is a missing value and is always in range.
+
+The fields of a struct type follow the same rule: a field that `types.yaml` does not mark `nullable: true` must not be null inside a non-null struct (for example the `cv_value` of a `cv_params` entry).
+
 ## Related pages
 
 - [PSM View](psm.md) — spectrum-level identifications.
@@ -316,6 +320,8 @@ In the YAML schemas, `required: true` marks *yes* and `optional: true` marks *op
 - [Intensities](intensities.md) — primary vs additional intensity structures.
 - [Peptide-Protein Map](pepmap.md) — deduplicated peptidoform → protein mapping.
 - [Modification Sites](site.md) — protein modification-site claims with a q-value, the probability that the residue is modified and the evidence fraction of each candidate modification.
+- [Fragments](fragment.md) — fragment-level quantities of DIA features.
+- [Proteins](protein.md) — name, organism and sequence of each protein the dataset names.
 - [Proteoforms](proteoform.md) — canonical, isoform, variant and chain members of protein families.
 - [API Views](views.md) — on-demand summaries derived by joining these views.
 - [Versioning](versioning.md) — the 1.1 flatten + primary-key changelog.

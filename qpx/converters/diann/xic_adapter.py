@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Iterable
+from dataclasses import replace
 from pathlib import Path
 
 import pyarrow as pa
@@ -13,7 +14,7 @@ import pyarrow.parquet as pq
 from qpx.converters.diann.constants import to_proforma
 from qpx.core.data import XicSchema
 from qpx.core.engine import create_converter_connection
-from qpx.writers import XicWriter
+from qpx.writers import XicExtraction, XicWriter
 
 logger = logging.getLogger(__name__)
 
@@ -90,16 +91,91 @@ def _trace_query(path: Path) -> str:
     """
 
 
+def _export_runs(paths: list[Path]) -> list[str]:
+    """The run of each DIA-NN XIC export, which must be distinct and carry the trace columns."""
+    if not paths:
+        raise ValueError("No DIA-NN XIC files were provided")
+    runs = [_run_name(path) for path in paths]
+    duplicates = sorted({run for run in runs if runs.count(run) > 1})
+    if duplicates:
+        raise ValueError(f"Duplicate run names across XIC files: {', '.join(duplicates)}")
+    for path in paths:
+        missing = _REQUIRED_COLUMNS - set(pq.read_schema(path).names)
+        if missing:
+            raise ValueError(f"{path} is missing DIA-NN XIC column(s): {', '.join(sorted(missing))}")
+    return runs
+
+
+# XIC fields a DIA-NN export does not carry.
+_NOT_EXPORTED = dict.fromkeys(
+    (
+        "feature_ids",
+        "feature_scores",
+        "compensation_voltage",
+        "target_mz",
+        "target_rt",
+        "rt_start",
+        "rt_stop",
+        "target_ion_mobility",
+        "ion_mobility_start",
+        "ion_mobility_stop",
+        "library_intensity",
+        "used_for_quantification",
+        "mz",
+        "is_decoy",
+        "additional_scores",
+        "cv_params",
+    )
+)
+
+
+def _run_table(con, path: Path, run: str, label: str, parsed: tuple[dict, dict]) -> pa.Table:
+    """The traces of one run's export as a validated XIC table.
+
+    *parsed* holds the precursors and transitions already parsed, keyed by their
+    DIA-NN values, and is shared across the runs.
+    """
+    precursors, transitions = parsed
+    rows = []
+    for precursor_id, transition, rt, intensity in con.execute(_trace_query(path)).fetchall():
+        if precursor_id not in precursors:
+            precursors[precursor_id] = _parse_precursor(precursor_id)
+        if transition not in transitions:
+            transitions[transition] = _parse_transition(transition)
+        peptidoform, charge = precursors[precursor_id]
+        annotation = transitions[transition]
+        rows.append(
+            {
+                "xic_id": f"{run}|{precursor_id}|{annotation['transition']}",
+                "run_file_name": run,
+                "label": label,
+                "precursor_id": precursor_id,
+                "peptidoform": peptidoform,
+                "charge": charge,
+                **annotation,
+                "isotope": 0,
+                "rt": rt,
+                "intensity": intensity,
+                **_NOT_EXPORTED,
+            }
+        )
+    table = pa.Table.from_pylist(rows, schema=XicSchema.get_arrow_schema())
+    result = XicSchema.validate_full(table, strict=True)
+    if result.errors:
+        raise ValueError(f"XIC schema validation failed for {path}:\n" + "\n".join(issue.message for issue in result.errors))
+    return table
+
+
+# DIA-NN exports the traces around the apex of the target precursors by default.
+_DEFAULT_EXTRACTION = XicExtraction(selection="targets", window="apex")
+
+
 def convert_diann_xic(
     xic_paths: Iterable[str | Path],
     output_path: str | Path,
     *,
     label: str = "LFQ",
-    selection: str = "targets",
-    window: str = "apex",
-    extraction_window_seconds: float | None = None,
-    qvalue_threshold: float | None = None,
-    transition_format: str = "mzPAF",
+    extraction: XicExtraction | None = None,
     duckdb_memory: str | None = None,
     duckdb_threads: int | None = None,
 ) -> int:
@@ -114,18 +190,14 @@ def convert_diann_xic(
     label:
         Channel label written for every trace. DIA-NN XIC exports are
         label-free, so the default is ``"LFQ"``.
-    selection:
-        What the export contains: ``targets``, ``targets_and_decoys`` or ``all``.
-        Written to the file footer as ``xic_selection``.
-    window:
-        Whether traces cover only the apex region or the full extraction window.
-        Written to the file footer as ``xic_window``.
-    extraction_window_seconds:
-        Optional extraction-window width in seconds, written to the footer when known.
-    qvalue_threshold:
-        Optional q-value threshold used to select the exported precursors.
-    transition_format:
-        Annotation grammar declared for fragment ``transition`` values; defaults to mzPAF.
+    extraction:
+        What the export contains (``selection``: ``targets``,
+        ``targets_and_decoys`` or ``all``), whether its traces cover the apex
+        region or the full extraction window (``window``), and, when known, the
+        extraction-window width in seconds and the q-value threshold that
+        selected the precursors. Written to the file footer; defaults to the
+        targets around the apex. The transitions are always declared as mzPAF,
+        unsmoothed and with their zero points kept.
     duckdb_memory, duckdb_threads:
         DuckDB memory limit (e.g. ``"16GB"``) and thread count for reading the exports.
 
@@ -135,93 +207,22 @@ def convert_diann_xic(
         Number of chromatogram traces written.
     """
     paths = [Path(path) for path in xic_paths]
-    if not paths:
-        raise ValueError("No DIA-NN XIC files were provided")
-
-    runs = [_run_name(path) for path in paths]
-    duplicates = sorted({run for run in runs if runs.count(run) > 1})
-    if duplicates:
-        raise ValueError(f"Duplicate run names across XIC files: {', '.join(duplicates)}")
-
-    for path in paths:
-        columns = set(pq.read_schema(path).names)
-        missing = _REQUIRED_COLUMNS - columns
-        if missing:
-            raise ValueError(f"{path} is missing DIA-NN XIC column(s): {', '.join(sorted(missing))}")
-
+    runs = _export_runs(paths)
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    extraction = replace(extraction or _DEFAULT_EXTRACTION, transition_format="mzPAF", smoothed=False, zero_points="kept")
 
-    con = create_converter_connection(memory_limit=duckdb_memory, threads=duckdb_threads)
-    precursor_cache: dict[str, tuple[str, int]] = {}
-    transition_cache: dict[str, dict] = {}
+    parsed: tuple[dict, dict] = ({}, {})
     total = 0
-    try:
-        with XicWriter(
-            output_path,
-            selection=selection,
-            window=window,
-            extraction_window_seconds=extraction_window_seconds,
-            qvalue_threshold=qvalue_threshold,
-            transition_format=transition_format,
-            smoothed=False,
-            zero_points="kept",
-        ) as writer:
-            for path, run in zip(paths, runs):
-                traces = con.execute(_trace_query(path)).fetchall()
-                rows = []
-                for precursor_id, transition, rt, intensity in traces:
-                    precursor = precursor_cache.get(precursor_id)
-                    if precursor is None:
-                        precursor = _parse_precursor(precursor_id)
-                        precursor_cache[precursor_id] = precursor
-                    annotation = transition_cache.get(transition)
-                    if annotation is None:
-                        annotation = _parse_transition(transition)
-                        transition_cache[transition] = annotation
-                    peptidoform, charge = precursor
-                    rows.append(
-                        {
-                            "xic_id": f"{run}|{precursor_id}|{annotation['transition']}",
-                            "run_file_name": run,
-                            "label": label,
-                            "feature_ids": None,
-                            "feature_scores": None,
-                            "compensation_voltage": None,
-                            "precursor_id": precursor_id,
-                            "peptidoform": peptidoform,
-                            "charge": charge,
-                            **annotation,
-                            "isotope": 0,
-                            "target_mz": None,
-                            "target_rt": None,
-                            "rt_start": None,
-                            "rt_stop": None,
-                            "target_ion_mobility": None,
-                            "ion_mobility_start": None,
-                            "ion_mobility_stop": None,
-                            "library_intensity": None,
-                            "used_for_quantification": None,
-                            "rt": rt,
-                            "intensity": intensity,
-                            "mz": None,
-                            "is_decoy": None,
-                            "additional_scores": None,
-                            "cv_params": None,
-                        }
-                    )
-
-                table = pa.Table.from_pylist(rows, schema=XicSchema.get_arrow_schema())
-                result = XicSchema.validate_full(table, strict=True)
-                if result.errors:
-                    raise ValueError(
-                        f"XIC schema validation failed for {path}:\n" + "\n".join(issue.message for issue in result.errors)
-                    )
-                writer.write_table(table)
-                total += table.num_rows
-                logger.info("%s: %d traces", path.name, table.num_rows)
-    finally:
-        con.close()
+    with (
+        create_converter_connection(memory_limit=duckdb_memory, threads=duckdb_threads) as con,
+        XicWriter(output_path, extraction=extraction) as writer,
+    ):
+        for path, run in zip(paths, runs):
+            table = _run_table(con, path, run, label, parsed)
+            writer.write_table(table)
+            total += table.num_rows
+            logger.info("%s: %d traces", path.name, table.num_rows)
 
     logger.info("Wrote %s (%d traces across %d runs)", output_path, total, len(paths))
     return total

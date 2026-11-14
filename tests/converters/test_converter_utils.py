@@ -10,7 +10,7 @@ import pytest
 
 from qpx.converters.maxquant.feature_adapter import MaxQuantFeatureAdapter
 from qpx.converters.maxquant.pg_adapter import MaxQuantPgAdapter
-from qpx.converters.utils import parse_uniprot_id, strip_uniprot_prefix
+from qpx.converters.utils import canonical_accession, parse_uniprot_id
 from qpx.core.files import run_file_stem
 
 
@@ -236,22 +236,27 @@ class TestParseUniprotId:
 
 
 class TestStripUniprotPrefix:
-    """Only ``sp|``/``tr|``-prefixed ids are stripped; everything else is verbatim."""
+    """Only ``sp|``/``tr|`` ids of a UniProtKB accession are stripped; everything else is verbatim."""
 
     @pytest.mark.parametrize(
         ("entry", "expected"),
         [
             ("sp|P55011|S12A2_HUMAN", "P55011"),
             ("tr|A0A3B3IS91|X_HUMAN", "A0A3B3IS91"),
+            ("sp|P04637-2|P53_HUMAN", "P04637-2"),
             ("P55011", "P55011"),  # bare accession untouched
             ("CON__P1", "CON__P1"),  # contaminant prefix, no sp|/tr| -> verbatim
-            ("REV__sp|P1|N", "REV__sp|P1|N"),  # decoy: not a leading sp|/tr| -> verbatim
+            ("REV__sp|P55011|N", "REV__P55011"),  # the decoy marker stays on the bare accession
+            ("CONTAM_sp|CONTAM_P02768|N", "CONTAM_P02768"),  # the marker is not doubled
+            ("sp|Cont_Q7SIH1|A2MG_BOVIN", "Cont_Q7SIH1"),  # the quantms contaminant marker
+            ("sp|MYPROT1|X_HUMAN", "sp|MYPROT1|X_HUMAN"),  # not a UniProtKB accession -> verbatim
+            ("CONTAM_sp|CONTAM_P1|N", "CONTAM_sp|CONTAM_P1|N"),
             ("xyz|abc", "xyz|abc"),  # pipe but not a UniProt db prefix -> verbatim
             ("", ""),
         ],
     )
     def test_strip(self, entry, expected):
-        assert strip_uniprot_prefix(entry) == expected
+        assert canonical_accession(entry) == expected
 
 
 def test_uniprot_entry_name_only_for_three_field_ids():

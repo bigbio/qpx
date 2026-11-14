@@ -14,14 +14,43 @@ if TYPE_CHECKING:
     from qpx.dataset import Dataset
 
 
+# The summary views count targets only, and count protein groups by membership:
+# an anchor protein can lead several groups.
+_FEATURE_GROUP_SQL = "list_sort(list_transform(f.pg_accessions, lambda x: x.accession))"
+
+_RUN_COUNTS_SQL = f"""
+        SELECT f.run_file_name,
+               COUNT(DISTINCT {_FEATURE_GROUP_SQL}) AS n_proteins,
+               COUNT(DISTINCT f.sequence) AS n_peptides,
+               COUNT(*) AS n_features
+        FROM feature f
+        WHERE NOT f.is_decoy
+        GROUP BY f.run_file_name
+        """
+
+
 class ProteinView(BaseView):
     """Protein intensity per sample — joins PG + Run."""
 
-    def intensity(self, q_value_threshold: float = 0.01) -> QueryResult:
-        q_value_threshold = float(q_value_threshold)
+    def intensity(self, q_value_threshold: float | None = None) -> QueryResult:
+        """Target group intensity per sample and label.
+
+        ``protein_group`` (the sorted membership joined by ``;``) identifies the
+        analyte; ``protein_accession`` is the group's anchor, a display label that
+        can lead several groups. *q_value_threshold* keeps the groups whose
+        ``global_qvalue`` is at most the threshold or null; by default no
+        q-value filter is applied.
+        """
+        self._require("pg", "run")
+        threshold = (
+            ""
+            if q_value_threshold is None
+            else f"AND (p.global_qvalue IS NULL OR p.global_qvalue <= {float(q_value_threshold)!r})"
+        )
         sql = pg_sample_ctes() + sql_build(
             """
         SELECT p.anchor_protein AS protein_accession,
+               array_to_string(list_sort(p.pg_accessions), ';') AS protein_group,
                us.sample_accession,
                p.label,
                p.intensity,
@@ -31,9 +60,9 @@ class ProteinView(BaseView):
         JOIN pg_unit_samples us
           ON us.grouped_runs = p.grouped_runs
          AND us.sample_label = p.label
-        WHERE (p.global_qvalue IS NULL OR p.global_qvalue <= $threshold)
+        WHERE NOT p.is_decoy $threshold
         """,
-            threshold=str(q_value_threshold),
+            threshold=threshold,
         )
         return QueryResult(self._engine.connection, sql)
 
@@ -42,11 +71,13 @@ class PeptideView(BaseView):
     """Peptide intensity per sample — joins Feature + Run."""
 
     def intensity(self) -> QueryResult:
+        """Target peptide intensity per sample and label."""
+        self._require("feature", "run")
         # A label-free run attributes its intensities to its lone sample whatever
         # the feature label (DIA-NN's ``raw`` against the run's ``LFQ``);
         # multiplexed runs need the exact label (see qpx.core.sample_sql).
         sql = (
-            feature_sample_ctes(("sequence", "peptidoform", "charge", "anchor_protein"))
+            feature_sample_ctes(("sequence", "peptidoform", "charge", "anchor_protein"), feature_where="NOT f.is_decoy")
             + """
         SELECT sequence, peptidoform, charge, anchor_protein,
                sample_accession, sample_label AS label, intensity
@@ -57,18 +88,12 @@ class PeptideView(BaseView):
 
 
 class IdentificationSummaryView(BaseView):
-    """Per-run summary: proteins, peptides, features."""
+    """Per-run summary: protein groups, peptides, features."""
 
     def summary(self) -> QueryResult:
-        sql = """
-        SELECT f.run_file_name,
-               COUNT(DISTINCT f.anchor_protein) AS n_proteins,
-               COUNT(DISTINCT f.sequence) AS n_peptides,
-               COUNT(*) AS n_features
-        FROM feature f
-        GROUP BY f.run_file_name
-        """
-        return QueryResult(self._engine.connection, sql)
+        """Target protein groups, peptide sequences and features per run."""
+        self._require("feature")
+        return QueryResult(self._engine.connection, _RUN_COUNTS_SQL)
 
     def plot(self):
         """Bar chart of identifications per run."""
@@ -89,15 +114,9 @@ class RunSummaryView(BaseView):
     """Per-run statistics with intensity distribution."""
 
     def summary(self):
-        sql = """
-        SELECT f.run_file_name,
-               COUNT(DISTINCT f.sequence) AS n_peptides,
-               COUNT(DISTINCT f.anchor_protein) AS n_proteins,
-               COUNT(*) AS n_features
-        FROM feature f
-        GROUP BY f.run_file_name
-        """
-        return self._execute_cached("run_summary", sql)
+        """Target peptide sequences, protein groups and features per run (cached)."""
+        self._require("feature")
+        return self._execute_cached("run_summary", _RUN_COUNTS_SQL)
 
     def plot(self):
         """Bar chart of run-level statistics."""
@@ -118,13 +137,15 @@ class ModificationView(BaseView):
     """Modification frequency across PSMs."""
 
     def frequency(self):
+        """Target PSMs and peptide sequences per modification."""
+        self._require("psm")
         sql = """
         SELECT m.name AS modification_name,
                m.accession AS modification_accession,
                COUNT(*) AS n_psms,
                COUNT(DISTINCT p.sequence) AS n_peptides
         FROM psm p, UNNEST(p.modifications) AS _t(m)
-        WHERE p.modifications IS NOT NULL
+        WHERE p.modifications IS NOT NULL AND NOT p.is_decoy
         GROUP BY m.name, m.accession
         ORDER BY n_psms DESC
         """
@@ -149,9 +170,11 @@ class QualityControlView(BaseView):
     """Dataset-wide QC metrics."""
 
     def metrics(self):
-        sql = """
+        """Target peptide sequences, protein groups, runs and features of the dataset (cached)."""
+        self._require("feature")
+        sql = f"""
         SELECT COUNT(DISTINCT f.sequence) AS unique_peptides,
-               COUNT(DISTINCT f.anchor_protein) AS unique_proteins,
+               COUNT(DISTINCT {_FEATURE_GROUP_SQL}) AS unique_proteins,
                COUNT(DISTINCT f.run_file_name) AS n_runs,
                COUNT(*) AS total_features
         FROM feature f
@@ -196,6 +219,7 @@ class SampleSummaryView(BaseView):
 
     def peptides_per_run(self):
         """Count distinct peptide sequences per run."""
+        self._require("feature")
         sql = """
         SELECT f.run_file_name,
                COUNT(DISTINCT f.sequence) AS n_peptides
@@ -207,37 +231,40 @@ class SampleSummaryView(BaseView):
         return self._execute_cached("peptides_per_run", sql)
 
     def peptides_per_sample(self):
-        """Count distinct peptide sequences per sample (joins Feature + Run)."""
-        sql = """
-        SELECT rs.sample_accession,
-               COUNT(DISTINCT f.sequence) AS n_peptides
-        FROM feature f
-        JOIN run r ON f.run_file_name = r.run_file_name,
-             UNNEST(r.samples) AS _t(rs)
-        WHERE f.is_decoy = false
-        GROUP BY rs.sample_accession
-        ORDER BY rs.sample_accession
+        """Count distinct peptide sequences per sample, resolved through the label of each intensity."""
+        self._require("feature", "run")
+        sql = (
+            feature_sample_ctes(("sequence",), feature_where="f.is_decoy = false")
+            + """
+        SELECT sample_accession, COUNT(DISTINCT sequence) AS n_peptides
+        FROM feature_samples
+        GROUP BY sample_accession
+        ORDER BY sample_accession
         """
+        )
         return self._execute_cached("peptides_per_sample", sql)
 
     def proteins_per_sample(self):
-        """Count distinct proteins per sample (joins PG + Run)."""
-        # Pre-explode grouped_runs so the run join is a hash-join on
-        # run_file_name instead of a nested-loop list_contains predicate.
-        sql = """
-        WITH pg_runs AS (
-            SELECT p.anchor_protein, p.is_decoy, gr AS run_file_name
-            FROM pg p, UNNEST(p.grouped_runs) AS _g(gr)
-        )
-        SELECT rs.sample_accession,
-               COUNT(DISTINCT pg.anchor_protein) AS n_proteins
-        FROM pg_runs pg
-        JOIN run r ON pg.run_file_name = r.run_file_name,
-             UNNEST(r.samples) AS _t(rs)
-        WHERE pg.is_decoy = false
+        """Count distinct protein groups per sample.
+
+        A row resolves to its sample through its label; an identification-only
+        row (no label) resolves in a single-sample run.
+        """
+        self._require("pg", "run")
+        # Any member run of grouped_runs resolves the row to its sample.
+        sql = (
+            pg_sample_ctes()
+            + """
+        SELECT rs.sample_accession, COUNT(DISTINCT list_sort(p.pg_accessions)) AS n_proteins
+        FROM pg p
+        JOIN run_samples rs
+          ON rs.run_file_name = p.grouped_runs[1]
+         AND (rs.sample_label = p.label OR (p.label IS NULL AND rs.n_samples = 1))
+        WHERE p.is_decoy = false
         GROUP BY rs.sample_accession
         ORDER BY rs.sample_accession
         """
+        )
         return self._execute_cached("proteins_per_sample", sql)
 
     def plot(self, metric: str = "peptides_per_run"):

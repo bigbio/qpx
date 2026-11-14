@@ -31,6 +31,7 @@ def info(source):
         # Show all ontology sources
         qpxc ontology info
 
+    \b
         # Show a specific source
         qpxc ontology info --source psi_ms
     """
@@ -63,6 +64,7 @@ def update(source):
         # Update all ontology sources
         qpxc ontology update
 
+    \b
         # Update a specific source
         qpxc ontology update --source psi_ms
     """
@@ -108,6 +110,7 @@ def build(source, build_all):
         # Build a specific ontology source
         qpxc ontology build --source psi_ms
 
+    \b
         # Build all configured sources
         qpxc ontology build --all-sources
     """
@@ -144,6 +147,7 @@ def search(query, source, top_k):
         # Search PSI-MS ontology (default)
         qpxc ontology search "mass spectrometry"
 
+    \b
         # Search PRIDE CV with more results
         qpxc ontology search "instrument" --source pride_cv --top-k 20
     """

@@ -10,6 +10,7 @@ import pyarrow as pa
 import pytest
 
 from qpx.core.ontology import PublicOntology
+from qpx.transforms.mantissa import MANTISSA_BITS
 from qpx.writers import (
     DatasetWriter,
     FeatureWriter,
@@ -70,6 +71,20 @@ def assert_pg_table_wellformed(table):
     for lbl in table.column("label").to_pylist():
         if lbl is not None:
             assert isinstance(lbl, str) and lbl
+
+
+def without_rounded_cv_values(rows, view):
+    """*rows* (``to_pylist``) with the ``cv_params`` values that relayout rounds set to None.
+
+    In the list form a cv value is a string, which ``round_table`` leaves alone, while
+    relayout rounds it as a struct field of the type it reads back from.
+    """
+    names = {path.split(".", 1)[1] for path in MANTISSA_BITS[view] if path.startswith("cv_params.")}
+    for row in rows:
+        for entry in row.get("cv_params") or []:
+            if entry["cv_name"] in names:
+                entry["cv_value"] = None
+    return rows
 
 
 def write_lfq_consensusxml(path, maps, trailing=""):
@@ -231,6 +246,24 @@ def make_pg_record(
         "molecular_weight": None,
         "additional_scores": None,
         "cv_params": None,
+    }
+
+
+def make_xic_record(feature_id, peptidoform="PEPTIDEK", run_file_name="run_01"):
+    """Create a minimal valid ms1 trace record dict that supports the feature *feature_id*."""
+    return {
+        "xic_id": f"{run_file_name}|{peptidoform}2|ms1",
+        "run_file_name": run_file_name,
+        "label": "LFQ",
+        "feature_ids": [feature_id],
+        "feature_scores": [{"feature_id": feature_id, "scores": None}],
+        "precursor_id": f"{peptidoform}2",
+        "peptidoform": peptidoform,
+        "charge": 2,
+        "transition": "ms1",
+        "transition_type": "ms1",
+        "rt": [60.0, 60.1, 60.2],
+        "intensity": [100.0, 200.0, 150.0],
     }
 
 

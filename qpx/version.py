@@ -21,7 +21,7 @@ from typing import Iterable
 # The current QPX specification (on-disk format) version. Keep in sync with
 # docs/spec/versioning.md ("Current Version"). Two-component {major}.{minor};
 # no patch component.
-QPX_SPEC_VERSION = "1.2"
+QPX_SPEC_VERSION = "1.3"
 
 
 class QpxVersionError(ValueError):
@@ -141,9 +141,10 @@ def _guard_pg_layout(source: str, columns: set[str], version_str: str | None) ->
             "'run_file_name' onto 'grouped_runs' (list<string>); this file still "
             "has 'run_file_name' and no 'grouped_runs' column, so grouped-runs "
             "queries cannot run.\n"
-            "  fix              : regenerate this PG file with qpx >= 1.1, or "
-            "migrate it by wrapping each scalar run_file_name into a single-element "
-            "grouped_runs list. See docs/spec/versioning.md (changelog 1.1)."
+            "  fix              : regenerate this PG file with qpx >= 1.1. Without the "
+            "source files, run 'qpxc migrate': grouped_runs alone is not enough, the file "
+            "also needs flat label and intensity columns and a pg_id. See "
+            "docs/spec/versioning.md (Migrating Without Re-converting)."
         )
 
 

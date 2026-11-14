@@ -28,6 +28,11 @@ _SCORE_MAPPINGS = [
     ("Decoy.Evidence", "diann_decoy_evidence", True),
     ("Translated.Quality", "diann_translated_quality", True),
     ("Translated.Q.Value", "diann_translated_qvalue", False),
+    ("PTM.Site.Confidence", "diann_ptm_site_confidence", True),
+    ("Lib.PTM.Site.Confidence", "diann_lib_ptm_site_confidence", True),
+    ("Peptidoform.Q.Value", "diann_peptidoform_qvalue", False),
+    ("Global.Peptidoform.Q.Value", "diann_global_peptidoform_qvalue", False),
+    ("Lib.Peptidoform.Q.Value", "diann_lib_peptidoform_qvalue", False),
 ]
 
 # CV param mappings: (DIA-NN column, output cv_name)
@@ -38,6 +43,7 @@ _CV_MAPPINGS = [
     ("Predicted.IM", "predicted_im"),
     ("Predicted.iIM", "predicted_iim"),
     ("iIM", "iim"),
+    ("Precursor.Lib.Index", "diann_precursor_lib_index"),
 ]
 
 # Ion mobility fields and cv columns. For data acquired without ion mobility
@@ -60,22 +66,11 @@ _BATCH_SQL = """
         AND r.$seq_col = lk.sequence
         AND r.$chg_col = lk.charge
     $channel_join
-    WHERE $run_name IN ({run_placeholders})
+    WHERE r.$run_col IN ({run_placeholders})
       $qvalue_filter
       AND r.$pg_col IS NOT NULL
     """
 
-
-# Per-channel nested columns collected into one feature row, and the channel
-# rows each one keeps: an unquantified channel has a null intensity and no entry.
-# Every channel row keeps its labelled entry so that the deduplication below can
-# partition on intensities[1].label. With a plain label column there, DuckDB
-# rewrites ROW_NUMBER() = 1 into an arg_min aggregate over the whole wide row,
-# which made the plexDIA feature step about 20 % slower.
-_CHANNEL_LIST_FILTERS = {
-    "intensities": "intensities[1].intensity IS NOT NULL",
-    "additional_intensities": "additional_intensities IS NOT NULL",
-}
 
 _CHANNEL_ROWS_SQL = """
         WITH channel_rows AS (
@@ -91,7 +86,7 @@ _CHANNEL_ROWS_SQL = """
                              _modified_sequence,
                              _pg_group,
                              intensities[1].label
-                ORDER BY _qvalue NULLS LAST
+                ORDER BY _qvalue NULLS LAST, rt NULLS LAST, intensities[1].intensity NULLS LAST
             ) = 1
         )
         SELECT
@@ -131,17 +126,22 @@ def _build_mass_select_parts(resolved: dict, report_cols: set[str]) -> list[str]
     """Build observed m/z and mass error expressions."""
     has_column = report_cols.__contains__
     parts: list[str] = []
-    # observed_mz: emit a truthful NULL when the report carries no Precursor.Mz
-    # (bigbio/qpx#244). A sentinel 0.0 looks like a real measurement and
-    # corrupts downstream mass-error / PPM math; NULL propagates as "unknown".
-    # The per-row _safe_float_sql already yields NULL for null/NaN cells, so no
-    # COALESCE-to-zero is applied even when the column is present.
-    observed_mz_col = resolved.get("observed_mz")
-    parts.append(
-        f"{_safe_float_sql(observed_mz_col)} AS observed_mz"
-        if observed_mz_col and has_column(observed_mz_col)
-        else "NULL::FLOAT AS observed_mz"
-    )
+    # observed_mz: DIA-NN's Precursor.Mz is the theoretical m/z of the precursor;
+    # the measured one is Precursor.Mz plus Ms1.Apex.Mz.Delta, the offset of the
+    # MS1 apex. A zero offset marks a precursor without a measured MS1 apex (all
+    # of them where Ms1.Apex.Area is 0), and a report without the offset (DIA-NN
+    # 1.8, 1.9) has no measured m/z, so both stay NULL rather than repeating the
+    # theoretical value (bigbio/qpx#244).
+    precursor_mz_col = resolved.get("precursor_mz")
+    delta_col = resolved.get("ms1_apex_mz_delta")
+    observed_expr = None
+    if precursor_mz_col and delta_col and has_column(precursor_mz_col) and has_column(delta_col):
+        delta = f'CAST(r."{delta_col}" AS DOUBLE)'
+        observed_expr = (
+            f'CASE WHEN isfinite({delta}) AND {delta} <> 0 AND isfinite(CAST(r."{precursor_mz_col}" AS DOUBLE)) '
+            f'THEN CAST(r."{precursor_mz_col}" AS DOUBLE) + {delta} END'
+        )
+    parts.append(f"CAST({observed_expr} AS FLOAT) AS observed_mz" if observed_expr else "NULL::FLOAT AS observed_mz")
 
     # mass_error_ppm: prefer a reported column, otherwise DERIVE it. DIA-NN
     # emits no mass-error column, so this was always null even though both
@@ -154,8 +154,7 @@ def _build_mass_select_parts(resolved: dict, report_cols: set[str]) -> list[str]
     mass_error_col = resolved.get("mass_error_ppm")
     if mass_error_col and has_column(mass_error_col):
         parts.append(f"{_safe_float_sql(mass_error_col)} AS mass_error_ppm")
-    elif observed_mz_col and has_column(observed_mz_col):
-        observed_expr = _safe_float_sql(observed_mz_col)
+    elif observed_expr:
         parts.append(
             "CASE WHEN lk.calculated_mz > 0 AND "
             f"({observed_expr}) > 0 "
@@ -182,7 +181,7 @@ def _build_acquisition_select_parts(resolved: dict, report_cols: set[str]) -> li
     run_col = "r." + validate_identifier(resolved["run_file_name"])
     parts.append(f"{run_name_sql(run_col)} AS run_file_name")
 
-    # MS2.Scan (DIA-NN 1.8) is a 0-based position among the run's MS2 spectra,
+    # MS2.Scan (Ms2.Scan in 2.x --export-quant) is a 0-based position among the run's MS2 spectra,
     # not a native scan number: it becomes a scan only through the MS-info table.
     parts.append("[]::INTEGER[] AS scan")
     ms2_col = resolved.get("ms2_scan")
@@ -212,6 +211,48 @@ def _build_ion_mobility_select_parts(resolved: dict, report_cols: set[str]) -> l
     return parts
 
 
+# The proteins each target peptidoform maps to. A DIA-NN decoy precursor carries
+# a mutated sequence under its parent's proteins, so decoy rows are left out.
+_PEPMAP_SQL = """
+    SELECT lk.peptidoform,
+           any_value(lk.sequence) AS sequence,
+           list_sort(list_distinct(list_filter(
+               list_transform(flatten(list(string_split(r.$ids_col, ';'))), lambda x: trim(x)),
+               lambda x: x <> ''
+           ))) AS accessions
+    FROM report r
+    JOIN precursor_lookup lk
+        ON r.$mod_col = lk.modified_sequence
+        AND r.$seq_col = lk.sequence
+        AND r.$chg_col = lk.charge
+    WHERE r.$run_col IN ({run_placeholders})
+      $qvalue_filter
+      $target_filter
+      AND r.$pg_col IS NOT NULL
+    GROUP BY lk.peptidoform
+    ORDER BY lk.peptidoform
+    """
+
+
+def build_pepmap_sql(resolved: dict, report_cols: set[str], qvalue_threshold: Optional[float]) -> str | None:
+    """The pepmap query over the feature rows: each peptidoform with its ``Protein.Ids``; None without that column."""
+    ids_col = resolved.get("mp_accessions")
+    if ids_col not in report_cols:
+        return None
+    decoy_col = resolved.get("decoy")
+    return sql_build(
+        _PEPMAP_SQL,
+        ids_col=validate_identifier(ids_col),
+        mod_col=validate_identifier(resolved["modified_sequence"]),
+        seq_col=validate_identifier(resolved["sequence"]),
+        chg_col=validate_identifier(resolved["charge"]),
+        run_col=validate_identifier(resolved["run_file_name"]),
+        qvalue_filter=_qvalue_filter_sql(qvalue_threshold, resolved.get("precursor_qvalue")),
+        target_filter=f'AND CAST(r."{decoy_col}" AS BOOLEAN) IS NOT TRUE' if decoy_col in report_cols else "",
+        pg_col=validate_identifier(resolved["pg_accessions"]),
+    )
+
+
 def _qvalue_filter_sql(qvalue_threshold: Optional[float], qv_col: str | None) -> str:
     """Build the opt-in precursor q-value filter."""
     qvalue_filter = ""
@@ -223,6 +264,21 @@ def _qvalue_filter_sql(qvalue_threshold: Optional[float], qv_col: str | None) ->
         )
 
     return qvalue_filter
+
+
+def decoy_flag_sql(resolved: dict, has_decoy_col: bool) -> str:
+    """The is_decoy expression over report rows ``r``: the decoy column, else a decoy prefix of the protein group.
+
+    A decoy's sequence can equal a target's (the decoy of one tubulin isoform is another isoform's peptide),
+    so the flag is part of the feature identity.
+    """
+    if has_decoy_col:
+        return f'CAST(r."{resolved["decoy"]}" AS BOOLEAN)'
+    pg_col = resolved["pg_accessions"]
+    return (
+        f"(starts_with(r.\"{pg_col}\", 'DECOY_') OR starts_with(r.\"{pg_col}\", 'decoy_') "
+        f"OR starts_with(r.\"{pg_col}\", 'rev_') OR starts_with(r.\"{pg_col}\", 'REV_'))"
+    )
 
 
 def _build_core_select_parts(
@@ -250,14 +306,11 @@ def _build_core_select_parts(
     # DIA-NN does not report a peptide-level q-value.
     parts.append("NULL::DOUBLE AS peptide_qvalue")
 
-    pg_col = resolved["pg_accessions"]
-    if has_decoy_col:
-        parts.append(f'CAST(r."{resolved["decoy"]}" AS BOOLEAN) AS is_decoy')
-    else:
-        parts.append(
-            f"(starts_with(r.\"{pg_col}\", 'DECOY_') OR starts_with(r.\"{pg_col}\", 'decoy_') "
-            f"OR starts_with(r.\"{pg_col}\", 'rev_') OR starts_with(r.\"{pg_col}\", 'REV_')) AS is_decoy"
-        )
+    parts.append(f"{decoy_flag_sql(resolved, has_decoy_col)} AS is_decoy")
+    # DIA-NN 2.x marks a decoy searched from the spectral library with ^. Its sequence is
+    # the decoy the search engine generates from the same parent, so it can share
+    # peptidoform, charge and run with that generated decoy; the flag is part of the identity.
+    parts.append(f"starts_with(r.\"{resolved['modified_sequence']}\", '^') AS is_library_decoy")
 
     parts.append("CAST(lk.calculated_mz AS FLOAT) AS calculated_mz")
 
@@ -283,11 +336,16 @@ def _build_metadata_select_parts(
     parts: list[str] = []
     pg_col = resolved["pg_accessions"]
 
-    proteotypic_col = resolved.get("proteotypic")
-    if proteotypic_col and has_column(proteotypic_col):
-        parts.append(f'CAST(r."{proteotypic_col}" AS INTEGER) = 1 AS "unique"')
-    else:
-        parts.append(f'NOT contains(r."{pg_col}", \';\') AS "unique"')
+    # unique: a one-protein group of a peptide that maps to no other protein.
+    # Protein.Ids lists every protein the peptide maps to; DIA-NN's Proteotypic
+    # flag depends on the protein-grouping level (genes by default), so it stays
+    # a cv_param.
+    members = f"list_filter(string_split(r.\"{pg_col}\", ';'), lambda x: trim(x) <> '')"
+    single = f"len({members}) = 1"
+    ids_col = resolved.get("mp_accessions")
+    if ids_col and has_column(ids_col):
+        single += f" AND len(list_filter(string_split(r.\"{ids_col}\", ';'), lambda x: trim(x) <> '')) = 1"
+    parts.append(f'CASE WHEN len({members}) > 0 THEN {single} END AS "unique"')
 
     pg_qvalue_col = resolved.get("pg_global_qvalue")
     parts.append(
@@ -351,13 +409,16 @@ def _build_batch_sql(
     parts.extend(_build_metadata_select_parts(r, report_cols))
 
     # --- Nested: intensities ---
-    label_expr, channel_helper_parts, channel_join = _build_channel_sql_parts(channel_col, qv_col)
-    parts.append(_build_intensities_sql(r["intensity"], label_expr, bool(channel_col)))
+    label_expr, channel_helper_parts, channel_join = _build_channel_sql_parts(channel_col, qv_col, has_column)
+    int_col = r["intensity"]
+    # A precursor DIA-NN reports without a quantity (0) keeps its label with a
+    # null intensity.
+    parts.append(f"[STRUCT_PACK(label := {label_expr}, intensity := {_quantity_sql(int_col)})] AS intensities")
 
     # --- Nested columns built by helpers ---
     parts.append(_build_additional_intensities_sql(r, has_column, label_expr))
     parts.append(_build_additional_scores_sql(has_column))
-    parts.append(_build_cv_params_sql(r, has_column))
+    parts.append(_build_cv_params_sql(has_column))
 
     # --- Helper columns (for Python post-processing, dropped later) ---
     mod_col = r["modified_sequence"]
@@ -365,6 +426,8 @@ def _build_batch_sql(
     chg_col = r["charge"]
     parts.append(f'r."{mod_col}" AS _modified_sequence')
     parts.append(f"{pg_group} AS _pg_group")
+    occupancy = 'r."Site.Occupancy.Probabilities"' if has_column("Site.Occupancy.Probabilities") else "NULL"
+    parts.append(f"CAST({occupancy} AS VARCHAR) AS _site_occupancy")
     parts.extend(channel_helper_parts)
 
     # --- Build full query ---
@@ -380,7 +443,7 @@ def _build_batch_sql(
         seq_col=validate_identifier(seq_col),
         chg_col=validate_identifier(chg_col),
         channel_join=channel_join,
-        run_name=run_name_sql("r." + validate_identifier(run_col)),
+        run_col=validate_identifier(run_col),
         qvalue_filter=qvalue_filter,
         pg_col=validate_identifier(pg_col),
     )
@@ -390,12 +453,20 @@ def _build_batch_sql(
     return row_sql
 
 
-def _build_channel_sql_parts(channel_col: str | None, qvalue_col: str | None) -> tuple[str, list[str], str]:
+def _build_channel_sql_parts(channel_col: str | None, qvalue_col: str | None, has_column) -> tuple[str, list[str], str]:
     """Return the label, helper columns, and join used for channel-aware rows."""
     if channel_col is None:
         return "'LFQ'", [], ""
 
     qvalue_expr = f"{_safe_double_sql(qvalue_col)} AS _qvalue" if qvalue_col else "NULL::DOUBLE AS _qvalue"
+    helpers = [
+        qvalue_expr,
+        "cl.channel_mass AS _channel_mass",
+        *(
+            f"{_safe_double_sql(column) if has_column(column) else 'NULL::DOUBLE'} AS {alias}"
+            for column, alias in (("Channel.Q.Value", "_channel_qvalue"), ("Channel.Evidence", "_channel_evidence"))
+        ),
+    ]
     channel_join = sql_build(
         """
         JOIN diann_channel_labels cl
@@ -403,11 +474,34 @@ def _build_channel_sql_parts(channel_col: str | None, qvalue_col: str | None) ->
         """,
         channel_col=validate_identifier(channel_col),
     )
-    return "cl.canonical_label", [qvalue_expr], channel_join
+    return "cl.canonical_label", helpers, channel_join
+
+
+# Fields describing the multiplet's peptidoform, which is the lightest partner's,
+# and so taken from the lightest channel's row.
+_LIGHTEST_CHANNEL_FIELDS = {"observed_mz", "mass_error_ppm"}
+
+
+_CHANNEL_AGGREGATES = {
+    "channel_details": """LIST(STRUCT_PACK(
+                label := intensities[1].label,
+                mz := observed_mz,
+                rt := rt,
+                qvalue := COALESCE(_channel_qvalue, _qvalue),
+                evidence := _channel_evidence
+            ) ORDER BY intensities[1].label) AS channel_details""",
+    "representative_label": (
+        "FIRST(intensities[1].label ORDER BY _qvalue NULLS LAST, intensities[1].label) AS representative_label"
+    ),
+}
 
 
 def _aggregate_channel_rows_sql(row_sql: str, target_schema: pa.Schema) -> str:
-    """Collapse DIA-NN's one-row-per-channel output to one QPX feature row."""
+    """Collapse DIA-NN's one-row-per-channel output to one QPX feature row.
+
+    The other scalar fields come from the channel with the best precursor
+    q-value, ties broken by label, so a conversion is reproducible.
+    """
     group_fields = {"sequence", "charge", "run_file_name"}
     python_fields = {
         "modifications",
@@ -419,8 +513,25 @@ def _aggregate_channel_rows_sql(row_sql: str, target_schema: pa.Schema) -> str:
         "feature_id",
         "psm_ids",
         "pg_ids",
-        # Producer-specific optional fields not emitted by DIA-NN.
         "modification_candidates",
+        # Derived by the writer from additional_scores and pg_accessions.
+        "precursor_qvalue",
+        "global_qvalue",
+        "pg_group_id",
+        "irt",
+        # Producer-specific optional fields not emitted by DIA-NN.
+        "identified_labels",
+        "identification_type",
+        "match_score",
+        "match_qvalue",
+        "match_rt_delta",
+        "match_mz_delta",
+        "imputed_labels",
+        "ccs",
+        "parent_ion_fraction",
+        "quant_scan",
+        "quant_ms_level",
+        "rt_aligned",
         "quantification_unit_id",
         "compensation_voltage",
         "consensus_rt",
@@ -433,14 +544,25 @@ def _aggregate_channel_rows_sql(row_sql: str, target_schema: pa.Schema) -> str:
             continue
         if name in group_fields:
             select_parts.append(quoted)
-        elif name in _CHANNEL_LIST_FILTERS:
+        elif name in _CHANNEL_AGGREGATES:
+            select_parts.append(_CHANNEL_AGGREGATES[name])
+        elif name == "intensities":
+            select_parts.append("LIST(intensities[1] ORDER BY intensities[1].label) AS intensities")
+        elif name == "additional_intensities":
             select_parts.append(
-                f"LIST({quoted}[1] ORDER BY intensities[1].label) FILTER (WHERE {_CHANNEL_LIST_FILTERS[name]}) AS {quoted}"
+                "LIST(additional_intensities[1] "
+                "ORDER BY intensities[1].label) "
+                "FILTER (WHERE additional_intensities IS NOT NULL) "
+                "AS additional_intensities"
             )
+        elif name in _LIGHTEST_CHANNEL_FIELDS:
+            select_parts.append(f"FIRST({quoted} ORDER BY _channel_mass NULLS LAST, intensities[1].label) AS {quoted}")
         else:
-            select_parts.append(f"FIRST({quoted} ORDER BY _qvalue NULLS LAST) AS {quoted}")
+            select_parts.append(f"FIRST({quoted} ORDER BY _qvalue NULLS LAST, intensities[1].label) AS {quoted}")
 
-    select_parts.extend(["_modified_sequence", "_pg_group"])
+    select_parts.extend(
+        ["_modified_sequence", "_pg_group", "FIRST(_site_occupancy ORDER BY _qvalue NULLS LAST) AS _site_occupancy"]
+    )
     select_clause = ",\n            ".join(select_parts)
     return sql_build(
         _CHANNEL_ROWS_SQL,
@@ -449,29 +571,13 @@ def _aggregate_channel_rows_sql(row_sql: str, target_schema: pa.Schema) -> str:
     )
 
 
-def _build_intensities_sql(intensity_col: str, label_expr: str, channel_rows: bool) -> str:
-    """Build SQL for the intensities nested column: no entry for an unquantified precursor.
-
-    The intensity struct cannot hold a null, so a feature DIA-NN identified
-    without a quantity keeps its row with ``intensities = null``. A channel row
-    keeps its labelled entry, because the per-channel deduplication partitions on
-    ``intensities[1].label``; ``_aggregate_channel_rows_sql`` then drops the
-    entries without a quantity.
-    """
-    quantity = _quantity_sql(intensity_col)
-    entry = f"[STRUCT_PACK(label := {label_expr}, intensity := {quantity})]"
-    if channel_rows:
-        return f"{entry} AS intensities"
-    return f"CASE WHEN {quantity} IS NOT NULL THEN {entry} END AS intensities"
-
-
 def _build_additional_intensities_sql(r: dict, _has, label_expr: str = "'LFQ'") -> str:
     """Build SQL for the additional_intensities nested column."""
     candidates = [
-        ("PG.MaxLFQ", "maxlfq"),
+        ("PG.MaxLFQ", "pg_maxlfq"),
     ]
     if "normalize_intensity" in r:
-        candidates.append((r["normalize_intensity"], "precursor_normalised"))
+        candidates.append((r["normalize_intensity"], "normalize_intensity"))
     if "ms1_area" in r:
         candidates.append((r["ms1_area"], "ms1_area"))
     entries, checks = [], []
@@ -514,18 +620,12 @@ def _build_additional_scores_sql(_has) -> str:
     return f"CASE WHEN {sc} THEN LIST_FILTER([{sl}], lambda x: x IS NOT NULL) ELSE NULL END AS additional_scores"
 
 
-def _build_cv_params_sql(r: dict, _has) -> str:
-    """Build SQL for the cv_params nested column."""
+def _build_cv_params_sql(_has) -> str:
+    """Build SQL for the cv_params nested column.
+
+    ``Quantity.Quality`` is the score ``diann_quantity_quality``, so it is not repeated here.
+    """
     entries, checks = [], []
-    pqs_col = r.get("precursor_quantification_score")
-    if pqs_col and _has(pqs_col):
-        chk = f'(r."{pqs_col}" IS NOT NULL)'
-        checks.append(chk)
-        entries.append(
-            f"CASE WHEN {chk} THEN STRUCT_PACK("
-            f"cv_name := 'precursor_quantification_score', "
-            f'cv_value := CAST(r."{pqs_col}" AS VARCHAR)) END'
-        )
     for diann_col, cv_name in _CV_MAPPINGS:
         if _has(diann_col):
             chk = f'(r."{diann_col}" IS NOT NULL AND CAST(r."{diann_col}" AS VARCHAR) != \'\')'

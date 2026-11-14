@@ -96,7 +96,19 @@ adata.write("PXD000000.ae.h5ad")
 
 ## Missing values
 
-When a protein is not detected in a sample, the corresponding cell in `X` and `layers` contains `NaN`. This is consistent with how scRNA-seq handles dropout events and is the standard behavior when pivoting from long-form to matrix-form.
+In a dense matrix (`.ae.h5ad`, `design_matrix()`), a protein not detected in a sample is `NaN`, as in the long-to-matrix pivots of scRNA-seq tools.
+
+The modalities of a `.h5mu` file are sparse: **a cell without a stored value is not measured**, and a stored value is a measurement, including an explicit `0`. `X.toarray()` turns the cells not stored into `0`, so to compute with missing values take the matrix through NaN first:
+
+```python
+import numpy as np
+
+dense = np.full(modality.shape, np.nan)
+stored = modality.X.tocoo()
+dense[stored.row, stored.col] = stored.data
+```
+
+`qpx` converters write a missing quantity as null or no entry, never as `0`, and `imputed_mask` flags cells a tool imputed ([Missing values](intensities.md#missing-values)).
 
 ## Multi-omics integration
 
@@ -108,34 +120,41 @@ AnnData enables integration of proteomics data with other omics modalities:
 
 ## MuData (`.h5mu`) {#mudata-h5mu}
 
-Converters that produce expression output also emit a single combined **MuData** container, `<prefix>.h5mu`, that bundles the per-precursor and per-protein matrices (and the standalone expression views, when present) into one multi-modal object for the scverse / `muon` ecosystem. It is written by `qpx/mudata.py` (`build_mudata`).
+Converters that produce expression output also emit a single combined **MuData** container, `<prefix>.h5mu`, that bundles the per-precursor and per-protein matrices (and the standalone expression views, when present) into one multi-modal object for the scverse / `muon` ecosystem. It is written by `qpx/mudata.py` (`build_mudata`), with gzip-compressed (level 4) datasets that `mudata`, `muon` and h5py read as they are, in backed mode too.
 
 ### Modalities
 
 | Modality (`mdata.mod[...]`) | `obs` (rows) | `var` (columns) | `X` |
 |---|---|---|---|
 | `precursors` | run (`run_file_name`), with its `run.samples` entry (`sample_accession`, `label`, replicates) and run columns | precursor identity `peptidoform\|charge` | sparse precursor intensity matrix |
-| `proteins` | quantification unit (`grouped_runs`), with the sample of its label and run columns joined over its runs | `anchor_protein` (with `gene_name` carried in `var`) | sparse protein-group intensity matrix |
+| `proteins` | quantification unit (`grouped_runs`), with the sample of its label and run columns joined over its runs | protein group, its sorted `pg_accessions` joined by `;` (with `anchor_protein` and `gene_name` in `var`) | sparse protein-group intensity matrix |
 | `expression` | Absolute Expression observations | AE variables | Absolute Expression matrix (loaded from the AE view when present) |
 | `differential` | Differential Expression observations | DE variables | Differential Expression matrix (loaded from the DE view when present) |
 
 A modality is included only when its source data is available, so a given `.h5mu` may carry a subset of these four.
 
-Multiplexed data (TMT, iTRAQ, plexDIA), or `all_intensity_labels=True`, expands `obs` over the channels: precursor observations are named `run|label` and protein observations `grouped_runs|label`.
+Converters write every label as its own observation (`run|label` for precursors, `grouped_runs|label` for proteins). `build_mudata()` keeps label-free data at one observation per run (or unit) unless `all_intensity_labels=True`; multiplexed data (TMT, iTRAQ, plexDIA) is always expanded over its channels.
 
 ### Protein observations are quantification units
 
-A protein-group quantity exists once per [quantification unit](data-model.md#quantification-units-fractions-one-grouped_runs-one-quantity-per-label), the `grouped_runs` set of fractions aggregated together, and label. Each unit and label is one `proteins` observation, named by its distinct member runs, sorted and joined by `;` (`F1;F2;F3`, or `F1;F2;F3|TMT126` when expanded over channels); an unfractionated unit keeps its run name. When `obs` is expanded over channels, its `grouped_runs` and `intensity_label` columns hold the unit name and the label. qpx 1.2 and earlier called this column `run_file_name`. The converters always write the expanded form, so the column is `grouped_runs` in every converter-written `.h5mu`, unfractionated ones included. A pg row with an empty `grouped_runs` belongs to no unit and is left out. The sample comes from any member run that carries the label (they are fractions of one sample context), and `run_accession`, `fraction` and `instrument` are joined over the member runs with `;`. `biological_replicate` and `technical_replicate` are left empty when the member runs disagree, as when a producer groups the injections of a sample into one unit. Precursors stay per run, since a feature is measured in one raw file.
+A protein-group quantity exists once per [quantification unit](data-model.md#quantification-units-fractions-one-grouped_runs-one-quantity-per-label), the `grouped_runs` set of fractions aggregated together, and label. Each unit and label is one `proteins` observation, named by its distinct member runs, sorted and joined by `;` (`F1;F2;F3`, or `F1;F2;F3|TMT126` when expanded over channels); an unfractionated unit keeps its run name. When `obs` is expanded over channels, its `grouped_runs` and `intensity_label` columns hold the unit name and the label. qpx 1.2.0 and earlier called this column `run_file_name`; qpx 1.3.0 renamed it to `grouped_runs`. The converters always write the expanded form, so the column is `grouped_runs` in every converter-written `.h5mu`, unfractionated ones included. A pg row with an empty `grouped_runs` belongs to no unit and is left out. The sample comes from any member run that carries the label (they are fractions of one sample context), and `run_accession`, `fraction` and `instrument` are joined over the member runs with `;`. `biological_replicate` and `technical_replicate` are left empty when the member runs disagree, as when a producer groups the injections of a sample into one unit. Precursors stay per run, since a feature is measured in one raw file.
+
+### Variables, cells and layers
+
+- **Protein groups.** A `proteins` variable is a protein group, keyed by its sorted `pg_accessions` joined by `;`, since two groups can be led by the same protein; `var` carries its `anchor_protein` and `gene_name`.
+- **Sample metadata.** `obs` carries the sample of each run and label from `run.samples` and its characteristics from `sample.parquet` (organism, disease, ...), when present.
+- **Cells.** `X` is sparse: a cell that was not quantified, such as an entry with a null intensity, is not stored.
+- **Layers.** `X` holds the primary `intensity`, the tool's unnormalised quantity (MaxQuant `Intensity`, DIA-NN `PG.Quantity`, FragPipe razor `Intensity`; see the tool mappings in [Protein Group](pg.md#recommended-intensity-names) and [Feature](feature.md)). Each additional intensity (`additional_intensities`, such as `maxlfq`, `lfq` or `ibaq`) is a layer named after its `intensity_name`, on the observations and variables of `X`, with repeated cells combined as in `X`. A cell the tool imputed is 1 in the layer `imputed_mask`, present when any is (`feature.imputed_labels`, `pg.is_imputed`).
 
 ### Decoys and repeated cells
 
 Decoy precursors and protein groups are left out by default. `build_mudata(ds, include_decoys=True)` keeps them and adds a boolean `is_decoy` column to each modality's `var`; `mdata.uns["qpx_include_decoys"]` records the choice.
 
-Several values can land in one matrix cell, such as two features of one precursor in one run (a MaxQuant MS/MS and a match-between-runs feature). They are combined with `build_mudata(ds, duplicates="sum")` (the default) or `duplicates="mean"`. Each modality's `uns["qpx_duplicates"]` records the aggregation and the number of such cells, and the build logs a warning when there are any. A null intensity (a protein group identified but not quantified) is not a value: it is left out of the combination and the count, and a cell with no other value is NaN.
+Several values can land in one matrix cell, such as two features of one precursor in one run (a MaxQuant MS/MS and a match-between-runs feature). They are combined with `build_mudata(ds, duplicates="sum")` (the default) or `duplicates="mean"`. Each modality's `uns["qpx_duplicates"]` records the aggregation and the number of such cells, and the build logs a warning when there are any.
 
 ### Cross-modality mapping
 
-`mdata.varp["feature_mapping"]` is a sparse precursor↔protein adjacency matrix over the concatenated `var` axis: each non-zero entry links a `precursors` column to the `proteins` column(s) it belongs to, derived from `feature.anchor_protein`.
+`mdata.varp["feature_mapping"]` is a sparse precursor↔protein adjacency matrix over the concatenated `var` axis: each non-zero entry links a `precursors` column to the `proteins` column(s) of the groups its features belong to, derived from `feature.pg_accessions`.
 
 ### Identity note
 

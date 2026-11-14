@@ -75,6 +75,8 @@ See the full YAML schema in [`xic.yaml`](schemas/xic.yaml).
 | `additional_scores` | Trace-level producer scores that do not depend on a specific feature | `array[struct]` | Optional |
 | `cv_params` | Trace-specific controlled-vocabulary metadata; run-level extraction settings belong in run/provenance metadata | `array[struct]` | Optional |
 
+`qpxc transform relayout` can store `additional_scores` and `cv_params` as a struct with one field per name ([Struct lists](serialization.md#struct-lists)).
+
 ## Tracing one entity through QPX
 
 ```mermaid
@@ -128,7 +130,7 @@ DIA-NN writes one `*.xic.parquet` per run with the columns `pr`, `feature`, `inf
 | — | `target_mz`, `target_rt`, windows, IM | not reported by DIA-NN XIC; null |
 | — | `is_decoy` | optional, from the DIA-NN report/feature row |
 
-The DIA-NN converter writes file-level selection metadata: `xic_selection=targets`, `xic_window=apex`, `xic_smoothed=false`, `xic_zero_points=kept`, `xic_rt_unit=seconds`, and `transition_format=mzPAF`. Override `--xic-selection`, `--xic-window`, `--xic-extraction-window-seconds` and `--xic-qvalue-threshold` when the export differs.
+The DIA-NN converter writes file-level selection metadata: `xic_selection=targets`, `xic_window=apex`, `xic_smoothed=false`, `xic_zero_points=kept`, `xic_rt_unit=seconds`, and `transition_format=mzPAF`. Override `--xic-selection`, `--xic-window`, `--xic-extraction-window-seconds` and `--xic-qvalue-threshold` when the export differs. `qpxc migrate` copies these keys with the traces; merging datasets keeps a key only when every source states the same value.
 
 !!! warning "Exclude DIA-NN `index` rows"
     DIA-NN also writes rows with `feature = "index"`, `rt = 0`, and `value = 0`. They are **not chromatogram points**: they chunk the precursors in blocks of 128 and carry the block number in `info` (0, 1, 2, …). Discard them when building QPX traces; only `feature = "ms1"` and fragment labels are measurements.

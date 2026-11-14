@@ -50,20 +50,46 @@ CV_PEP_GLOBAL = "MS:1002352"  # PSM-level global FDR (global PEP)
 # ---------------------------------------------------------------------------
 # Site localization scores
 # ---------------------------------------------------------------------------
-CV_PHOSPHORS_SITE_PROB = "MS:1001969"  # phosphoRS: site probability
-CV_PTMRS_SITE_PROB = "MS:1002536"  # PTM-score (D-score / Ascore)
-CV_ASCORE = "MS:1001985"  # Ascore
-
-# Set of accessions that represent per-site localization scores.
-# When found on a SpectrumIdentificationItem these should be mapped
-# to the modification positions in the PSM record.
-SITE_LOCALIZATION_ACCESSIONS = frozenset(
+CV_MODIFICATION_INDEX = "MS:1002504"  # modification index
+# Parameters of a Modification or SearchModification that do not name the modification.
+MODIFICATION_NON_IDENTITY_ACCESSIONS = frozenset(
     {
-        CV_PHOSPHORS_SITE_PROB,
-        CV_PTMRS_SITE_PROB,
-        CV_ASCORE,
+        CV_MODIFICATION_INDEX,
+        "MS:1003347",  # UNIMOD derivative code
+        "MS:1003390",  # crosslinker cleavage characteristics
+        "MS:1003392",  # search modification id
+        "MS:1003393",  # search modification id ref
     }
 )
+# Identification based on several spectra, and its PEP: values start with the identification's id.
+MULTI_SPECTRA_ACCESSIONS = frozenset({"MS:1003332", "MS:1003336"})
+
+# Per-site probabilities, the ones among the terms below.
+SITE_PROBABILITY_ACCESSIONS = frozenset(
+    {
+        "MS:1001971",  # phosphoRS site probability
+        "MS:1001980",  # MaxQuant:Phospho (STY) Probabilities
+        "MS:1001982",  # MaxQuant:P-site localization probability
+        "MS:1003147",  # PTMProphet probability
+    }
+)
+
+# Per-site localization scores on a SpectrumIdentificationItem: the PSM-level
+# statistics whose value follows MS:1002505,
+# MOD_INDEX:SCORE:POSITION[|POSITION...]:PASS_THRESHOLD.
+SITE_LOCALIZATION_ACCESSIONS = SITE_PROBABILITY_ACCESSIONS | {
+    "MS:1001969",  # phosphoRS score
+    "MS:1001974",  # DeBunker:score
+    "MS:1001978",  # MSQuant:PTM-score
+    "MS:1001979",  # MaxQuant:PTM Score
+    "MS:1001983",  # MaxQuant:PTM Delta Score
+    "MS:1001985",  # Ascore
+    "MS:1001986",  # H-Score
+    "MS:1002507",  # modification rescoring:false localization rate
+    "MS:1002536",  # D-Score
+    "MS:1002537",  # MD-Score
+    "MS:1003291",  # Luciphor deltaScore
+}
 
 # ---------------------------------------------------------------------------
 # Spectrum metadata

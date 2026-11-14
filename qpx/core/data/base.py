@@ -10,7 +10,15 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from qpx.core.convert import QueryResult
-from qpx.core.data.schema import ValidationResult, pg_referential_issues_from_query
+from qpx.core.data.footer_validation import (
+    duplicate_composite_issues,
+    footer_issues,
+    mixed_identity_issues,
+    stale_identity_issues,
+    undeclared_column_issues,
+)
+from qpx.core.data.label_validation import label_vocabulary_issues
+from qpx.core.data.schema import ValidationResult, pg_quantity_issues, pg_referential_issues_from_query
 from qpx.core.engine import DuckDBEngine, create_engine
 from qpx.core.parquet_io import read_parquet_metadata
 from qpx.core.query import LazyQuery, _escape_sql_string
@@ -109,9 +117,9 @@ class BaseStructure:
         return self._with_query(self._query.order_by(*columns, desc=desc))
 
     # --- Materialization (delegates to core.convert.QueryResult) ---
-    def to_df(self) -> pd.DataFrame:
-        """Execute query and return pandas DataFrame."""
-        return QueryResult(self._engine.connection, self._query.build_sql()).to_df()
+    def to_df(self, dtype_backend: str | None = None) -> pd.DataFrame:
+        """Execute query and return pandas DataFrame; ``dtype_backend="pyarrow"`` keeps nested columns in Arrow memory."""
+        return QueryResult(self._engine.connection, self._query.build_sql()).to_df(dtype_backend)
 
     def to_arrow(self) -> pa.Table:
         """Execute query and return Arrow Table."""
@@ -146,21 +154,26 @@ class BaseStructure:
             yield batch_values, df
 
     # --- Validation ---
-    def validate(self, *, strict: bool = False) -> ValidationResult:
+    def validate(self, *, strict: bool = False, semantic: bool = False, check_identity: bool = False) -> ValidationResult:
         """Validate this structure's data against its schema.
 
         ``strict=True`` (used by ``qpxc validate``) promotes duplicate-PK and
         required-null issues to errors; the default is lenient. Rows are read in
         batches; only the primary-key columns are held for the whole view.
+        ``semantic=True`` also checks PSM and feature peptidoforms, modification
+        positions and m/z values. ``check_identity=True`` also re-derives each id
+        from the declared composite.
         """
         view = self._schema_class
         severity = "error" if strict else "warning"
         query = self._query.build_sql()
         schema = self._engine.connection.sql(sql_build("SELECT * FROM ($query) LIMIT 0", query=query)).to_arrow_table().schema
-        # DuckDB drops footer metadata. A single local PSM file has one format;
-        # never apply the first shard's declaration to a union of several files.
-        if view.view_name == "psm" and len(self._file_paths) == 1 and Path(self._file_path).is_file():
-            scan_format = (pq.read_metadata(self._file_path).metadata or {}).get(b"scan_format")
+        # DuckDB drops footer metadata, so the footers are read from the local files.
+        footers = [(str(path), pq.read_metadata(path).metadata or {}) for path in self._file_paths if Path(path).is_file()]
+        # A single PSM file has one format; never apply the first shard's
+        # declaration to a union of several files.
+        if view.view_name == "psm" and len(self._file_paths) == 1 and footers:
+            scan_format = footers[0][1].get(b"scan_format")
             if scan_format:
                 schema = schema.with_metadata({**(schema.metadata or {}), b"scan_format": scan_format})
         # Whole-view queries run before the batches stream: a new query on the
@@ -171,16 +184,37 @@ class BaseStructure:
             keys = self._engine.connection.sql(
                 sql_build("SELECT $columns FROM ($query)", columns=columns, query=query)
             ).to_arrow_table()
-        referential = []
-        if view.view_name == "pg" and {"pg_accessions", "grouped_runs", "label"} <= set(schema.names):
-            referential = pg_referential_issues_from_query(self._engine, query, view.view_name, severity)
+        referential = footer_issues(view, footers, severity) + undeclared_column_issues(view, schema.names)
+        referential += label_vocabulary_issues(self._engine, query, view.view_name, schema)
+        if view.identity_composite is not None:
+            referential += mixed_identity_issues(view, footers)
+        if check_identity:
+            referential += stale_identity_issues(self._engine, query, view, schema.names, footers, severity)
+        referential += duplicate_composite_issues(self._engine, query, view, schema.names, footers, severity)
+        if view.view_name == "pg":
+            referential += self._pg_view_issues(query, set(schema.names), severity)
         # Only the columns the row checks read are streamed; the constant keeps the
         # select valid for a view that has none of them.
         columns = ", ".join(["1 AS _validation_row", *map(validate_identifier, view.validation_columns(schema))])
         batches = self._engine.connection.sql(
             sql_build("SELECT $columns FROM ($query)", columns=columns, query=query)
         ).to_arrow_reader(_VALIDATE_BATCH_ROWS)
-        return view.validate_batches(schema, batches, keys, referential, strict=strict)
+        result = view.validate_batches(schema, batches, keys, referential, strict=strict)
+        # A mistyped column is already reported, and the semantic queries cannot bind to it
+        if semantic and not any(issue.check == "type_mismatch" for issue in result.issues):
+            from qpx.core.semantic_validation import semantic_issues
+
+            result.issues.extend(semantic_issues(self._engine, query, schema.names, view.view_name, severity))
+        return result
+
+    def _pg_view_issues(self, query: str, names: set[str], severity: str) -> list:
+        """Whole-view pg checks: referential invariants and the presence of a quantity."""
+        issues = []
+        if {"pg_accessions", "grouped_runs", "label"} <= names:
+            issues += pg_referential_issues_from_query(self._engine, query, "pg", severity)
+        if {"label", "intensity"} <= names:
+            issues += pg_quantity_issues(self._engine, query, "pg")
+        return issues
 
     # --- Parquet metadata (delegates to core.parquet_io) ---
     @property

@@ -52,7 +52,9 @@ dataset_schema = pa.schema(
 | `project_title` | Title of the project | string | no |
 | `project_description` | Description of the project | string | no |
 | `pubmed_id` | PubMed ID associated with the project | string | no |
-| `qpx_version` | Version of the QPX format specification | string | yes |
+| `analysis_id` | Names this analysis, new for each conversion and merge ([Row Identity](identity.md#scope)) | string | no |
+
+The specification version is not a column: it is the `qpx_version` footer key of every file ([Versioning](versioning.md#version-in-files)).
 
 #### Software Provenance
 

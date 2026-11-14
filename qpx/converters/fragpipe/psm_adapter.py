@@ -18,8 +18,19 @@ from typing import Optional, Tuple
 import pandas as pd
 
 from qpx.converters.base import BaseConverter, resolve_columns
-from qpx.converters.fragpipe.constants import is_decoy_accession, to_modifications, to_proforma
+from qpx.converters.fragpipe.constants import (
+    is_decoy_accession,
+    name_glycan,
+    place_mass_shift,
+    protein_accessions,
+    ptmprophet_columns,
+    ptmprophet_sites,
+    to_proforma,
+    unassigned_mass_shift,
+)
+from qpx.converters.localization import localize_modifications
 from qpx.converters.mappings import get_field_mappings
+from qpx.converters.ptm import compute_precursor_mz, from_proforma
 from qpx.converters.utils import safe_float
 from qpx.core.scores import normalize_score_name
 from qpx.core.sql import escape_path, sql_build
@@ -59,6 +70,9 @@ class FragPipePsmAdapter(BaseConverter):
             )
     """
 
+    # Site-probability columns of the current batch.
+    _ptmprophet_columns: list[tuple[str, float]] = []
+
     def convert(
         self,
         psm_path: str,
@@ -89,7 +103,7 @@ class FragPipePsmAdapter(BaseConverter):
         # Step 3: Stream and transform
         self.logger.info("Transforming FragPipe PSMs ...")
 
-        with PsmWriter(output_path, creator=creator, compression=self._compression) as writer:
+        with PsmWriter(output_path, creator=creator) as writer:
             for batch in self._query_batched("SELECT * FROM fragpipe_psms", chunksize):
                 df = batch.to_pandas()
                 records = self._transform_batch(df)
@@ -123,6 +137,7 @@ class FragPipePsmAdapter(BaseConverter):
     def _transform_batch(self, df: pd.DataFrame) -> list[dict]:
         # Pre-extract column arrays for faster per-row access than to_dict("records")
         col_arrays = {col: df[col].values for col in df.columns}
+        self._ptmprophet_columns = ptmprophet_columns(df.columns)
         rows = ({col: vals[i] for col, vals in col_arrays.items()} for i in range(len(df)))
         return self._transform_rows_with_skip(rows, self._transform_row, "FragPipe PSM")
 
@@ -135,20 +150,19 @@ class FragPipePsmAdapter(BaseConverter):
 
         spectrum_fields = self._psm_spectrum_fields(row)
         observed_mz = spectrum_fields["observed_mz"]
-        calculated_mz = spectrum_fields["calculated_mz"]
 
-        # Protein accessions
-        protein_id = str(row.get(r.get("pg_accessions", "Protein"), ""))
-        protein_accessions = [protein_id] if protein_id else []
+        # Protein accessions: the razor protein and every other protein the peptide maps to
+        protein_raw = row.get(r.get("pg_accessions", "Protein"))
+        accessions = protein_accessions(protein_raw, row.get("Mapped Proteins"))
 
         # Is decoy (bool) -- decoy prefix on any accession in the RAW protein field
         # (rev_/REV_/DECOY_/decoy_), kept consistent with the feature/pg adapters.
-        is_decoy = is_decoy_accession(protein_id)
+        is_decoy = is_decoy_accession(protein_raw)
 
-        # Peptidoform -- build ProForma from sequence + Assigned Modifications
-        assigned_mods_raw = row.get("Assigned Modifications")
-        assigned_mods_str = str(assigned_mods_raw) if pd.notna(assigned_mods_raw) and assigned_mods_raw else ""
-        peptidoform = to_proforma(assigned_mods_str, sequence)
+        peptidoform, modifications, candidates = self._psm_modifications(row, sequence)
+
+        # Calculated M/Z lacks the mass shift, and a glycan PTM-Shepherd only added to Assigned Modifications
+        calculated_mz = compute_precursor_mz(peptidoform, charge) or spectrum_fields["calculated_mz"]
 
         # Mass error (ppm) — compute from observed and calculated m/z
         if observed_mz and calculated_mz:
@@ -161,17 +175,13 @@ class FragPipePsmAdapter(BaseConverter):
 
         additional_scores, missed_cleavages, cv_params = self._psm_annotations(row)
 
-        # Modifications -- parse Assigned Modifications if present
-        modifications = None
-        assigned_mods = row.get("Assigned Modifications")
-        if pd.notna(assigned_mods) and assigned_mods:
-            _, modifications = to_modifications(str(assigned_mods), sequence)
-
         return {
             **spectrum_fields,
+            "calculated_mz": calculated_mz,
             "sequence": sequence,
             "peptidoform": peptidoform,
             "modifications": modifications,
+            "modification_candidates": candidates,
             "charge": charge,
             "is_decoy": is_decoy,
             "mass_error_ppm": mass_error_ppm,
@@ -180,13 +190,37 @@ class FragPipePsmAdapter(BaseConverter):
             "cv_params": cv_params or None,
             "ion_mobility": ion_mobility,
             "missed_cleavages": missed_cleavages,
-            "protein_accessions": protein_accessions or None,
+            "protein_accessions": accessions or None,
             "mz_array": None,
             "intensity_array": None,
             "charge_array": None,
             "ion_type_array": None,
             "ion_mobility_array": None,
         }
+
+    def _psm_modifications(self, row: dict, sequence: str) -> tuple:
+        """Peptidoform, modifications and candidates from Assigned Modifications, any mass shift and PTMProphet."""
+        assigned_mods_raw = row.get("Assigned Modifications")
+        assigned_mods = str(assigned_mods_raw) if pd.notna(assigned_mods_raw) and assigned_mods_raw else ""
+        peptidoform = to_proforma(assigned_mods, sequence)
+        candidates = None
+        shift = unassigned_mass_shift(
+            assigned_mods,
+            sequence,
+            safe_float(row.get("Calculated Peptide Mass")),
+            safe_float(row.get("Delta Mass")),
+        )
+        if shift is not None:
+            peptidoform, candidates = place_mass_shift(assigned_mods, sequence, shift, row.get("MSFragger Localization"))
+        _, modifications = from_proforma(peptidoform, sequence, meta=None)
+        modifications, localized = localize_modifications(
+            modifications,
+            sequence,
+            ptmprophet_sites(row, self._ptmprophet_columns, sequence),
+            first_group=2 if candidates else 1,
+        )
+        candidates = [*(candidates or []), *(localized or [])] or None
+        return peptidoform, name_glycan(modifications, row.get("Total Glycan Composition")), candidates
 
     def _psm_spectrum_fields(self, row: dict) -> dict:
         """Extract source, spectrum, and precursor confidence fields."""
@@ -202,22 +236,14 @@ class FragPipePsmAdapter(BaseConverter):
         scan = [scan_number] if scan_number > 0 else []
 
         # m/z
-        observed_mz = (
-            safe_float(
-                row.get(
-                    "Calibrated Observed M/Z",
-                    row.get(r.get("observed_mz", "Observed M/Z")),
-                )
-            )
-            or 0.0
-        )
+        observed_mz = safe_float(row.get("Calibrated Observed M/Z", row.get(r.get("observed_mz", "Observed M/Z"))))
         calculated_mz = safe_float(row.get(r.get("calculated_mz", "Calculated M/Z")))
 
         # RT (FragPipe Retention is already in seconds)
         rt = safe_float(row.get(r.get("rt", "Retention")))
 
-        # PEP (FragPipe uses PeptideProphet Probability; convert to 1-prob)
-        pp_prob = safe_float(row.get("PeptideProphet Probability"))
+        # PEP (PeptideProphet Probability, "Probability" in FragPipe 22; convert to 1-prob)
+        pp_prob = safe_float(row.get("PeptideProphet Probability", row.get("Probability")))
         pep = None
         if pp_prob is not None:
             pep = 1.0 - pp_prob if pp_prob <= 1.0 else pp_prob
@@ -254,6 +280,26 @@ class FragPipePsmAdapter(BaseConverter):
                 }
             )
 
+        # Purity: the precursor's share of the ion abundance in the isolation window
+        purity = safe_float(row.get("Purity"))
+        if purity is not None:
+            additional_scores.append(
+                {
+                    "score_name": "parent_ion_fraction",
+                    "score_value": purity,
+                    "higher_better": True,
+                }
+            )
+
+        # Glycan assignment of PTM-Shepherd
+        for column, score_name, higher_better in (
+            ("Glycan Score", "glycan_score", True),
+            ("Glycan q-value", "glycan_qvalue", False),
+        ):
+            value = safe_float(row.get(column))
+            if value is not None:
+                additional_scores.append({"score_name": score_name, "score_value": value, "higher_better": higher_better})
+
         # Missed cleavages (dedicated field)
         missed = row.get("Number of Missed Cleavages")
         missed_cleavages = int(missed) if pd.notna(missed) else None
@@ -268,4 +314,7 @@ class FragPipePsmAdapter(BaseConverter):
                     "cv_value": str(int(termini)),
                 }
             )
+        compensation_voltage = safe_float(row.get("Compensation Voltage"))
+        if compensation_voltage is not None:
+            cv_params.append({"cv_name": "compensation_voltage", "cv_value": str(compensation_voltage)})
         return additional_scores, missed_cleavages, cv_params

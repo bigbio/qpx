@@ -105,7 +105,7 @@ qpxc convert maxquant \
 # List the generated files
 ls -la output/
 
-# You should see a file like: psm-{uuid}.psm.parquet
+# You should see maxquant.psm.parquet, next to the dataset, ontology and provenance tables
 ```
 
 ### Step 4: Inspect the Data (Optional)
@@ -114,7 +114,7 @@ ls -la output/
 # Using Python to read the parquet file
 import pyarrow.parquet as pq
 
-table = pq.read_table("output/psm-*.psm.parquet")
+table = pq.read_table("output/maxquant.psm.parquet")
 df = table.to_pandas()
 
 print(f"Total PSMs: {len(df)}")

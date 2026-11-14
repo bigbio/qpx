@@ -6,7 +6,13 @@ peptide sequence, including the identification scores, optional spectral data,
 and protein mappings. Its mandatory opaque `psm_id` is the primary key. A
 producer-supplied ID is preserved by default; otherwise QPX derives the ID from
 the footer-declared `identity_composite`, whose schema default is
-`[peptidoform, charge, run_file_name, scan]`.
+`[run_file_name, scan, peptidoform, charge]`. An id is meaningful within one file;
+see [Row Identity](identity.md).
+
+That composite names one peptidoform per spectrum. A file with several hits of
+one peptidoform and charge for a spectrum (other engines, or cross-links) needs
+a producer-supplied `psm_id`, as `qpxc convert mzidentml` writes from its
+`SpectrumIdentificationItem` ids, or an extended composite.
 
 De novo sequencing workflows set `is_decoy` to `false` and may omit
 `protein_accessions`. Record the workflow with a `de_novo_peptide_sequencing`
@@ -38,10 +44,11 @@ step in `provenance.parquet`.
 | `posterior_error_probability` | Posterior error probability (PEP) for the peptide-spectrum match — the probability that the PSM is incorrect. **Lower values indicate higher confidence** (lower is better). Ranges from 0.0 (confident) to 1.0 (likely incorrect) | float64, null | no |
 | `is_decoy` | Whether the PSM is a decoy match (`true`) or a target match (`false`); use `false` when no target-decoy search was used. A peptide that matches both target and decoy proteins (OpenMS `target_decoy = target+decoy`) is a target match | bool | yes |
 | `calculated_mz` | Theoretical peptide mass-to-charge ratio based on identified sequence and modifications; null when it cannot be calculated | float32, null | yes |
-| `observed_mz` | Experimental observed peptide mass-to-charge ratio | float32 | yes |
+| `observed_mz` | Experimental observed peptide mass-to-charge ratio; null when the producer reports no measured precursor m/z | float32, null | yes |
 | `mass_error_ppm` | Mass error in ppm: 1e6 × (observed_mz − calculated_mz) / calculated_mz | float32, null | no |
 | `missed_cleavages` | Number of missed enzymatic cleavages | int16, null | no |
 | `rt` | MS2 scan's retention time (in seconds) | float32, null | no |
+| `qvalue` | PSM-level q-value, filled from `additional_scores` ([typed q-values](scores.md#typed-q-value-columns)); specification 1.3 | float64, null | no |
 | `predicted_rt` | Predicted retention time of the peptide (in seconds) | float32, null | no |
 | `run_file_name` | Spectrum file name without path or extension | string | yes |
 | `scan` | Scan identifier as an array of integer components (e.g., `[43920]` for single-scan instruments, `[10, 1, 345]` for Waters function/process/scan) | array[int32] | yes |
@@ -56,12 +63,15 @@ These fields are optional and may not exist in the file at all. They are include
 | Field | Description                                                                                                                                             | Type | Required |
 |-------|---------------------------------------------------------------------------------------------------------------------------------------------------------|------|----------|
 | `cross_links` | Cross-link information for XL-MS experiments. Each entry describes one cross-link site. `null` for non-cross-linked PSMs                                | array[struct], null | optional |
+| `pass_threshold` | Whether the search engine or validator marks the PSM as passing its threshold. `null` when it does not say | bool, null | optional |
 | `ion_mobility` | Ion mobility value for the precursor ion                                                                                                                | float32, null | optional |
+| `ccs` | Collisional cross section in square angstroms (MS:1002954), when the producer reports one | float32, null | no |
 | `mz_array` | Array of m/z values for the spectrum                                                                                                                    | array[float32], null | optional |
 | `intensity_array` | Array of intensity values for the spectrum                                                                                                              | array[float32], null | optional |
 | `charge_array` | Array of fragment ion charge values                                                                                                                     | array[int32], null | optional |
-| `ion_type_array` | Array of fragment ion type annotations (e.g., b1, y2, a2)                                                                                               | array[string], null | optional |
+| `ion_type_array` | Array of fragment ion type annotations, with any neutral loss (e.g., b1, y2, a2, y5-H2O); the charge is in `charge_array`                               | array[string], null | optional |
 | `ion_mobility_array` | Array of fragment ion mobility values                                                                                                                   | array[float32], null | optional |
+| `label` | MS1-labelled experiments (SILAC, dimethyl, mTRAQ): the channel label of the identified precursor, whose label modifications `peptidoform` carries ([MS1 labels](intensities.md#ms1-labels-silac-dimethyl-mtraq)) | string, null | optional |
 | `feature_id` | **Authoritative** (optional) foreign key to the linked Feature row through `feature.feature_id`; the producer's assignment of this PSM to a consensus feature (null when unlinked). It is NOT recomputable from shared identification fields, so it is materialized. Its inverse, `feature.psm_ids`, is a **computed softlink** — `Dataset.link_feature_psm()` groups `(feature_id, psm_id)` by `feature_id`; qpx does not materialize it ([bigbio/qpx#267](https://github.com/bigbio/qpx/issues/267)). | int64, null | optional |
 
 !!! note "Nullable vs Optional"
@@ -73,14 +83,36 @@ The `cross_links` field supports XL-MS (cross-linking mass spectrometry) experim
 
 | Field | Description | Type | Required |
 |-------|-------------|------|----------|
-| `xl_type` | Type of cross-link: `"inter"` (between two peptides), `"intra"` (within same peptide), or `"dead-end"` (one reactive end) | string | yes |
+| `xl_type` | Type of cross-link: `"inter"` (between two peptides), `"intra"` (within same peptide), `"dead-end"` (one reactive end) or `"noncovalent"` (peptides associated without a link) | string | yes |
 | `partner_sequence` | Plain amino acid sequence of the beta (partner) peptide. `null` for dead-end and intra-peptide links | string, null | no |
 | `partner_peptidoform` | Beta peptide in ProForma notation. `null` for dead-end and intra-peptide links | string, null | no |
-| `donor_position` | Cross-link attachment position on the alpha peptide (1-indexed) | int32 | yes |
+| `donor_position` | Cross-link attachment position on the alpha peptide (1-indexed). `null` for noncovalent associations | int32, null | no |
 | `acceptor_position` | Attachment position on the beta peptide (1-indexed). `null` for dead-end links | int32, null | no |
 | `linker_name` | Name of the cross-linker reagent (e.g., `"DSS"`, `"BS3"`, `"DSSO"`) | string | yes |
 | `linker_accession` | XLMOD controlled vocabulary accession for the linker (e.g., `"XLMOD:02001"`) | string, null | no |
 | `linker_mass` | Cross-linker mass in Daltons | float64 | yes |
+
+`peptidoform` names only the alpha peptide, while `calculated_mz` and `observed_mz` belong to the whole complex, so these columns of the PSM state the rest:
+
+| Field | Description | Type |
+|-------|-------------|------|
+| `crosslinked_peptidoform` | The linked species in ProForma 2.0, what tells two link species with the same alpha peptide apart: `PEPK[XLMOD:02001#XL1]R//SEK[#XL1]R`, with the linker's mass where it has no accession, `PEP//SEK` for a noncovalent pair | string, null |
+| `protein_starts` | First residue of the alpha peptide in each of `protein_accessions` (1-indexed): the linked residue is at `start + donor_position - 1` | array[int32], null |
+| `partner_protein_accessions` | Proteins of the partner peptide. `protein_accessions` holds those of the alpha peptide | array[string], null |
+| `partner_protein_starts` | First residue of the partner peptide in each of those proteins (1-indexed): the linked residue is at `start + acceptor_position - 1` | array[int32], null |
+| `crosslink_decoy_class` | `target_target`, `target_decoy` or `decoy_decoy`. `is_decoy` is true for both of the latter | string, null |
+
+A false-discovery rate at the level of the residue pair or protein pair goes in `additional_scores` under its own name, next to that of the PSM. One row per residue pair is a query away:
+
+```sql
+SELECT protein_accessions[1] AS protein_a, partner_protein_accessions[1] AS protein_b,
+       link.donor_position + protein_starts[1] - 1 AS residue_a,
+       link.acceptor_position + partner_protein_starts[1] - 1 AS residue_b,
+       count(*) AS psms
+FROM (SELECT *, unnest(cross_links) AS link FROM psm)
+WHERE link.xl_type = 'inter' AND crosslink_decoy_class = 'target_target'
+GROUP BY ALL
+```
 
 !!! example "Cross-linked PSM"
     ```json
@@ -111,6 +143,7 @@ Several fields in the PSM view use structures shared across other QPX views:
 - For details on the `modifications` field structure, see [Modifications](modifications.md).
 - For details on `additional_scores` and score semantics, see [Scores](scores.md).
 - For details on `cv_params` usage and recommended terms, see [Scores & CV Terms](scores.md).
+- For `additional_scores` and `cv_params` stored by `qpxc transform relayout` as a struct with one field per name, see [Struct lists](serialization.md#struct-lists).
 
 !!! note "A null `feature_id` means no linked feature"
     `feature_id` records a PSM's feature link in the exported dataset. A null
@@ -150,7 +183,7 @@ Several fields in the PSM view use structures shared across other QPX views:
 {
   "psm_id": -4279600662514899531,
   "sequence": "AAAAAAAAAAGAAGGR",
-  "peptidoform": "[Acetyl]-AAAAAAAAAAGAAGGR",
+  "peptidoform": "[UNIMOD:1]-AAAAAAAAAAGAAGGR",
   "charge": 2,
   "scan": [42164],
   "rt": 5140.98,
@@ -164,7 +197,7 @@ Several fields in the PSM view use structures shared across other QPX views:
   "modifications": [
     {
       "name": "Acetyl",
-      "accession": "UniMod:1",
+      "accession": "UNIMOD:1",
       "positions": [
         {
           "position": 0,
@@ -206,7 +239,7 @@ When spectral arrays are included, the record also contains peak-level data:
 {
   "psm_id": -4279600662514899531,
   "sequence": "AAAAAAAAAAGAAGGR",
-  "peptidoform": "[Acetyl]-AAAAAAAAAAGAAGGR",
+  "peptidoform": "[UNIMOD:1]-AAAAAAAAAAGAAGGR",
   "charge": 2,
   "scan": [42164],
   "rt": 5140.98,
@@ -228,9 +261,9 @@ PSM Parquet files store file-level metadata as key-value pairs in the Parquet fo
 | Field | Description |
 |-------|-------------|
 | `qpx_version` | Version of the QPX format used to generate the file |
-| `software_provider` | Name and version of the software that generated the data |
+| `software_provider` | Software that wrote the file (`qpx` for the qpx writers) |
 | `scan_format` | Format of scan identifiers: `scan`, `index`, or `nativeId` |
-| `creator` | Name of the tool or person who created the file |
+| `creator` | Tool whose output the data was converted from (e.g. `maxquant`, `diann`) |
 | `file_type` | Type of the file (value: `psm_file`) |
 | `creation_date` | Date when the file was created |
 | `compression_format` | Compression algorithm used: `zstd` (default), `snappy`, `gzip`, `lzo`, or `none` |
@@ -255,5 +288,5 @@ PSM Parquet files store file-level metadata as key-value pairs in the Parquet fo
 
 - **Relationship to feature view**: The PSM view captures individual spectrum matches, while the [Feature View](feature.md) aggregates these into quantified peptide features with intensity data. A single feature may correspond to multiple PSMs across different scans.
 - **Protein inference**: Protein inference results should not be the primary focus of the PSM view. `protein_accessions` is an **optional** column — protein mappings can be recovered by joining through the feature and protein group views. When included, it is useful for peptide filtering and protein-level browsing. For full protein group information, use the protein group (PG) view.
-- **Spectral arrays**: The `mz_array` and `intensity_array` are parallel arrays of the same length. For large-scale spectral storage, the dedicated mass spectra (mz) view is recommended.
+- **Spectral arrays**: `mz_array`, `intensity_array`, `charge_array`, `ion_type_array` and `ion_mobility_array` are parallel arrays of the same length. Which peaks they hold depends on the producer, so the file's footer key `spectrum_content` states it: `all_peaks` (the whole spectrum: `qpxc convert mzidentml --include-spectra` from the MGF), `matched_peaks` (the peaks the search engine assigned: MaxQuant `Masses`, `Intensities`, with `Matches` as `ion_type_array` and `charge_array`), or `annotated_peaks` (the peaks with a fragment annotation: OpenMS). A file without the key does not say. For large-scale spectral storage, the dedicated mass spectra (mz) view is recommended.
 - **Recommended additional scores**: `global_qvalue` (experiment-level PSM q-value), `rank` (peptide rank in search results), and `pg_global_qvalue` (protein group q-value used for filtering).

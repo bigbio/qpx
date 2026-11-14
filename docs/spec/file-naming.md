@@ -68,7 +68,7 @@ The only requirement is that the prefix is consistent across all files in the sa
 | `my_phospho_study.provenance.parquet` | Processing Provenance | Parquet |
 
 !!! info "Why preserve the original SDRF?"
-    The `.sdrf.tsv` file is kept alongside `sample.parquet` and `run.parquet` to maintain a direct link to the original experimental metadata as submitted to ProteomeXchange. For local projects without an SDRF, this file can be omitted -- the `sample.parquet` and `run.parquet` views contain all the necessary metadata.
+    `qpxc convert` copies the SDRF it was given to `{prefix}.sdrf.tsv`. The `.sdrf.tsv` file is kept alongside `sample.parquet` and `run.parquet` to maintain a direct link to the original experimental metadata as submitted to ProteomeXchange. For local projects without an SDRF, this file can be omitted -- the `sample.parquet` and `run.parquet` views contain all the necessary metadata.
 
 ## Complete Project Layout
 

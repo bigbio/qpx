@@ -12,6 +12,24 @@ Instrument, enzyme, and dissociation method fields store **plain strings** (huma
 
 ---
 
+## Per-Run Search and Channel Fields {#per-run-fields}
+
+`modification_parameters` lists the modifications of the SDRF rows of that run, so that a phospho run and a global run of one study keep their own. These fields are in specification 1.3:
+
+| Field | Source | Meaning |
+| ----- | ------ | ------- |
+| `label_definitions` | `comment[modification parameters]` of each label's rows | For each SILAC, dimethyl or mTRAQ label of the run, its label modifications with their masses. `SILAC heavy` alone does not say whether a plex used K4R6 or K8R10 |
+| `gradient_length` | `comment[gradient length]` | LC gradient in seconds. `120 min`, `2 h` and `7200 s` are read; a bare number is minutes |
+| `acquisition_start` | `comment[acquisition date]`, else mzML `run/@startTimeStamp` | Run acquisition start, preserved as source text |
+| `samples[].channel_role` | `comment[channel role]`, or `comment[reference channel]` | `reference` for the channel `comment[reference channel]` names, `sample` for the others; otherwise the value of `comment[channel role]`, such as `carrier` or `empty` |
+| `samples[].mixture` | `comment[mixture]` | Identifier of the labelled mixture, to separate TMT plexes |
+
+`acquisition_start` is an optional, nullable string. The first valid `comment[acquisition date]` value of each run takes precedence; SDRF missing values such as `not available` and `not applicable` are ignored. If no valid value exists, `qpxc convert sdrf --mzml-dir` reads the `startTimeStamp` attribute from the run's `.mzML` or `.mzML.gz` header. The mzML source is currently exposed only by this command. Missing files or attributes leave the value null. Text is preserved verbatim, including date-only values (`2011-05-31`), fractional seconds (`2016-10-06T22:36:56.803000`) and timezone suffixes (`2015-02-19T20:08:48Z`); QPX does not parse dates, convert timezones or fill in missing time components.
+
+A sample may occupy several labels of a run, as in pulsed SILAC; helpers keep them apart by `(sample, label, unit)`.
+
+---
+
 ## MODIFICATION Structure {#modification-structure}
 
 Modification parameters use a dedicated struct with explicit fields, since modifications have well-known properties (fixed/variable, position, target residue) that benefit from a typed schema:
@@ -24,6 +42,7 @@ MODIFICATION = pa.struct(
         pa.field("fixed", pa.bool_(), nullable=True),  # true = fixed, false = variable
         pa.field("position", pa.string(), nullable=True),  # e.g. "Anywhere", "Protein N-term"
         pa.field("target_amino_acid", pa.string(), nullable=True),  # e.g. "S,T,Y", "C"
+        pa.field("mass_delta", pa.float64(), nullable=True),  # SDRF MM=, else the Unimod mass
     ]
 )
 
@@ -59,9 +78,9 @@ import pyarrow as pa
 
 run_schema = pa.schema(
     [
-        # Identity -- maps to SDRF "assay name"
-        pa.field("run_accession", pa.string()),  # PK
-        pa.field("run_file_name", pa.string()),  # raw data file name (without extension)
+        # Identity
+        pa.field("run_accession", pa.string()),  # run file stem
+        pa.field("run_file_name", pa.string()),  # PK: raw data file name (without extension)
         pa.field("file_name", pa.string(), nullable=True),  # original file name with extension (e.g. "S1_Frontal_1.raw")
         # Sample-channel mapping (one run can contain multiple samples via TMT/iTRAQ)
         pa.field(
@@ -84,6 +103,7 @@ run_schema = pa.schema(
         pa.field("enzymes", pa.list_(pa.string()), nullable=True),
         pa.field("dissociation_method", pa.string(), nullable=True),
         pa.field("acquisition_method", pa.string(), nullable=True),
+        pa.field("acquisition_start", pa.string(), nullable=True),
         # Other ontology-backed run terms (acquisition method as CV, labeling, etc.)
         pa.field("additional_terms", pa.list_(ONTOLOGY_TERM), nullable=True),
         # Modification parameters -- list of typed modification structs
@@ -98,17 +118,20 @@ run_schema = pa.schema(
 
 | Field | Description | Type | Required |
 |---|---|---|---|
-| `run_accession` | Unique run identifier (= SDRF `assay name`) | string | yes |
-| `run_file_name` | Raw data file name (without extension) | string | yes |
+| `run_accession` | Run identifier. Converters write the run file stem, whatever the SDRF `assay name` says, so it equals `run_file_name`; not the primary key | string | yes |
+| `run_file_name` | Raw data file name (without extension); the primary key | string | yes |
 | `file_name` | Original file name with extension (e.g. `S1_Frontal_1.raw`) | string | optional |
-| `samples` | List of sample-channel mappings with replicate info (FK to sample.parquet) | list[struct] | yes |
+| `samples` | List of sample-channel mappings with replicate info (FK to sample.parquet) | list[sample_channel] | yes |
 | `fraction` | Fraction identifier | string | optional |
 | `instrument` | Mass spectrometer name | string | optional |
 | `enzymes` | Proteolytic enzyme name(s) | list[string] | optional |
 | `dissociation_method` | Fragmentation method name (e.g. HCD, CID, ETD) | string | optional |
 | `acquisition_method` | Data acquisition method name (e.g. DDA, DIA); from `comment[proteomics data acquisition method]` | string | optional |
-| `additional_terms` | Other ontology-backed run terms (acquisition method, labeling, etc.) | list[ONTOLOGY_TERM] | optional |
-| `modification_parameters` | Modifications configured in the database search | list[MODIFICATION] | optional |
+| `additional_terms` | Other ontology-backed run terms (acquisition method, labeling, etc.) | list[ontology_term] | optional |
+| `modification_parameters` | Modifications configured in the database search | list[modification_param] | optional |
+| `label_definitions` | For each SILAC, dimethyl or mTRAQ label of the run, its label modifications; see above | list[label_definition] | optional |
+| `gradient_length` | LC gradient in seconds; see above | float32 | optional |
+| `acquisition_start` | Run acquisition start as source text; see above | string | optional |
 
 ### Samples list detail
 
@@ -207,6 +230,7 @@ Each MODIFICATION struct contains:
 
 !!! tip "Reading run.parquet"
     ```python
+    import pyarrow.compute as pc
     import pyarrow.parquet as pq
 
     runs = pq.read_table("PXD014414.run.parquet")
@@ -215,7 +239,7 @@ Each MODIFICATION struct contains:
     #  'instrument', 'enzymes', ...]
 
     # Get all sample-channel mappings for a specific run
-    run_row = runs.filter(pq.compute.equal(runs.column("run_accession"), "Run_01")).to_pydict()
+    run_row = runs.filter(pc.equal(runs.column("run_accession"), "Run_01")).to_pydict()
     print(run_row["samples"])
     ```
 

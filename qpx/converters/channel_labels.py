@@ -16,6 +16,7 @@ channel indices present in the data.
 
 from __future__ import annotations
 
+import logging
 import re
 from collections import defaultdict
 from typing import Iterable, Optional
@@ -32,7 +33,11 @@ from sdrf_pipelines.converters.channel_map import normalize_label as _normalize_
 from sdrf_pipelines.converters.openms.utils import infer_itraqplex, infer_tmtplex
 
 from qpx.core.files import run_file_stem
-from qpx.writers.base import parquet_write_options
+from qpx.writers.encoding import SampledParquetWriter
+
+logger = logging.getLogger(__name__)
+
+_MS1_LABEL = re.compile(r"(?i)^(?:silac|dimethyl|mtraq)")
 
 __all__ = [
     "read_sdrf_labels",
@@ -51,7 +56,27 @@ __all__ = [
 _FAMILY_PREFIX = {"TMT": "tmt", "ITRAQ": "itraq", "iTRAQ": "itraq"}
 _CANONICAL_LABELS = {label.casefold(): label for channel_labels in CHANNEL_LABELS.values() for label in channel_labels.values()}
 _SILAC_LABELS = set(CHANNEL_LABELS["silac3plex"].values())
+# TMTpro-134C, iTRAQ4plex-114, "iTRAQ reagent 114"
+_REPORTER_SPELLING = re.compile(r"(?i)(TMT|iTRAQ)(?:(\d+)plex|pro)?[\s_-]*(?:reagent)?[\s_-]*(\d{3}[NC]?)")
+_BARE_REPORTER = re.compile(r"\d{3}[NC]?D?")
+_FIRST_TMT_CHANNEL = 126
 _ONTOLOGY_NAME = re.compile(r"(?:^|;)\s*NT\s*=\s*([^;]+)", re.IGNORECASE)
+
+
+def _reporter_channel(text: str) -> str:
+    """``iTRAQ4plex-114`` -> ``ITRAQ114``; a channel its named plex does not have keeps its spelling.
+
+    A bare ``126`` names one family: iTRAQ reporters stop at 121, TMT starts at 126.
+    """
+    if _BARE_REPORTER.fullmatch(text):
+        return f"{'TMT' if int(text[:3]) >= _FIRST_TMT_CHANNEL else 'ITRAQ'}{text}"
+    spelling = _REPORTER_SPELLING.fullmatch(text)
+    if spelling is None:
+        return text
+    family, plex_size, channel = spelling.groups()
+    label = f"{family}{channel}".upper()
+    plex = CHANNEL_LABELS.get(f"{family}{plex_size}plex".lower())
+    return text if plex is not None and label not in plex.values() else label
 
 
 def normalize_label(label: str) -> str:
@@ -60,7 +85,7 @@ def normalize_label(label: str) -> str:
     match = _ONTOLOGY_NAME.search(text)
     if match:
         text = match.group(1).strip()
-    normalized = _normalize_label(text)
+    normalized = _normalize_label(_reporter_channel(text))
     return _CANONICAL_LABELS.get(normalized.casefold(), normalized)
 
 
@@ -218,6 +243,47 @@ def experiment_type_from_labels(sdrf_labels: Optional[set[str]]) -> str:
     if any(normalize_label(label) in _SILAC_LABELS for label in sdrf_labels):
         return "SILAC"
     return "LFQ"
+
+
+# Unimod accession of the reagent each isobaric plex is labelled with.
+_PLEX_UNIMOD = {"tmt6plex": 737, "tmt10plex": 737, "tmt11plex": 737, "tmt16plex": 2016, "tmt18plex": 2016}
+_PLEX_UNIMOD |= {"itraq4plex": 214, "itraq8plex": 730}
+
+
+def label_unimod(sdrf_labels: Optional[set[str]]) -> Optional[int]:
+    """UNIMOD accession of the isobaric reagent the SDRF channel labels imply, or ``None``."""
+    family = _FAMILY_PREFIX.get(experiment_type_from_labels(sdrf_labels))
+    if family is None:
+        return None
+    canonical = {normalize_label(label) for label in sdrf_labels if label}
+    infer = infer_tmtplex if family == "tmt" else infer_itraqplex
+    try:
+        return _PLEX_UNIMOD.get(infer(canonical))
+    except ValueError:
+        return None
+
+
+def plex_for_columns(family: str, labels: set[str], n_columns: int) -> dict[int, str]:
+    """``{1-based position: label}`` of the plex holding *labels*, sized *n_columns* when one is.
+
+    A label's position depends on the plex: ``ITRAQ114`` is channel 1 of iTRAQ4
+    and channel 2 of iTRAQ8, so four labels in an 8-column table read 8-plex columns.
+    """
+    plex = resolve_channel_labels(family, labels)
+    if not plex or not n_columns or len(plex) == n_columns:
+        return plex
+    for name, channels in CHANNEL_LABELS.items():
+        if name.startswith(_FAMILY_PREFIX[family]) and len(channels) == n_columns and labels <= set(channels.values()):
+            return channels
+    logger.warning(
+        "The table has %d reporter columns, but the SDRF labels %s are channels of a %d-channel %s plex; "
+        "each is read from the column of its position in that plex, so check the labels if the run used another plex",
+        n_columns,
+        sorted(labels),
+        len(plex),
+        family,
+    )
+    return plex
 
 
 def _channel_indices(channel_indices: Optional[Iterable]) -> set[int]:
@@ -416,6 +482,11 @@ def fraction_groups_from_consensusxml(
     return groups
 
 
+def is_ms1_label(text: str) -> bool:
+    """A SILAC, dimethyl or mTRAQ label names its quantity already, whatever the experiment type says."""
+    return _MS1_LABEL.match(text) is not None
+
+
 def _relabel_entries(column, channel_labels: dict[int, str], is_lfq: bool) -> pa.Array:
     """
     Relabel the ``label`` field of a list<struct> intensities column.
@@ -437,7 +508,14 @@ def _relabel_entries(column, channel_labels: dict[int, str], is_lfq: bool) -> pa
     positions = np.arange(len(entries)) - np.repeat(offsets[:-1], lengths) + 1
     # A numeric label fixes the channel; any other label takes its position's channel.
     fixed = [
-        "LFQ" if is_lfq else channel_labels.get(int(text), normalize_label(text)) if text.isdigit() else None for text in texts
+        text
+        if is_ms1_label(text)
+        else "LFQ"
+        if is_lfq
+        else channel_labels.get(int(text), normalize_label(text))
+        if text.isdigit()
+        else None
+        for text in texts
     ]
     width = int(positions.max()) + 1 if len(positions) else 1
     keys = np.where(np.array([label is not None for label in fixed], dtype=bool)[codes], codes * width, codes * width + positions)
@@ -470,7 +548,13 @@ def _relabel_scalar_labels(column, channel_labels: dict[int, str], is_lfq: bool)
     """
     encoded = column.combine_chunks().dictionary_encode()
     labels = [
-        "LFQ" if is_lfq else channel_labels.get(int(text), normalize_label(text)) if text.isdigit() else normalize_label(text)
+        text
+        if is_ms1_label(text)
+        else "LFQ"
+        if is_lfq
+        else channel_labels.get(int(text), normalize_label(text))
+        if text.isdigit()
+        else normalize_label(text)
         for text in encoded.dictionary.to_pylist()
     ]
     return pa.array(labels, type=column.type).take(encoded.indices)
@@ -589,9 +673,9 @@ def relabel_intensities_parquet(
       stamp OpenMS's ``fraction_group`` onto pg/feature rows).
 
     Streams by row group so memory stays bounded on large tables. Non-target
-    columns pass through untouched. QPX compression and selective
-    BYTE_STREAM_SPLIT encoding are retained; *compression* overrides the source
-    codec when supplied. Returns the number of rows annotated with a cv_param.
+    columns pass through untouched. The output is written like every QPX view,
+    with per-column encodings measured on its first rows; *compression* overrides
+    the source codec when supplied. Returns the number of rows annotated with a cv_param.
     """
     do_cv_param = cv_param_resolver is not None and run_column is not None and cv_param_name is not None
 
@@ -602,11 +686,7 @@ def relabel_intensities_parquet(
     if compression is not None or b"compression_format" in source_metadata:
         source_metadata[b"compression_format"] = output_compression.encode()
     output_schema = parquet.schema_arrow.with_metadata(source_metadata or None)
-    writer = pq.ParquetWriter(
-        dst_path,
-        output_schema,
-        **parquet_write_options(output_schema, output_compression),
-    )
+    writer = SampledParquetWriter(dst_path, output_schema, output_compression)
     annotated = 0
     try:
         for group in range(parquet.num_row_groups):

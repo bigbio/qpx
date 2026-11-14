@@ -6,18 +6,21 @@
 [![Codacy Badge](https://app.codacy.com/project/badge/Coverage/e71a662e8d4f483094576c1d8f8888c3)](https://app.codacy.com/gh/bigbio/qpx/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_Coverage)
 [![PyPI version](https://badge.fury.io/py/qpx.svg)](https://badge.fury.io/py/qpx)
 
-A Python package for working with mass spectrometry data in the QPX format.
+A Python package for converting, querying and validating quantitative proteomics data in the QPX format. QPX stores linked records as Apache Parquet views and exports quantification matrices to MuData for the scverse ecosystem.
 
 ![QPX Architecture](docs/images/qpx-architecture.svg)
 
 ## Features
 
-- **Convert** data from OpenMS (native QPX and consensusXML), DIA-NN, MaxQuant, Spectronaut, FragPipe, CPTAC CDAP (`.psm`), mzIdentML, and SDRF to QPX Parquet format
-- **Transform** QPX data: gene mapping, protein quantification (DirectLFQ, MaxLFQ, iBAQ, TopN, …), accession normalization, metadata updates
-- **Query** datasets with SQL, filter rows, or preview with `head`
+- **Convert** data from OpenMS/quantms (native QPX, consensusXML and MSstats input), DIA-NN, MaxQuant, Spectronaut, FragPipe, Proteome Discoverer, CPTAC CDAP (`.psm`), mzIdentML, mzML and SDRF to QPX
+- **Transform** QPX data: gene mapping, protein quantification (DirectLFQ, MaxLFQ, iBAQ, TopN, Top3 and sum), accession normalization, protein properties, site quantification and metadata updates
+- **Query** datasets with SQL or the Python API, filter rows, or preview with `head`; export results to pandas, Arrow or Polars
 - **Inspect** dataset summaries, Arrow schemas, and Parquet metadata
-- **Validate** datasets against the canonical QPX schema
+- **Validate** schemas, values and links between views against the canonical QPX specification
+- **Prepare for publication** with `transform relayout` (sorting, ID remapping and numeric precision reduction), or upgrade older datasets with `migrate`
 - **Ontology** management for PSI-MS and PRIDE CV terms
+
+Available views depend on the input tool. The [data model](docs/spec/data-model.md) covers PSMs, precursor features, protein groups, spectra, fragments, peptide-to-protein mappings, proteins, modification sites, proteoforms and metadata. A dataset keeps these views in one folder as `{prefix}.{view}.parquet` files; optional analysis matrices use HDF5.
 
 ### MuData Export (quantification results only)
 
@@ -30,21 +33,43 @@ from qpx import Dataset
 from qpx.mudata import build_mudata
 
 ds = Dataset("path/to/PXD000000/")
-mdata = build_mudata(ds)  # auto-detects label & available modalities
+mdata = build_mudata(ds)  # detects available modalities and expands multiplexed labels
 mdata.write("PXD000000.h5mu")  # serialize to HDF5
 ```
 
-Use `build_mudata(ds, all_intensity_labels=True)` to represent every TMT/iTRAQ
-channel as a separate observation (`run|label` for precursors, `grouped_runs|label`
-for proteins). Protein observations are quantification units, so the fractions of
-one sample form one observation. Decoys are left out unless you pass
-`include_decoys=True` (see [MuData](docs/spec/anndata.md#mudata-h5mu)).
+By default, multiplexed data (TMT, iTRAQ and plexDIA) expand over every channel:
+`run|label` for precursor observations and `grouped_runs|label` for protein-group
+observations. Label-free data keep one observation per run or quantification
+unit; `all_intensity_labels=True` forces the expanded form. Use
+`intensity_label="TMT126"` to select one channel.
+
+Protein observations are quantification units: the fractions in one
+`grouped_runs` set share one protein-group quantity per label. Variables are
+`peptidoform|charge` for precursors and sorted `pg_accessions` joined by `;` for
+protein groups. Additional intensities become layers. When both modalities are
+present, `varp["feature_mapping"]` links the precursor and protein-group variables.
+Decoys are left out by default. Repeated values in one cell are summed, or
+averaged with `duplicates="mean"`. Null intensities are omitted from the sparse
+matrices; their implicit cells read as zero. See [MuData](docs/spec/anndata.md#mudata-h5mu)
+for `include_decoys=True`, imputation masks and optional expression modalities.
 
 > MuData support is included in the default QPX installation.
 
 ### Performance
 
 ![QPX Benchmark](docs/images/qpx-benchmark.svg)
+
+Local measurements use the LFQ and TMT outputs of [PXD007683](https://www.ebi.ac.uk/pride/archive/projects/PXD007683). The LFQ query comparison uses a gzip mzTab PSM section read with pandas and the corresponding QPX PSM view read with DuckDB. Each query ran in five fresh processes with a warm OS page cache; the table shows medians. Imports, conversion and `relayout` are outside the timed interval.
+
+| LFQ PSM query | gzip mzTab + pandas | QPX + DuckDB | Matching result |
+| --- | ---: | ---: | --- |
+| Count all PSMs | 2.361 s | 1.71 ms | 542,403 |
+| Count PSMs with `charge = 2` | 2.332 s | 2.53 ms | 382,341 |
+| Read `sequence` and `charge` | 2.320 s | 26.43 ms | 542,403 rows; identical multisets |
+
+This compares two reading workflows and engines. The text workflow parses the full PSM section for each query; DuckDB can read only the needed Parquet columns and answer an unfiltered count from the footer. The figure's memory values are increases in process peak RSS above the imported process, not total process memory. Measurements used an Intel Core Ultra 7 270K Plus, 24 logical CPUs, 122.9 GiB RAM, Python 3.13.9, DuckDB 1.5.2, pandas 2.3.3 and PyArrow 24, with 24 DuckDB threads. Results depend on the data, query and machine.
+
+Storage compares related outputs after `qpxc transform relayout`: LFQ gzip mzTab + MSstats occupy **59.59 MiB**, versus **23.74 MiB** for six QPX Parquet views; TMT gzip MSstats occupies **18.17 MiB**, versus **5.13 MiB** for the QPX feature view alone. LFQ feature rows differ between MSstats and QPX (518,248 and 573,203). TMT stores 1,362,592 channel entries in 123,872 feature rows with 11 intensities each. These are different representations and contents. `relayout` also sorts records, remaps IDs and reduces the precision of selected measured values, so these sizes are not a lossless compression ratio.
 
 ## Installation
 
@@ -64,7 +89,7 @@ pip install "qpx[all]"         # all optional extras above
 ### Install from GitHub (latest dev)
 
 ```bash
-pip install git+https://github.com/bigbio/qpx.git
+pip install git+https://github.com/bigbio/qpx.git@dev
 ```
 
 ### Install from Source
@@ -185,6 +210,7 @@ Commands:
   validate   Validate a QPX dataset or structure against the canonical schema.
   ontology   Manage CV ontology data (PSI-MS, PRIDE CV).
   pdc2qpx    Download a PDC/CPTAC study and convert it to a QPX dataset.
+  migrate    Upgrade a dataset to the current QPX specification.
 ```
 
 ### pdc2qpx
@@ -205,13 +231,25 @@ qpxc pdc2qpx -a cptac_lfq.csv --download-dir ./downloads --output-folder ./qpx
 ### Convert
 
 ```bash
-qpxc convert [openms | openms-consensus | diann | diann-xic | maxquant | spectronaut | fragpipe | mzidentml | cdap | mz | sdrf] [OPTIONS]
+qpxc convert COMMAND [OPTIONS]
+# openms, openms-consensus, quantms-msstats, diann, diann-xic, maxquant, spectronaut,
+# fragpipe, proteome-discoverer, mzidentml, cdap, mz, sdrf
 ```
+
+Use `qpxc convert <command> --help` for the required input files and available output views. The `openms` command enriches native OpenMS QPX output and is deprecated in favor of `openms-consensus` for consensusXML input.
 
 ### Transform
 
 ```bash
-qpxc transform [gene-map | quantify | normalize-accessions | update-metadata] [OPTIONS]
+qpxc transform COMMAND [OPTIONS]
+# gene-map, quantify, normalize-accessions, protein-properties,
+# site, update-metadata, relayout
+
+# Write a sorted copy for selective reads and publication
+qpxc transform relayout --dataset ./PXD014414 --output-folder ./PXD014414_sorted
+
+# Upgrade an older dataset
+qpxc migrate --help
 ```
 
 ### Query
@@ -250,7 +288,10 @@ qpx/
 ├── cli/                    # Click CLI (entry point: qpx.cli.main:main)
 │   ├── main.py             # Top-level CLI group
 │   ├── pdc2qpx.py          # pdc2qpx command (PDC download + convert)
-│   └── convert.py          # convert subcommands (openms, openms-consensus, quantms-msstats, maxquant, diann, spectronaut, fragpipe, mzidentml, cdap, mz, sdrf)
+│   ├── convert/            # Tool commands, shared options and postprocessing
+│   ├── transform/          # Transform commands
+│   ├── query.py            # SQL, filter and head commands
+│   └── migrate.py          # Dataset migration command
 ├── pipeline/               # High-level orchestration (pdc2qpx: download + CDAP + mz)
 ├── converters/             # Tool-specific converters
 │   ├── openms/             # OpenMS native QPX enrichment
@@ -260,6 +301,7 @@ qpx/
 │   ├── maxquant/           # MaxQuant converter
 │   ├── spectronaut/        # Spectronaut converter
 │   ├── fragpipe/           # FragPipe converter
+│   ├── proteome_discoverer/ # Proteome Discoverer exports converter
 │   ├── mzidentml/          # mzIdentML converter
 │   ├── quantms_msstats/    # QuantMS *_msstats_in.csv + SDRF converter
 │   └── sdrf.py             # Shared SDRF converter
@@ -271,6 +313,9 @@ qpx/
 │   └── ontology/           # OBO ontology registry
 ├── writers/                # Parquet writers (one per structure)
 ├── views/                  # Analytical views (protein, peptide, QC)
+├── transforms/             # Gene mapping, quantification, relayout and metadata
+├── collection.py           # Multi-dataset queries
+├── mudata.py               # Quantification matrices and MuData export
 └── dataset.py              # Main Dataset class entry point
 ```
 

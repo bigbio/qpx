@@ -32,6 +32,9 @@ class TestS3EngineConfig:
         engine = DuckDBEngine(s3_config={"region": "us-east-1", "anonymous": True})
         result = engine.execute("SELECT * FROM duckdb_extensions() WHERE extension_name = 'httpfs' AND loaded = true").fetchone()
         assert result is not None
+        # Cursors, which stream query rows, see the S3 settings too.
+        setting = "SELECT current_setting('s3_region'), current_setting('s3_url_style')"
+        assert engine.connection.cursor().execute(setting).fetchall() == [("us-east-1", "path")]
         engine.close()
 
     def test_s3_with_custom_endpoint(self):

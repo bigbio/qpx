@@ -84,19 +84,19 @@ summary = ds.identification_summary.summary()
 print(summary.to_df())
 
 fig = ds.identification_summary.plot()
-fig.savefig("identifications.png")
+fig.write_html("identifications.html")
 
 # Run summary (per-run statistics)
-fig = ds.run_summary.plot(figsize=(14, 7))
-fig.savefig("run_summary.png")
+fig = ds.run_summary.plot()
+fig.write_html("run_summary.html")
 
 # Modification frequency across PSMs
 fig = ds.modification_view.plot(top_n=20)
-fig.savefig("modifications.png")
+fig.write_html("modifications.html")
 
 # Dataset QC metrics
 fig = ds.qc_view.plot()
-fig.savefig("qc_overview.png")
+fig.write_html("qc_overview.html")
 ```
 
 ### Multi-Dataset Analysis
@@ -111,11 +111,7 @@ ds2 = qpx.open_dataset("PXD016999/")
 
 # Virtual mode — cross-dataset SQL
 coll = qpx.DatasetCollection([ds1, ds2])
-result = coll.sql("""
-    SELECT 'PXD014414' AS dataset, COUNT(*) AS n_features FROM feature_0
-    UNION ALL
-    SELECT 'PXD016999' AS dataset, COUNT(*) AS n_features FROM feature_1
-""")
+result = coll.sql("SELECT source_dataset, COUNT(*) AS n_features FROM feature GROUP BY source_dataset")
 print(result.to_df())
 
 # Physical merge — combine structures into a new directory

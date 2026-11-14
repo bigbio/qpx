@@ -3,7 +3,7 @@
 `site.parquet` holds **protein modification-site claims**: one row per claim that a residue of a protein carries a given modification, in the runs listed in `grouped_runs`. Three columns describe a claim, and they answer different questions:
 
 - **`site_qvalue`** — error control over the claims of this view. A claim is **false** when the residue does not carry this modification in the sample, whatever the reason: the peptide or the protein is wrong, the modification is on another residue, or it is another modification. The **counting unit** is the distinct row (protein, position, modification, runs), not the PSM: the q-value is the estimated proportion of false claims among the rows at least as well supported. It is a set-level statistic, not the probability that one row is correct. A producer that has no estimate at this unit leaves it null, and records the method and the population it estimated over in [provenance](provenance.md).
-- **`modified_probability`** — the probability that the residue carries *some* modification, from the spectra of the peptides that cover it. It is **not stoichiometry** (the fraction of the protein's copies that are modified), which this view does not report.
+- **`modified_probability`** — the probability that the residue carries *some* modification, from the spectra of the peptides that cover it. It is **not stoichiometry** (the fraction of the protein's copies that are modified), which the `stoichiometry` column holds.
 - **`evidence_fraction`** — the share of the residue's modification evidence that supports *this* modification. Within one spectrum the candidate explanations are mutually exclusive and get posterior probabilities; the probability mass placing a modification on the residue is summed over spectra, and the evidence fraction is the part of it placing this modification. With the `alternatives` of the row it sums to 1; a row without alternatives holds the residue's whole evidence, so its fraction is 1. Mass spectrometry often cannot tell near-isobaric modifications apart (acetyl and trimethyl differ by 0.036 Da), and the fractions show how the evidence splits between them.
 
 !!! warning "An evidence fraction is not a presence probability"
@@ -21,7 +21,7 @@ The YAML schema definition lives at `qpx/core/data/schemas/site.yaml` in the sou
 
 | Field | Description | Type | Required |
 |-------|-------------|------|----------|
-| `site_id` | Opaque int64 identity, derived from the identity composite (`protein_accession`, `position`, `modification_name`, `grouped_runs`) | int64 | yes |
+| `site_id` | Opaque int64 identity, derived from the identity composite (`protein_accession`, `position`, `modification_name`, `grouped_runs`, `label`) | int64 | yes |
 | `protein_accession` | Protein the position refers to | string | yes |
 | `family` | Protein family (the canonical entry of an isoform, variant or chain) | string, null | no |
 | `position` | Position in the protein: 1-based for a residue, 0 for the protein N-terminus, length + 1 for the C-terminus (see below) | int32 | yes |
@@ -39,8 +39,13 @@ The YAML schema definition lives at `qpx/core/data/schemas/site.yaml` in the sou
 | `psm_count` | PSMs at the PSM cutoff that place the modification there | int32, null | no |
 | `best_psm_id` | Best of those PSMs (`psm.psm_id`) | int64, null | no |
 | `is_decoy` | Decoy or knockoff claim | bool | yes |
+| `label` | Channel of this quantification, null for a claim without one; part of the identity; specification 1.3 | string, null | no |
+| `intensity` | Quantity of the modified site in this label and these runs; specification 1.3 | float32, null | no |
+| `stoichiometry` | Fraction of the protein's copies at this residue that carry the modification; specification 1.3 | float64, null | no |
 | `additional_scores` | Additional scores, e.g. a localization probability | list\<score\> | no |
 | `cv_params` | CV parameters | list\<cv_param\> | no |
+
+`qpxc transform relayout` can store `additional_scores` and `cv_params` as a struct with one field per name ([Struct lists](serialization.md#struct-lists)).
 
 The `site_alternative` struct:
 
@@ -99,3 +104,14 @@ print(resolved.to_df())
 - `pg_id` links a site to its protein group in [pg](pg.md).
 - `best_psm_id` links to the [psm](psm.md) row with the best evidence.
 - A [proteoform](proteoform.md) of the same `family` can carry the residue in a variant or chain. Site rows do not establish that several modifications occur on the same molecule.
+
+## Quantified sites
+
+A quantified row holds one site, label and set of runs, and `intensity` with `stoichiometry` say how much of it there is. Do not read `modified_probability` as stoichiometry, which is what these columns are for. A pg link (`pg_id`) stays null on a labelled row, because validation expects the link to name a null-label pg row.
+
+| Producer | What it writes |
+|----------|----------------|
+| `qpxc convert maxquant --sites-file` | Each `<modification>Sites.txt` per experiment: `Intensity [L/M/H] <experiment>`, or `Reporter intensity corrected N` with an isobaric SDRF; `Occupancy` as `stoichiometry`; `Localization prob` as `modified_probability`; scores and `PEP` in `additional_scores`; the other proteins and positions in `cv_params`. `grouped_runs` holds the experiment's raw files, from the evidence file or SDRF. `psm_count` covers all experiments. |
+| `qpxc transform site --modification` | For any converter whose feature view has `pg_positions`: per run and label, the summed intensity of the peptides that place the modification, on their `anchor_protein`. `stoichiometry` is their share of the intensity of all peptides covering the residue, an apparent value since peptides ionize differently. `modified_probability` is the best probability score of the placement. |
+
+DIA-NN and Spectronaut site tables are not read: use `qpxc transform site`, which reads the localization both converters keep on the feature view.

@@ -13,12 +13,14 @@ from pathlib import Path
 import pyarrow.parquet as pq
 
 from qpx.converters.mzidentml import MzIdentMLConverter
+from qpx.converters.mzidentml.mgf_parser import MgfSpectraIndex
 from qpx.core.data import (
     DatasetSchema,
     PepMapSchema,
     ProvenanceSchema,
     PsmSchema,
 )
+from qpx.dataset import Dataset
 
 XL_EXAMPLES = Path(__file__).parent.parent / "examples" / "mzidentml" / "xl"
 PXD054720_DIR = Path(__file__).parent.parent / "examples" / "mzidentml" / "PXD054720"
@@ -246,6 +248,10 @@ class TestPXD054720WithSpectra:
         with_spectra = sum(1 for v in mz_col if v is not None and len(v) > 0)
         assert with_spectra > 0, "Expected some PSMs with attached spectra"
 
+    def test_footer_states_what_the_arrays_hold(self, converted_dataset):
+        metadata = pq.read_metadata(str(converted_dataset / "PXD054720_sp.psm.parquet")).metadata
+        assert metadata[b"spectrum_content"] == b"all_peaks"
+
     def test_spectra_arrays_match_length(self, converted_dataset):
         table = pq.read_table(str(converted_dataset / "PXD054720_sp.psm.parquet"))
         mz_col = table.column("mz_array").to_pylist()
@@ -284,7 +290,7 @@ class TestIndexFallback:
             {"scan": [1], "_spectrum_id_scheme": "index", "mz_array": None, "intensity_array": None, "rt": None},
         ]
 
-        result = MzIdentMLConverter._attach_spectra(records, str(mgf))
+        result = MzIdentMLConverter._attach_spectra(records, MgfSpectraIndex(mgf))
         assert result[0]["mz_array"] == [100.0]  # position 0
         assert result[1]["mz_array"] == [200.0]  # position 1
 
@@ -303,7 +309,7 @@ class TestIndexFallback:
             {"scan": [999], "_spectrum_id_scheme": "index", "mz_array": None, "intensity_array": None, "rt": None},
         ]
 
-        result = MzIdentMLConverter._attach_spectra(records, str(mgf))
+        result = MzIdentMLConverter._attach_spectra(records, MgfSpectraIndex(mgf))
         # No spectrum at position 999 → nothing attached (NOT the SCANS=999 peaks).
         assert result[0]["mz_array"] is None
 
@@ -328,9 +334,10 @@ class TestIndexFallback:
         parsed = {
             "spectra_data": {"SD1": "e2e.mgf"},
             "db_sequences": {},
-            "peptides": {"Pep1": {"sequence": "PEPTIDE", "modifications": None, "xl_mods": {}}},
+            "peptides": {"Pep1": {"sequence": "PEPTIDE", "peptidoform": "PEPTIDE", "modifications": None, "xl_mods": {}}},
             "peptide_evidence": {},
             "linker_info": {},
+            "modification_tags": {},
             "spectrum_results": [
                 {
                     "spectrum_id": "index=1",  # the 2nd spectrum (position 1)
@@ -356,7 +363,7 @@ class TestIndexFallback:
         records = _build_psm_records(parsed)
         assert records[0]["_spectrum_id_scheme"] == "index"
 
-        result = MzIdentMLConverter._attach_spectra(records, str(mgf))
+        result = MzIdentMLConverter._attach_spectra(records, MgfSpectraIndex(mgf))
         # Correct spectrum is position 1 (200.0), NOT the SCANS=1 collision (100.0).
         assert result[0]["mz_array"] == [200.0]
         assert result[0]["intensity_array"] == [600.0]
@@ -377,3 +384,68 @@ class TestImport:
         from qpx.converters.mzidentml.converter import MzIdentMLConverter as Cls
 
         assert Cls is not None
+
+
+class TestScanSemantics:
+    """psm.scan says what it holds: an MGF turns index references into scan numbers (bigbio/qpx battle test H25)."""
+
+    @staticmethod
+    def _footer(tmp_path, prefix="mz"):
+        return pq.read_metadata(tmp_path / f"{prefix}.psm.parquet").metadata.get(b"scan_format")
+
+    def test_index_references_become_scans_of_the_mgf(self, tmp_path):
+        mgf = tmp_path / "test.mgf"
+        mgf.write_text("BEGIN IONS\nSCANS=999\n100.0 500\nEND IONS\nBEGIN IONS\nSCANS=998\n200.0 600\nEND IONS\n")
+        records = [
+            {"scan": [0], "_spectrum_id_scheme": "index", "mz_array": None, "intensity_array": None, "rt": None},
+            {"scan": [1], "_spectrum_id_scheme": "index", "mz_array": None, "intensity_array": None, "rt": None},
+        ]
+        result = MzIdentMLConverter._attach_spectra(records, MgfSpectraIndex(mgf, keep_peaks=False))
+        assert [r["scan"] for r in result] == [[999], [998]]
+        assert {r["_spectrum_id_scheme"] for r in result} == {"scan"}
+        assert result[0]["mz_array"] is None
+
+    def test_title_with_an_index_is_not_a_scan(self, tmp_path):
+        mgf = tmp_path / "test.mgf"
+        mgf.write_text("BEGIN IONS\nTITLE=run.0.0 index=0\n100.0 500\nEND IONS\n")
+        records = [{"scan": [0], "_spectrum_id_scheme": "index", "mz_array": None, "intensity_array": None, "rt": None}]
+        result = MzIdentMLConverter._attach_spectra(records, MgfSpectraIndex(mgf))
+        assert result[0]["scan"] == [0]
+        assert result[0]["_spectrum_id_scheme"] == "index"
+
+    def test_mgf_of_one_run_leaves_other_runs_alone(self, tmp_path):
+        mgf = tmp_path / "run_a.mgf"
+        mgf.write_text("BEGIN IONS\nSCANS=999\n100.0 500\nEND IONS\n")
+        records = [
+            {"scan": [0], "run_file_name": "run_a", "_spectrum_id_scheme": "index", "mz_array": None, "intensity_array": None},
+            {"scan": [0], "run_file_name": "run_b", "_spectrum_id_scheme": "index", "mz_array": None, "intensity_array": None},
+        ]
+        result = MzIdentMLConverter._attach_spectra(records, MgfSpectraIndex(mgf), runs=2)
+        assert [r["scan"] for r in result] == [[999], [0]]
+
+    def test_file_declares_the_format_of_its_references(self, tmp_path):
+        mzid = Path(__file__).resolve().parent.parent / "examples/mzidentml/xl/scores_and_thresholds_1_3_0_draft.mzid.gz"
+        MzIdentMLConverter().convert(mzid, tmp_path, output_prefix="mz")
+        assert self._footer(tmp_path) == b"index"
+
+
+def test_several_result_batches_match_one(tmp_path, monkeypatch):
+    """Batching results changes neither the records nor the views built after them."""
+    mzid = Path(__file__).resolve().parent.parent / "examples/mzidentml/xl/Xlink_EDC_mzIdentML_1_3_0_draft.mzid.gz"
+    MzIdentMLConverter().convert(mzid, tmp_path / "one", output_prefix="mz")
+    monkeypatch.setattr("qpx.converters.mzidentml.psm_adapter._RESULT_BATCH", 1)
+    MzIdentMLConverter().convert(mzid, tmp_path / "many", output_prefix="mz")
+    for view in ("psm", "pepmap"):
+        assert pq.read_table(tmp_path / "one" / f"mz.{view}.parquet").equals(
+            pq.read_table(tmp_path / "many" / f"mz.{view}.parquet")
+        )
+
+
+def test_link_species_with_one_alpha_peptide_are_separate_identities(tmp_path):
+    mzid = XL_EXAMPLES / "Xlink_EDC_mzIdentML_1_3_0_draft.mzid.gz"
+    MzIdentMLConverter().convert(mzid_path=str(mzid), output_folder=str(tmp_path), output_prefix="xl")
+
+    with Dataset(str(tmp_path), file_prefix="xl") as dataset:
+        result = dataset.validate()["psm"]
+
+    assert not result.errors

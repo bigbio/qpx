@@ -28,13 +28,13 @@ import pyarrow.parquet as pq
 from qpx._version import __version__
 from qpx.core.scores import field_ontology_entries
 from qpx.core.sql import escape_path, sql_build
-from qpx.writers.base import (
+from qpx.writers.base import parquet_write_options
+from qpx.writers.ontology import OntologyWriter
+from qpx.writers.partitioned import (
     _PARTITIONED_MAX_ROWS_PER_GROUP,
     _PARTITIONED_MIN_ROWS_PER_GROUP,
     _stamp_footer_metadata,
-    parquet_write_options,
 )
-from qpx.writers.ontology import OntologyWriter
 from qpx.writers.provenance import ProvenanceWriter
 
 logging.basicConfig(

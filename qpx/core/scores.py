@@ -20,6 +20,8 @@ import logging
 import re
 from typing import Optional
 
+from qpx.core.builtin_scores import BUILTIN_SCORES
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -60,285 +62,6 @@ def normalize_score_name(raw_name: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Built-in cache for scores NOT in PSI-MS OBO
-# ---------------------------------------------------------------------------
-# Only tool-specific scores that have no CV accession, or QPX-internal
-# metrics.  Everything with an MS: accession is resolved from the OBO file.
-
-_BUILTIN_SCORES: dict[str, dict] = {
-    # --- DIA-NN (no MS accessions yet) ---
-    "diann_qvalue": {
-        "ontology_name": "DIA-NN:Q.Value",
-        "ontology_accession": None,
-        "ontology_source": None,
-        "description": "DIA-NN run-level q-value (lower is better)",
-        "higher_better": False,
-    },
-    "precursor_qvalue": {
-        "ontology_name": "DIA-NN:Q.Value",
-        "ontology_accession": None,
-        "ontology_source": None,
-        "description": "DIA-NN run-level precursor q-value (lower is better)",
-        "higher_better": False,
-    },
-    "diann_global_qvalue": {
-        "ontology_name": "DIA-NN:Global.Q.Value",
-        "ontology_accession": None,
-        "ontology_source": None,
-        "description": "DIA-NN global q-value (lower is better)",
-        "higher_better": False,
-    },
-    "diann_cscore": {
-        "ontology_name": "DIA-NN:CScore",
-        "ontology_accession": None,
-        "ontology_source": None,
-        "description": "DIA-NN confidence score (higher is better)",
-        "higher_better": True,
-    },
-    # --- MSFragger / FragPipe (no MS accessions) ---
-    "msfragger_hyperscore": {
-        "ontology_name": "MSFragger:Hyperscore",
-        "ontology_accession": None,
-        "ontology_source": None,
-        "description": "MSFragger hyperscore (higher is better)",
-        "higher_better": True,
-    },
-    "msfragger_expectation": {
-        "ontology_name": "MSFragger:Expectation",
-        "ontology_accession": None,
-        "ontology_source": None,
-        "description": "MSFragger expectation value (lower is better)",
-        "higher_better": False,
-    },
-    # --- Sage (no MS accessions yet) ---
-    "sage_hyperscore": {
-        "ontology_name": "Sage:hyperscore",
-        "ontology_accession": None,
-        "ontology_source": None,
-        "description": "Sage hyperscore (higher is better)",
-        "higher_better": True,
-    },
-    # --- QPX-internal metrics ---
-    "parent_ion_fraction": {
-        "ontology_name": "parent ion fraction",
-        "ontology_accession": None,
-        "ontology_source": None,
-        "description": "Fraction of target peak intensity in isolation window (higher is better)",
-        "higher_better": True,
-    },
-    "consensus_support": {
-        "ontology_name": "consensus support",
-        "ontology_accession": None,
-        "ontology_source": None,
-        "description": "Number of search engines supporting the identification (higher is better)",
-        "higher_better": True,
-    },
-    "precursor_quantification_score": {
-        "ontology_name": "precursor quantification score",
-        "ontology_accession": None,
-        "ontology_source": None,
-        "description": "QuantUMS-derived quantification confidence (higher is better)",
-        "higher_better": True,
-    },
-    # --- DIA-NN additional scores ---
-    "diann_evidence": {
-        "ontology_name": "DIA-NN:Evidence",
-        "ontology_accession": None,
-        "ontology_source": None,
-        "description": "DIA-NN co-elution evidence score (higher is better)",
-        "higher_better": True,
-    },
-    "diann_spectrum_similarity": {
-        "ontology_name": "spectral dot product",
-        "ontology_accession": "MS:1003304",
-        "ontology_source": "MS",
-        "description": "Observed vs library MS2 spectrum similarity (higher is better)",
-        "higher_better": True,
-    },
-    "diann_ms1_profile_corr": {
-        "ontology_name": "DIA-NN:Ms1.Profile.Corr",
-        "ontology_accession": None,
-        "ontology_source": None,
-        "description": "MS1/MS2 chromatographic profile correlation (higher is better)",
-        "higher_better": True,
-    },
-    "diann_mass_evidence": {
-        "ontology_name": "DIA-NN:Mass.Evidence",
-        "ontology_accession": None,
-        "ontology_source": None,
-        "description": "Mass accuracy scoring contribution (higher is better)",
-        "higher_better": True,
-    },
-    "diann_averagine": {
-        "ontology_name": "DIA-NN:Averagine",
-        "ontology_accession": None,
-        "ontology_source": None,
-        "description": "Isotope pattern fit against Averagine model (higher is better)",
-        "higher_better": True,
-    },
-    "diann_quantity_quality": {
-        "ontology_name": "DIA-NN:Quantity.Quality",
-        "ontology_accession": None,
-        "ontology_source": None,
-        "description": "Quantification quality 1/(1+SD) (higher is better)",
-        "higher_better": True,
-    },
-    "diann_lib_qvalue": {
-        "ontology_name": "DIA-NN:Lib.Q.Value",
-        "ontology_accession": "MS:1002354",
-        "ontology_source": "MS",
-        "description": "Library-pass precursor q-value (lower is better)",
-        "higher_better": False,
-    },
-    "diann_lib_pg_qvalue": {
-        "ontology_name": "DIA-NN:Lib.PG.Q.Value",
-        "ontology_accession": "MS:1002373",
-        "ontology_source": "MS",
-        "description": "Library-pass protein group q-value (lower is better)",
-        "higher_better": False,
-    },
-    "diann_protein_qvalue": {
-        "ontology_name": "protein-level q-value",
-        "ontology_accession": "MS:1001869",
-        "ontology_source": "MS",
-        "description": "Protein-level FDR using proteotypic peptides (lower is better)",
-        "higher_better": False,
-    },
-    "diann_decoy_cscore": {
-        "ontology_name": "DIA-NN:Decoy.CScore",
-        "ontology_accession": None,
-        "ontology_source": None,
-        "description": "CScore for paired decoy match (higher is better)",
-        "higher_better": True,
-    },
-    "diann_decoy_evidence": {
-        "ontology_name": "DIA-NN:Decoy.Evidence",
-        "ontology_accession": None,
-        "ontology_source": None,
-        "description": "Evidence score for paired decoy match (higher is better)",
-        "higher_better": True,
-    },
-    "diann_translated_quality": {
-        "ontology_name": "DIA-NN:Translated.Quality",
-        "ontology_accession": None,
-        "ontology_source": None,
-        "description": "plexDIA translation quality (higher is better)",
-        "higher_better": True,
-    },
-    "diann_translated_qvalue": {
-        "ontology_name": "DIA-NN:Translated.Q.Value",
-        "ontology_accession": None,
-        "ontology_source": None,
-        "description": "plexDIA translated q-value (lower is better)",
-        "higher_better": False,
-    },
-    # --- q-value variants used directly by converters ---
-    # Names preserve DIA-NN / tool origin for backward compatibility.
-    "qvalue": {
-        "ontology_name": "q-value (DIA-NN:Q.Value)",
-        "ontology_accession": "MS:1002354",
-        "ontology_source": "MS",
-        "description": "Run-level precursor q-value (DIA-NN Q.Value, lower is better)",
-        "higher_better": False,
-    },
-    "pg_qvalue": {
-        "ontology_name": "protein group q-value (DIA-NN:PG.Q.Value)",
-        "ontology_accession": "MS:1002373",
-        "ontology_source": "MS",
-        "description": "Protein group run-level q-value (DIA-NN PG.Q.Value, lower is better)",
-        "higher_better": False,
-    },
-    "pg_pep": {
-        "ontology_name": "protein group posterior error probability (DIA-NN:PG.PEP)",
-        "ontology_accession": None,
-        "ontology_source": None,
-        "description": "Protein group posterior error probability (DIA-NN PG.PEP, lower is better)",
-        "higher_better": False,
-    },
-    "protein_global_qvalue": {
-        "ontology_name": "protein-level global FDR",
-        "ontology_accession": "MS:1001214",
-        "ontology_source": "MS",
-        "description": "Protein global q-value (lower is better)",
-        "higher_better": False,
-    },
-    "global_qvalue": {
-        "ontology_name": "global q-value (DIA-NN:Global.Q.Value)",
-        "ontology_accession": "MS:1002350",
-        "ontology_source": "MS",
-        "description": "Global q-value at experiment level (DIA-NN Global.Q.Value, lower is better)",
-        "higher_better": False,
-    },
-    "pg_global_qvalue": {
-        "ontology_name": "protein group global FDR (DIA-NN:Global.PG.Q.Value)",
-        "ontology_accession": "MS:1001214",
-        "ontology_source": "MS",
-        "description": "Protein group global q-value (DIA-NN Global.PG.Q.Value, lower is better)",
-        "higher_better": False,
-    },
-    # --- Phospho site localization scores ---
-    "phosphors_site_probability": {
-        "ontology_name": "PhosphoRS site probability",
-        "ontology_accession": "MS:1001969",
-        "ontology_source": "MS",
-        "description": "PhosphoRS phosphorylation site probability (higher is better)",
-        "higher_better": True,
-    },
-    "ptmrs_site_probability": {
-        "ontology_name": "ptmRS site probability",
-        "ontology_accession": "MS:1002536",
-        "ontology_source": "MS",
-        "description": "ptmRS PTM site probability (higher is better)",
-        "higher_better": True,
-    },
-    "luciphor_site_probability": {
-        "ontology_name": "Luciphor site probability",
-        "ontology_accession": "MS:1003291",
-        "ontology_source": "MS",
-        "description": "Luciphor PTM site localization probability (higher is better)",
-        "higher_better": True,
-    },
-    "d_score_site_probability": {
-        "ontology_name": "D-Score site probability",
-        "ontology_accession": "MS:1002536",
-        "ontology_source": "MS",
-        "description": "D-Score phospho site localization probability (higher is better)",
-        "higher_better": True,
-    },
-    "phospho_sty_probability": {
-        "ontology_name": "MaxQuant Phospho (STY) probability",
-        "ontology_accession": "MS:1001982",
-        "ontology_source": "MS",
-        "description": "MaxQuant per-site phosphorylation probability (higher is better)",
-        "higher_better": True,
-    },
-    # --- MaxQuant Andromeda scores ---
-    "andromeda_score": {
-        "ontology_name": "Andromeda score",
-        "ontology_accession": "MS:1002338",
-        "ontology_source": "MS",
-        "description": "Andromeda search engine score (higher is better)",
-        "higher_better": True,
-    },
-    "andromeda_delta_score": {
-        "ontology_name": "Andromeda delta score",
-        "ontology_accession": "MS:1003433",
-        "ontology_source": "MS",
-        "description": "Andromeda delta score between best and second-best match (higher is better)",
-        "higher_better": True,
-    },
-    # --- Intensity terms ---
-    "lfq": {
-        "ontology_name": "MaxLFQ intensity",
-        "ontology_accession": None,
-        "ontology_source": None,
-        "description": "Label-free quantification intensity (MaxLFQ algorithm)",
-        "higher_better": True,
-    },
-}
-
-
-# ---------------------------------------------------------------------------
 # PublicOntology-backed CV lookup (lazy singleton)
 # ---------------------------------------------------------------------------
 
@@ -366,12 +89,15 @@ def _lookup_from_obo(normalized_name: str) -> Optional[dict]:
     if term is None:
         return None
 
+    higher_better = term["higher_better"]
+    if higher_better is None:
+        higher_better = _direction_from_name(normalize_score_name(term["name"]))
     return {
         "ontology_name": term["name"],
         "ontology_accession": term["accession"],
         "ontology_source": term["source"],
         "description": term["definition"],
-        "higher_better": (term["higher_better"] if term["higher_better"] is not None else True),
+        "higher_better": higher_better,
     }
 
 
@@ -393,7 +119,7 @@ def lookup_score(normalized_name: str) -> Optional[dict]:
         return _lookup_cache[normalized_name]
 
     # 1. Check built-in cache
-    entry = _BUILTIN_SCORES.get(normalized_name)
+    entry = BUILTIN_SCORES.get(normalized_name)
     if entry is not None:
         _lookup_cache[normalized_name] = entry
         return entry
@@ -409,16 +135,33 @@ def lookup_score(normalized_name: str) -> Optional[dict]:
 # ---------------------------------------------------------------------------
 
 
-def is_higher_better(normalized_name: str) -> bool:
+# Most PSI-MS score terms carry no has_order relation. Error rates and
+# probabilities of being wrong are lower-is-better whatever the engine.
+_LOWER_IS_BETTER = re.compile(r"e_?value|expect|q_?value|p_?value|fdr|posterior_error|(?:^|_)pep(?:_|$)")
+# Engine match scores and probabilities of being right are higher-is-better.
+_HIGHER_IS_BETTER = re.compile(r"score$|xcorr|probability$")
+
+
+def _direction_from_name(normalized_name: str) -> Optional[bool]:
+    """Score direction implied by a score's name, ``None`` when the name does not tell."""
+    if _LOWER_IS_BETTER.search(normalized_name):
+        return False
+    if _HIGHER_IS_BETTER.search(normalized_name):
+        return True
+    return None
+
+
+def is_higher_better(normalized_name: str) -> Optional[bool]:
     """Return whether the score with *normalized_name* is higher-is-better.
 
-    Checks built-in cache, then OBO registry. Falls back to ``True``
-    (higher is better) for completely unknown scores.
+    Checks built-in cache, then OBO registry. A score whose direction neither
+    declares is lower-is-better when it is an e-value, q-value, p-value, PEP
+    or FDR, and ``None`` (unknown) otherwise; a consumer must not guess.
     """
     info = lookup_score(normalized_name)
-    if info is not None:
+    if info is not None and info["higher_better"] is not None:
         return info["higher_better"]
-    return True
+    return _direction_from_name(normalized_name)
 
 
 # ---------------------------------------------------------------------------
@@ -428,20 +171,20 @@ def is_higher_better(normalized_name: str) -> bool:
 # Standard QPX fields with known PSI-MS CV accessions
 _FIELD_CV_MAP: dict[str, dict] = {
     "posterior_error_probability": {
-        "ontology_name": "posterior error probability",
+        "ontology_name": "percolator:PEP",
         "ontology_accession": "MS:1001493",
         "ontology_source": "MS",
         "description": "Posterior error probability (PEP) for PSM correctness",
     },
     "observed_mz": {
         "ontology_name": "selected ion m/z",
-        "ontology_accession": "MS:1001475",
+        "ontology_accession": "MS:1000744",
         "ontology_source": "MS",
         "description": "Experimentally measured precursor m/z",
     },
     "calculated_mz": {
-        "ontology_name": "calculated mass to charge ratio",
-        "ontology_accession": "MS:1001234",
+        "ontology_name": "theoretical monoisotopic m/z",
+        "ontology_accession": "MS:1003053",
         "ontology_source": "MS",
         "description": "Theoretically calculated m/z of the peptide",
     },
@@ -457,9 +200,27 @@ _FIELD_CV_MAP: dict[str, dict] = {
         "ontology_source": "MS",
         "description": "Precursor ion charge state",
     },
+    "instrument": {
+        "ontology_name": "instrument model",
+        "ontology_accession": "MS:1000031",
+        "ontology_source": "MS",
+        "description": "Instrument model of the run",
+    },
+    "enzymes": {
+        "ontology_name": "cleavage agent name",
+        "ontology_accession": "MS:1001045",
+        "ontology_source": "MS",
+        "description": "Cleavage agents used for the run",
+    },
+    "dissociation_method": {
+        "ontology_name": "dissociation method",
+        "ontology_accession": "MS:1000044",
+        "ontology_source": "MS",
+        "description": "Fragmentation method of the run",
+    },
     "intensity": {
-        "ontology_name": "MS1 feature area",
-        "ontology_accession": "MS:1002498",
+        "ontology_name": "LC-MS feature intensity",
+        "ontology_accession": "MS:1001840",
         "ontology_source": "MS",
         "description": "Primary precursor intensity",
     },
@@ -620,3 +381,18 @@ def score_ontology_entries(
             }
         )
     return entries
+
+
+def unresolved_field_entry(field_name: str, view: str) -> dict:
+    """Return the ontology row of an emitted name that no converter mapping or CV term describes."""
+    return {
+        "field_name": field_name,
+        "ontology_name": None,
+        "ontology_accession": None,
+        "ontology_source": None,
+        "ontology_version": None,
+        "view": view,
+        "description": f"{field_name} (no CV term)",
+        "source_column_name": None,
+        "source_tool": None,
+    }

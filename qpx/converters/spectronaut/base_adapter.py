@@ -7,6 +7,13 @@ Provides common data-loading helpers used by both
 from __future__ import annotations
 
 from qpx.converters.base import BaseConverter
+from qpx.converters.spectronaut.report_layout import (
+    long_columns,
+    melted_report_sql,
+    pivot_columns,
+    report_header,
+    unavailable_views,
+)
 from qpx.core.sql import escape_path, sql_build, validate_identifier
 
 
@@ -53,7 +60,8 @@ class SpectronautBaseAdapter(BaseConverter):
 
         Supports both TSV and Parquet formats.  If the ``report`` view
         already exists it is skipped.  Decimal separator is auto-detected
-        for TSV files.
+        for TSV files.  A pivot report (one column per run) is melted to the
+        long layout in a temporary table.
 
         Args:
             path: Filesystem path to the Spectronaut report file.
@@ -62,7 +70,10 @@ class SpectronautBaseAdapter(BaseConverter):
             self.logger.debug("report view already loaded -- skipping reload")
             return
         safe_path = escape_path(path)
-        if path.endswith(".parquet"):
+        header = report_header(path)
+        if pivot_columns(header):
+            self._load_pivot_report(path, header)
+        elif path.endswith(".parquet"):
             self._conn.execute(
                 sql_build(
                     "CREATE VIEW report AS SELECT * FROM read_parquet('$path')",
@@ -84,6 +95,24 @@ class SpectronautBaseAdapter(BaseConverter):
             )
         count = self._conn.execute("SELECT COUNT(*) FROM report").fetchall()[0][0]
         self.logger.info("Spectronaut report view created (%d rows)", count)
+
+    def _load_pivot_report(self, path: str, header: list[str]) -> None:
+        """Melt a pivot report into the ``report`` table; a quantity column can hold ``Filtered``, so all are read as text."""
+        reader = (
+            "read_parquet(?)"
+            if path.endswith(".parquet")
+            else "read_csv(?, delim='\t', header=true, all_varchar=true, null_padding=true)"
+        )
+        self.logger.info("Melting Spectronaut pivot report: %d runs", len(pivot_columns(header)))
+        self._conn.execute(sql_build("CREATE TEMP TABLE report_pivot AS SELECT * FROM $reader", reader=reader), [path])
+        self._conn.execute(sql_build("CREATE TEMP TABLE report AS $query", query=melted_report_sql(header, "report_pivot")))
+        self._conn.execute("DROP TABLE report_pivot")
+
+    def _require_view(self, path: str, view: str) -> None:
+        """Raise a clear error when the report at *path* cannot produce *view*."""
+        reason = unavailable_views(long_columns(report_header(path))).get(view)
+        if reason:
+            raise ValueError(f"Cannot convert {path} to the {view} view: {reason}")
 
     def _get_report_columns(self) -> set[str]:
         """Return column names in the DuckDB report view."""

@@ -12,6 +12,7 @@ from qpx.converters.orchestrator import BaseOrchestrator
 from qpx.converters.sdrf import convert_sdrf_views
 from qpx.converters.spectronaut.feature_adapter import SpectronautFeatureAdapter
 from qpx.converters.spectronaut.pg_adapter import SpectronautPgAdapter
+from qpx.converters.spectronaut.report_layout import long_columns, report_header, unavailable_views
 from qpx.core.constants import FEATURE, ONTOLOGY, PG, RUN, SAMPLE
 from qpx.core.scores import field_ontology_entries, score_ontology_entries
 
@@ -27,22 +28,31 @@ class SpectronautConverter(BaseOrchestrator):
         sdrf_path=None,
         max_memory=None,
         max_cpus=None,
-        compression: str = "zstd",
     ):
         """Initialize converter with report path and DuckDB settings."""
         self.report_path = str(report_path)
         self.sdrf_path = str(sdrf_path) if sdrf_path else None
         self._memory = max_memory
         self._threads = max_cpus
-        self._compression = compression
         self._ontology_entries: list[dict] = []
         self._resolved_mappings_by_view: dict[str, dict] = {}
+
+    def available_views(self) -> list[str]:
+        """The views this report can produce, warning about the others; raises when it produces none."""
+        unavailable = unavailable_views(long_columns(report_header(self.report_path)))
+        for view, reason in unavailable.items():
+            logger.warning("Skipping the %s view: %s", view, reason)
+        views = [view for view in (FEATURE, PG) if view not in unavailable]
+        if not views:
+            raise ValueError(f"{self.report_path} is not a convertible Spectronaut report: {'; '.join(unavailable.values())}")
+        return views
 
     def convert_features(
         self,
         qvalue_threshold=None,
         output_folder=".",
         output_prefix=None,
+        fragments=False,
     ):
         """Convert Spectronaut features to feature.parquet."""
         output_folder = Path(output_folder)
@@ -50,7 +60,6 @@ class SpectronautConverter(BaseOrchestrator):
         with SpectronautFeatureAdapter(
             duckdb_memory=self._memory,
             duckdb_threads=self._threads,
-            compression=self._compression,
         ) as adapter:
             adapter.convert(
                 spectronaut_report=self.report_path,
@@ -61,6 +70,8 @@ class SpectronautConverter(BaseOrchestrator):
             self._ontology_entries.extend(score_ontology_entries(adapter.get_discovered_scores(), view=FEATURE))
             cols = adapter.get_table_columns("report")
             self._resolved_mappings_by_view[FEATURE] = resolve_columns(get_field_mappings("spectronaut", "feature"), cols)
+            if fragments:
+                adapter.write_fragments(str(output_folder / f"{prefix}.fragment.parquet"))
         logger.info("Spectronaut feature conversion complete")
 
     def convert_pg(
@@ -74,7 +85,6 @@ class SpectronautConverter(BaseOrchestrator):
         with SpectronautPgAdapter(
             duckdb_memory=self._memory,
             duckdb_threads=self._threads,
-            compression=self._compression,
         ) as adapter:
             adapter.convert(
                 spectronaut_report=self.report_path,
@@ -132,7 +142,7 @@ class SpectronautConverter(BaseOrchestrator):
                 "tool_uri": None,
                 "parameters": None,
                 "config": None,
-                "output_views": [FEATURE, PG],
+                "output_views": list(self._resolved_mappings_by_view),
             },
             {
                 "step_order": 2,
@@ -148,7 +158,7 @@ class SpectronautConverter(BaseOrchestrator):
                     },
                 ],
                 "config": None,
-                "output_views": [FEATURE, PG, SAMPLE, RUN, ONTOLOGY],
+                "output_views": [*self._resolved_mappings_by_view, SAMPLE, RUN, ONTOLOGY],
             },
         ]
         self._write_provenance(Path(output_folder), prefix, records)

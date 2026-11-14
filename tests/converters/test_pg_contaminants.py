@@ -4,6 +4,7 @@ import pyarrow.parquet as pq
 import pytest
 
 from qpx.converters.openms_consensus.converter import OpenMSConsensusConverter
+from qpx.converters.utils import canonical_accession
 from tests.converters.test_diann_converter import _diann_row, _pg_rows_single_run
 from tests.converters.test_openms_consensus import _SHARED_LEADER_CONSENSUSXML
 
@@ -32,7 +33,7 @@ def test_openms_pg_contaminant_checks_nonleading_members(tmp_path, member, expec
 
     assert len(rows) == 2
     assert {tuple(row["pg_accessions"]): (row["contaminant"], row["intensity"]) for row in rows} == {
-        (anchor, member): (expected, 1000.0),
+        (anchor, canonical_accession(member)): (expected, 1000.0),
         (anchor, "P12345"): (False, 3000.0),
     }
     assert all(row["anchor_protein"] == anchor for row in rows)

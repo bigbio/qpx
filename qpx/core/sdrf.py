@@ -18,6 +18,8 @@ from qpx.core.files import run_file_stem
 
 logger = logging.getLogger(__name__)
 
+_UNIMOD_ACCESSION = re.compile(r"(?i)UNIMOD:(\d+)")
+
 
 def validate_sdrf_data_files(sdrf_table: DataFrame) -> None:
     """Require a non-empty ``comment[data file]`` value in every SDRF row."""
@@ -72,22 +74,21 @@ def parse_sdrf_kv(sdrf_value: str) -> dict[str, str]:
 
 
 def parse_modification_parameters(sdrf_table: DataFrame) -> list[dict] | None:
-    """Parse the ``comment[modification parameters]`` columns of a lower-cased SDRF table.
+    """The distinct ``comment[modification parameters]`` of the given SDRF rows, e.g. those of one run.
 
-    Each column holds one modification as ``NT=...;AC=...;MT=...;TA=...;PP=...``,
-    read from its first non-blank value (the search settings are shared by
-    all rows). Returns one ``{accession, name, fixed, position,
-    target_amino_acid}`` dict per modification, or ``None`` when there are none.
+    Each value holds one modification as ``NT=...;AC=...;MT=...;TA=...;PP=...``.
+    Returns one ``{accession, name, fixed, position, target_amino_acid,
+    mass_delta}`` dict per distinct modification, or ``None`` when there are none.
     """
-    results: list[dict] = []
+    results: dict[tuple, dict] = {}
     for col in sdrf_table.columns:
         if not col.startswith("comment[modification parameter"):
             continue
-        values = sdrf_table[col].dropna()
-        mod = _modification_parameter(values.iloc[0]) if not values.empty else None
-        if mod:
-            results.append(mod)
-    return results or None
+        for raw in sdrf_table[col].dropna().unique():
+            mod = _modification_parameter(raw)
+            if mod:
+                results.setdefault((mod["accession"], mod["name"], mod["position"], mod["target_amino_acid"]), mod)
+    return list(results.values()) or None
 
 
 def _modification_parameter(raw: str) -> dict | None:
@@ -103,7 +104,21 @@ def _modification_parameter(raw: str) -> dict | None:
         "fixed": kv.get("MT", "").lower() in ("fixed", "fix"),
         "position": kv.get("PP", None),
         "target_amino_acid": kv.get("TA", None),
+        "mass_delta": _modification_mass(kv),
     }
+
+
+def _modification_mass(kv: dict) -> float | None:
+    """The mass delta an SDRF modification declares (``MM=``), else that of its Unimod accession."""
+    declared = kv.get("MM")
+    if declared:
+        return float(declared)
+    match = _UNIMOD_ACCESSION.fullmatch(kv.get("AC", ""))
+    if match is None:
+        return None
+    from qpx.converters.ptm import unimod_mass
+
+    return unimod_mass(int(match.group(1)))
 
 
 def get_complex_value_sdrf_column(sdrf_table: DataFrame, column: str) -> list:
@@ -132,7 +147,7 @@ class SDRFHandler:
         :param sdrf_file: SDRF file
         """
         try:
-            sdrf_table = pd.read_csv(sdrf_file, sep="\t", header=0)
+            sdrf_table = pd.read_csv(sdrf_file, sep="\t", header=0, dtype=str, keep_default_na=False, na_values=[""])
             sdrf_table.columns = sdrf_table.columns.str.lower()
             # Normalize common SDRF column name variants
             col_renames = {}
@@ -155,17 +170,24 @@ class SDRFHandler:
     def get_experiment_type_from_sdrf(self):
         """
         Using the SDRF file label column, we will try to extract the experiment type of an SDRF.
-        The three possible values supported in SDRF are lfq, tmt and itraq; the
-        isobaric types carry the number of distinct labels (``"TMT10"``), which
-        need not be a full plex (partial plexes, TMTpro 18). Which channels the
-        labels are is resolved by the converters from the shared channel map.
+        Returns ``LFQ``, ``SILAC``, or ``TMT<n>`` / ``ITRAQ<n>`` with the channel count of the plex.
         """
-        labeling_values = [i.upper() for i in self._label_values()]
-        if any("LABEL FREE" in i for i in labeling_values):
+        labeling_values = self._label_values()
+        if any("LABEL FREE" in i.upper() for i in labeling_values):
             return "LFQ"
-        for family in ("TMT", "ITRAQ"):
-            if any(family in i for i in labeling_values):
-                return f"{family}{len(labeling_values)}"
+
+        from qpx.converters.channel_labels import experiment_type_from_labels, resolve_channel_labels
+
+        labels = set(labeling_values)
+        family = experiment_type_from_labels(labels)
+        if family == "SILAC":
+            return family
+        if family in ("TMT", "iTRAQ"):
+            # The plex is the smallest one holding every declared label, so partial plexes resolve too.
+            plex = resolve_channel_labels(family, labels)
+            if not plex:
+                raise ValueError(f"The SDRF {family} labels {sorted(labels)} match no {family} plex")
+            return f"{family.upper()}{len(plex)}"
         raise ValueError("The SDRF file provided does not contain any supported comment[label] value")
 
     def _label_values(self) -> list:

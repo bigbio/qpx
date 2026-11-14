@@ -16,8 +16,10 @@ from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
+import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
+from scipy import sparse
 
 mudata = pytest.importorskip("mudata")
 anndata = pytest.importorskip("anndata")
@@ -28,11 +30,51 @@ from qpx.mudata import (  # noqa: E402
     _LABEL_QUERIES,
     _attach_uns_metadata,
     _detect_intensity_label,
+    _pivot_arrow_to_sparse,
     build_mudata,
 )
 from qpx.version import QPX_SPEC_VERSION  # noqa: E402
 from qpx.writers import FeatureWriter, PgWriter, RunWriter  # noqa: E402
 from tests.conftest import make_feature_record, make_pg_record, make_run_record  # noqa: E402
+
+
+def _pivot_to_sparse(
+    df: pd.DataFrame,
+    row_col: str,
+    col_col: str,
+    value_col: str,
+    row_index: pd.Index,
+    col_index: pd.Index,
+) -> sparse.csr_matrix:
+    """Pivot a long-form DataFrame into a sparse CSR matrix.
+
+    Parameters
+    ----------
+    df : DataFrame
+        Long-form data with at least *row_col*, *col_col*, *value_col*.
+    row_col, col_col, value_col : str
+        Column names for rows, columns, and values.
+    row_index, col_index : pd.Index
+        Pre-built indices that define the matrix shape.
+
+    Returns
+    -------
+    scipy.sparse.csr_matrix
+    """
+    row_pos = row_index.get_indexer(df[row_col])
+    col_pos = col_index.get_indexer(df[col_col])
+
+    # Drop entries that did not match (-1)
+    mask = (row_pos >= 0) & (col_pos >= 0)
+    data = df[value_col].values[mask].astype(np.float32)
+    row_pos = row_pos[mask]
+    col_pos = col_pos[mask]
+
+    mat = sparse.coo_matrix(
+        (data, (row_pos, col_pos)),
+        shape=(len(row_index), len(col_index)),
+    )
+    return mat.tocsr()
 
 
 class _FakeResult:
@@ -206,7 +248,8 @@ def _write_quant_bundle(tmp_path, prefix, feature_intensities, protein_intensiti
     with FeatureWriter(tmp_path / f"{prefix}.feature.parquet") as writer:
         writer.write_batch([make_feature_record(intensities=feature_intensities)])
     with PgWriter(tmp_path / f"{prefix}.pg.parquet") as writer:
-        writer.write_batch([make_pg_record(intensities=protein_intensities)])
+        # The group of the feature's default pg_accessions, so the two link.
+        writer.write_batch([make_pg_record(intensities=protein_intensities, pg_accessions=["P12345"])])
 
     run = make_run_record()
     run["samples"] = [
@@ -618,7 +661,7 @@ class TestArrowPivotEquivalence:
         """The Arrow pivot produces the same sparse matrix as pandas."""
         import pyarrow as pa
 
-        from qpx.mudata import _pivot_arrow_to_sparse, _pivot_to_sparse
+        from qpx.mudata import _pivot_arrow_to_sparse
 
         df = self._frame()
         rows = pd.Index(sorted(df["observation_id"].unique()), name="observation_id")
@@ -634,7 +677,7 @@ class TestArrowPivotEquivalence:
         """A value absent from the index must be dropped, exactly as get_indexer does."""
         import pyarrow as pa
 
-        from qpx.mudata import _pivot_arrow_to_sparse, _pivot_to_sparse
+        from qpx.mudata import _pivot_arrow_to_sparse
 
         df = self._frame()
         rows = pd.Index(["r1|L", "r2|L"], name="observation_id")  # r3|L deliberately absent
@@ -650,7 +693,7 @@ class TestArrowPivotEquivalence:
         """A null Arrow dictionary code is unmatched, not a NumPy index."""
         import pyarrow as pa
 
-        from qpx.mudata import _pivot_arrow_to_sparse, _pivot_to_sparse
+        from qpx.mudata import _pivot_arrow_to_sparse
 
         df = pd.DataFrame(
             {
@@ -903,3 +946,18 @@ class TestFailedModalitiesAreReported:
         reloaded = mu.read_h5mu(str(path))
 
         assert reloaded.uns["qpx_failed_modalities"]["precursors"].startswith("ArrowInvalid")
+
+
+def test_pivot_stores_no_cell_for_a_null_quantity():
+    """A null means not measured and stores nothing, while a measured zero stays stored."""
+    table = pa.table(
+        {
+            "row": pa.array(["a", "b", "c"]).dictionary_encode(),
+            "col": pa.array(["s1", "s1", "s1"]).dictionary_encode(),
+            "value": pa.array([1.5, None, 0.0], type=pa.float32()),
+        }
+    )
+
+    matrix = _pivot_arrow_to_sparse(table, "row", "col", "value", pd.Index(["a", "b", "c"]), pd.Index(["s1"])).tocoo()
+
+    assert sorted(zip(matrix.row.tolist(), matrix.data.tolist())) == [(0, 1.5), (2, 0.0)]

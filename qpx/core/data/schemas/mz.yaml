@@ -35,6 +35,14 @@ fields:
     type: float32
     optional: true
     doc: "Inverse ion mobility (TIMS)"
+  drift_time:
+    type: float32
+    optional: true
+    doc: "Ion mobility drift time in milliseconds (MS:1002476), for drift-tube and travelling-wave instruments"
+  compensation_voltage:
+    type: float32
+    optional: true
+    doc: "FAIMS compensation voltage in volts (MS:1001581)"
   ion_injection_time:
     type: float32
     optional: true
@@ -59,6 +67,14 @@ fields:
     type: "list<float32>"
     required: true
     doc: "Intensity values"
+  ion_mobility_array:
+    type: "list<float32>"
+    optional: true
+    doc: "Ion mobility of each peak, for a spectrum whose peaks span a mobility range"
+  ion_mobility_array_unit:
+    type: string
+    optional: true
+    doc: "Unit of ion_mobility_array: 'Vs/cm^2' (1/K0) or 'ms' (drift time)"
 
   # Metadata
   cv_params:

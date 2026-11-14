@@ -23,6 +23,10 @@ fields:
   software_version:
     type: string
     doc: "Software version"
+  analysis_id:
+    type: string
+    optional: true
+    doc: "Identifies this analysis among others of the same project: ids and accessions alone do not (see Row Identity)"
   creation_date:
     type: string
     required: true

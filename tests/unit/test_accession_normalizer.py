@@ -56,6 +56,27 @@ def test_file_without_changes_is_copied(tmp_path):
     assert (tmp_path / "out.pg.parquet").read_bytes() == source.read_bytes()
 
 
+def test_psm_and_pepmap_accessions_are_normalized_and_a_pg_file_keeps_its_ids(tmp_path):
+    """PSM-to-pg matching needs one spelling everywhere; a pg_id stays but no longer re-derives."""
+    from qpx.writers import PgWriter, PsmWriter
+    from tests.conftest import make_pg_record, make_psm_record
+
+    psm = tmp_path / "x.psm.parquet"
+    with PsmWriter(psm) as writer:
+        writer.write_batch([{**make_psm_record(), "protein_accessions": ["sp|P04637|P53_HUMAN"]}])
+    normalize_parquet(psm, tmp_path / "out.psm.parquet", direction="forward")
+    normalized = pq.read_table(tmp_path / "out.psm.parquet")
+    assert normalized.column("protein_accessions").to_pylist() == [["P04637"]]
+    assert pq.read_metadata(tmp_path / "out.psm.parquet").metadata[b"identity_source"] == b"derived"
+
+    pg = tmp_path / "x.pg.parquet"
+    with PgWriter(pg) as writer:
+        writer.write_batch([make_pg_record(anchor_protein="sp|P04637|P53_HUMAN", pg_accessions=["sp|P04637|P53_HUMAN"])])
+    normalize_parquet(pg, tmp_path / "out.pg.parquet", direction="forward")
+    assert pq.read_metadata(tmp_path / "out.pg.parquet").metadata[b"identity_source"] == b"provided"
+    assert pq.read_table(tmp_path / "out.pg.parquet").column("pg_id").to_pylist() == pq.read_table(pg).column("pg_id").to_pylist()
+
+
 def test_dataset_normalization_covers_psm_lists_and_partitioned_views(tmp_path):
     """Every view is stripped in place, PSM protein lists and partitioned parts included."""
     pq.write_table(

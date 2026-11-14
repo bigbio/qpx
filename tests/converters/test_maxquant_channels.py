@@ -107,13 +107,13 @@ _ITRAQ4_REAGENT = ["iTRAQ reagent 114", "iTRAQ reagent 115", "iTRAQ reagent 116"
 @pytest.mark.parametrize(
     ("plex", "labels", "written", "offset"),
     [
-        (ITRAQ4, _ITRAQ4_REAGENT, _ITRAQ4_REAGENT, 1),
+        (ITRAQ4, _ITRAQ4_REAGENT, ITRAQ4, 1),
         (TMT10, [f"AC=MS:1002616;NT={label}" for label in TMT10], TMT10, 0),
     ],
     ids=["itraq_reagent", "tmt_ontology"],
 )
-def test_reporter_labels_keep_the_sdrf_spelling(tmp_path, plex, labels, written, offset):
-    """Other spellings of a channel map by the channel they name and keep the label the run view writes."""
+def test_reporter_labels_are_written_canonically(tmp_path, plex, labels, written, offset):
+    """Other spellings of a channel map by the channel they name and are written in its canonical form."""
     from qpx.converters.maxquant.feature_adapter import MaxQuantFeatureAdapter
 
     evidence, _, sdrf = _write_inputs(tmp_path, plex, labels, offset)
@@ -152,68 +152,31 @@ def test_pg_keeps_identified_channels_without_intensity(tmp_path, spell):
     assert [row["label"].upper().endswith("TMT127C") for row in rows if row["intensity"] is None] == [True]
 
 
-@pytest.mark.parametrize(
-    ("labels", "match"),
-    [
-        (["SILAC light", "SILAC heavy"], "SILAC"),
-        # TMT127 (6-plex) and TMT127N (10-plex) belong to no single plex.
-        (["TMT126", "TMT127", "TMT127N"], "not channels of a TMT plex"),
-    ],
-    ids=["silac", "mixed_plex"],
-)
-def test_unmappable_labels_fail_before_writing(tmp_path, labels, match):
-    """Labels the converter cannot map to reporter columns stop it before any view is written."""
-    from qpx.converters.maxquant.converter import MaxQuantConverter
-
-    evidence, _, sdrf = _write_inputs(tmp_path, TMT10, labels, 0)
-    out = tmp_path / "out"
-    with pytest.raises(ValueError, match=match):
-        MaxQuantConverter().convert(output_folder=str(out), evidence_file=str(evidence), sdrf_file=str(sdrf))
-    assert list(out.glob("*.parquet")) == []
-
-
 _MSMS = (
     "Sequence\tModified sequence\tCharge\tRaw file\tScan number\tm/z\tMass\tPEP\tReverse\tScore\tProteins\n"
     "PEPTIDER\t_PEPTIDER_\t2\trun1\t100\t478.73\t955.46\t0.01\t\t100\tP1\n"
 )
 
 
-@pytest.mark.parametrize("with_evidence", [False, True], ids=["msms_only", "psm_structure"])
-@pytest.mark.parametrize(
-    "labels",
-    [["SILAC light", "SILAC heavy"], ["TMT126", "TMT127", "TMT127N"]],
-    ids=["silac", "mixed_plex"],
-)
-def test_psm_conversion_does_not_map_labels(tmp_path, labels, with_evidence):
-    """The PSM view reads no reporter columns, so labels the feature and pg views cannot map do not stop it.
-
-    A SILAC label the SDRF declares as a fixed modification of the heavy
-    samples is not added to the peptidoforms either: MaxQuant carries it on
-    the labelled rows only.
-    """
+@pytest.mark.parametrize("views", ["feature", "psm", "psm_with_evidence"])
+def test_unmappable_labels_fail_before_writing(tmp_path, views):
+    """Labels of no single plex stop every conversion, the PSM view's included, before any view is written."""
     from qpx.converters.maxquant.converter import MaxQuantConverter
     from qpx.core.constants import PSM
 
-    evidence, _, _ = _write_inputs(tmp_path, TMT10, TMT10, 0)
+    # TMT127 (6-plex) and TMT127N (10-plex) belong to no single plex.
+    evidence, _, sdrf = _write_inputs(tmp_path, TMT10, ["TMT126", "TMT127", "TMT127N"], 0)
     msms = tmp_path / "msms.txt"
     msms.write_text(_MSMS)
-    heavy = "AC=UNIMOD:267;TA=R;MT=fixed"
-    sdrf = tmp_path / "sdrf.tsv"
-    sdrf.write_text(
-        "source name\tcomment[data file]\tcomment[label]\tcomment[modification parameters]\n"
-        + "".join(f"S_{label}\trun1.raw\t{label}\t{heavy if 'heavy' in label else ''}\n" for label in labels)
-    )
+    inputs = {
+        "feature": {"evidence_file": str(evidence)},
+        "psm": {"msms_file": str(msms), "structures": [PSM]},
+        "psm_with_evidence": {"msms_file": str(msms), "evidence_file": str(evidence), "structures": [PSM]},
+    }[views]
     out = tmp_path / "out"
-    MaxQuantConverter().convert(
-        output_folder=str(out),
-        msms_file=str(msms),
-        evidence_file=str(evidence) if with_evidence else None,
-        sdrf_file=str(sdrf),
-        output_prefix="mq",
-        structures=[PSM],
-    )
-    assert [row["peptidoform"] for row in pq.read_table(out / "mq.psm.parquet").to_pylist()] == ["PEPTIDER"]
-    assert not (out / "mq.feature.parquet").exists()
+    with pytest.raises(ValueError, match="match no TMT plex"):
+        MaxQuantConverter().convert(output_folder=str(out), sdrf_file=str(sdrf), **inputs)
+    assert list(out.glob("*.parquet")) == []
 
 
 def test_reporter_columns_without_sdrf_warn(tmp_path, caplog):
@@ -223,18 +186,23 @@ def test_reporter_columns_without_sdrf_warn(tmp_path, caplog):
     evidence, _, _ = _write_inputs(tmp_path, TMT10, TMT10, 0)
     with MaxQuantFeatureAdapter() as adapter, caplog.at_level("WARNING"):
         adapter.convert(str(evidence), str(tmp_path / "feature.parquet"))
-    assert "10 reporter intensity columns" in caplog.text
+    assert "reporter intensity columns but no SDRF declares the channels" in caplog.text
 
 
 @pytest.mark.parametrize(
-    ("labels", "n_columns", "warns"),
-    [(TMT6, 10, True), (["TMT126", "TMT131"], 11, True), (TMT10, 10, False), (ITRAQ4, 8, False)],
+    ("family", "labels", "n_columns", "warns"),
+    [
+        ("TMT", TMT6, 10, True),
+        ("TMT", ["TMT126", "TMT131"], 11, True),
+        ("TMT", TMT10, 10, False),
+        ("iTRAQ", ITRAQ4, 8, False),
+    ],
     ids=["tmt6_in_10_columns", "tmt6_in_11_columns", "tmt10", "itraq4_in_itraq8"],
 )
-def test_reporter_column_count_of_no_plex_warns(caplog, labels, n_columns, warns):
+def test_reporter_column_count_of_no_plex_warns(caplog, family, labels, n_columns, warns):
     """Labels of a plex with another channel count than the table's reporter columns are mapped with a warning."""
-    from qpx.converters.maxquant.channels import reporter_channels
+    from qpx.converters.channel_labels import plex_for_columns
 
     with caplog.at_level("WARNING"):
-        reporter_channels(labels, n_columns)
+        plex_for_columns(family, set(labels), n_columns)
     assert (f"has {n_columns} reporter columns" in caplog.text) is warns

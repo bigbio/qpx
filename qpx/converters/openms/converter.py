@@ -15,6 +15,7 @@ from functools import partial
 from pathlib import Path
 
 import pyarrow as pa
+import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
 from qpx._version import __version__
@@ -28,12 +29,13 @@ from qpx.converters.channel_labels import (
     resolve_channel_labels,
 )
 from qpx.converters.openms.run_names import RunNormalizer, build_run_normalizer
+from qpx.converters.openms_consensus.channels import ratio_name
 from qpx.converters.orchestrator import BaseOrchestrator
 from qpx.converters.sdrf import SdrfConverter
 from qpx.core.constants import FEATURE, ONTOLOGY, PG, PSM, RUN, SAMPLE
 from qpx.core.data.loader import load_schema
+from qpx.core.files import run_file_stem
 from qpx.core.scores import score_ontology_entries
-from qpx.transforms.accession_normalizer import normalize_dataset_accessions
 from qpx.writers import FeatureWriter, PgWriter, PsmWriter
 
 logger = logging.getLogger(__name__)
@@ -64,10 +66,8 @@ _VIEW_WRITERS = {
 # unambiguously under that name.
 FRACTION_GROUP_CV_NAME = "fraction_group"
 
-# Run-file extensions stripped when matching consensusXML ``<map name>`` values
-# against pg ``grouped_runs`` / feature ``run_file_name`` (which -out_qpx may
-# write with or without an extension).
-_RUN_EXTENSIONS = (".mzml", ".raw", ".mzxml", ".d.zip", ".d.tar.gz", ".d.tar", ".d", ".wiff", ".dia")
+
+_NATIVE_RATIOS = ("ratio", "ratio_normalized")
 
 
 def _run_key_candidates(name: str | None) -> list[str]:
@@ -81,13 +81,9 @@ def _run_key_candidates(name: str | None) -> list[str]:
     base = text.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
     if base and base not in candidates:
         candidates.append(base)
-    lower = base.lower()
-    for ext in _RUN_EXTENSIONS:
-        if lower.endswith(ext):
-            stem = base[: -len(ext)]
-            if stem and stem not in candidates:
-                candidates.append(stem)
-            break
+    stem = run_file_stem(base)
+    if stem and stem not in candidates:
+        candidates.append(stem)
     return candidates
 
 
@@ -206,18 +202,16 @@ class _RewriteOptions:
 
     channel_labels: dict[int, str]
     is_lfq: bool | None
-    compression: str
     fraction_group_lookup: dict[str, str]
     run_normalizer: RunNormalizer
 
 
-def _core_writer_kwargs(parquet, view: str, compression: str) -> dict:
+def _core_writer_kwargs(parquet, view: str) -> dict:
     """Preserve source writer, scan-format and identity metadata during upgrade."""
     metadata = parquet.schema_arrow.metadata or {}
     writer_kwargs = {
         "creator": metadata.get(b"creator", b"OpenMS").decode(),
         "software_provider": metadata.get(b"software_provider", b"OpenMS").decode(),
-        "compression": compression,
     }
     if view == FEATURE:
         writer_kwargs["override_provided_ids"] = False
@@ -230,11 +224,45 @@ def _core_writer_kwargs(parquet, view: str, compression: str) -> dict:
     return writer_kwargs
 
 
+def name_native_ratios(table: pa.Table, channel_labels: dict[int, str]) -> pa.Table:
+    """Name OpenMS' ``ratio`` and ``ratio_normalized`` after their labels, as ``ratio_<num>_<den>`` on the numerator.
+
+    The native writer puts them on every label, with 1.0 on the reference: the lowest channel.
+    """
+    if "additional_intensities" not in table.column_names or not channel_labels:
+        return table
+    column = table.column("additional_intensities")
+    items = pc.list_flatten(pc.list_flatten(column).combine_chunks().field("intensities"))
+    if not pc.any(pc.is_in(items.field("intensity_name"), value_set=pa.array(_NATIVE_RATIOS))).as_py():
+        return table
+    reference = channel_labels[min(channel_labels)]
+    renamed = [_named_ratio_entries(entries, reference) for entries in column.to_pylist()]
+    index = table.schema.get_field_index("additional_intensities")
+    return table.set_column(index, "additional_intensities", pa.array(renamed, type=column.type))
+
+
+def _named_ratio_entries(entries: list[dict] | None, reference: str) -> list[dict] | None:
+    result = []
+    for entry in entries or []:
+        label = entry["label"]
+        intensities = []
+        for item in entry["intensities"] or []:
+            name = item["intensity_name"]
+            if name not in _NATIVE_RATIOS:
+                intensities.append(item)
+            elif label != reference:
+                new_name = ratio_name(label, reference, normalized=name == "ratio_normalized")
+                intensities.append({**item, "intensity_name": new_name})
+        if intensities:
+            result.append({"label": label, "intensities": intensities})
+    return result or None
+
+
 def _rewrite_core_file(view: str, src_path: Path, dst: Path, options: _RewriteOptions) -> tuple[Path, int, int]:
     """Upgrade one OpenMS core file while streaming by Parquet row group."""
     parquet = pq.ParquetFile(src_path)
     writer_class = _VIEW_WRITERS[view]
-    writer_kwargs = _core_writer_kwargs(parquet, view, options.compression)
+    writer_kwargs = _core_writer_kwargs(parquet, view)
     channel_labels = options.channel_labels
     is_lfq = options.is_lfq
     fraction_group_lookup = options.fraction_group_lookup
@@ -260,6 +288,7 @@ def _rewrite_core_file(view: str, src_path: Path, dst: Path, options: _RewriteOp
                     cv_param_resolver=fraction_group_resolver,
                 )
                 table = options.run_normalizer(table, view)
+                table = name_native_ratios(table, options.channel_labels)
                 annotated += group_annotated
                 rows += table.num_rows
                 if view != PG or "intensities" not in table.column_names:
@@ -332,7 +361,6 @@ class OpenMSConverter(BaseOrchestrator):
         qpx_dir: str | Path,
         sdrf_path: str | Path | None = None,
         consensusxml_path: str | Path | None = None,
-        compression: str = "zstd",
     ):
         """Initialize the OpenMS QPX converter.
 
@@ -350,14 +378,11 @@ class OpenMSConverter(BaseOrchestrator):
             peptide identifications are present, each PSM's run is recovered
             from exact spectrum evidence. Missing or ambiguous matches fail
             conversion before existing core outputs are replaced.
-        compression : str
-            Parquet compression codec (default ``zstd``).
 
         """
         self.qpx_dir = Path(qpx_dir)
         self.sdrf_path = str(sdrf_path) if sdrf_path else None
         self.consensusxml_path = str(consensusxml_path) if consensusxml_path else None
-        self._compression = compression
 
     def convert(
         self,
@@ -404,6 +429,9 @@ class OpenMSConverter(BaseOrchestrator):
             software_version=None,
             provenance_records=provenance_records,
         )
+        # Imported here: accession_normalizer imports qpx.converters, whose package init imports this module.
+        from qpx.transforms.accession_normalizer import normalize_dataset_accessions
+
         normalize_dataset_accessions(Path(output_folder), output_prefix)
         self._write_mudata(output_folder, output_prefix)
         logger.info("OpenMS QPX enrichment complete -> %s", output_folder)
@@ -438,7 +466,6 @@ class OpenMSConverter(BaseOrchestrator):
         options = _RewriteOptions(
             channel_labels,
             is_lfq,
-            self._compression,
             fraction_group_lookup,
             build_run_normalizer(self.sdrf_path, self.consensusxml_path, maplist, PSM in discovered),
         )
@@ -485,7 +512,7 @@ class OpenMSConverter(BaseOrchestrator):
         if not self.sdrf_path:
             logger.warning("No SDRF path provided — skipping sample/run conversion")
             return []
-        with SdrfConverter(compression=self._compression) as sdrf_conv:
+        with SdrfConverter() as sdrf_conv:
             sdrf_conv.convert(
                 sdrf_path=self.sdrf_path,
                 sample_output=str(output_folder / f"{output_prefix}.sample.parquet"),

@@ -96,9 +96,11 @@ def transform_normalize_accessions_cmd(
     Reverse: converts bare accessions back to full UniProt format.
     Requires a FASTA database to look up the full identifiers.
 
-    Normalizes protein accessions in the feature, pg, psm, site and proteoform
-    views. Every convert command already writes bare accessions; use this for
-    datasets converted by an earlier qpx, or to restore full identifiers.
+    Normalizes protein accessions in the feature, pg, psm, pepmap, site and
+    proteoform views. Every convert command already writes bare accessions;
+    use this for datasets converted by an earlier qpx, or to restore full
+    identifiers. Ids stay as they are, so links survive: a file whose identity
+    composite holds an accession (pg_id) is then marked identity_source=provided.
 
     \b
     Examples:
@@ -106,11 +108,13 @@ def transform_normalize_accessions_cmd(
         qpxc transform normalize-accessions \\
             --dataset ./my_dataset --direction forward --in-place
 
+    \b
         # Reverse: restore full UniProt identifiers from FASTA
         qpxc transform normalize-accessions \\
             --dataset ./my_dataset --direction reverse \\
             --fasta proteins.fasta --in-place
 
+    \b
         # Forward to a new directory (non-destructive)
         qpxc transform normalize-accessions \\
             --dataset ./my_dataset --direction forward \\

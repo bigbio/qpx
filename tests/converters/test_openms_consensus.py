@@ -201,7 +201,7 @@ def test_pg_peptide_counts_are_per_protein(monkeypatch):
     )
 
     cm = ConsensusMap()
-    records = pg_adapter.build_pg_records(cm, feature_map_info(cm), protein_maps, {}, None, 0)
+    records = pg_adapter.build_pg_records(cm, feature_map_info(cm), protein_maps, {}, None)
 
     assert records[0]["peptide_counts"]["unique_sequences"] == 2
     assert records[0]["peptides"] == [
@@ -823,8 +823,12 @@ _MULTIRUN_CONSENSUSXML = """<?xml version="1.0" encoding="ISO-8859-1"?>
     </ProteinIdentification>
   </IdentificationRun>
   <mapList count="2">
-    <map id="0" name="run_01.mzML" unique_id="1" label="label-free" size="1"></map>
-    <map id="1" name="run_02.mzML" unique_id="2" label="label-free" size="1"></map>
+    <map id="0" name="run_01.mzML" unique_id="1" label="label-free" size="1">
+      <UserParam type="int" name="fraction_group" value="1"/>
+    </map>
+    <map id="1" name="run_02.mzML" unique_id="2" label="label-free" size="1">
+      <UserParam type="int" name="fraction_group" value="1"/>
+    </map>
   </mapList>
   <consensusElementList>
     <consensusElement id="e_0" quality="0.0" charge="2">

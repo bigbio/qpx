@@ -26,6 +26,9 @@ from typing import NamedTuple, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
+# Site of a fixed modification on the peptide N-terminus.
+NTERM = "N-term"
+
 _MASS_TOL = 0.01
 
 # OpenMS adds its own entries to ModificationsDB from ``CHEMISTRY/custom_mods.xml``
@@ -96,6 +99,7 @@ class _UnimodIndex(NamedTuple):
     masses: list[float]
     by_name: dict[str, list[_UnimodSite]]
     mass_by_accession: dict[int, float]
+    title_by_accession: dict[int, str]
 
 
 @lru_cache(maxsize=1)
@@ -114,11 +118,13 @@ def _unimod_index() -> _UnimodIndex:
     db = oms.ModificationsDB()
     sites: list[_UnimodSite] = []
     by_name: dict[str, list[_UnimodSite]] = {}
+    titles: dict[int, str] = {}
     for index in range(db.getNumberOfModifications()):
         mod = db.getModification(index)
         if 0 < mod.getUniModRecordId() < _OPENMS_CUSTOM_RECORD_ID:
             terminus = termini.get(int(mod.getTermSpecificity()))
             sites.append(_UnimodSite(mod.getUniModRecordId(), mod.getDiffMonoMass(), mod.getOrigin(), terminus))
+            titles[mod.getUniModRecordId()] = mod.getId()
             for name in _modification_names(mod):
                 by_name.setdefault(name, []).append(sites[-1])
     sites.sort(key=lambda site: site.mass)
@@ -127,6 +133,7 @@ def _unimod_index() -> _UnimodIndex:
         masses=[site.mass for site in sites],
         by_name=by_name,
         mass_by_accession={site.accession: site.mass for site in sites},
+        title_by_accession=titles,
     )
 
 
@@ -207,15 +214,61 @@ def mass_to_unimod(mass: float, residue: Optional[str] = None, terminus: Optiona
     return _break_tie({accession for accession, key in keys.items() if key == best})
 
 
-def format_mass_delta(mass: float) -> str:
-    """Signed ProForma mass tag for a delta mass without a Unimod entry, e.g. ``+999.1234``."""
-    return f"+{mass}" if mass >= 0 else str(mass)
+def format_mass_shift(mass: float) -> str:
+    """Return the canonical ProForma tag body for an unknown mass shift, e.g. ``+79.9663``."""
+    return f"{mass:+.4f}"
+
+
+def unimod_title(uid: int) -> Optional[str]:
+    """Unimod title of an accession, e.g. ``Phospho`` for 21."""
+    return _unimod_index().title_by_accession.get(uid)
+
+
+def unimod_mass(uid: int) -> Optional[float]:
+    """Monoisotopic mass delta of a Unimod accession; ``None`` for an accession pyopenms does not know."""
+    return UNIMOD_MASS.get(uid)
+
+
+def canonical_mod_tag(
+    accession: Optional[str],
+    name: Optional[str],
+    mass: Optional[float],
+    residue: Optional[str] = None,
+    terminus: Optional[str] = None,
+) -> str:
+    """ProForma tag body for a modification reported by accession, name and/or mass.
+
+    A UNIMOD accession is kept when its mass agrees with *mass*, and replaced
+    by the mass when it does not. An accession QPX has no mass for keeps the
+    mass alongside (``UNIMOD:1842|+54.0106``). Other accessions (PSI-MOD,
+    PSI-MS "unknown modification") and names are mapped to UNIMOD by name,
+    then by mass; anything still unmapped is written as the signed mass.
+    """
+    unimod = re.match(r"(?i)unimod:(\d+)$", accession or "")
+    if unimod:
+        return _checked_unimod_tag(int(unimod.group(1)), mass)
+    uid = name_to_unimod(name, residue, terminus) if name else None
+    if uid is not None and mass is not None and abs(UNIMOD_MASS[uid] - mass) > _MASS_TOL:
+        uid = None
+    if uid is None and mass is not None:
+        uid = mass_to_unimod(mass, residue, terminus)
+    if uid is not None:
+        return f"UNIMOD:{uid}"
+    return format_mass_shift(mass) if mass is not None else accession or name or ""
+
+
+def _checked_unimod_tag(uid: int, mass: Optional[float]) -> str:
+    """``UNIMOD:uid`` if *mass* agrees with it, the mass if not, both if its mass is unknown."""
+    ref = unimod_mass(uid)
+    if mass is None or (ref is not None and abs(ref - mass) <= _MASS_TOL):
+        return f"UNIMOD:{uid}"
+    return format_mass_shift(mass) if ref is not None else f"UNIMOD:{uid}|{format_mass_shift(mass)}"
 
 
 def mass_tag(mass: float, residue: Optional[str] = None, terminus: Optional[str] = None) -> str:
     """ProForma tag for a delta mass: ``UNIMOD:n`` (see :func:`mass_to_unimod`), else the signed mass."""
     accession = mass_to_unimod(mass, residue, terminus)
-    return f"UNIMOD:{accession}" if accession is not None else format_mass_delta(mass)
+    return f"UNIMOD:{accession}" if accession is not None else format_mass_shift(mass)
 
 
 def _name_keys(name: str) -> list[str]:
@@ -384,15 +437,19 @@ def parse_unimod_delta(mod_str: str) -> Optional[float]:
     Accepts:
         - ``UniMod:35`` / ``UNIMOD:35`` -> Unimod delta mass (``UNIMOD_MASS``)
         - ``+15.9949`` / ``-17.0265`` -> parse directly
+        - ``UNIMOD:1842|+54.0106`` -> the explicit mass of a pipe-separated tag
     """
-    m = re.match(r"(?:UniMod|UNIMOD):(\d+)", mod_str, re.IGNORECASE)
+    parts = mod_str.split("|")
+    for part in parts:
+        try:
+            return float(part)
+        except ValueError:
+            continue
+    m = re.match(r"(?:UniMod|UNIMOD):(\d+)", parts[0], re.IGNORECASE)
     if m:
         uid = int(m.group(1))
         return UNIMOD_MASS.get(uid)
-    try:
-        return float(mod_str)
-    except ValueError:
-        return None
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -408,7 +465,7 @@ def build_proforma(sequence: str, mods: list[tuple[int, str]]) -> str:
         mods: List of (position, tag) where position is 0 for N-term,
             1..N for residue positions (1-indexed), and ``len(sequence)+1``
             for the C-term (the mzIdentML/FragPipe/CDAP convention). Tag is
-            e.g. "UNIMOD:35" or "CHEMMOD:+15.99". Multiple mods may share a
+            e.g. "UNIMOD:35" or "+15.9900". Multiple mods may share a
             position; all are emitted (order preserved) rather than collapsed.
 
     Returns:
@@ -482,8 +539,13 @@ def _normalize_peptidoform(peptidoform: str) -> str:
         if end is None:
             out.append(peptidoform[i:])
             break
-        # Convert the outer delimiters; keep the inner content as it is
-        out.append(f"[{peptidoform[i + 1 : end - 1]}]")
+        inner = peptidoform[i + 1 : end - 1]
+        if char == "(" and peptidoform[end : end + 1] == "[" and inner.isalpha() and inner.isupper():
+            # A ProForma range, PRT(ES)[Phospho]EM, not an mzTab tag
+            out.append(peptidoform[i:end])
+        else:
+            # Convert the outer delimiters; keep the inner content as it is
+            out.append(f"[{inner}]")
         i = end
     return _add_nterm_dash("".join(out))
 
@@ -493,9 +555,63 @@ def _add_nterm_dash(peptidoform: str) -> str:
     end = 0
     while end < len(peptidoform) and peptidoform[end] == "[":
         end = _group_end(peptidoform, end, "[", "]") or len(peptidoform)
-    if 0 < end < len(peptidoform) and peptidoform[end] != "-":
+    if 0 < end < len(peptidoform) and peptidoform[end] not in "-?":
         return f"{peptidoform[:end]}-{peptidoform[end:]}"
     return peptidoform
+
+
+def _canonical_tag(tag: str, residue: Optional[str], terminus: Optional[str]) -> str:
+    """Canonical form of one bracketed tag of :func:`normalize_peptidoform`.
+
+    A mass without a site (unknown position) stays a mass: any Unimod entry within
+    the tolerance would fit it.
+    """
+    head, _, rest = tag.partition("|")
+    unimod = re.match(r"(?i)unimod:(\d+)$", head)
+    if unimod:
+        return f"UNIMOD:{unimod.group(1)}" + (f"|{rest}" if rest else "")
+    mass = parse_unimod_delta(head.removeprefix("CHEMMOD:"))
+    if mass is not None:
+        return format_mass_shift(mass) if residue is None else canonical_mod_tag(None, None, mass, residue, terminus)
+    return canonical_mod_tag(None, head, None)
+
+
+def normalize_peptidoform(peptidoform: str) -> str:
+    """Rewrite a ProForma or mzTab-style peptidoform into the canonical form.
+
+    Names and ``UniMod:`` accessions become ``UNIMOD:n``; ``CHEMMOD:`` and
+    bare mass shifts become ``UNIMOD:n`` when a Unimod entry of that mass is
+    allowed at the site, else ``[+x.xxxx]``. Fixed modifications a producer
+    left out cannot be recovered from the string alone.
+    """
+    text = _normalize_peptidoform(peptidoform)
+    out: list[str] = []
+    residue: Optional[str] = None
+    i = 0
+    while i < len(text):
+        if text[i] == "[":
+            end = text.find("]", i)
+            if end == -1:
+                out.append(text[i:])
+                break
+            nterm = residue is None and text[end + 1 : end + 2] == "-"
+            site = next((ch for ch in text[end:] if ch.isalpha()), None) if nterm else residue
+            terminus = "N" if nterm else "C" if text[i - 1 : i] == "-" else None
+            out.append(f"[{_canonical_tag(text[i + 1 : end], site, terminus)}]")
+            i = end + 1
+        else:
+            if text[i].isalpha():
+                residue = text[i]
+            out.append(text[i])
+            i += 1
+    return "".join(out)
+
+
+_UNLOCALIZED_TAGS = re.compile(r"(?:\[[^\[\]]+\])+\?")
+# Constructs outside the subset docs/spec/scope.md declares: cross-links and
+# chimeric species (//, +), charge (/2), global (<...>), labile ({...}), groups
+# (#g1) and ranges ((ES)[...]).
+_UNPARSED_PROFORMA = re.compile(r"//|/\d|^<|^\{|#|\)\[")
 
 
 def _modification_site(seq_pos: int, last_aa: str | None, cterm: bool, sequence_length: int) -> tuple[int, str | None]:
@@ -507,18 +623,21 @@ def _modification_site(seq_pos: int, last_aa: str | None, cterm: bool, sequence_
     return seq_pos, last_aa
 
 
+def _unimod_title_of(accession: str) -> str:
+    """The Unimod title of ``UNIMOD:<n>``; the accession itself when Unimod has no such entry."""
+    number = accession.split(":", 1)[1]
+    return (unimod_title(int(number)) if number.isdigit() else None) or accession
+
+
 def _modification_identity(mod_str: str, aa: str | None, meta: Optional[dict]) -> tuple[str, str | None]:
     """Resolve a modification tag to its name and accession."""
+    mod_str = mod_str.split("|", 1)[0]
     name = mod_str
     accession = None
     if mod_str.startswith("UNIMOD:"):
         accession = mod_str
-        if meta:
-            entry = meta.get(accession)
-            if entry:
-                name = entry[0]
-        else:
-            name = accession
+        entry = meta.get(accession) if meta else None
+        name = entry[0] if entry else _unimod_title_of(accession)
     elif mod_str.startswith("+") or mod_str.startswith("-"):
         if meta:
             for acc, (mod_name, sites, _) in meta.items():
@@ -526,10 +645,6 @@ def _modification_identity(mod_str: str, aa: str | None, meta: Optional[dict]) -
                     name = mod_name
                     accession = acc
                     break
-            else:
-                name = f"CHEMMOD:{mod_str}"
-        else:
-            name = f"CHEMMOD:{mod_str}"
     return name, accession
 
 
@@ -545,7 +660,7 @@ def _from_proforma_impl(
     """
     # Normalise mzTab parenthetical notation to ProForma brackets
     peptidoform = _normalize_peptidoform(peptidoform)
-    if not peptidoform or peptidoform == sequence:
+    if not peptidoform or peptidoform == sequence or _UNPARSED_PROFORMA.search(peptidoform):
         return peptidoform, None
 
     mods: dict[str, dict] = {}
@@ -554,7 +669,14 @@ def _from_proforma_impl(
     last_aa = None
     cterm = False
 
+    # Tags before "?" have an unknown position, so they list no positions.
     i = 0
+    unlocalized = _UNLOCALIZED_TAGS.match(peptidoform)
+    if unlocalized:
+        for mod_str in re.findall(r"\[([^\[\]]+)\]", unlocalized.group()):
+            name, accession = _modification_identity(mod_str, None, meta)
+            mods.setdefault(accession or name, {"name": name, "accession": accession, "positions": []})
+        i = unlocalized.end()
     while i < n:
         if peptidoform[i] == "[":
             try:
@@ -642,7 +764,8 @@ def _sum_sequence_mass(modified_seq: str) -> Optional[float]:
     """Sum residue + modification masses for a modified sequence string.
 
     Supports ``(UniMod:N)`` and ``[UNIMOD:N]`` bracket formats,
-    as well as the ProForma N-term separator ``-``.
+    as well as the ProForma N-term separator ``-`` and the ``?`` that ends
+    modifications of unknown position.
     """
     mass = 0.0
     i = 0
@@ -658,7 +781,7 @@ def _sum_sequence_mass(modified_seq: str) -> Optional[float]:
                 return None
             mass += delta
             i = end + 1
-        elif ch == "-":
+        elif ch in "-?":
             i += 1
         else:
             aa_mass = AA_MASS.get(ch.upper())
@@ -698,15 +821,19 @@ __all__ = [
     "UNIMOD_MASS",
     "WATER_MASS",
     "build_proforma",
+    "canonical_mod_tag",
     "compute_precursor_mz",
-    "format_mass_delta",
+    "format_mass_shift",
     "from_proforma",
     "mass_tag",
     "mass_to_unimod",
     "modification_tag",
     "name_to_unimod",
+    "normalize_peptidoform",
     "parse_unimod_delta",
     "position_site",
     "split_modified_sequence",
+    "unimod_mass",
+    "unimod_title",
     "vendor_position",
 ]

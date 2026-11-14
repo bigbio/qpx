@@ -276,7 +276,7 @@ Each index stores a metadata file at `_index/{type}/_metadata.json`:
 {
     "index_type": "peptide",
     "source_view": "psm",
-    "qpx_version": "1.2",
+    "qpx_version": "1.3",
     "built_at": "2026-04-08T14:30:00Z",
     "datasets_included": ["PXD000561", "PXD002137"],
     "total_entries": 14400000,

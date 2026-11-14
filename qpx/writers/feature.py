@@ -3,11 +3,36 @@
 import logging
 from collections.abc import Sequence
 
+import numpy as np
+import pyarrow as pa
+
 from qpx.core.data import FeatureSchema
 from qpx.core.data.identity import derive_id
 from qpx.writers.base import BaseWriter
+from qpx.writers.derived import FEATURE_SCORE_COLUMNS, fill_group_ids, fill_irt, fill_score_columns
 
 _log = logging.getLogger(__name__)
+
+# Composite fields FeatureWriter persists as float32; the others keep their Python values.
+_FLOAT32_FIELDS = frozenset(field.name for field in FeatureSchema.get_arrow_schema() if field.type == pa.float32())
+
+
+def derive_feature_ids(records: list[dict], composite: Sequence[str]) -> list[int]:
+    """The ``feature_id`` FeatureWriter derives for each identified record from *composite*.
+
+    Values are hashed as persisted, so a float32 field is rounded to float32 first.
+    """
+    unordered = tuple(index for index, name in enumerate(composite) if name in ("grouped_runs", "pg_accessions"))
+    return [
+        derive_id(
+            [
+                float(np.float32(rec.get(name))) if name in _FLOAT32_FIELDS and rec.get(name) is not None else rec.get(name)
+                for name in composite
+            ],
+            unordered_list_indices=unordered,
+        )
+        for rec in records
+    ]
 
 
 class FeatureWriter(BaseWriter):
@@ -17,6 +42,9 @@ class FeatureWriter(BaseWriter):
         """Derive identified Feature ids by default from the declared composite."""
         super().__init__(*args, override_provided_ids=override_provided_ids, **kwargs)
         self._unidentified_fallback_count = 0
+
+    def _derive_columns(self, table: pa.Table) -> pa.Table:
+        return fill_irt(fill_group_ids(fill_score_columns(table, FEATURE_SCORE_COLUMNS)))
 
     def _should_override_provided_id(self, index: int, composite_values: dict[str, list]) -> bool:
         """Use the natural composite only for identified Features."""

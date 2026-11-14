@@ -60,7 +60,7 @@ def test_writer_footer_metadata(tmp_path):
     assert meta["file_type"] == "feature_file"
     assert meta["creator"] == "test_suite"
     # qpx_version is the on-disk SPEC version, not the package build version.
-    assert meta["qpx_version"] == QPX_SPEC_VERSION == "1.2"
+    assert meta["qpx_version"] == QPX_SPEC_VERSION == "1.3"
     # The package build version is stamped separately for provenance.
     assert "writer_version" in meta
     assert "uuid" in meta
@@ -393,7 +393,7 @@ class TestAtomicWrites:
                 make_feature_record(sequence="SECOND", peptidoform="SECOND"),
             ]
         )
-        writer.write_batch([{"not": "a valid record"}])
+        writer.write_batch([{"charge": "not a charge"}])
 
         with pytest.raises(ValueError):
             writer.close()

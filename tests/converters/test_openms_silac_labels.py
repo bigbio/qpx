@@ -5,7 +5,7 @@ import pyarrow.parquet as pq
 import pytest
 
 from qpx.converters.channel_labels import experiment_type_from_labels
-from qpx.converters.openms.converter import OpenMSConverter
+from qpx.converters.openms.converter import OpenMSConverter, name_native_ratios
 from qpx.dataset import Dataset
 from qpx.writers.feature import FeatureWriter
 from qpx.writers.pg import PgWriter
@@ -135,3 +135,46 @@ def test_legacy_silac_pg_upgrade_retains_every_channel(tmp_path):
         assert row["additional_intensities"] == [
             {"label": labels[index - 1], "intensities": [{"intensity_name": "normalized", "intensity_value": 500.0 * index}]}
         ]
+
+
+def test_native_ratios_are_named_on_the_numerator_and_the_reference_loses_its_one():
+    pair = pa.struct([("intensity_name", pa.string()), ("intensity_value", pa.float32())])
+    entry = pa.struct([("label", pa.string()), ("intensities", pa.list_(pair))])
+    other = {"intensity_name": "unnormalized_unique_peptide_sum", "intensity_value": 7.0}
+    rows = [
+        [{"label": "SILAC light", "intensities": [{"intensity_name": "ratio", "intensity_value": 1.0}]}],
+        [
+            {
+                "label": "SILAC heavy",
+                "intensities": [
+                    {"intensity_name": "ratio", "intensity_value": 2.0},
+                    {"intensity_name": "ratio_normalized", "intensity_value": 2.5},
+                    other,
+                ],
+            }
+        ],
+        None,
+    ]
+    table = pa.table({"additional_intensities": pa.array(rows, type=pa.list_(entry))})
+
+    result = name_native_ratios(table, {1: "SILAC light", 2: "SILAC heavy"}).column("additional_intensities").to_pylist()
+
+    assert result[0] is None
+    assert result[1] == [
+        {
+            "label": "SILAC heavy",
+            "intensities": [
+                {"intensity_name": "ratio_h_l", "intensity_value": 2.0},
+                {"intensity_name": "ratio_h_l_normalized", "intensity_value": 2.5},
+                other,
+            ],
+        }
+    ]
+    assert result[2] is None
+
+
+def test_tables_without_native_ratios_are_left_alone():
+    pair = pa.struct([("intensity_name", pa.string()), ("intensity_value", pa.float32())])
+    entry = pa.struct([("label", pa.string()), ("intensities", pa.list_(pair))])
+    table = pa.table({"additional_intensities": pa.array([None, None], type=pa.list_(entry))})
+    assert name_native_ratios(table, {1: "SILAC light"}) is table

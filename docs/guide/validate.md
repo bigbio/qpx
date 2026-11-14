@@ -95,7 +95,7 @@ def generate_example(command, default_text=""):
 
 ## Overview
 
-The `validate` command checks QPX datasets and individual Parquet files against their canonical schemas. It verifies column presence, type matching, null values in required columns, and primary key uniqueness.
+The `validate` command checks QPX datasets and individual Parquet files against their canonical schemas: the columns, values and footer of each structure, and the references between structures.
 
 ## Parameters {#validate-parameters}
 
@@ -123,21 +123,59 @@ print(generate_example(validate_cmd, "Validate QPX datasets and files:"))
 
 ## Validation Checks
 
+Each check reports an error, a warning, or a *strict* issue: a warning from
+`Dataset.validate()` and an error from `Dataset.validate(strict=True)` and from
+`qpxc validate`, which always validates strictly.
+
 The validator performs the following checks on each structure:
 
-| Check | Description |
-|-------|-------------|
-| **Column presence** | All required columns defined in the canonical schema must exist |
-| **Type matching** | Column Arrow types must match the schema definition |
-| **Null values** | Non-nullable columns must not contain null values |
-| **Primary key uniqueness** | Primary key columns must have unique values |
+| Check | Severity | Description |
+| --- | --- | --- |
+| **Readable** | error | The structure's files can be read; a file in an incompatible older layout, such as a QPX 1.0 `pg.parquet`, fails validation with the reason instead of being left out |
+| **Column presence** | error | All required columns defined in the canonical schema must exist |
+| **Type matching** | error | Column Arrow types must match the schema definition |
+| **Null values** | strict | Non-nullable columns, and the non-nullable fields of their structs (such as `cv_params[].cv_value`), contain no nulls |
+| **Primary key uniqueness** | strict | Primary key columns must have unique values |
+| **Identity composites** | strict | Rows with equal identity composite values carry the same id |
+| **Value ranges** | strict | Values lie in the range their schema declares (q-values and PEP in [0, 1], sequence coverage in [0, 100], primary intensities at least 0) and are not NaN or infinite |
+| **Single row** | error | `dataset.parquet` has exactly one row |
+| **Footer** | error, strict | `qpx_version` has the reader's major version, `file_type` names the view, and `identity_composite` and `primary_key` name fields of the view (errors); a missing key is a strict issue, and a newer minor version a warning |
+| **Score names** | warning | `additional_scores` names are `snake_case` |
+| **PG quantity** | warning | When a pg view has labelled rows, at least one has a positive `intensity`; otherwise the source carried no protein quantity |
+
+When a dataset holds several views, it also checks the references between them:
+
+| Check | Severity | Description |
+| --- | --- | --- |
+| **Run references** | error | Every `run_file_name` of feature, psm and mz, and every member of `pg.grouped_runs`, is a run in `run.parquet` |
+| **Label → sample** | error | Each `(run, label)` of `feature.intensities` and each `(grouped_runs, label)` of pg resolves to exactly one `run.samples` entry, and a feature row lists each label once. A feature label that matches no sample of a single-sample run is only a warning, because the query helpers fall back to that sample |
+| **PSM label** | strict | `psm.label` is one of the `identified_labels` of the feature it links to |
+| **Fraction order** | warning | A multi-run `pg.grouped_runs` list is stored in ascending `run.fraction` order (when every member has a numeric fraction) |
+| **ID references** | strict | `psm.feature_id`, `feature.psm_ids`, `feature.pg_ids` and the site/proteoform `pg_id`/`best_psm_id` links name existing rows |
+
+A cross-view check whose query fails is reported as skipped, with the reason (I/O error, out of memory or possible schema drift), as a strict issue.
+
+### Semantic checks
+
+`--semantic` (`validate(semantic=True)` in Python) also checks what the PSM and feature values mean. It parses each distinct peptidoform, so it takes longer on large views:
+
+| Check | Severity | Description |
+| --- | --- | --- |
+| **Peptidoform syntax** | strict | The peptidoform is [canonical ProForma](../spec/peptidoform.md#canonical-form) |
+| **Peptidoform sequence** | strict | The peptidoform without its modifications is `sequence` |
+| **Modification accessions** | strict | Every tag is a known `UNIMOD:n` accession, a signed mass shift or a name (other accession namespaces are not canonical) |
+| **Modification positions** | strict | `modifications` positions lie in the peptide (0 to length + 1) and name its residue |
+| **calculated_mz** | strict | Within 20 ppm of the theoretical m/z of the peptidoform at its charge, when every modification has a known mass |
+| **Mass error** | warning | `observed_mz` within 50 ppm of `calculated_mz`; not checked for MS1-label multiplets (`identified_labels` set) |
+
+Cross-linked PSMs (`cross_links` set) carry the partner peptide's mass and skip both m/z checks.
 
 ### Cross-view checks
 
 When a dataset has a run view, rows are also resolved through it. A row that names no run, or a label that names no single sample, drops out of every per-sample view or is counted twice, so these findings are errors with or without strict validation:
 
 | Check | View | Description |
-| ----- | ---- | ----------- |
+| --- | --- | --- |
 | `dangling_grouped_run` | pg | Every `grouped_runs` element must be a `run.run_file_name` |
 | `ambiguous_grouped_run_sample` | pg | Each `label` must match the channel of exactly one sample across the row's grouped runs; reported once per distinct (grouped runs, label) unit |
 | `dangling_run_file_name` | feature, psm, mz | `run_file_name` must be a `run.run_file_name` (skipped for an mz view without the optional column) |
@@ -161,9 +199,19 @@ with qpx.open_dataset("./PXD014414") as ds:
             print(f"  [{issue.severity}] {issue.message}")
 ```
 
+`validate()` takes:
+
+| Argument | Default | Meaning |
+| --- | --- | --- |
+| `structures` | all | Structure names to validate; a requested structure the dataset does not have, or could not read, is an error |
+| `strict` | `False` | Report the *strict* issues as errors, as `qpxc validate` does |
+| `semantic` | `False` | Also run the [semantic checks](#semantic-checks) |
+
+`qpxc validate` has no `--strict` flag: it always validates strictly, so a check that is only a warning from `ds.validate()`, such as a duplicate primary key, fails the command.
+
 ## Exit Codes
 
 | Code | Meaning |
-|------|---------|
+| --- | --- |
 | `0` | All validated structures are valid |
 | `1` | One or more structures have validation errors |

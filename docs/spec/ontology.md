@@ -28,6 +28,10 @@ Fields without a CV mapping and tool-specific scores without an ontology accessi
 
 The CV versions declared by an input file describe that producer's vocabulary. They must not replace the version of a different ontology resource used by QPX to resolve an output mapping.
 
+A row describes a name the view emits: a column, a score, a CV parameter or an additional intensity. Converters reconcile the rows with the written files, dropping rows for names that were never written and adding rows for emitted scores, CV parameters, intensity names and CV-mapped columns without one (with a null accession when no term exists). `qpxc validate` warns with `ontology_unknown_field` on a row that names nothing its view emits.
+
+Values are not fields. The term of a value such as an instrument model is in `run.additional_terms`, whose `properties` name the field it resolves (`{"key": "field", "value": "instrument"}`) and the SDRF value (`{"key": "sdrf_value", "value": "Lumos"}`).
+
 !!! note "Primary key"
     Rows are unique on `(field_name, view)`. Converters collapse duplicates
     (first-wins) when the same field is accumulated both as a discovered score
@@ -122,7 +126,7 @@ Sample metadata fields map to biological ontologies. These mappings are critical
 
 | Field | Ontology | Ontology Accession | Description |
 |---|---|---|---|
-| `run_accession` | --- | --- | Unique run identifier (= SDRF `assay name`) |
+| `run_accession` | --- | --- | Run identifier: the run file stem |
 | `run_file_name` | --- | --- | Raw data file name without path or extension |
 | `samples` | --- | --- | Sample-channel mapping (FK to `sample.parquet`) |
 | `fraction` | --- | --- | Fraction identifier |
@@ -166,7 +170,8 @@ Sample metadata fields map to biological ontologies. These mappings are critical
 | `run_file_name` | --- | --- | Spectrum file name without path or extension |
 | `scan` | scan number | `MS:1003057` | Scan identifier as array of integer components |
 | `protein_accessions` | --- | --- | Protein accessions the peptide maps to (optional column) |
-| `ion_mobility` | ion mobility drift time | `MS:1002476` | Ion mobility value for the precursor |
+| `ion_mobility` | inverse reduced ion mobility | `MS:1002815` | Inverse reduced ion mobility (1/K0, Vs/cm²) for the precursor |
+| `ccs` | collisional cross sectional area | `MS:1002954` | Collisional cross section of the precursor (Å²) |
 | `mz_array` | m/z array | `MS:1000514` | Array of fragment m/z values |
 | `intensity_array` | intensity array | `MS:1000515` | Array of fragment intensity values |
 | `charge_array` | --- | --- | Array of fragment ion charge values |
@@ -194,7 +199,8 @@ Sample metadata fields map to biological ontologies. These mappings are critical
 | `rt_start` | --- | --- | Start of the retention time window |
 | `rt_stop` | --- | --- | End of the retention time window |
 | `predicted_rt` | predicted retention time | `MS:1000897` | Predicted retention time (seconds) |
-| `ion_mobility` | ion mobility drift time | `MS:1002476` | Ion mobility value for the precursor |
+| `ion_mobility` | inverse reduced ion mobility | `MS:1002815` | Inverse reduced ion mobility (1/K0, Vs/cm²) for the precursor |
+| `ccs` | collisional cross sectional area | `MS:1002954` | Collisional cross section of the precursor (Å²) |
 | `ion_mobility_start` | --- | --- | Start ion mobility value |
 | `ion_mobility_stop` | --- | --- | End ion mobility value |
 | `run_file_name` | --- | --- | Run file containing the feature |
@@ -263,7 +269,7 @@ Sample metadata fields map to biological ontologies. These mappings are critical
 
 ## Score Fields {#scores}
 
-Score names used in `additional_scores` that have PSI-MS ontology mappings. All QPX score names use **snake_case** -- the ontology name column shows the proper CV term.
+Score names used in `additional_scores` or the [typed q-value columns](scores.md#typed-q-value-columns) that have PSI-MS ontology mappings. In specification 1.3, a q-value matching a typed column's name and value is not duplicated in `additional_scores`. All QPX score names use **snake_case** -- the ontology name column shows the proper CV term.
 
 | QPX Name (snake_case) | Ontology Name | Ontology Accession | Direction |
 |---|---|---|---|
@@ -306,11 +312,13 @@ Fields defined by QPX without standardized ontology terms.
 | `peptide_counts` / `feature_counts` | PG | Count structures for peptides and features |
 | `contaminant` | PG | Contaminant indicator |
 | `pg_positions` | Feature | Peptide positions within each protein |
-| `id_run_file_name` / `id_scan` | Feature | Reference to best PSM for the feature |
+| `id_run_file_name` / `scan` | Feature | Reference to best PSM for the feature |
 | `protein_accessions` | PSM | Protein accessions (optional column) |
 | `charge_array` / `ion_type_array` / `ion_mobility_array` | PSM | Fragment ion annotation arrays |
 | `parent_ion_fraction` | Score | Fraction of target peak intensity in the isolation window |
-| `precursor_quantification_score` | Score | QuantUMS-derived quantification confidence: 1.0 / (1.0 + SD) |
+| `glycan_score` | Score | Score of the glycan composition assignment (higher is better) |
+| `glycan_qvalue` | Score | Q-value of the glycan composition assignment (lower is better) |
+| `precursor_quantification_score` | Score | QuantUMS-derived quantification confidence: 1.0 / (1.0 + SD). In the `cv_params` of DIA-NN files from qpx 1.3.0 and earlier; qpx 1.4.0 writes it only as the score `diann_quantity_quality` |
 
 ---
 

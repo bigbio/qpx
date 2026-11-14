@@ -4,28 +4,37 @@ import logging
 from pathlib import Path
 
 from qpx._version import __version__
+from qpx.converters.fragpipe.isobaric import load_channel_annotation, load_tmt_report, plex_runs
 from qpx.converters.fragpipe.pg_adapter import FragPipePgAdapter
 from qpx.converters.fragpipe.psm_adapter import FragPipePsmAdapter
 from qpx.converters.mappings import get_tool_meta
 from qpx.converters.orchestrator import BaseOrchestrator
-from qpx.core.constants import FEATURE, ONTOLOGY, PG, PSM, RUN, SAMPLE
+from qpx.core.constants import FEATURE, ONTOLOGY, PEPMAP, PG, PSM, RUN, SAMPLE
 from qpx.core.scores import field_ontology_entries, score_ontology_entries
 
 logger = logging.getLogger(__name__)
 
-# Rows per batch read from each FragPipe table.
-_BATCH_SIZE = 1_000_000
+# Records per batch: rows of psm.tsv, and rows times experiments of
+# combined_ion.tsv and combined_protein.tsv, each row expanding to one record
+# per experiment.
+_BATCH_SIZE = 100_000
 
 
 class FragPipeConverter(BaseOrchestrator):
     """Orchestrate full FragPipe conversion to QPX format."""
 
-    def __init__(self, output_directory=None, max_memory=None, max_cpus=None, compression: str = "zstd"):
+    def __init__(self, output_directory=None, max_memory=None, max_cpus=None):
         self._output_dir = Path(output_directory) if output_directory else None
         self._memory = max_memory
         self._cpus = max_cpus
-        self._compression = compression
         self._resolved_mappings_by_view: dict[str, dict] = {}
+        self._channels: dict[str, str] = {}
+        self._tmt_report: dict[str, dict[str, float]] = {}
+
+    def load_plex(self, annotation_file, tmt_report_file=None) -> None:
+        """Convert one plex: the channel columns of its reports take the labels of its annotation.txt."""
+        self._channels = load_channel_annotation(annotation_file)
+        self._tmt_report = load_tmt_report(tmt_report_file, self._channels) if tmt_report_file else {}
 
     def convert(
         self,
@@ -44,6 +53,10 @@ class FragPipeConverter(BaseOrchestrator):
             raise ValueError("output_folder or output_directory required")
         out.mkdir(parents=True, exist_ok=True)
         prefix = output_prefix or "fragpipe"
+        if self._channels:
+            if not psm_file:
+                raise ValueError("The annotation of a plex needs psm.tsv, whose spectrum ids name the plex's raw runs")
+            experiment_to_runs = {prefix: plex_runs(str(psm_file))}
 
         ontology_entries: list[dict] = []
         produced_structures: list[str] = []
@@ -54,15 +67,13 @@ class FragPipeConverter(BaseOrchestrator):
             logger.info("FragPipe PSM conversion complete")
 
         if ion_file:
-            self._convert_features(
+            produced_structures += self._convert_features(
                 ion_file,
-                psm_file,
-                sdrf_file,
-                out / f"{prefix}.feature.parquet",
+                (psm_file, pg_file, sdrf_file),
+                (out, prefix),
                 (experiment_to_runs, experiment_annotation_file),
                 ontology_entries,
             )
-            produced_structures.append(FEATURE)
             logger.info("FragPipe feature conversion complete")
 
         if pg_file:
@@ -110,7 +121,7 @@ class FragPipeConverter(BaseOrchestrator):
 
     def _convert_psms(self, psm_file, output_path, ontology_entries):
         """Write PSMs and collect their ontology and source mappings."""
-        with FragPipePsmAdapter(duckdb_memory=self._memory, duckdb_threads=self._cpus, compression=self._compression) as adapter:
+        with FragPipePsmAdapter(duckdb_memory=self._memory, duckdb_threads=self._cpus) as adapter:
             adapter.convert(
                 psm_path=str(psm_file),
                 output_path=str(output_path),
@@ -119,17 +130,24 @@ class FragPipeConverter(BaseOrchestrator):
             ontology_entries.extend(score_ontology_entries(adapter.get_discovered_scores(), view=PSM))
             self._resolved_mappings_by_view[PSM] = adapter.get_resolved_columns()
 
-    def _convert_features(self, ion_file, psm_file, sdrf_file, output_path, mapping, ontology_entries):
-        """Write features using the supplied experiment mapping."""
+    def _convert_features(self, ion_file, sources, output, mapping, ontology_entries) -> list[str]:
+        """Write features, and the pepmap of their mapped proteins, using the supplied experiment mapping.
+
+        The protein groups of ``pg_file`` give each feature its full group
+        membership. Returns the views written.
+        """
+        psm_file, pg_file, sdrf_file = sources
+        out, prefix = output
         experiment_to_runs, experiment_annotation_file = mapping
         from qpx.converters.fragpipe.feature_adapter import FragPipeFeatureAdapter
 
-        with FragPipeFeatureAdapter(
-            duckdb_memory=self._memory, duckdb_threads=self._cpus, compression=self._compression
-        ) as adapter:
+        with FragPipeFeatureAdapter(duckdb_memory=self._memory, duckdb_threads=self._cpus) as adapter:
+            if pg_file:
+                adapter.load_protein_groups(str(pg_file))
+            adapter.load_channels(self._channels)
             adapter.convert(
                 feature_path=str(ion_file),
-                output_path=str(output_path),
+                output_path=str(out / f"{prefix}.feature.parquet"),
                 sdrf_path=str(sdrf_file) if sdrf_file else None,
                 psm_path=str(psm_file) if psm_file else None,
                 experiment_to_runs=experiment_to_runs,
@@ -138,11 +156,15 @@ class FragPipeConverter(BaseOrchestrator):
             )
             ontology_entries.extend(score_ontology_entries(adapter.get_discovered_scores(), view=FEATURE))
             self._resolved_mappings_by_view[FEATURE] = adapter.get_resolved_columns()
+            if adapter.write_pepmap(str(out / f"{prefix}.pepmap.parquet")):
+                return [FEATURE, PEPMAP]
+        return [FEATURE]
 
     def _convert_pg(self, pg_file, sdrf_file, output_path, mapping, ontology_entries):
         """Write protein groups using the supplied experiment mapping."""
         experiment_to_runs, experiment_annotation_file = mapping
-        with FragPipePgAdapter(duckdb_memory=self._memory, duckdb_threads=self._cpus, compression=self._compression) as adapter:
+        with FragPipePgAdapter(duckdb_memory=self._memory, duckdb_threads=self._cpus) as adapter:
+            adapter.load_channels(self._channels, self._tmt_report)
             adapter.convert(
                 protein_path=str(pg_file),
                 output_path=str(output_path),

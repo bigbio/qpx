@@ -6,17 +6,12 @@ emits one ``pg.parquet`` row per protein group, using ``PgWriter``.
 
 from __future__ import annotations
 
-import gzip
 import logging
 from pathlib import Path
-from typing import Any
-
-try:
-    from lxml import etree
-except ImportError:
-    etree: Any = None
 
 from qpx.converters.base import BaseConverter
+from qpx.converters.mzidentml.document import MzidDocument, stream_results
+from qpx.converters.utils import canonical_accession, uniprot_entry_name
 from qpx.core.files import run_file_stem
 from qpx.core.scores import normalize_score_name
 from qpx.writers.pg import PgWriter
@@ -39,6 +34,7 @@ class MzIdentMLPgAdapter(BaseConverter):
         mzid_path: str | Path,
         output_path: str | Path,
         creator: str = "mzidentml",
+        document: MzidDocument | None = None,
     ) -> None:
         """Parse *mzid_path* and write QPX PG records to *output_path*.
 
@@ -46,23 +42,25 @@ class MzIdentMLPgAdapter(BaseConverter):
             mzid_path: Path to ``.mzid`` or ``.mzid.gz`` file.
             output_path: Destination ``pg.parquet`` path.
             creator: Creator tag written to Parquet metadata.
+            document: The file's tree when its results were already streamed.
         """
-        if etree is None:
-            raise ImportError("lxml is required for mzIdentML conversion. Install it with: pip install qpx[mzidentml]")
         mzid_path = Path(mzid_path)
         fallback_run = mzid_path.name.replace(".mzid.gz", "").replace(".mzid", "")
 
-        root, ns = self._parse_xml(mzid_path)
-        dbseq_map = self._build_dbseq_map(root, ns)
-        grouped_runs_by_list, fallback_runs = self._build_grouped_runs(root, ns, fallback_run)
+        if document is None:
+            document = MzidDocument()
+            for _ in stream_results(mzid_path, document):
+                document.release_sequences()
+        root, ns = document.root, document.ns
+        grouped_runs_by_list, fallback_runs = self._build_grouped_runs(root, ns, fallback_run, document.spectra_refs)
 
-        records = list(self._iter_protein_groups(root, ns, dbseq_map, grouped_runs_by_list, fallback_runs))
+        records = list(self._iter_protein_groups(root, ns, document.db_accessions, grouped_runs_by_list, fallback_runs))
 
         if not records:
             logger.warning("No protein group records produced from %s", mzid_path)
             return
 
-        with PgWriter(output_path, creator=creator, compression=self._compression) as writer:
+        with PgWriter(output_path, creator=creator) as writer:
             writer.write_batch(records)
 
         logger.info("Wrote %d protein groups to %s", len(records), output_path)
@@ -70,23 +68,6 @@ class MzIdentMLPgAdapter(BaseConverter):
     # ------------------------------------------------------------------
     # XML parsing helpers
     # ------------------------------------------------------------------
-
-    @staticmethod
-    def _parse_xml(mzid_path: Path) -> tuple:
-        """Parse mzIdentML XML, returns (root, namespace)."""
-        if str(mzid_path).endswith(".gz"):
-            with gzip.open(mzid_path, "rb") as fh:
-                tree = etree.parse(fh)
-        else:
-            tree = etree.parse(str(mzid_path))
-        root = tree.getroot()
-        ns = root.nsmap.get(None, "")
-        return root, ns
-
-    @staticmethod
-    def _build_dbseq_map(root, ns: str) -> dict[str, str]:
-        """Build id → accession lookup from DBSequence elements."""
-        return {d.get("id"): d.get("accession", d.get("id")) for d in root.iter(f"{{{ns}}}DBSequence")}
 
     @staticmethod
     def _ordered_unique(values: list[str]) -> list[str]:
@@ -99,6 +80,7 @@ class MzIdentMLPgAdapter(BaseConverter):
         root,
         ns: str,
         fallback_run: str,
+        spectra_refs: dict[str, list[str]],
     ) -> tuple[dict[str, list[str]], list[str]]:
         """Resolve each ProteinDetectionList to its contributing spectra runs."""
         spectra_data = {
@@ -127,10 +109,7 @@ class MzIdentMLPgAdapter(BaseConverter):
             if not list_id:
                 continue
             runs = list(runs_by_identification_list.get(list_id, []))
-            runs.extend(
-                spectra_data.get(result.get("spectraData_ref"), "")
-                for result in identification_list.iter(f"{{{ns}}}SpectrumIdentificationResult")
-            )
+            runs.extend(spectra_data.get(ref, "") for ref in spectra_refs.get(list_id, []))
             runs_by_identification_list[list_id] = cls._ordered_unique(runs)
 
         runs_by_protein_list: dict[str, list[str]] = {}
@@ -195,12 +174,15 @@ class MzIdentMLPgAdapter(BaseConverter):
     def _pag_members(self, pdhs, ns: str, dbseq_map: dict, additional_scores: list) -> tuple:
         """Collect member accessions, peptide counts, representative and scores."""
         pg_accessions: list[str] = []
+        member_names: list[str | None] = []
         anchor_protein: str | None = None
         peptides: list[dict] = []
         for pdh in pdhs:
-            acc = dbseq_map.get(pdh.get("dBSequence_ref", ""), pdh.get("dBSequence_ref", ""))
+            source_id = dbseq_map.get(pdh.get("dBSequence_ref", ""), pdh.get("dBSequence_ref", ""))
+            acc = canonical_accession(source_id)
             if acc:
                 pg_accessions.append(acc)
+                member_names.append(uniprot_entry_name(source_id))
 
             # Count PeptideHypothesis elements as peptide count for this protein
             pep_count = len(pdh.findall(f"{{{ns}}}PeptideHypothesis"))
@@ -227,7 +209,7 @@ class MzIdentMLPgAdapter(BaseConverter):
                             }
                         )
 
-        return pg_accessions, anchor_protein, peptides
+        return pg_accessions, member_names if all(member_names) else None, anchor_protein, peptides
 
     def _build_pag_record(self, pag, ns: str, dbseq_map: dict[str, str], grouped_runs: list[str]) -> dict | None:
         """Build a single pg record from a ProteinAmbiguityGroup element."""
@@ -237,7 +219,7 @@ class MzIdentMLPgAdapter(BaseConverter):
 
         global_qvalue, additional_scores = self._extract_pag_scores(pag, ns)
 
-        pg_accessions, anchor_protein, peptides = self._pag_members(pdhs, ns, dbseq_map, additional_scores)
+        pg_accessions, pg_names, anchor_protein, peptides = self._pag_members(pdhs, ns, dbseq_map, additional_scores)
 
         if not pg_accessions:
             return None
@@ -250,7 +232,7 @@ class MzIdentMLPgAdapter(BaseConverter):
 
         return {
             "pg_accessions": pg_accessions,
-            "pg_names": None,
+            "pg_names": pg_names,
             "gg_accessions": None,
             "gg_names": None,
             "gg_qvalue": None,

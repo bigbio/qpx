@@ -7,8 +7,9 @@ from pathlib import Path
 
 import click
 
+from qpx.cli.resources import convert_resource_options
+
 from .options import (
-    _compression_option,
     _dataset_metadata_options,
     _max_cpus_option,
     _max_memory_option,
@@ -41,9 +42,14 @@ from .postprocess import _finish_conversion
     "--project-accession",
     help="PDC / ProteomeXchange accession (e.g. PDC000227)",
 )
-@_compression_option
+@click.option(
+    "--sdrf-file",
+    help="SDRF defining which runs form one quantification unit. Default: runs that differ only in a _fNN suffix.",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
 @_max_memory_option
 @_max_cpus_option
+@convert_resource_options
 @_verbose_option
 @_dataset_metadata_options
 def convert_cdap_cmd(**kwargs):
@@ -60,6 +66,7 @@ def convert_cdap_cmd(**kwargs):
             --output-folder ./qpx_output/PDC000440 \\
             --project-accession PDC000440
 
+    \b
         # Only produce PSM and Feature (skip PG)
         qpxc convert cdap \\
             --psm-dir /data/CPTAC/PDC000440 \\
@@ -71,7 +78,6 @@ def convert_cdap_cmd(**kwargs):
     output_prefix = kwargs["output_prefix"]
     structures = kwargs["structures"]
     project_accession = kwargs["project_accession"]
-    compression = kwargs["compression"]
     max_memory = kwargs["max_memory"]
     max_cpus = kwargs["max_cpus"]
     verbose = kwargs["verbose"]
@@ -91,7 +97,6 @@ def convert_cdap_cmd(**kwargs):
     converter = CdapConverter(
         max_memory=max_memory,
         max_cpus=max_cpus,
-        compression=compression,
     )
     converter.convert(
         psm_dir=psm_dir,
@@ -99,6 +104,7 @@ def convert_cdap_cmd(**kwargs):
         output_prefix=output_prefix,
         structures=requested,
         project_accession=project_accession,
+        sdrf_path=kwargs["sdrf_file"],
     )
 
     _finish_conversion(output_folder, output_prefix, project_accession, metadata)

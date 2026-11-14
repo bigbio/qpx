@@ -43,6 +43,25 @@ def to_proforma(modified_sequence: str) -> str:
     return build_proforma(sequence, tags)
 
 
+def localization_sites(localization: str, sequence: str) -> dict[str, dict[int, float]]:
+    """Per-modification site probabilities from ``EG.PTMLocalizationProbabilities``.
+
+    The column holds percentages inside the brackets,
+    ``_PVS[Phospho (STY): 92.3%]PS[Phospho (STY): 7.7%]K_``; a modification
+    without one was not localized. Empty for a value that does not spell *sequence*.
+    """
+    spelled, mods = split_modified_sequence(localization.strip("_"), "[", "]")
+    sites: dict[str, dict[int, float]] = {}
+    if spelled != sequence:
+        return sites
+    for position, text in mods:
+        name, _, percent = text.rpartition(": ")
+        if name and percent.endswith("%"):
+            position = vendor_position(name, position, sequence)
+            sites.setdefault(modification_tag(name, *position_site(sequence, position)), {})[position] = float(percent[:-1]) / 100
+    return sites
+
+
 def to_modifications(modified_sequence: str, sequence: str) -> tuple[str, list[dict] | None]:
     """Parse modifications from a Spectronaut EG.ModifiedSequence string.
 

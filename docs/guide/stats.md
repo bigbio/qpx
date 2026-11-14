@@ -1,464 +1,155 @@
 # Statistics and Quality Control
 
-Generate statistics and perform quality control analysis on QPX datasets using the Python API.
-
-## Overview
-
-QPX provides a comprehensive Python API for accessing dataset statistics and quality control metrics. The API allows you to programmatically query your data and generate statistical summaries for publications, quality assessment, and comparative analysis.
+Compute statistics and quality metrics of a QPX dataset with the Python API. Every example here runs on a converted dataset in `./output/`.
 
 ## Getting Started
 
-Load a QPX dataset and access basic statistics:
-
 ```python
 import qpx
 
-# Load dataset
-ds = qpx.Dataset("path/to/dataset/")
+ds = qpx.Dataset("./output/")
 
-# Basic counts
-print(f"Total PSMs: {ds.psm.count()}")
-print(f"Total features: {ds.feature.count()}")
-print(f"Total protein groups: {ds.pg.count()}")
+print(ds.available_structures)
+print(f"PSMs: {ds.psm.count()}")
+print(f"Features: {ds.feature.count()}")
+print(f"Protein group rows: {ds.pg.count()}")
 ```
 
-## Core Statistics
+A view opens lazily: `count()`, `filter()` and `select()` run in DuckDB without loading the file, and `to_df()` loads only what the query asks for.
 
-### PSM-Level Statistics
-
-Access peptide-spectrum match statistics:
+## Built-in Summaries
 
 ```python
 import qpx
 
 ds = qpx.Dataset("./output/")
 
-# PSM counts
-total_psms = ds.psm.count()
-print(f"Number of PSMs: {total_psms:,}")
+# One row: unique peptides and proteins, runs, features (targets only)
+print(ds.qc_view.metrics().to_df())
 
-# Unique peptides (without modifications)
-unique_peptides = ds.psm.data["sequence"].nunique()
-print(f"Number of peptides: {unique_peptides:,}")
+# One row per run: n_proteins, n_peptides, n_features
+print(ds.identification_summary.summary().to_df())
 
-# Unique peptidoforms (with modifications)
-unique_peptidoforms = ds.psm.data["peptidoform"].nunique()
-print(f"Number of peptidoforms: {unique_peptidoforms:,}")
+# One row per modification: n_psms, n_peptides
+print(ds.modification_view.frequency().to_df())
 
-# Unique proteins
-unique_proteins = ds.psm.data["protein_accessions"].nunique()
-print(f"Number of proteins: {unique_proteins:,}")
-
-# Number of MS runs
-num_runs = ds.psm.data["run_file_name"].nunique()
-print(f"Number of msruns: {num_runs:,}")
+# Through the sample table
+print(ds.sample_summary.peptides_per_sample().to_df())
+print(ds.sample_summary.proteins_per_sample().to_df())
 ```
 
-### Feature-Level Statistics
+## Your Own Queries
 
-Access feature quantification statistics:
+`ds.sql()` runs DuckDB SQL over the views, which are registered by name:
 
 ```python
 import qpx
 
 ds = qpx.Dataset("./output/")
 
-# Feature counts
-total_features = ds.feature.count()
-print(f"Total features: {total_features:,}")
+# Charge states of target features
+charges = ds.sql("""
+    SELECT charge, count(*) AS n
+    FROM feature
+    WHERE NOT coalesce(is_decoy, false)
+    GROUP BY charge
+    ORDER BY charge
+""").to_df()
+print(charges)
 
-# Samples with quantification data
-num_samples = len([col for col in ds.feature.data.columns if col.startswith("sample_")])
-print(f"Number of samples: {num_samples}")
-
-# Missing value analysis
-intensity_cols = [col for col in ds.feature.data.columns if col.startswith("sample_")]
-missing_values = ds.feature.data[intensity_cols].isna().sum().sum()
-total_values = ds.feature.data[intensity_cols].size
-completeness = (1 - missing_values / total_values) * 100
-print(f"Data completeness: {completeness:.2f}%")
+# Peptides and peptidoforms
+counts = ds.sql("""
+    SELECT count(DISTINCT sequence) AS peptides, count(DISTINCT peptidoform) AS peptidoforms
+    FROM feature
+""").fetchone()
+print(counts)
 ```
 
-### Protein Group Statistics
+!!! warning "`unique` is a reserved word"
+    Write `"unique"` in SQL when you select that feature column.
 
-Access protein group quantification statistics:
+The same results are available through the query builder:
 
 ```python
 import qpx
 
 ds = qpx.Dataset("./output/")
 
-# Protein group counts
-total_pgs = ds.pg.count()
-print(f"Number of protein groups: {total_pgs:,}")
-
-# iBAQ statistics (if available)
-if "ibaq" in ds.pg.data.columns:
-    ibaq_cols = [col for col in ds.pg.data.columns if col.startswith("sample_") and "ibaq" in col.lower()]
-    num_ibaq_samples = len(ibaq_cols)
-    num_ibaq_proteins = ds.pg.data[ibaq_cols].notna().any(axis=1).sum()
-    print(f"iBAQ Number of proteins: {num_ibaq_proteins:,}")
-    print(f"iBAQ Number of samples: {num_ibaq_samples}")
+print(ds.feature.filter("charge = 2").count())
+print(ds.feature.filter("charge = 2").select("sequence", "charge").limit(5).to_df())
+print(ds.psm.targets_only().select("peptidoform").to_df()["peptidoform"].nunique())
 ```
 
-## Comprehensive Statistics Report
+## Missing Values
 
-Generate a complete statistics summary:
+`design_matrix()` pivots protein quantities to one row per sample and one column per protein. A missing quantity is `NaN`.
+
+```python
+import qpx
+
+ds = qpx.Dataset("./output/")
+
+matrix = ds.design_matrix()
+print(f"{matrix.shape[0]} samples, {matrix.shape[1]} proteins")
+print(f"Missing overall: {matrix.isna().to_numpy().mean():.1%}")
+print(matrix.isna().mean(axis=1).sort_values(ascending=False).head())
+```
+
+## A Quality Report
 
 ```python
 import qpx
 
 
-def generate_stats_report(dataset_path, output_file=None):
-    """Generate comprehensive statistics for a QPX dataset."""
-    ds = qpx.Dataset(dataset_path)
-
-    report = []
-    report.append("=" * 50)
-    report.append("QPX Dataset Statistics Report")
-    report.append("=" * 50)
-    report.append("")
-
-    # PSM Statistics
-    if hasattr(ds, "psm") and ds.psm.count() > 0:
-        report.append("PSM Statistics:")
-        report.append(f"  Number of PSMs: {ds.psm.count():,}")
-        report.append(f"  Number of peptides: {ds.psm.data['sequence'].nunique():,}")
-        report.append(f"  Number of peptidoforms: {ds.psm.data['peptidoform'].nunique():,}")
-        report.append(f"  Number of proteins: {ds.psm.data['protein_accessions'].nunique():,}")
-        report.append(f"  Number of msruns: {ds.psm.data['run_file_name'].nunique():,}")
-        report.append("")
-
-    # Feature Statistics
-    if hasattr(ds, "feature") and ds.feature.count() > 0:
-        intensity_cols = [col for col in ds.feature.data.columns if col.startswith("sample_")]
-        report.append("Feature Statistics:")
-        report.append(f"  Number of features: {ds.feature.count():,}")
-        report.append(f"  Number of samples: {len(intensity_cols)}")
-        report.append("")
-
-    # Protein Group Statistics
-    if hasattr(ds, "pg") and ds.pg.count() > 0:
-        report.append("Protein Group Statistics:")
-        report.append(f"  Number of protein groups: {ds.pg.count():,}")
-        report.append("")
-
-    # Dataset metadata
-    if hasattr(ds, "dataset_meta"):
-        report.append("Dataset Metadata:")
-        if hasattr(ds.dataset_meta, "name"):
-            report.append(f"  Name: {ds.dataset_meta.name}")
-        if hasattr(ds.dataset_meta, "version"):
-            report.append(f"  Version: {ds.dataset_meta.version}")
-
-    report.append("=" * 50)
-
-    # Output
-    report_text = "\n".join(report)
-    if output_file:
-        with open(output_file, "w") as f:
-            f.write(report_text)
-        print(f"Report saved to: {output_file}")
-    else:
-        print(report_text)
-
-    return report_text
-
-
-# Usage
-generate_stats_report("./output/", "./reports/statistics.txt")
-```
-
-## Statistical Interpretation Guide
-
-### Data Quality Indicators
-
-#### Good Quality Signs
-
-- Consistent protein counts across replicates
-- Expected PSM-to-peptide ratios (typically 2-5)
-- Complete data across all msruns
-- Reasonable peptidoform diversity (typically 1-3 per peptide)
-
-#### Potential Issues
-
-- **Very low PSM counts**: Search parameter issues, poor sample quality
-- **High peptidoform-to-peptide ratio**: Over-prediction of modifications
-- **Missing msruns**: File processing errors
-- **Extreme variation**: Batch effects, contamination
-
-### Understanding Metrics
-
-#### Peptide vs Peptidoform
-
-- **Peptide**: Amino acid sequence (e.g., `PEPTIDE`)
-- **Peptidoform**: Peptide + modifications (e.g., `PEPTIDE[+16]`)
-
-#### Expected Ratios
-
-Typical ratios for quality data:
-
-- **PSMs per peptide**: 2-5 (varies with replicates)
-- **Peptidoforms per peptide**: 1-3 (depends on PTM analysis)
-- **Peptides per protein**: 3-20 (depends on protein abundance and coverage)
-
-### Comparative Analysis
-
-When comparing datasets:
-
-1. **Normalize by sample amount**: Account for loading differences
-2. **Consider instrument type**: Different platforms yield different numbers
-3. **Account for search space**: Database size affects identification rates
-4. **Match FDR thresholds**: Ensure fair comparison
-
-### Reporting Guidelines
-
-For publications, report:
-
-- Total unique proteins, peptides, and PSMs
-- Number of biological replicates
-- Number of technical replicates (msruns)
-- FDR thresholds applied
-- Protein and peptide identification rates
-
-## Quality Control Workflow
-
-Complete QC workflow example:
-
-```python
-import qpx
-import pandas as pd
-
-
-def quality_control_report(dataset_path):
-    """Perform comprehensive quality control analysis."""
-    ds = qpx.Dataset(dataset_path)
-
-    # 1. Check data completeness
-    print("1. Data Completeness Check")
-    print(f"   PSM data: {'Present' if ds.psm.count() > 0 else 'Missing'}")
-    print(f"   Feature data: {'Present' if ds.feature.count() > 0 else 'Missing'}")
-    print(f"   Protein group data: {'Present' if ds.pg.count() > 0 else 'Missing'}")
-    print()
-
-    # 2. Identification rates
-    print("2. Identification Rates")
-    total_psms = ds.psm.count()
-    unique_peptides = ds.psm.data["sequence"].nunique()
-    unique_proteins = ds.psm.data["protein_accessions"].nunique()
-    print(f"   PSMs per peptide: {total_psms / unique_peptides:.2f}")
-    print(f"   Peptides per protein: {unique_peptides / unique_proteins:.2f}")
-    print()
-
-    # 3. Missing value analysis
-    if hasattr(ds, "feature") and ds.feature.count() > 0:
-        print("3. Missing Value Analysis")
-        intensity_cols = [col for col in ds.feature.data.columns if col.startswith("sample_")]
-        missing_pct = ds.feature.data[intensity_cols].isna().mean() * 100
-        print(f"   Average missing values: {missing_pct.mean():.2f}%")
-        print(f"   Range: {missing_pct.min():.2f}% - {missing_pct.max():.2f}%")
-        print()
-
-    # 4. Modification analysis
-    print("4. Modification Analysis")
-    peptidoforms = ds.psm.data["peptidoform"].nunique()
-    peptides = ds.psm.data["sequence"].nunique()
-    mod_ratio = peptidoforms / peptides
-    print(f"   Peptidoforms per peptide: {mod_ratio:.2f}")
-    print(f"   Status: {'Normal' if 1 <= mod_ratio <= 3 else 'Review recommended'}")
-    print()
-
-    # 5. Run completeness
-    print("5. MS Run Completeness")
-    num_runs = ds.psm.data["run_file_name"].nunique()
-    print(f"   Total runs: {num_runs}")
-    run_psms = ds.psm.data.groupby("run_file_name").size()
-    print(f"   PSMs per run: {run_psms.mean():.0f} ± {run_psms.std():.0f}")
-    print()
-
+def quality_report(path, min_peptides_per_run=1000):
+    """Flag runs with few peptides, against the dataset's own median."""
+    ds = qpx.Dataset(path)
+    runs = ds.identification_summary.summary().to_df()
+    median = runs["n_peptides"].median()
+    low = runs[(runs["n_peptides"] < min_peptides_per_run) | (runs["n_peptides"] < median / 2)]
     return {
-        "total_psms": total_psms,
-        "unique_peptides": unique_peptides,
-        "unique_proteins": unique_proteins,
-        "num_runs": num_runs,
-        "mod_ratio": mod_ratio,
+        "metrics": ds.qc_view.metrics().to_df().iloc[0].to_dict(),
+        "median_peptides_per_run": float(median),
+        "low_runs": low["run_file_name"].tolist(),
     }
 
 
-# Usage
-qc_results = quality_control_report("./output/")
+print(quality_report("./output/"))
 ```
 
-## Custom Thresholds
+The thresholds are examples: choose them for your instrument and gradient. Do not take a fixed PSM count as a sign of quality across experiments.
 
-Define and check quality thresholds:
+## Validating Alongside Statistics
 
-```python
-import qpx
-
-
-def check_quality_thresholds(dataset_path):
-    """Check dataset against defined quality thresholds."""
-    ds = qpx.Dataset(dataset_path)
-
-    # Define thresholds
-    thresholds = {"min_proteins": 1000, "min_peptides": 5000, "min_psms": 10000, "max_missing_pct": 30, "min_runs": 3}
-
-    # Check against thresholds
-    warnings = []
-
-    # Protein count
-    protein_count = ds.psm.data["protein_accessions"].nunique()
-    if protein_count < thresholds["min_proteins"]:
-        warnings.append(f"Low protein count: {protein_count:,} (threshold: {thresholds['min_proteins']:,})")
-
-    # Peptide count
-    peptide_count = ds.psm.data["sequence"].nunique()
-    if peptide_count < thresholds["min_peptides"]:
-        warnings.append(f"Low peptide count: {peptide_count:,} (threshold: {thresholds['min_peptides']:,})")
-
-    # PSM count
-    psm_count = ds.psm.count()
-    if psm_count < thresholds["min_psms"]:
-        warnings.append(f"Low PSM count: {psm_count:,} (threshold: {thresholds['min_psms']:,})")
-
-    # Run count
-    run_count = ds.psm.data["run_file_name"].nunique()
-    if run_count < thresholds["min_runs"]:
-        warnings.append(f"Low run count: {run_count} (threshold: {thresholds['min_runs']})")
-
-    # Report
-    if warnings:
-        print("Quality Warnings:")
-        for warning in warnings:
-            print(f"  - {warning}")
-    else:
-        print("All quality thresholds passed!")
-
-    return len(warnings) == 0
-
-
-# Usage
-passes_qc = check_quality_thresholds("./output/")
-```
-
-## Use Cases
-
-### Quality Control
-
-Verify expected number of identifications:
-
-```python
-import qpx
-
-ds = qpx.Dataset("./output/")
-stats = {
-    "proteins": ds.psm.data["protein_accessions"].nunique(),
-    "peptides": ds.psm.data["sequence"].nunique(),
-    "psms": ds.psm.count(),
-}
-
-print(f"Identified {stats['proteins']:,} proteins from {stats['psms']:,} PSMs")
-```
-
-### Publication Reporting
-
-Generate summary statistics for methods sections:
+`validate()` returns one result per view. Use it before reporting numbers:
 
 ```python
 import qpx
 
 ds = qpx.Dataset("./output/")
 
-print("Statistical Summary for Publication:")
-print(f"  - {ds.psm.data['protein_accessions'].nunique():,} unique proteins")
-print(f"  - {ds.psm.data['sequence'].nunique():,} unique peptides")
-print(f"  - {ds.psm.count():,} peptide-spectrum matches")
-print(f"  - {ds.psm.data['run_file_name'].nunique()} MS runs")
+for structure, result in ds.validate().items():
+    errors = [issue for issue in result.issues if issue.severity == "error"]
+    print(structure, "valid" if not errors else f"{len(errors)} error(s)")
 ```
 
-### Data Completeness
+## Comparing Datasets
 
-Assess coverage across samples:
-
-```python
-import qpx
-
-ds = qpx.Dataset("./output/")
-
-if hasattr(ds, "feature") and ds.feature.count() > 0:
-    intensity_cols = [col for col in ds.feature.data.columns if col.startswith("sample_")]
-
-    # Per-sample completeness
-    for col in intensity_cols:
-        completeness = (1 - ds.feature.data[col].isna().mean()) * 100
-        print(f"{col}: {completeness:.1f}% complete")
-```
-
-### Method Optimization
-
-Compare different search parameters:
+Ids and identities are per analysis ([Row Identity](../spec/identity.md#scope)), so compare natural measures. To compare several conversions, loop over their folders:
 
 ```python
+import pandas as pd
 import qpx
 
-# Load two datasets processed with different parameters
-ds1 = qpx.Dataset("./output_params1/")
-ds2 = qpx.Dataset("./output_params2/")
-
-print("Parameter Set 1:")
-print(f"  Proteins: {ds1.psm.data['protein_accessions'].nunique():,}")
-print(f"  Peptides: {ds1.psm.data['sequence'].nunique():,}")
-print()
-
-print("Parameter Set 2:")
-print(f"  Proteins: {ds2.psm.data['protein_accessions'].nunique():,}")
-print(f"  Peptides: {ds2.psm.data['sequence'].nunique():,}")
-```
-
-## Batch Processing
-
-Process multiple datasets:
-
-```python
-import qpx
-from pathlib import Path
-
-
-def batch_statistics(dataset_paths, output_file):
-    """Generate statistics for multiple datasets."""
-    results = []
-
-    for path in dataset_paths:
-        ds = qpx.Dataset(path)
-        stats = {
-            "dataset": Path(path).name,
-            "proteins": ds.psm.data["protein_accessions"].nunique(),
-            "peptides": ds.psm.data["sequence"].nunique(),
-            "psms": ds.psm.count(),
-            "runs": ds.psm.data["run_file_name"].nunique(),
-        }
-        results.append(stats)
-
-    # Save to file
-    import pandas as pd
-
-    df = pd.DataFrame(results)
-    df.to_csv(output_file, index=False)
-    print(f"Batch statistics saved to: {output_file}")
-
-    return df
-
-
-# Usage
-datasets = ["./dataset1/", "./dataset2/", "./dataset3/"]
-batch_statistics(datasets, "./reports/batch_stats.csv")
+rows = []
+for path in ["./output/"]:
+    ds = qpx.Dataset(path)
+    rows.append({"dataset": path, **ds.qc_view.metrics().to_df().iloc[0].to_dict()})
+print(pd.DataFrame(rows))
 ```
 
 ## Related Documentation
 
-- [Visualization Guide](visualize.md) - Create visual representations of statistics
-- [Dataset API Reference](../spec/dataset.md) - Core dataset structure
-- [PSM Format](../spec/psm.md) - PSM data specification
-- [Feature Format](../spec/feature.md) - Feature data specification
-- [Protein Group Format](../spec/pg.md) - Protein group data specification
+- [Visualization Guide](visualize.md)
+- [Validate](validate.md)
+- [API Views](../spec/views.md)

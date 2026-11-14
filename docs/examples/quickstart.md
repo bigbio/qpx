@@ -13,7 +13,6 @@ qpxc convert maxquant \
 
 # Convert all structures (PSM + feature + PG)
 qpxc convert maxquant \
-    --msms-file tests/examples/maxquant/maxquant_full/msms.txt.gz \
     --evidence-file tests/examples/maxquant/maxquant_full/evidence.txt.gz \
     --sdrf-file tests/examples/maxquant/maxquant_full/PXD001819.sdrf.tsv \
     --protein-groups-file tests/examples/maxquant/maxquant_full/proteinGroups.txt \
@@ -22,9 +21,8 @@ qpxc convert maxquant \
 
 **Expected Output**:
 
-- `output/psm-{uuid}.psm.parquet`
-- `output/feature-{uuid}.feature.parquet`
-- `output/pg-{uuid}.pg.parquet`
+- `output/maxquant.psm.parquet` (first command)
+- `output/maxquant.feature.parquet`, `output/maxquant.pg.parquet` and the metadata tables (second command)
 
 ## Example 2: Convert DIA-NN Data
 
@@ -49,8 +47,8 @@ qpxc convert diann \
 
 **Expected Output**:
 
-- `output/feature-{uuid}.feature.parquet`
-- `output/pg-{uuid}.pg.parquet`
+- `output/diann.feature.parquet`
+- `output/diann.pg.parquet`
 
 ## Example 3: Protein Quantification
 
@@ -59,13 +57,13 @@ Compute protein-level quantification from QPX feature data using mokume.
 ```bash
 # DirectLFQ quantification (default)
 qpxc transform quantify \
-    --feature-path ./output/feature.parquet \
+    --feature-path ./output/maxquant.feature.parquet \
     --method directlfq \
     -o proteins_directlfq.parquet
 
 # iBAQ quantification (requires FASTA)
 qpxc transform quantify \
-    --feature-path ./output/feature.parquet \
+    --feature-path ./output/maxquant.feature.parquet \
     --method ibaq \
     --fasta proteome.fasta \
     -o proteins_ibaq.tsv

@@ -1,7 +1,7 @@
 name: psm
 file_type: psm_file
 primary_key: [psm_id]
-identity_composite: [peptidoform, charge, run_file_name, scan]
+identity_composite: [run_file_name, scan, peptidoform, charge]
 doc: "Peptide Spectrum Matches from identification searches"
 
 fields:
@@ -36,6 +36,8 @@ fields:
     doc: "Precursor charge"
   posterior_error_probability:
     type: float64
+    minimum: 0
+    maximum: 1
     doc: "PEP - probability PSM is incorrect (lower is better)"
   is_decoy:
     type: bool
@@ -49,13 +51,21 @@ fields:
   observed_mz:
     type: float32
     required: true
-    doc: "Experimental m/z"
+    nullable: true
+    doc: "Experimental m/z; null when the producer reports no measured precursor m/z"
   mass_error_ppm:
     type: float32
     doc: "Mass error in ppm: 1e6 * (observed_mz - calculated_mz) / calculated_mz"
   additional_scores:
     type: "list<score>"
     doc: "Search engine scores"
+  qvalue:
+    type: float64
+    minimum: 0
+    maximum: 1
+    nullable: true
+    optional: true
+    doc: "PSM-level q-value, filled from additional_scores at write time (scores.md); null when the source has none"
   predicted_rt:
     type: float32
     doc: "Predicted RT (seconds)"
@@ -77,6 +87,10 @@ fields:
     type: float32
     optional: true
     doc: "Ion mobility"
+  ccs:
+    type: float32
+    optional: true
+    doc: "Collisional cross section in square angstroms (MS:1002954), when the producer reports one"
   missed_cleavages:
     type: int16
     doc: "Number of missed enzymatic cleavages (MS:1003044)"
@@ -91,6 +105,35 @@ fields:
     type: "list<cross_link>"
     optional: true
     doc: "Cross-link information for XL-MS experiments"
+  crosslinked_peptidoform:
+    type: string
+    optional: true
+    nullable: true
+    doc: "The whole linked species in ProForma 2.0: PEPK[XLMOD:02001#XL1]R//SEK[#XL1]R for two peptides, peptidoform alone naming only the alpha peptide"
+  protein_starts:
+    type: "list<int32>"
+    optional: true
+    nullable: true
+    doc: "For a cross-linked PSM: first residue of the peptide in each of protein_accessions (1-indexed)"
+  partner_protein_accessions:
+    type: "list<string>"
+    optional: true
+    nullable: true
+    doc: "Proteins of the partner peptide of an inter-peptide cross-link or noncovalent pair"
+  partner_protein_starts:
+    type: "list<int32>"
+    optional: true
+    nullable: true
+    doc: "First residue of the partner peptide in each of partner_protein_accessions (1-indexed), for placing the linked residue in the protein"
+  crosslink_decoy_class:
+    type: string
+    optional: true
+    nullable: true
+    doc: "Target or decoy origin of the two peptides: target_target, target_decoy or decoy_decoy"
+  pass_threshold:
+    type: "bool"
+    optional: true
+    doc: "Whether the search engine or validator marks the PSM as passing its threshold"
 
   # Spectral data (optional - may be stored in mz.parquet instead)
   mz_array:
@@ -113,6 +156,12 @@ fields:
     type: "list<float32>"
     optional: true
     doc: "Fragment ion mobility values"
+
+  label:
+    type: string
+    optional: true
+    nullable: true
+    doc: "MS1-labelled experiments (SILAC, dimethyl, mTRAQ): the channel label of the identified precursor, whose label modifications the peptidoform carries. Null otherwise."
 
   # Optional cross-reference
   feature_id:

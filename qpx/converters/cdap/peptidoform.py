@@ -10,9 +10,9 @@ sequence::
 The N-terminal label tag (e.g. TMT/iTRAQ on the alpha amine) appears before
 the first residue.  Subsequent ``±mass`` tokens annotate the residue that
 immediately precedes them.  Tokens are mapped to Unimod accessions at their
-residue or N-terminus with :func:`qpx.converters.ptm.mass_to_unimod`; masses
-without a Unimod entry there are passed through unchanged as ``CHEMMOD``
-strings so that downstream tooling can still report them.
+residue or N-terminus with :func:`qpx.converters.ptm.mass_to_unimod`; other
+masses are kept as ProForma mass shifts (``[+123.4560]``) so that downstream
+tooling can still report them.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ import re
 from functools import lru_cache
 from typing import Iterable
 
-from qpx.converters.ptm import build_proforma, mass_to_unimod, position_site
+from qpx.converters.ptm import build_proforma, format_mass_shift, mass_to_unimod, position_site
 
 # Regex capturing a single signed delta-mass token (e.g. ``+229.163``,
 # ``-17.027``).  Anchored to start-of-string when scanning the prefix; the
@@ -30,16 +30,16 @@ _MASS_TOKEN_RE = re.compile(r"^([+-]\d+\.\d+)")
 
 
 def _resolve_mass_to_unimod(mass_token: str, sequence: str, position: int) -> str:
-    """Map a CDAP delta-mass token (e.g. ``+229.163``) at *position* to a UNIMOD or CHEMMOD tag.
+    """Map a CDAP delta-mass token (e.g. ``+229.163``) at *position* to a UNIMOD tag or a mass shift.
 
     Position 0 is the N-terminus.  A mass without a Unimod entry at that residue
-    or terminus is preserved as a ``CHEMMOD:±mass`` string so the converter never
-    silently drops a modification.
+    or terminus is kept as a signed mass shift so the converter never silently
+    drops a modification.
     """
     accession = mass_to_unimod(float(mass_token), *position_site(sequence, position))
     if accession is not None:
         return f"UNIMOD:{accession}"
-    return f"CHEMMOD:{mass_token}"
+    return format_mass_shift(float(mass_token))
 
 
 @lru_cache(maxsize=65536)

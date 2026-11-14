@@ -22,6 +22,7 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
+from qpx.core.files import run_file_stem
 from qpx.core.http import safe_urlopen
 
 logger = logging.getLogger(__name__)
@@ -152,18 +153,8 @@ def fetch_file_metadata(file_id: str) -> Optional[dict]:
 
 
 def _strip_raw_extension(file_name: str) -> str:
-    """Drop a trailing raw extension to match CDAP ``run_file_name``.
-
-    The extension set must stay identical to
-    ``CdapBaseAdapter.strip_run_extension`` (converters/cdap/base_adapter.py);
-    otherwise a ``.mzML.gz`` or ``.d`` run would strip to a different stem here
-    and break the join between ``run.parquet`` and the psm/feature views.
-    """
-    stem = str(file_name).strip()
-    for ext in (".raw", ".RAW", ".mzML", ".mzml", ".mgf"):
-        if stem.endswith(ext):
-            return stem[: -len(ext)]
-    return stem
+    """Drop a trailing acquisition-file suffix to match CDAP ``run_file_name``."""
+    return run_file_stem(file_name)
 
 
 def map_runs_to_plex(pdc_study_id: str, *, threads: int = DEFAULT_METADATA_THREADS) -> dict[str, dict]:

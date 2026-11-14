@@ -15,6 +15,8 @@ Source survey: ``/home/shenyufei/.windsurf/plans/cdap-psm-survey-77e878.md``.
 
 from __future__ import annotations
 
+from sdrf_pipelines.converters.channel_map import CHANNEL_LABELS
+
 # ---------------------------------------------------------------------------
 # Channel definitions (5 patterns observed across 91 studies)
 # ---------------------------------------------------------------------------
@@ -72,6 +74,17 @@ CHANNEL_DEFS: dict[str, list[str]] = {
     ],
     "iTRAQ4": ["iTRAQ114", "iTRAQ115", "iTRAQ116", "iTRAQ117"],
 }
+
+_PLEX_OF_CHANNEL_DEF = {"TMT10": "tmt10plex", "TMT11": "tmt11plex", "TMT18": "tmt18plex", "iTRAQ4": "itraq4plex"}
+
+# CDAP column -> canonical SDRF label, by position in the plex: TMT10 ch10 is
+# ``TMT131`` but TMT11 ch10 is ``TMT131N``, and CDAP's ``126C`` is ``TMT126``.
+CANONICAL_LABELS: dict[str, str] = {
+    column: CHANNEL_LABELS[_PLEX_OF_CHANNEL_DEF[plex]][position]
+    for plex, columns in CHANNEL_DEFS.items()
+    if plex in _PLEX_OF_CHANNEL_DEF
+    for position, column in enumerate(columns, start=1)
+} | {"TMTXX-132N": "TMT132N", "TMTXX-132C": "TMT132C"}
 
 # ---------------------------------------------------------------------------
 # Decoy definitions

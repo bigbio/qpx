@@ -93,10 +93,10 @@ def test_reference_channel_in_every_plex_is_not_summed(bridge):
         median = ds.design_matrix(agg="median")
         units = ds.design_matrix(by="unit")
 
-    assert median.loc["POOL", "P1"] == 1050.0
-    assert units.loc[("POOL", "plex1|TMT126"), "P1"] == 1000.0
-    assert units.loc[("POOL", "plex2|TMT126"), "P1"] == 1100.0
-    assert units.loc[("plex2_A", "plex2|TMT127N"), "P1"] == 500.0
+    assert median.loc["POOL", "P1;P12346"] == 1050.0
+    assert units.loc[("POOL", "plex1|TMT126"), "P1;P12346"] == 1000.0
+    assert units.loc[("POOL", "plex2|TMT126"), "P1;P12346"] == 1100.0
+    assert units.loc[("plex2_A", "plex2|TMT127N"), "P1;P12346"] == 500.0
 
 
 def test_per_fraction_pg_rows_are_named_in_the_error(tmp_path):
@@ -114,7 +114,7 @@ def test_per_fraction_pg_rows_are_named_in_the_error(tmp_path):
         total = ds.design_matrix(agg="sum")
         peptides = ds.design_matrix("peptide")
 
-    assert total.loc["S1", "P1"] == 7.0
+    assert total.loc["S1", "P1;P12346"] == 7.0
     # The peptide units already join the two fractions.
     assert peptides.loc["S1", "PEPTIDEK"] == 2.0
 
@@ -126,7 +126,7 @@ def test_aggregations_combine_a_samples_units(replicates, level, fraction_value)
         total = ds.design_matrix(level, agg="sum")
         largest = ds.design_matrix(level, agg="max")
 
-    column = mean.columns[0]
+    column = {"protein": "P1;P12346", "peptide": "PEPTIDEK"}[level]
     assert mean.loc["S1", column] == 30.0
     assert total.loc["S1", column] == 90.0
     assert largest.loc["S1", column] == 60.0
@@ -164,9 +164,9 @@ def test_missing_cells_stay_nan_by_default(replicates):
         matrix = ds.design_matrix(agg="mean")
         filled = ds.design_matrix(agg="mean", fillna=0.0)
 
-    assert matrix.loc["S2", "P2"] == 9.0
-    assert math.isnan(matrix.loc["S1", "P2"])
-    assert filled.loc["S1", "P2"] == 0.0
+    assert matrix.loc["S2", "P12346;P2"] == 9.0
+    assert math.isnan(matrix.loc["S1", "P12346;P2"])
+    assert filled.loc["S1", "P12346;P2"] == 0.0
 
 
 def test_parquet_pivot_matches_the_in_memory_matrix(bridge, tmp_path_factory):
@@ -180,7 +180,7 @@ def test_parquet_pivot_matches_the_in_memory_matrix(bridge, tmp_path_factory):
     on_disk = pd.read_parquet(out).set_index("sample_accession").sort_index()
     pd.testing.assert_frame_equal(on_disk, expected.sort_index(), check_names=False, check_dtype=False)
     assert pq.read_table(by_unit).num_rows == 4
-    assert {"sample_accession", "quantification_unit", "P1"} <= set(pq.read_table(by_unit).column_names)
+    assert {"sample_accession", "quantification_unit", "P1;P12346"} <= set(pq.read_table(by_unit).column_names)
 
 
 def test_parquet_pivot_refuses_repeated_units_without_agg(bridge, tmp_path_factory):

@@ -13,6 +13,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 
 from qpx.converters.diann.feature_adapter import _ms_info_scans
+from qpx.core.engine import create_connection
 from qpx.core.sql import escape_path, sql_build
 from qpx.writers.mz import MzWriter
 
@@ -131,8 +132,7 @@ class DiannMzAdapter:
     ``*_ms_info.parquet`` (``rt`` and the ``precursor_*`` columns).
     """
 
-    def __init__(self, compression: str = "zstd", batch_size: int = 100_000):
-        self._compression = compression
+    def __init__(self, batch_size: int = 100_000):
         self._batch_size = batch_size
 
     def convert(
@@ -156,11 +156,14 @@ class DiannMzAdapter:
             for run, scan in matched_scans:
                 scans_by_run[run].add(scan)
 
-        con = duckdb.connect()
+        con = create_connection()
 
         pending: list[dict] = []
         written = 0
-        writer = MzWriter(output_path, compression=self._compression, batch_size=self._batch_size)
+        writer = MzWriter(output_path, batch_size=self._batch_size)
+        writer.add_footer_metadata(
+            {b"spectrum_content": b"selected_ms_levels" if scans_by_run is None else b"identified_spectra"}
+        )
         try:
             for ms2_file in ms2_files:
                 run_name = ms2_file.name.removesuffix("_ms2_info.parquet")

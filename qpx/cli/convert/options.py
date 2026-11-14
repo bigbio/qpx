@@ -44,17 +44,6 @@ def _output_prefix_option(func):
     return click.option("--output-prefix", help="Prefix for output file names")(func)
 
 
-def _compression_option(func):
-    """Add the shared Parquet compression option."""
-    return click.option(
-        "--compression",
-        type=click.Choice(["zstd", "snappy", "gzip", "none"], case_sensitive=False),
-        default="zstd",
-        show_default=True,
-        help="Parquet compression codec.",
-    )(func)
-
-
 def _sdrf_file_option(func):
     """Add the shared required SDRF file option."""
     return click.option(
@@ -69,7 +58,7 @@ def _max_memory_option(func):
     """Add the shared memory limit option."""
     return click.option(
         "--max-memory",
-        help="Maximum memory limit (e.g. '16GB')",
+        help="DuckDB memory limit (e.g. '16GB'); the converter's Python row batches come on top",
     )(func)
 
 

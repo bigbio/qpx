@@ -7,8 +7,9 @@ from pathlib import Path
 
 import click
 
+from qpx.cli.resources import convert_resource_options
+
 from .options import (
-    _compression_option,
     _dataset_metadata_options,
     _max_cpus_option,
     _max_memory_option,
@@ -43,15 +44,16 @@ from .postprocess import _finish_conversion
     type=float,
 )
 @_output_folder_option
+@click.option("--fragments", is_flag=True, help="Also write the report's F.* columns as the fragment view")
 @_output_prefix_option
 @_max_memory_option
 @_max_cpus_option
+@convert_resource_options
 @_project_accession_option
-@_compression_option
 @_verbose_option
 @_dataset_metadata_options
 def convert_spectronaut_cmd(**kwargs):
-    r"""Convert Spectronaut report to QPX format.
+    """Convert Spectronaut report to QPX format.
 
     Reads a Spectronaut report TSV file and converts feature-level and
     protein-group quantification data into QPX Parquet format.
@@ -59,14 +61,15 @@ def convert_spectronaut_cmd(**kwargs):
     \b
     Examples:
         # Feature + protein groups
-        qpxc convert spectronaut \
-            --report-path report.tsv \
+        qpxc convert spectronaut \\
+            --report-path report.tsv \\
             --output-folder ./qpx_output
 
+    \b
         # With SDRF metadata
-        qpxc convert spectronaut \
-            --report-path report.tsv \
-            --sdrf-file data.sdrf.tsv \
+        qpxc convert spectronaut \\
+            --report-path report.tsv \\
+            --sdrf-file data.sdrf.tsv \\
             --output-folder ./qpx_output
     """
     report_path = kwargs["report_path"]
@@ -77,7 +80,6 @@ def convert_spectronaut_cmd(**kwargs):
     max_memory = kwargs["max_memory"]
     max_cpus = kwargs["max_cpus"]
     project_accession = kwargs["project_accession"]
-    compression = kwargs["compression"]
     verbose = kwargs["verbose"]
     metadata = kwargs["metadata"]
 
@@ -88,23 +90,27 @@ def convert_spectronaut_cmd(**kwargs):
     prefix = output_prefix or "spectronaut"
 
     from qpx.converters.spectronaut import SpectronautConverter
+    from qpx.core.constants import FEATURE, PG
 
     converter = SpectronautConverter(
         report_path=report_path,
         sdrf_path=sdrf_file,
         max_memory=max_memory,
         max_cpus=max_cpus,
-        compression=compression,
     )
-    converter.convert_features(
-        qvalue_threshold=qvalue_threshold,
-        output_folder=output_folder,
-        output_prefix=prefix,
-    )
-    converter.convert_pg(
-        output_folder=output_folder,
-        output_prefix=prefix,
-    )
+    views = converter.available_views()
+    if FEATURE in views:
+        converter.convert_features(
+            qvalue_threshold=qvalue_threshold,
+            output_folder=output_folder,
+            output_prefix=prefix,
+            fragments=kwargs["fragments"],
+        )
+    if PG in views:
+        converter.convert_pg(
+            output_folder=output_folder,
+            output_prefix=prefix,
+        )
 
     if sdrf_file:
         converter.convert_sdrf(output_folder=output_folder, prefix=prefix)

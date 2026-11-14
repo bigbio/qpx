@@ -4,16 +4,17 @@ import logging
 from pathlib import Path
 
 from qpx._version import __version__
-from qpx.converters.channel_labels import read_sdrf_labels
 from qpx.converters.mappings import get_tool_meta
-from qpx.converters.maxquant.channels import reporter_channels
 from qpx.converters.maxquant.feature_adapter import MaxQuantFeatureAdapter
 from qpx.converters.maxquant.pg_adapter import MaxQuantPgAdapter
+from qpx.converters.maxquant.protein_fields import write_protein_view
 from qpx.converters.maxquant.psm_adapter import MaxQuantPsmAdapter
 from qpx.converters.orchestrator import BaseOrchestrator
 from qpx.converters.sdrf import convert_sdrf_views
-from qpx.core.constants import FEATURE, ONTOLOGY, PG, PSM, RUN, SAMPLE
+from qpx.core.constants import FEATURE, ONTOLOGY, PEPMAP, PG, PSM, RUN, SAMPLE
 from qpx.core.scores import field_ontology_entries, score_ontology_entries
+from qpx.core.sdrf import SDRFHandler
+from qpx.writers import SiteWriter
 
 logger = logging.getLogger(__name__)
 
@@ -27,18 +28,12 @@ def _views_with_input(msms_file, evidence_file, protein_groups_file) -> list[str
     return [view for view, path in inputs if path]
 
 
-def _reads_reporter_columns(structures, evidence_file, protein_groups_file) -> bool:
-    """Whether a view that maps SDRF labels to reporter columns (feature, pg) will be written."""
-    return bool({FEATURE, PG} & set(structures) & set(_views_with_input(None, evidence_file, protein_groups_file)))
-
-
 class MaxQuantConverter(BaseOrchestrator):
     """Orchestrate full MaxQuant conversion to QPX format."""
 
-    def __init__(self, max_memory=None, max_cpus=None, compression: str = "zstd"):
+    def __init__(self, max_memory=None, max_cpus=None):
         self._memory = max_memory
         self._cpus = max_cpus
-        self._compression = compression
         self._resolved_mappings_by_view: dict[str, dict] = {}
 
     def convert(
@@ -52,6 +47,7 @@ class MaxQuantConverter(BaseOrchestrator):
         structures=None,
         spectral_data=False,
         project_accession=None,
+        sites_files=(),
     ):
         output_folder = Path(output_folder)
         output_folder.mkdir(parents=True, exist_ok=True)
@@ -61,19 +57,34 @@ class MaxQuantConverter(BaseOrchestrator):
             structures = _views_with_input(msms_file, evidence_file, protein_groups_file)
 
         ontology_entries: list[dict] = []
+        if sdrf_file:
+            self._convert_sdrf(sdrf_file, output_folder, prefix, ontology_entries)
 
-        check_labels = _reads_reporter_columns(structures, evidence_file, protein_groups_file)
-        self._write_sdrf_views(sdrf_file, output_folder, prefix, ontology_entries, check_labels)
+        # Features go first: each PSM links to its feature through msms.txt "Evidence ID".
+        evidence_feature_ids = None
+        if FEATURE in structures and evidence_file:
+            evidence_feature_ids, wrote_pepmap = self._convert_features(
+                evidence_file,
+                protein_groups_file,
+                sdrf_file,
+                output_folder / f"{prefix}.feature.parquet",
+                ontology_entries,
+                link_evidence=PSM in structures and bool(msms_file),
+            )
+            if wrote_pepmap:
+                structures = [*structures, PEPMAP]
+            logger.info("MaxQuant feature conversion complete")
 
         if PSM in structures and msms_file:
-            self._convert_psms(msms_file, sdrf_file, output_folder / f"{prefix}.psm.parquet", spectral_data, ontology_entries)
-            logger.info("MaxQuant PSM conversion complete")
-
-        if FEATURE in structures and evidence_file:
-            self._convert_features(
-                evidence_file, protein_groups_file, sdrf_file, output_folder / f"{prefix}.feature.parquet", ontology_entries
+            self._convert_psms(
+                msms_file,
+                sdrf_file,
+                output_folder / f"{prefix}.psm.parquet",
+                spectral_data,
+                ontology_entries,
+                evidence_feature_ids,
             )
-            logger.info("MaxQuant feature conversion complete")
+            logger.info("MaxQuant PSM conversion complete")
 
         if PG in structures and protein_groups_file:
             self._convert_pg(
@@ -81,21 +92,19 @@ class MaxQuantConverter(BaseOrchestrator):
             )
             logger.info("MaxQuant PG conversion complete")
 
+        if sites_files:
+            self._convert_sites(sites_files, evidence_file, sdrf_file, output_folder / f"{prefix}.site.parquet")
+            structures = [*structures, "site"]
+
         self._write_conversion_metadata(output_folder, prefix, structures, project_accession, ontology_entries)
 
     @staticmethod
-    def _write_sdrf_views(sdrf_file, output_folder: Path, prefix: str, ontology_entries: list[dict], check_labels: bool) -> None:
-        """Write sample/run metadata from the SDRF (if it has the required columns).
+    def _convert_sdrf(sdrf_file, output_folder: Path, prefix: str, ontology_entries: list[dict]) -> None:
+        """Write sample/run metadata (if the SDRF has the required columns).
 
-        With ``check_labels`` (a feature or pg view will be written), labels the
-        adapters cannot map to reporter columns (SILAC, labels of no known
-        plex) fail here, before any view is written. The PSM view reads no
-        reporter columns, so a PSM-only conversion does not check them.
+        The channel design is resolved first, so an unsupported SDRF fails before any view is written.
         """
-        if not sdrf_file:
-            return
-        if check_labels:
-            reporter_channels(read_sdrf_labels(str(sdrf_file)))
+        SDRFHandler(str(sdrf_file)).get_experiment_type_from_sdrf()
         if convert_sdrf_views(str(sdrf_file), output_folder, prefix, ontology_entries):
             logger.info("SDRF conversion complete")
 
@@ -109,7 +118,8 @@ class MaxQuantConverter(BaseOrchestrator):
                 "tool_name": "MaxQuant",
                 "tool_version": None,
                 "tool_uri": None,
-                "parameters": None,
+                # The primary intensities: `Reporter intensity` and `Intensity`, not their corrected or LFQ forms.
+                "parameters": [{"key": "isotope_corrected", "value": "false"}, {"key": "normalization", "value": "none"}],
                 "config": None,
                 "output_views": structures,
             },
@@ -127,12 +137,11 @@ class MaxQuantConverter(BaseOrchestrator):
         ]
         super()._write_provenance(output_folder, prefix, records)
 
-    def _convert_psms(self, msms_file, sdrf_file, output_path, spectral_data, ontology_entries):
+    def _convert_psms(self, msms_file, sdrf_file, output_path, spectral_data, ontology_entries, evidence_feature_ids=None):
         """Write PSMs and collect their ontology and source mappings."""
         with MaxQuantPsmAdapter(
             duckdb_memory=self._memory,
             duckdb_threads=self._cpus,
-            compression=self._compression,
         ) as adapter:
             adapter.convert(
                 msms_path=str(msms_file),
@@ -140,16 +149,16 @@ class MaxQuantConverter(BaseOrchestrator):
                 chunksize=_BATCH_SIZE,
                 spectral_data=spectral_data,
                 sdrf_path=str(sdrf_file) if sdrf_file else None,
+                evidence_feature_ids=evidence_feature_ids,
             )
             ontology_entries.extend(score_ontology_entries(adapter.get_discovered_scores(), view=PSM))
             self._resolved_mappings_by_view[PSM] = adapter.get_resolved_columns()
 
-    def _convert_features(self, evidence_file, protein_groups_file, sdrf_file, output_path, ontology_entries):
-        """Write features and collect their ontology and source mappings."""
+    def _convert_features(self, evidence_file, protein_groups_file, sdrf_file, output_path, ontology_entries, link_evidence):
+        """Write features and their pepmap; return the evidence id -> feature_id map and whether a pepmap was written."""
         with MaxQuantFeatureAdapter(
             duckdb_memory=self._memory,
             duckdb_threads=self._cpus,
-            compression=self._compression,
         ) as adapter:
             adapter.convert(
                 evidence_path=str(evidence_file),
@@ -157,16 +166,18 @@ class MaxQuantConverter(BaseOrchestrator):
                 sdrf_path=str(sdrf_file) if sdrf_file else None,
                 protein_groups_path=(str(protein_groups_file) if protein_groups_file else None),
                 chunksize=_BATCH_SIZE,
+                link_evidence=link_evidence,
             )
             ontology_entries.extend(score_ontology_entries(adapter.get_discovered_scores(), view=FEATURE))
             self._resolved_mappings_by_view[FEATURE] = adapter.get_resolved_columns()
+            wrote_pepmap = adapter.write_pepmap(str(output_path).replace(".feature.parquet", ".pepmap.parquet"))
+            return adapter.evidence_feature_ids, wrote_pepmap
 
     def _convert_pg(self, protein_groups_file, evidence_file, sdrf_file, output_path, ontology_entries):
         """Write protein groups and collect their source mappings."""
         with MaxQuantPgAdapter(
             duckdb_memory=self._memory,
             duckdb_threads=self._cpus,
-            compression=self._compression,
         ) as adapter:
             adapter.convert(
                 protein_groups_path=str(protein_groups_file),
@@ -177,6 +188,15 @@ class MaxQuantConverter(BaseOrchestrator):
             )
             ontology_entries.extend(score_ontology_entries(adapter.get_discovered_scores(), view=PG))
             self._resolved_mappings_by_view[PG] = adapter.get_resolved_columns()
+        write_protein_view(str(protein_groups_file), str(output_path).replace(".pg.parquet", ".protein.parquet"))
+
+    def _convert_sites(self, sites_files, evidence_file, sdrf_file, output_path) -> None:
+        """Write the site view of the ``Sites.txt`` tables."""
+        with (
+            MaxQuantPgAdapter(duckdb_memory=self._memory, duckdb_threads=self._cpus) as adapter,
+            SiteWriter(output_path) as writer,
+        ):
+            adapter.write_sites(sites_files, evidence_file, sdrf_file, writer)
 
     def _write_conversion_metadata(self, output_folder, prefix, structures, project_accession, ontology_entries):
         """Write field ontology, provenance, and dataset metadata."""
@@ -190,7 +210,7 @@ class MaxQuantConverter(BaseOrchestrator):
             )
 
         self._write_ontology(output_folder, prefix, ontology_entries)
-        self._write_provenance(output_folder, prefix, structures)
+        self._write_provenance(output_folder, prefix, sorted(structures))
         self._write_dataset(
             output_folder,
             prefix,

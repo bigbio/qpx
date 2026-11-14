@@ -13,27 +13,32 @@ import pyarrow.compute as pc
 
 from qpx.core.data.validation import (
     _SEQUENCE_EDIT_COLUMNS,
-    _UNIT_INTERVAL_COLUMNS,
+    _SINGLE_ROW_VIEWS,
     _VOCABULARIES,
     ValidationIssue,
     ValidationResult,
     _anchor_membership_issues,
+    _anchor_outside_membership,
     _anchor_without_membership,
-    _chromatogram_length_counts,
+    _bad_score_names,
     _chromatogram_length_issues,
     _evidence_fraction_counts,
     _evidence_fraction_issues,
     _issue,
     _modification_candidate_counts,
     _modification_candidate_issues,
+    _nested_null_count,
+    _nonnullable_paths,
     _out_of_range_count,
-    _rt_monotonic_counts,
+    _range_issues,
+    _range_values,
     _rt_monotonic_issues,
+    _score_name_issues,
     _sequence_edit_counts,
     _sequence_edit_issues,
-    _unit_interval_issues,
     _vocabulary_count,
     _vocabulary_issues,
+    _xic_counts,
 )
 from qpx.core.sql import sql_build
 
@@ -45,7 +50,7 @@ from qpx.core.sql import sql_build
 class FieldDef:
     """A resolved schema field definition."""
 
-    __slots__ = ("name", "arrow_type", "nullable", "optional", "doc")
+    __slots__ = ("name", "arrow_type", "nullable", "optional", "doc", "value_ranges")
 
     def __init__(
         self,
@@ -55,16 +60,31 @@ class FieldDef:
         nullable: bool = True,
         optional: bool = False,
         doc: str = "",
+        value_ranges: dict | None = None,
     ):
         self.name = name
         self.arrow_type = arrow_type
         self.nullable = nullable
         self.optional = optional
         self.doc = doc
+        # Declared (minimum, maximum) by path below the field: () for the field
+        # itself, (name,) for a field of its struct or list-of-struct type.
+        self.value_ranges = value_ranges or {}
 
     def to_arrow_field(self) -> pa.Field:
         metadata = {"doc": self.doc} if self.doc else None
         return pa.field(self.name, self.arrow_type, nullable=self.nullable, metadata=metadata)
+
+
+def _struct_types_compatible(expected: pa.StructType, actual: pa.StructType) -> bool:
+    """Compare field names and types in order; only nullable members at the end may be absent."""
+    if actual.num_fields > expected.num_fields:
+        return False
+    absent = (expected.field(i) for i in range(actual.num_fields, expected.num_fields))
+    if not all(field.nullable for field in absent):
+        return False
+    pairs = ((expected.field(i), actual.field(i)) for i in range(actual.num_fields))
+    return all(ef.name == af.name and _types_compatible(ef.type, af.type) for ef, af in pairs)
 
 
 def _types_compatible(expected: pa.DataType, actual: pa.DataType) -> bool:
@@ -72,6 +92,8 @@ def _types_compatible(expected: pa.DataType, actual: pa.DataType) -> bool:
 
     Parquet does not preserve inner-struct field nullability, so we compare
     types structurally while ignoring the ``nullable`` flag on struct children.
+    A struct written before the specification added nullable members at its end
+    (``run.samples[].channel_role``) stays valid: those members read as null.
     """
     if expected == actual:
         return True
@@ -84,18 +106,8 @@ def _types_compatible(expected: pa.DataType, actual: pa.DataType) -> bool:
     if isinstance(expected, pa.MapType) and isinstance(actual, pa.MapType):
         return _types_compatible(expected.key_type, actual.key_type) and _types_compatible(expected.item_type, actual.item_type)
 
-    # struct — compare field names, types (ignoring nullable)
     if isinstance(expected, pa.StructType) and isinstance(actual, pa.StructType):
-        if expected.num_fields != actual.num_fields:
-            return False
-        for i in range(expected.num_fields):
-            ef = expected.field(i)
-            af = actual.field(i)
-            if ef.name != af.name:
-                return False
-            if not _types_compatible(ef.type, af.type):
-                return False
-        return True
+        return _struct_types_compatible(expected, actual)
 
     return False
 
@@ -113,6 +125,10 @@ def _canonicalize_primary_key_column(column: pa.ChunkedArray) -> pa.Array | pa.C
 
 
 _SCAN_FORMATS = ("scan", "index", "nativeId")
+# The column a physical merge adds, naming the dataset a row came from.
+SOURCE_DATASET_COLUMN = "source_dataset"
+# The columns any view may carry beyond its schema: x_<namespace>_<name>.
+EXTENSION_COLUMN_PREFIX = "x_"
 
 
 def _declared_scan_format(schema: pa.Schema, structure: str) -> str | None:
@@ -240,9 +256,9 @@ def _pg_referential_issues(
     if not {"pg_accessions", "grouped_runs", "label"} <= names or len(table) == 0:
         return []
 
-    import duckdb
+    from qpx.core.engine import create_connection
 
-    con = duckdb.connect()
+    con = create_connection()
     try:
         con.register("pg_validate", table)
         return _query_pg_referential_issues(con, structure, severity)
@@ -256,9 +272,9 @@ def pg_referential_issues_from_parquet(
     severity: str,
 ) -> list[ValidationIssue]:
     """Validate PG referential invariants against a file-backed Parquet relation."""
-    import duckdb
+    from qpx.core.engine import create_connection
 
-    con = duckdb.connect()
+    con = create_connection()
     try:
         relation = con.read_parquet(path)
         if not {"pg_accessions", "grouped_runs", "label"} <= set(relation.columns):
@@ -276,6 +292,26 @@ def pg_referential_issues_from_query(con, query: str, structure: str, severity: 
         return _query_pg_referential_issues(con, structure, severity)
     finally:
         con.execute("DROP VIEW pg_validate")
+
+
+def pg_quantity_issues(con, query: str, structure: str) -> list[ValidationIssue]:
+    """Warn when the labelled (quantification) rows of a pg view carry no positive intensity.
+
+    A converter that finds no protein quantity in its source writes every
+    intensity null; some converters before qpx 1.4.0 wrote 0 instead. The view
+    is valid but holds no abundance. Identification-only rows have no label
+    and are not counted.
+    """
+    labelled, quantified = con.execute(
+        sql_build(
+            "SELECT count(label), count(*) FILTER (WHERE isfinite(intensity) AND intensity > 0) FROM ($query)",
+            query=query,
+        )
+    ).fetchall()[0]
+    if not labelled or quantified:
+        return []
+    message = f"none of the {labelled} labelled pg row(s) has a positive intensity; the source carried no protein quantity"
+    return [_issue(structure, "no_pg_quantity", "warning", "intensity", message)]
 
 
 def _primary_key_issues(
@@ -317,6 +353,7 @@ def _primary_key_issues(
 # ones. Validation streams no other column, so a check that reads a new column
 # must list it here.
 _ROW_CHECK_COLUMNS = (
+    "additional_scores",
     "anchor_protein",
     "pg_accessions",
     "modification_candidates",
@@ -331,19 +368,23 @@ _ROW_CHECK_COLUMNS = (
 class _RowCounts:
     """Counts of the checks that read one row at a time, summed over a view's batches."""
 
-    def __init__(self, structure: str, schema: pa.Schema, required: list[str]):
+    def __init__(self, structure: str, schema: pa.Schema, required: list[str], ranges: dict):
         names = schema.names
         self.structure = structure
+        # Top-level columns by name; struct fields below them by path.
         self.nulls = dict.fromkeys(required, 0)
-        self.out_of_range = dict.fromkeys((name for name in _UNIT_INTERVAL_COLUMNS.get(structure, ()) if name in names), 0)
+        self.ranges = ranges
+        self.out_of_range = dict.fromkeys((path for path in ranges if path[0] in names), 0)
         self.vocabulary = dict.fromkeys((name for name in _VOCABULARIES.get(structure, {}) if name in names), 0)
         # Counts of the checks that are not kept per column.
         self.totals = {
             "anchor": 0,
+            "anchor_outside": 0,
             "fractions": (0, 0, 0),
             "candidates": (0, 0),
             "edits": (0, 0),
             "scan": 0,
+            "scores": (0, None),
             "chromatogram": 0,
             "rt_monotonic": 0,
         }
@@ -351,46 +392,56 @@ class _RowCounts:
     def add(self, batch: pa.Table | pa.RecordBatch, scan_format: str | None) -> None:
         """Add one batch's counts."""
         totals = self.totals
-        for name in self.nulls:
-            self.nulls[name] += batch.column(name).null_count
+        for key in self.nulls:
+            if isinstance(key, str):
+                self.nulls[key] += batch.column(key).null_count
+            else:
+                self.nulls[key] += _nested_null_count(batch.column(key[0]), key[1:])
         totals["anchor"] += _anchor_without_membership(batch)
-        for name in self.out_of_range:
-            self.out_of_range[name] += _out_of_range_count(batch.column(name))
+        totals["anchor_outside"] += _anchor_outside_membership(batch)
+        for path in self.out_of_range:
+            values = _range_values(batch.column(path[0]), path)
+            if values is not None:
+                self.out_of_range[path] += _out_of_range_count(values, *self.ranges[path])
         if self.structure == "site":
             totals["fractions"] = tuple(a + b for a, b in zip(totals["fractions"], _evidence_fraction_counts(batch)))
         totals["candidates"] = tuple(a + b for a, b in zip(totals["candidates"], _modification_candidate_counts(batch)))
         totals["edits"] = tuple(a + b for a, b in zip(totals["edits"], _sequence_edit_counts(batch, self.structure)))
-        totals["chromatogram"] += _chromatogram_length_counts(batch) if self.structure == "xic" else 0
-        if self.structure == "xic" and "rt" in batch.schema.names:
-            totals["rt_monotonic"] += _rt_monotonic_counts(batch.column("rt"))
+        chromatogram, rt_monotonic = _xic_counts(batch, self.structure)
+        totals["chromatogram"] += chromatogram
+        totals["rt_monotonic"] += rt_monotonic
         for name in self.vocabulary:
             self.vocabulary[name] += _vocabulary_count(batch.column(name), _VOCABULARIES[self.structure][name])
         if scan_format is not None:
             totals["scan"] += _scan_format_violations(batch.column("scan"), scan_format)
+        if "additional_scores" in batch.schema.names:
+            bad = _bad_score_names(batch.column("additional_scores"))
+            count, example = totals["scores"]
+            totals["scores"] = (count + len(bad), example or (bad[0].as_py() if len(bad) else None))
 
     def null_issues(self, rows: int, severity: str) -> list[ValidationIssue]:
         """Issues for the non-nullable columns that hold nulls."""
-        return [
-            _issue(
-                self.structure,
-                "null_values",
-                severity,
-                name,
-                f"Column '{name}' is non-nullable but contains {count} null value(s) out of {rows} rows",
-            )
-            for name, count in self.nulls.items()
-            if count
-        ]
+        issues = []
+        for key, count in self.nulls.items():
+            if not count:
+                continue
+            if isinstance(key, str):
+                message = f"Column '{key}' is non-nullable but contains {count} null value(s) out of {rows} rows"
+            else:
+                message = f"Field '{'.'.join(key)}' is non-nullable but contains {count} null value(s)"
+            issues.append(_issue(self.structure, "null_values", severity, key if isinstance(key, str) else key[0], message))
+        return issues
 
     def value_issues(self, severity: str) -> list[ValidationIssue]:
         """Issues from the value checks counted over the batches."""
         return [
-            *_anchor_membership_issues(self.totals["anchor"], self.structure, severity),
-            *_unit_interval_issues(self.out_of_range, self.structure, severity),
+            *_anchor_membership_issues(self.totals["anchor"], self.totals["anchor_outside"], self.structure, severity),
+            *_range_issues(self.out_of_range, self.ranges, self.structure, severity),
             *_evidence_fraction_issues(self.totals["fractions"], self.structure, severity),
             *_vocabulary_issues(self.vocabulary, self.structure, severity),
             *_modification_candidate_issues(self.totals["candidates"], self.structure, severity),
             *_sequence_edit_issues(self.totals["edits"], self.structure, severity),
+            *_score_name_issues(*self.totals["scores"], self.structure),
             *_chromatogram_length_issues(self.totals["chromatogram"], self.structure, severity),
             *_rt_monotonic_issues(self.totals["rt_monotonic"], self.structure, severity),
         ]
@@ -427,11 +478,21 @@ class ViewSchema:
         return self._view_name
 
     @property
+    def file_type(self) -> str:
+        """The file_type a file of this view declares in its footer."""
+        return self._file_type
+
+    @property
     def identity_composite(self) -> tuple[str, ...] | None:
         """Composite of existing fields the single-column identity id is derived
         from, as declared by the schema's ``identity_composite`` key. ``None``
         for views without a derived identity (mz, run, sample, ...)."""
         return self._identity_composite
+
+    @property
+    def value_ranges(self) -> dict[tuple[str, ...], tuple]:
+        """Declared (minimum, maximum) by column path: a field, or a field of its struct or list-of-struct type."""
+        return {(name, *sub): bounds for name, fdef in self._fields.items() for sub, bounds in fdef.value_ranges.items()}
 
     @property
     def __name__(self) -> str:
@@ -449,14 +510,25 @@ class ViewSchema:
             self._arrow_schema_cache = pa.schema(arrow_fields)
         return self._arrow_schema_cache
 
+    def undeclared_columns(self, names) -> set[str]:
+        """Those of *names* that are neither in the schema nor a sanctioned extra column."""
+        if self._extra_columns:
+            return set()
+        known = {*self.get_arrow_schema().names, SOURCE_DATASET_COLUMN}
+        return {name for name in names if name not in known and not name.startswith(EXTENSION_COLUMN_PREFIX)}
+
     def get_extended_arrow_schema(self, extra_column_names: list[str]) -> pa.Schema:
         """Return the base schema extended with additional string columns.
 
-        Only allowed when ``extra_columns=True`` in the YAML spec.
-        Extra columns are appended as nullable ``pa.string()`` fields.
+        Only allowed when ``extra_columns=True`` in the YAML spec, except for
+        ``source_dataset``, which a merge adds to every view, and ``x_<namespace>_<name>``
+        extension columns. Extra columns are appended as nullable ``pa.string()`` fields.
         """
-        if not self._extra_columns:
-            raise ValueError(f"Schema '{self._view_name}' does not allow extra columns")
+        refused = sorted(self.undeclared_columns(extra_column_names))
+        if refused:
+            raise ValueError(
+                f"Schema '{self._view_name}' does not allow the extra columns {refused}: name them x_<namespace>_<name>"
+            )
         base = self.get_arrow_schema()
         known = set(base.names)
         extra_fields = [pa.field(name, pa.string(), nullable=True) for name in extra_column_names if name not in known]
@@ -472,8 +544,8 @@ class ViewSchema:
 
     def validation_columns(self, schema: pa.Schema) -> list[str]:
         """The columns of *schema* that the row-level checks of validate_batches() read."""
-        needed = {name for name, fdef in self._fields.items() if not fdef.nullable}
-        needed.update(_ROW_CHECK_COLUMNS, _UNIT_INTERVAL_COLUMNS.get(self._view_name, ()), _VOCABULARIES.get(self._view_name, {}))
+        needed = {name for name, fdef in self._fields.items() if not fdef.nullable or _nonnullable_paths(fdef.arrow_type)}
+        needed.update(_ROW_CHECK_COLUMNS, (path[0] for path in self.value_ranges), _VOCABULARIES.get(self._view_name, {}))
         return [name for name in schema.names if name in needed]
 
     def validate(self, table: pa.Table, *, strict: bool = False) -> list[str]:
@@ -523,22 +595,32 @@ class ViewSchema:
         """Validate a view read as Arrow batches sharing *schema*, with the checks of validate_full().
 
         The checks that read one row at a time are summed batch by batch, so the
-        whole view is never held at once. The two that span rows are passed in for
-        the whole view: *keys* holds its primary-key columns (None when one is
-        missing) and *referential* its pg referential issues.
+        whole view is never held at once. Those that span rows or files are passed
+        in for the whole view: *keys* holds its primary-key columns (None when one
+        is missing) and *referential* the issues of its pg references, footers and
+        identity composites.
         """
         result = ValidationResult(structure=self._view_name)
         severity = "error" if strict else "warning"
         result.issues.extend(self._column_issues(schema))
 
         required = [name for name, fdef in self._fields.items() if name in schema.names and not fdef.nullable]
-        counts = _RowCounts(self._view_name, schema, required)
+        required += [
+            (name, *path)
+            for name, fdef in self._fields.items()
+            if name in schema.names
+            for path in _nonnullable_paths(fdef.arrow_type)
+        ]
+        counts = _RowCounts(self._view_name, schema, required, self.value_ranges)
         scan_format = _declared_scan_format(schema, self._view_name)
         rows = 0
         for batch in batches:
             rows += batch.num_rows
             counts.add(batch, scan_format)
 
+        if self._view_name in _SINGLE_ROW_VIEWS and rows != 1:
+            message = f"The {self._view_name} view has {rows} rows; it must have exactly one"
+            result.issues.append(_issue(self._view_name, "row_count", "error", None, message))
         result.issues.extend(counts.null_issues(rows, severity))
         result.issues.extend(_primary_key_issues(keys, self._primary_key, self._view_name, severity))
         result.issues.extend(referential)
@@ -553,13 +635,19 @@ class ViewSchema:
             name = expected_field.name
             if name not in schema.names:
                 if not self._is_optional(name):
-                    issues.append(_issue(self._view_name, "missing_column", "error", name, f"Missing required column: {name}"))
+                    issues.append(_issue(self._view_name, "missing_column", "error", name, self._missing_message(name)))
                 continue
             actual = schema.field(name)
             if not _types_compatible(expected_field.type, actual.type):
                 message = f"Column '{name}': expected {expected_field.type}, got {actual.type}"
                 issues.append(_issue(self._view_name, "type_mismatch", "error", name, message))
         return issues
+
+    def _missing_message(self, field_name: str) -> str:
+        fdef = self._fields.get(field_name)
+        if fdef is not None and fdef.nullable:
+            return f"Missing column: {field_name} (its values may be null, but the column must be present)"
+        return f"Missing required column: {field_name}"
 
     def _is_optional(self, field_name: str) -> bool:
         fdef = self._fields.get(field_name)

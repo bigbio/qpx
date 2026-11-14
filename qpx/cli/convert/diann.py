@@ -7,8 +7,9 @@ from pathlib import Path
 
 import click
 
+from qpx.cli.resources import convert_resource_options
+
 from .options import (
-    _compression_option,
     _dataset_metadata_options,
     _fasta_option,
     _max_cpus_option,
@@ -21,6 +22,18 @@ from .options import (
     _verbose_option,
 )
 from .postprocess import _finish_conversion
+
+
+def _xic_extraction(options: dict):
+    """The trace selection that the ``--xic-*`` options declare."""
+    from qpx.writers import XicExtraction
+
+    return XicExtraction(
+        selection=options["xic_selection"],
+        window=options["xic_window"],
+        extraction_window_seconds=options["xic_extraction_window_seconds"],
+        qvalue_threshold=options["xic_qvalue_threshold"],
+    )
 
 
 def _write_diann_views(converter, options: dict, prefix: str) -> None:
@@ -36,14 +49,14 @@ def _write_diann_views(converter, options: dict, prefix: str) -> None:
         qvalue_threshold=qvalue_threshold,
         output_folder=output_folder,
         output_prefix=output_prefix,
+        fragments=options["fragments"],
     )
-    if pg_matrix_path:
-        converter.convert_pg(
-            pg_matrix_path=pg_matrix_path,
-            output_folder=output_folder,
-            output_prefix=output_prefix,
-            qvalue_threshold=qvalue_threshold,
-        )
+    converter.convert_pg(
+        pg_matrix_path=pg_matrix_path,
+        output_folder=output_folder,
+        output_prefix=output_prefix,
+        qvalue_threshold=qvalue_threshold,
+    )
 
     converter.convert_mz(
         mzml_statistics_folder=mzml_info_folder,
@@ -58,13 +71,7 @@ def _write_diann_views(converter, options: dict, prefix: str) -> None:
             logging.getLogger(__name__).warning("No *.xic.parquet files found in %s; the xic view was not written", xic_folder)
         else:
             traces = converter.convert_xic(
-                xic_files,
-                output_folder=output_folder,
-                output_prefix=prefix,
-                selection=options.get("xic_selection", "targets"),
-                window=options.get("xic_window", "apex"),
-                extraction_window_seconds=options.get("xic_extraction_window_seconds"),
-                qvalue_threshold=options.get("xic_qvalue_threshold"),
+                xic_files, output_folder=output_folder, output_prefix=prefix, extraction=_xic_extraction(options)
             )
             click.echo(f"XIC view: {traces} traces across {len(xic_files)} runs")
     converter.convert_sdrf(output_folder=output_folder, prefix=prefix)
@@ -102,10 +109,18 @@ def _write_diann_views(converter, options: dict, prefix: str) -> None:
     type=float,
 )
 @_output_folder_option
+@click.option(
+    "--fragments",
+    is_flag=True,
+    help="Also write the fragment view, from Fragment.Quant.* (1.x) or Fr.N.* (2.x --export-quant)",
+)
 @_output_prefix_option
 @click.option(
     "--pg-matrix-path",
-    help="DIA-NN protein quantities matrix file (enables PG conversion)",
+    help=(
+        "DIA-NN protein-group matrix (optional). The pg view comes from the report; the matrix fills "
+        "a label-free group's MaxLFQ when the report lacks it."
+    ),
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
 )
 @click.option(
@@ -142,8 +157,8 @@ def _write_diann_views(converter, options: dict, prefix: str) -> None:
 )
 @_max_memory_option
 @_max_cpus_option
+@convert_resource_options
 @_project_accession_option
-@_compression_option
 @click.option(
     "--diann-log",
     help="DIA-NN summary log file (version auto-detected from first line)",
@@ -156,20 +171,20 @@ def _write_diann_views(converter, options: dict, prefix: str) -> None:
 def convert_diann_cmd(**kwargs):
     """Convert DIA-NN report to QPX format.
 
-    Reads a DIA-NN report.tsv file and converts feature-level quantification
-    data into QPX Parquet format. When --pg-matrix-path is provided, also
-    produces protein group output.
+    Reads a DIA-NN report.tsv file and converts its precursor and protein-group
+    quantification data into QPX Parquet format.
 
     \b
     Examples:
-        # Feature conversion
+        # Feature and protein-group conversion
         qpxc convert diann \\
             --report-path report.tsv \\
             --sdrf-file data.sdrf.tsv \\
             --mzml-info-folder ./mzml_info \\
             --output-folder ./qpx_output
 
-        # Feature + protein groups
+    \b
+        # With the protein-group matrix
         qpxc convert diann \\
             --report-path report.tsv \\
             --sdrf-file data.sdrf.tsv \\
@@ -177,6 +192,7 @@ def convert_diann_cmd(**kwargs):
             --pg-matrix-path report.pg_matrix.tsv \\
             --output-folder ./qpx_output
 
+    \b
         # Feature + XIC traces (DIA-NN --xic exports)
         qpxc convert diann \\
             --report-path report.tsv \\
@@ -191,7 +207,6 @@ def convert_diann_cmd(**kwargs):
     max_memory = kwargs["max_memory"]
     max_cpus = kwargs["max_cpus"]
     project_accession = kwargs["project_accession"]
-    compression = kwargs["compression"]
     diann_log = kwargs["diann_log"]
     fasta = kwargs["fasta"]
     mudata = kwargs["mudata"]
@@ -211,7 +226,6 @@ def convert_diann_cmd(**kwargs):
         sdrf_path=sdrf_file,
         max_memory=max_memory,
         max_cpus=max_cpus,
-        compression=compression,
         diann_log=str(diann_log) if diann_log else None,
     )
     _write_diann_views(converter, kwargs, prefix)
@@ -261,17 +275,7 @@ def convert_diann_cmd(**kwargs):
 @_output_folder_option
 @_output_prefix_option
 @_verbose_option
-def convert_diann_xic_cmd(
-    xic_folder,
-    label,
-    xic_selection,
-    xic_window,
-    xic_extraction_window_seconds,
-    xic_qvalue_threshold,
-    output_folder,
-    output_prefix,
-    verbose,
-):
+def convert_diann_xic_cmd(**options):
     """Merge DIA-NN XIC exports into one QPX xic view.
 
     DIA-NN writes one ``*.xic.parquet`` per run when ``--xic`` is enabled.
@@ -285,26 +289,21 @@ def convert_diann_xic_cmd(
             --output-folder ./qpx_output \\
             --output-prefix PXD014414
     """
-    if verbose:
+    if options["verbose"]:
         logging.getLogger().setLevel(logging.DEBUG)
 
-    xic_files = sorted(Path(xic_folder).glob("*.xic.parquet"))
+    xic_files = sorted(Path(options["xic_folder"]).glob("*.xic.parquet"))
     if not xic_files:
-        raise click.ClickException(f"No *.xic.parquet files found in {xic_folder}")
+        raise click.ClickException(f"No *.xic.parquet files found in {options['xic_folder']}")
 
+    output_folder = options["output_folder"]
     output_folder.mkdir(parents=True, exist_ok=True)
-    prefix = output_prefix or "diann"
+    prefix = options["output_prefix"] or "diann"
 
     from qpx.converters.diann.xic_adapter import convert_diann_xic
 
     traces = convert_diann_xic(
-        xic_files,
-        output_folder / f"{prefix}.xic.parquet",
-        label=label,
-        selection=xic_selection,
-        window=xic_window,
-        extraction_window_seconds=xic_extraction_window_seconds,
-        qvalue_threshold=xic_qvalue_threshold,
+        xic_files, output_folder / f"{prefix}.xic.parquet", label=options["label"], extraction=_xic_extraction(options)
     )
     click.echo(
         f"XIC conversion complete: {traces} traces from {len(xic_files)} run(s). "

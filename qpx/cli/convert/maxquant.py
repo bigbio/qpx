@@ -7,8 +7,9 @@ from pathlib import Path
 
 import click
 
+from qpx.cli.resources import convert_resource_options
+
 from .options import (
-    _compression_option,
     _dataset_metadata_options,
     _max_cpus_option,
     _max_memory_option,
@@ -59,6 +60,13 @@ def _maxquant_structures(structures, msms_file, evidence_file, protein_groups_fi
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
 )
 @click.option(
+    "--sites-file",
+    "sites_files",
+    multiple=True,
+    help="MaxQuant <modification>Sites.txt for the site view, such as 'Phospho (STY)Sites.txt'; repeat for several",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
+@click.option(
     "--sdrf-file",
     help="SDRF metadata file (required for feature and PG; its fixed modifications are added to PSM and feature peptidoforms)",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
@@ -72,13 +80,13 @@ def _maxquant_structures(structures, msms_file, evidence_file, protein_groups_fi
 )
 @_max_cpus_option
 @_max_memory_option
+@convert_resource_options
 @click.option(
     "--spectral-data",
     help="Include spectral data fields in PSM output",
     is_flag=True,
 )
 @_project_accession_option
-@_compression_option
 @_verbose_option
 @_dataset_metadata_options
 def convert_maxquant_cmd(**kwargs):
@@ -97,6 +105,7 @@ def convert_maxquant_cmd(**kwargs):
             --sdrf-file metadata.sdrf.tsv \\
             --output-folder ./qpx_output
 
+    \b
         # Convert PSMs only
         qpxc convert maxquant \\
             --msms-file msms.txt \\
@@ -114,7 +123,6 @@ def convert_maxquant_cmd(**kwargs):
     max_memory = kwargs["max_memory"]
     spectral_data = kwargs["spectral_data"]
     project_accession = kwargs["project_accession"]
-    compression = kwargs["compression"]
     verbose = kwargs["verbose"]
     metadata = kwargs["metadata"]
 
@@ -127,7 +135,7 @@ def convert_maxquant_cmd(**kwargs):
 
     from qpx.converters.maxquant import MaxQuantConverter
 
-    converter = MaxQuantConverter(max_memory=max_memory, max_cpus=max_cpus, compression=compression)
+    converter = MaxQuantConverter(max_memory=max_memory, max_cpus=max_cpus)
     converter.convert(
         msms_file=msms_file,
         evidence_file=evidence_file,
@@ -138,6 +146,7 @@ def convert_maxquant_cmd(**kwargs):
         structures=list(requested),
         spectral_data=spectral_data,
         project_accession=project_accession,
+        sites_files=kwargs["sites_files"],
     )
 
     prefix = output_prefix or "maxquant"

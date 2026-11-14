@@ -6,6 +6,8 @@ from typing import Optional
 
 import click
 
+from qpx.cli.resources import duckdb_resource_options
+
 from .dataset import _copy_dataset_files, _gene_map_dataset_prefix, _refresh_dataset_mudata, _stage_dataset_integrity
 
 
@@ -62,6 +64,7 @@ def _validate_gene_map_inputs(
     default=None,
     type=click.Path(file_okay=False, path_type=Path),
 )
+@duckdb_resource_options
 @click.option("--verbose", help="Enable verbose logging", is_flag=True)
 def transform_gene_map_cmd(
     parquet_path: Optional[Path],
@@ -88,10 +91,11 @@ def transform_gene_map_cmd(
     Examples:
         # A single parquet file
         qpxc transform gene-map \\
-            --parquet-path ./output/psm.parquet \\
+            --parquet-path ./output/maxquant.psm.parquet \\
             --fasta proteins.fasta \\
             --output-folder ./output
 
+    \b
         # A whole QPX dataset, refreshing its h5mu in place
         qpxc transform gene-map \\
             --dataset ./qpx_output \\

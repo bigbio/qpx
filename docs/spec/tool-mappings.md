@@ -17,13 +17,14 @@ The PSM (Peptide Spectrum Match) view captures spectrum-level identification res
 | QPX Field | MaxQuant | DIA-NN | FragPipe |
 | --- | --- | --- | --- |
 | `sequence` | Sequence | Stripped.Sequence | Peptide |
-| `peptidoform` | Modified sequence, plus the SDRF fixed modifications MaxQuant leaves out | Modified.Sequence | Modified Peptide |
+| `peptidoform` | Modified sequence, plus the fixed modifications MaxQuant leaves out (SDRF, else parameters.txt or summary.txt; the isobaric label from the SDRF channel labels) and the SILAC label modifications of the `Labeling state` (summary.txt `Labels<n>`) | Modified.Sequence | Modified Peptide |
+| `label` | Labeling state (SILAC) | --- | --- |
 | `charge` | Charge | Precursor.Charge | Charge |
-| `posterior_error_probability` | PEP | PEP | --- |
+| `posterior_error_probability` | PEP | PEP | 1 − PeptideProphet Probability (Probability in FragPipe 22) |
 | `is_decoy` | Reverse | --- | --- |
-| `calculated_mz` | --- | --- | Calculated M/Z |
-| `observed_mz` | m/z | --- | Observed M/Z |
-| `protein_accessions` | Proteins | Protein.Group | Protein |
+| `calculated_mz` | From the peptidoform (`Mass` when a modification has no known mass) | --- | Calculated M/Z |
+| `observed_mz` | calculated_mz + m/z × Mass error [ppm] × 10⁻⁶; msms.txt `m/z` is theoretical, and it and its mass error leave isobaric labels out | --- | Observed M/Z |
+| `protein_accessions` | Proteins | Protein.Group | Protein, Mapped Proteins |
 | `run_file_name` | Raw file | Run | Spectrum File |
 | `scan` | Scan number | --- | Scan |
 | `rt` | Retention time | RT | Retention |
@@ -38,25 +39,28 @@ The Feature view captures quantified peptide features with intensity data. Featu
 | QPX Field | MaxQuant | DIA-NN | FragPipe | QuantMS MSstats |
 | --- | --- | --- | --- | --- |
 | `sequence` | Sequence | Stripped.Sequence | Peptide | PeptideSequence (unmodified) |
-| `peptidoform` | Modified sequence, plus the SDRF fixed modifications MaxQuant leaves out | Modified.Sequence | Modified Peptide | PeptideSequence (ProForma-normalized) |
+| `peptidoform` | Modified sequence, plus the fixed modifications MaxQuant leaves out (SDRF, else parameters.txt or summary.txt; the isobaric label from the SDRF channel labels) | Modified.Sequence | Modified Peptide | PeptideSequence (ProForma-normalized) |
 | `charge` | Charge | Precursor.Charge | --- | Charge / PrecursorCharge |
 | `is_decoy` | Reverse | Decoy (`--report-decoys`), else accession prefix | --- | ProteinName prefix |
+| `is_library_decoy` | --- | `^` prefix of Modified.Sequence (2.x) | --- | --- |
 | `peptide_qvalue` | --- | --- | --- | --- |
-| `calculated_mz` | --- | --- | Calculated M/Z | --- |
-| `observed_mz` | m/z | --- | --- | --- |
+| `calculated_mz` | From the peptidoform (`Mass` when a modification has no known mass) | From the peptidoform | Calculated M/Z (psm.tsv), else M/Z | --- |
+| `observed_mz` | m/z × (1 + Mass error [ppm] × 10⁻⁶); evidence.txt `m/z` is theoretical without isobaric labels, and its mass error includes them | Precursor.Mz + Ms1.Apex.Mz.Delta (2.x); `Precursor.Mz` is theoretical | Calibrated Observed M/Z (psm.tsv); `M/Z` is theoretical | --- |
 | `rt` | Retention time | RT | --- | RetentionTime |
+| `rt_aligned` | Calibrated retention time | --- | --- | --- |
 | `rt_start` | --- | RT.Start | --- | --- |
 | `rt_stop` | --- | RT.Stop | --- | --- |
 | `predicted_rt` | --- | Predicted.RT | --- | --- |
-| `intensities` | Intensity | Precursor.Quantity | Intensity | Intensity + Channel |
-| `pg_accessions` | `Protein IDs` of the group in `Protein group IDs` (the razor group of a shared peptide); `Leading proteins` without proteinGroups.txt | Protein.Group (`DECOY_`-prefixed on decoy rows) | --- | ProteinName |
-| `anchor_protein` | First `Majority protein IDs` entry of that group; `Leading razor protein` without proteinGroups.txt | First Protein.Group accession | --- | First ProteinName accession |
+| `intensities` | Intensity; Intensity L/M/H (SILAC) | Precursor.Quantity (+ Channel for plexDIA) | Intensity | Intensity + Channel |
+| `identified_labels` | Labeling State, and msms.txt Labeling state of its MS/MS (SILAC) | --- | --- | --- |
+| `pg_accessions` | `Protein IDs` of the group in `Protein group IDs` (the razor group of a shared peptide); `Leading proteins` without proteinGroups.txt | Protein.Group (`DECOY_`-prefixed on decoy rows) | Protein + its Indistinguishable Proteins (combined_protein.tsv) | ProteinName |
+| `anchor_protein` | First `Majority protein IDs` entry of that group; `Leading razor protein` without proteinGroups.txt | First Protein.Group accession | Protein | First ProteinName accession |
 | `pg_positions` | --- | --- | --- | --- |
-| `run_file_name` | Raw file | Run | --- | Reference / Run resolved through SDRF |
+| `run_file_name` | Raw file | Run | First raw file of the experiment (experiment_annotation.tsv or SDRF) | Reference / Run resolved through SDRF |
 
-DIA-NN `Q.Value` is precursor-level and is stored in `additional_scores` as `precursor_qvalue`; it is not mapped to the peptide-level `peptide_qvalue` field.
+DIA-NN `Q.Value` is precursor-level and is written to the `precursor_qvalue` column; it is not mapped to the peptide-level `peptide_qvalue` field.
 
-MaxQuant `unique` follows the group the feature takes. With proteinGroups.txt, it is true when the peptide is in a single group (`Protein group IDs` names one id) and that group has one protein; a shared peptide carries its razor group and is false. Without proteinGroups.txt, or for a row whose `Protein group IDs` do not resolve, the group falls back to `Leading proteins`, which lists one leader per group, so the group's size is unknown: `unique` is then true when the peptide is in a single group of any size. In ontology.parquet the feature `pg_accessions` and `anchor_protein` name the column they were read from: `Protein IDs` and `Majority protein IDs` (proteinGroups.txt) when `Protein group IDs` resolve, otherwise `Leading proteins` and `Leading razor protein`.
+MaxQuant `unique` follows the group the feature takes. With proteinGroups.txt, it is true when the peptide is in a single group (`Protein group IDs` names one id) and that group has one protein; a shared peptide carries its razor group and is false. Without proteinGroups.txt, or for a row whose `Protein group IDs` do not resolve, the group falls back to `Leading proteins`, which lists one leader per group, so the group's size is unknown: `unique` is then true when the peptide maps to a single protein (`Proteins`), or, without that column, when it is in a single group of any size. In ontology.parquet the feature `pg_accessions` and `anchor_protein` name the column they were read from: `Protein IDs` and `Majority protein IDs` (proteinGroups.txt) when `Protein group IDs` resolve, otherwise `Leading proteins` and `Leading razor protein`.
 
 ## XIC Field Mappings
 
@@ -96,15 +100,15 @@ The Protein Group view captures protein-level quantification and inference resul
 
 | QPX Field | MaxQuant | DIA-NN | FragPipe |
 | --- | --- | --- | --- |
-| `pg_accessions` | Protein IDs | Protein.Group | Group + Indistinguishable Proteins |
-| `pg_names` | Protein names | Protein.Names | --- |
-| `gg_accessions` | Gene names | Genes | --- |
+| `pg_accessions` | Protein IDs | Protein.Group | Protein ID + Indistinguishable Proteins |
+| `pg_names` | Protein names | Protein.Names | Description |
+| `gg_accessions` | Gene names | Genes | Gene |
 | `run_file_name` | combined | Run | --- |
-| `peptide_counts` | Unique peptides | Unique.Stripped.Peptides | Unique Peptides |
-| `feature_counts` | MS/MS count | Precursor.Quantity | Precursor Ions |
+| `peptide_counts` | Unique peptides [exp], Peptides [exp] | Unique.Stripped.Peptides | Unique Peptides [exp], Total Peptides [exp] |
+| `feature_counts` | --- | Precursor.Quantity | --- |
 | `global_qvalue` | Q-value | Global.PG.Q.Value | --- |
-| `intensities` | Intensity, LFQ intensity | PG.Quantity | --- |
-| `additional_intensities` | LFQ intensity, iBAQ | PG.Normalised, PG.MaxLFQ | --- |
+| `intensities` | Intensity [exp]; Intensity L/M/H [exp] (SILAC); Reporter intensity | PG.Quantity | Intensity [exp] |
+| `additional_intensities` | LFQ intensity, iBAQ, MS/MS count; Ratio X/Y [normalized] [exp] (SILAC) | PG.Normalised, PG.MaxLFQ | MaxLFQ (Unique) Intensity, Unique Intensity, Spectral Count, Unique Spectral Count, Total Spectral Count [exp] |
 | `is_decoy` | Reverse | Decoy (`--report-decoys`; accessions prefixed `DECOY_`) | --- |
 | `contaminant` | Potential contaminant | --- | --- |
 

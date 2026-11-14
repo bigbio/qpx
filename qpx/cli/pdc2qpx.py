@@ -7,6 +7,8 @@ from pathlib import Path
 
 import click
 
+from qpx.cli.resources import convert_resource_options
+
 
 @click.command("pdc2qpx")
 @click.option(
@@ -46,12 +48,7 @@ import click
 )
 @click.option("--max-cpus", type=int, help="Threads for the CDAP conversion")
 @click.option("--max-memory", help="Memory limit for the CDAP conversion")
-@click.option(
-    "--download-threads",
-    default=24,
-    show_default=True,
-    help="Parallel HTTP Range threads per file for downloads",
-)
+@convert_resource_options
 @click.option(
     "--skip-download",
     is_flag=True,
@@ -83,6 +80,7 @@ def pdc2qpx_cmd(**kwargs):
             --download-dir ./downloads --output-folder ./qpx/PDC000109 \\
             --include-spectra
 
+    \b
         # Many studies from a CSV (each -> ./qpx/<study>/)
         qpxc pdc2qpx -a cptac_lfq.csv \\
             --download-dir ./downloads --output-folder ./qpx --max-cpus 24
@@ -95,7 +93,6 @@ def pdc2qpx_cmd(**kwargs):
     ms_levels = kwargs["ms_levels"]
     max_cpus = kwargs["max_cpus"]
     max_memory = kwargs["max_memory"]
-    download_threads = kwargs["download_threads"]
     skip_download = kwargs["skip_download"]
     stop_on_error = kwargs["stop_on_error"]
     verbose = kwargs["verbose"]
@@ -115,7 +112,6 @@ def pdc2qpx_cmd(**kwargs):
         "ms_levels": levels,
         "max_cpus": max_cpus,
         "max_memory": max_memory,
-        "download_threads": download_threads,
         "skip_download": skip_download,
     }
 

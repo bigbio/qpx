@@ -2,12 +2,13 @@ name: run
 file_type: run_file
 primary_key: [run_file_name]
 doc: "MS acquisition run metadata, one row per run"
+extra_columns: true
 
 fields:
   run_accession:
     type: string
     required: true
-    doc: "Unique run identifier (SDRF assay name)"
+    doc: "Run identifier; converters write the run file stem. The primary key is run_file_name"
   run_file_name:
     type: string
     required: true
@@ -60,4 +61,19 @@ fields:
   modification_parameters:
     type: "list<modification_param>"
     optional: true
-    doc: "Modifications configured in database search"
+    doc: "Modifications configured in database search for this run"
+  label_definitions:
+    type: "list<label_definition>"
+    nullable: true
+    optional: true
+    doc: "The label modifications of each MS1 label of this run, as the SDRF declares them"
+  gradient_length:
+    type: float32
+    nullable: true
+    optional: true
+    doc: "Length of the LC gradient (seconds), from comment[gradient length]"
+  acquisition_start:
+    type: string
+    nullable: true
+    optional: true
+    doc: "Run acquisition start, verbatim from comment[acquisition date] or mzML startTimeStamp; no timezone conversion"

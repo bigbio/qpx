@@ -13,35 +13,35 @@ Key schema changes:
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Optional
 
 import pandas as pd
 
 from qpx.converters.base import resolve_columns
+from qpx.converters.localization import localize_modifications
 from qpx.converters.mappings import get_field_mappings
 from qpx.converters.maxquant.base_adapter import MaxQuantBaseAdapter
-from qpx.converters.maxquant.constants import PROTON_MASS, parse_phospho_probabilities, phospho_candidates, to_proforma
+from qpx.converters.maxquant.constants import (
+    MQ_LABEL_LETTERS,
+    LabelMods,
+    localization_columns,
+    localization_sites,
+    mq_calculated_mz,
+    mq_observed_mz,
+    summary_label_mods,
+    to_proforma,
+)
+from qpx.converters.maxquant.evidence_fields import peak_annotations
+from qpx.converters.maxquant.silac import multiplet_labels
 from qpx.converters.ptm import from_proforma
-from qpx.converters.utils import mq_flag_to_bool, safe_float
+from qpx.converters.utils import mass_error_ppm, mq_flag_to_bool, safe_float
 from qpx.writers.psm import PsmWriter
 
 logger = logging.getLogger(__name__)
 
 # Derive expected columns from central mappings
 _PSM_MAP = get_field_mappings("maxquant", "psm")
-
-# MaxQuant columns to read from msms.txt (derived from constants)
-_MQ_PSM_USECOLS = list({candidates[0] for candidates in _PSM_MAP.values()}) + [
-    "Proteins",  # protein accessions (not in FIELD_MAPPINGS)
-    "Mass",  # neutral mass for calculated_mz computation
-    "PIF",  # parent ion fraction score
-    "Masses",  # spectral masses
-    "Intensities",  # spectral intensities
-    "Number of matches",
-    "1/K0",  # ion mobility
-    "Phospho (STY) Probabilities",  # per-site phospho localization
-    "Phospho (STY) Score Diffs",  # per-site phospho score differences
-]
 
 # Optional spectral data columns
 _MQ_PSM_SPECTRAL_COLS = [
@@ -55,6 +55,10 @@ _MQ_PSM_SPECTRAL_COLS = [
 class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
     """Convert MaxQuant ``msms.txt`` to ``psm.parquet``.
 
+    ``psm.feature_id`` is filled from ``Evidence ID`` when the feature view's
+    ids are passed to :meth:`convert`. A SILAC PSM carries the label of its
+    ``Labeling state`` and that label's modifications.
+
     Usage::
 
         with MaxQuantPsmAdapter() as adapter:
@@ -64,6 +68,13 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
             )
     """
 
+    # Site-probability columns of the current batch.
+    _localization_columns: list[tuple[str, str]] = []
+
+    _evidence_feature_ids: dict[int, int] = {}
+    # Raw file -> (label, label modifications) of each SILAC labeling state.
+    _states: dict[str, tuple[tuple[str, LabelMods], ...]] = {}
+
     def convert(
         self,
         msms_path: str,
@@ -72,6 +83,7 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
         spectral_data: bool = False,
         creator: str = "maxquant",
         sdrf_path: Optional[str] = None,
+        evidence_feature_ids: Optional[dict[int, int]] = None,
     ) -> None:
         """Run the msms.txt -> psm.parquet conversion.
 
@@ -81,12 +93,13 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
             chunksize: Rows per batch.
             spectral_data: Whether to include spectral arrays.
             creator: Creator tag in Parquet metadata.
-            sdrf_path: Optional SDRF whose fixed modifications are added to
-                the peptidoforms (MaxQuant leaves them out of
-                ``Modified sequence``).
+            sdrf_path: Optional SDRF file declaring fixed modifications and labels.
+            evidence_feature_ids: evidence.txt ``id`` -> feature_id of the
+                feature view written alongside, linking each PSM through its
+                ``Evidence ID``.
         """
-        self._fixed_mods = self._load_fixed_modifications(sdrf_path)
-
+        self._fixed = self._fixed_mods(sdrf_path, msms_path)
+        self._evidence_feature_ids = evidence_feature_ids or {}
         # Step 1: Load msms.txt into DuckDB
         self._load_msms(msms_path)
 
@@ -96,19 +109,51 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
             for c in self._conn.execute("SELECT column_name FROM information_schema.columns WHERE table_name='msms'").fetchall()
         }
         self._resolved = resolve_columns(_PSM_MAP, actual_cols)
+        self._states = self._labeling_states(msms_path, actual_cols, sdrf_path)
 
         # Step 3: Stream and transform
         self.logger.info("Transforming MaxQuant PSMs ...")
 
-        with PsmWriter(output_path, creator=creator, compression=self._compression) as writer:
+        with PsmWriter(output_path, creator=creator) as writer:
             for batch in self._query_batched("SELECT * FROM msms", chunksize):
                 df = batch.to_pandas()
                 records = self._transform_batch(df, spectral_data)
                 if records:
                     self._track_scores(records)
                     writer.write_batch(records)
+            if spectral_data:
+                writer.add_footer_metadata({b"spectrum_content": b"matched_peaks"})
 
         self.logger.info(f"MaxQuant PSM conversion complete -> {output_path}")
+
+    def _labeling_states(self, msms_path: str, columns: set[str], sdrf_path: Optional[str]) -> dict:
+        """``Raw file`` -> ``(label, label modifications)`` of each SILAC labeling state.
+
+        SILAC ``msms.txt`` has a ``Labeling state`` column; the labels of each
+        state are in the ``summary.txt`` MaxQuant writes beside it.
+        """
+        run_labels, experiment_type, _ = self._load_sdrf(sdrf_path)
+        if "Labeling state" not in columns:
+            if experiment_type == "SILAC":
+                raise ValueError("The SDRF declares SILAC labels, but msms.txt has no Labeling state column")
+            return {}
+        summary_path = Path(msms_path).with_name("summary.txt")
+        label_mods = summary_label_mods(summary_path)
+        if not label_mods:
+            raise ValueError(f"SILAC msms.txt needs MaxQuant's summary.txt beside it for the label definitions: {summary_path}")
+        # A SILAC pair is "L"/"H", a triplet "L"/"M"/"H".
+        letters = {run: "LH" if len(states) == 2 else MQ_LABEL_LETTERS[: len(states)] for run, states in label_mods.items()}
+        labels = multiplet_labels("".join(letters.values()), run_labels, experiment_type)
+        return {
+            run: tuple((labels[letter], mods) for letter, mods in zip(letters[run], states)) for run, states in label_mods.items()
+        }
+
+    def _psm_label(self, row: dict) -> tuple[Optional[str], LabelMods]:
+        """The SILAC label and label modifications of a PSM; none when its labeling state is unknown (-1)."""
+        state = row.get("Labeling state")
+        if not self._states or pd.isna(state) or state < 0:
+            return None, ()
+        return self._states[str(row.get(self._resolved.get("run_file_name", "Raw file")))][int(state)]
 
     # ------------------------------------------------------------------
     # Data loading
@@ -133,6 +178,7 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
         # Pre-extract column arrays for faster per-row access than to_dict("records")
         col_arrays = {col: df[col].values for col in df.columns}
         n_rows = len(df)
+        self._localization_columns = localization_columns(df.columns)
         for i in range(n_rows):
             row = {col: vals[i] for col, vals in col_arrays.items()}
             rec = self._transform_row(row, spectral_data)
@@ -147,14 +193,14 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
         identity = self._psm_identity(row)
         if identity is None:
             return None
-        sequence, peptidoform, modifications, site_scores = identity
+        sequence, peptidoform, modifications, candidates, label = identity
         charge_raw = row.get(r.get("charge", "Charge"), 0)
         charge = int(charge_raw) if pd.notna(charge_raw) else 0
 
         # is_decoy (bool) -- MaxQuant uses '+' for Reverse
         is_decoy = mq_flag_to_bool(row.get(r.get("is_decoy", "Reverse"), ""))
 
-        spectrum_fields = self._psm_spectrum_fields(row, charge)
+        spectrum_fields = self._psm_spectrum_fields(row, charge, peptidoform)
 
         # Protein accessions — normalise sp|/tr| prefixes for consistency
         proteins_cell = row.get("Proteins")
@@ -163,9 +209,6 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
             if pd.notna(proteins_cell) and proteins_cell is not None
             else []
         )
-
-        # Mass error (ppm) — direct column from msms.txt
-        mass_error_ppm = safe_float(row.get(r.get("mass_error_ppm", "Mass error [ppm]")))
 
         # Ion mobility
         ion_mobility = safe_float(row.get("1/K0"))
@@ -177,65 +220,59 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
         additional_scores, cv_params = self._psm_annotations(row)
 
         mz_array, intensity_array = self._spectral_arrays(row, spectral_data)
+        ion_types, charges = (
+            peak_annotations(row.get("Matches") if pd.notna(row.get("Matches")) else None, len(mz_array))
+            if mz_array
+            else (None, None)
+        )
 
+        evidence_id = row.get("Evidence ID")
         return {
             **spectrum_fields,
+            "feature_id": self._evidence_feature_ids.get(int(evidence_id)) if pd.notna(evidence_id) else None,
+            "label": label,
             "sequence": sequence,
             "peptidoform": peptidoform,
             "modifications": modifications,
-            "modification_candidates": phospho_candidates(site_scores, sequence, modifications),
+            "modification_candidates": candidates,
             "charge": charge,
             "is_decoy": is_decoy,
-            "mass_error_ppm": mass_error_ppm,
             "additional_scores": additional_scores or None,
             "predicted_rt": None,
             "cv_params": cv_params or None,
             "ion_mobility": ion_mobility,
+            "ccs": safe_float(row.get("CCS")),
             "missed_cleavages": missed_cleavages,
             "protein_accessions": protein_accessions or None,
             "mz_array": mz_array,
             "intensity_array": intensity_array,
-            "charge_array": None,
-            "ion_type_array": None,
+            "charge_array": charges,
+            "ion_type_array": ion_types,
             "ion_mobility_array": None,
         }
 
     def _psm_identity(self, row: dict) -> tuple | None:
-        """Parse the peptide identity and phospho localization."""
+        """Parse the peptide identity and its site localization."""
         r = self._resolved
         sequence = str(row.get(r.get("sequence", "Sequence"), ""))
-        peptidoform = to_proforma(
-            str(row.get(r.get("modified_sequence", "Modified sequence"), "")),
-            self._fixed_mods,
-        )
-
-        # Parse phospho site localization probabilities (if available)
-        phospho_raw = row.get("Phospho (STY) Probabilities")
-        site_scores = None
-        if pd.notna(phospho_raw) and phospho_raw:
-            site_scores = parse_phospho_probabilities(str(phospho_raw))
+        label, label_mods = self._psm_label(row)
+        peptidoform = to_proforma(str(row.get(r.get("modified_sequence", "Modified sequence"), "")), self._fixed, label_mods)
 
         # Mirror the feature adapter: an empty/missing "Modified sequence"
         # yields no peptidoform, and the tuple-unpack must degrade to
         # (None, None) rather than a bare None (which raises TypeError and
         # aborts the whole PSM view).
-        peptidoform, modifications = (
-            from_proforma(
-                peptidoform,
-                sequence,
-                site_scores=site_scores,
-            )
-            if peptidoform
-            else (None, None)
-        )
+        peptidoform, modifications = from_proforma(peptidoform, sequence) if peptidoform else (None, None)
         if peptidoform is None:
             # PsmSchema requires a peptidoform; a row with an empty/missing
             # "Modified sequence" is skipped rather than aborting the whole view.
             self.logger.debug("Skipping PSM row with empty modified sequence (sequence=%r)", sequence)
             return None
-        return sequence, peptidoform, modifications, site_scores
+        sites = localization_sites(row, self._localization_columns, sequence)
+        modifications, candidates = localize_modifications(modifications, sequence, sites)
+        return sequence, peptidoform, modifications, candidates, label
 
-    def _psm_spectrum_fields(self, row: dict, charge: int) -> dict:
+    def _psm_spectrum_fields(self, row: dict, charge: int, peptidoform: str) -> dict:
         """Extract PSM spectrum, m/z, and retention-time fields."""
         r = self._resolved
         # Scan (list<int32>)
@@ -250,15 +287,12 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
         # Run file name (strip extension)
         run_file_name = str(row.get(r.get("run_file_name", "Raw file"), ""))
 
-        # m/z values
-        observed_mz = safe_float(row.get(r.get("observed_mz", "m/z"))) or 0.0
-
-        # Calculated m/z from neutral mass and charge
-        neutral_mass = safe_float(row.get("Mass"))
-        if neutral_mass and charge:
-            calculated_mz = (neutral_mass + charge * PROTON_MASS) / charge
-        else:
-            calculated_mz = None
+        calculated_mz = mq_calculated_mz(peptidoform, charge, safe_float(row.get("Mass")))
+        observed_mz = mq_observed_mz(
+            safe_float(row.get(r.get("observed_mz", "m/z"))),
+            safe_float(row.get(r.get("mass_error_ppm", "Mass error [ppm]"))),
+            calculated_mz,
+        )
 
         # RT (minutes → seconds)
         rt = safe_float(row.get(r.get("rt", "Retention time")))
@@ -272,6 +306,7 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
             "run_file_name": run_file_name,
             "observed_mz": observed_mz,
             "calculated_mz": calculated_mz,
+            "mass_error_ppm": mass_error_ppm(calculated_mz, observed_mz),
             "rt": rt,
             "posterior_error_probability": pep,
         }
@@ -299,8 +334,9 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
                     "higher_better": True,
                 }
             )
+        # MaxQuant writes 0 when it did not compute the fraction.
         pif = safe_float(row.get("PIF"))
-        if pif is not None:
+        if pif:
             additional_scores.append(
                 {
                     "score_name": "parent_ion_fraction",

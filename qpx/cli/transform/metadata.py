@@ -66,11 +66,13 @@ def transform_update_metadata_cmd(
             --sdrf ./updated_sdrf.tsv \\
             --old-sdrf ./original_sdrf.tsv
 
+    \b
         # Update without safety check (first-time enrichment)
         qpxc transform update-metadata \\
             --dataset ./my_project \\
             --sdrf ./enriched_sdrf.tsv
 
+    \b
         # Force update even if protected fields changed
         qpxc transform update-metadata \\
             --dataset ./my_project \\

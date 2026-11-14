@@ -306,17 +306,36 @@ def test_a_variant_proteoform_carries_its_edits(tmp_path):
     assert _validate(tmp_path, "proteoform").is_valid
 
 
-def test_maxquant_phospho_probabilities_keep_every_candidate_residue():
-    """S 0.95 is placed; T 0.03 and Y 0.02 were dropped before and are now candidates."""
-    from qpx.converters.maxquant.constants import parse_phospho_probabilities, phospho_candidates
+def test_site_probabilities_keep_every_candidate_residue():
+    """S 0.95 is placed; T 0.03 and Y 0.02 are its alternatives, and only the placed site gets a score."""
+    from qpx.converters.localization import localize_modifications
     from qpx.converters.ptm import from_proforma
 
-    scores = parse_phospho_probabilities("_PEPS(0.95)T(0.03)Y(0.02)K_")
-    _, modifications = from_proforma("PEPS[UNIMOD:21]TYK", "PEPSTYK", site_scores=scores)
-    candidates = phospho_candidates(scores, "PEPSTYK", modifications)
+    _, modifications = from_proforma("PEPS[UNIMOD:21]TYK", "PEPSTYK")
+    localized, candidates = localize_modifications(modifications, "PEPSTYK", {"UNIMOD:21": {4: 0.95, 5: 0.03, 6: 0.02}})
     assert [(c["position"], c["amino_acid"], c["probability"], c["assigned"], c["alternative_group"]) for c in candidates] == [
         (4, "S", 0.95, True, 1),
         (5, "T", 0.03, False, 1),
         (6, "Y", 0.02, False, 1),
     ]
-    assert phospho_candidates(None, "PEPSTYK", modifications) is None
+    assert (candidates[0]["name"], candidates[0]["accession"]) == ("Phospho", "UNIMOD:21")
+    assert localized[0]["positions"][0]["scores"][0]["score_name"] == "localization_probability"
+    assert modifications[0]["positions"][0]["scores"] is None  # the from_proforma cache is untouched
+    assert localize_modifications(modifications, "PEPSTYK", {}) == (modifications, None)
+
+
+def test_site_probabilities_of_several_placements_stay_ungrouped():
+    """Two phosphates over three sites sum to 2; each modification has its own group otherwise."""
+    from qpx.converters.localization import localize_modifications
+    from qpx.converters.ptm import from_proforma
+
+    sequence = "PS[UNIMOD:21]T[UNIMOD:21]YM[UNIMOD:35]K"
+    _, modifications = from_proforma(sequence, "PSTYMK")
+    _, candidates = localize_modifications(
+        modifications, "PSTYMK", {"UNIMOD:21": {2: 0.9, 3: 0.8, 4: 0.3}, "UNIMOD:35": {5: 1.0}}
+    )
+    assert {c["accession"]: c["alternative_group"] for c in candidates} == {"UNIMOD:21": None, "UNIMOD:35": 1}
+    # Independent occupancies of one placed site can exceed 1 and cannot be a group.
+    _, modifications = from_proforma("PS[UNIMOD:21]TK", "PSTK")
+    _, candidates = localize_modifications(modifications, "PSTK", {"UNIMOD:21": {2: 0.9, 3: 0.6}})
+    assert [c["alternative_group"] for c in candidates] == [None, None]

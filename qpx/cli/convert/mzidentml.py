@@ -7,7 +7,9 @@ from pathlib import Path
 
 import click
 
-from .options import _compression_option, _dataset_metadata_options, _output_folder_option, _verbose_option
+from qpx.cli.resources import convert_resource_options
+
+from .options import _dataset_metadata_options, _output_folder_option, _verbose_option
 from .postprocess import _finish_conversion
 
 
@@ -26,7 +28,7 @@ from .postprocess import _finish_conversion
 )
 @click.option(
     "--mgf-path",
-    help="Optional MGF file for spectra attachment",
+    help="Optional MGF file: index= spectrum references become the scan numbers it records",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
 )
 @click.option(
@@ -36,10 +38,16 @@ from .postprocess import _finish_conversion
     default=False,
 )
 @click.option(
+    "--rank1-only",
+    help="Keep only the first-ranked hit of each spectrum",
+    is_flag=True,
+    default=False,
+)
+@click.option(
     "--project-accession",
     help="PRIDE / ProteomeXchange accession (e.g. PXD054720)",
 )
-@_compression_option
+@convert_resource_options
 @_verbose_option
 @_dataset_metadata_options
 def convert_mzidentml_cmd(**kwargs):
@@ -57,12 +65,14 @@ def convert_mzidentml_cmd(**kwargs):
             --mzid-path results.mzid \\
             --output-folder ./qpx_output
 
+    \b
         # Convert an XL-MS mzIdentML 1.3 file
         qpxc convert mzidentml \\
             --mzid-path crosslinks.mzid \\
             --output-folder ./qpx_output \\
             --output-prefix xl_experiment
 
+    \b
         # Convert with spectra from MGF
         qpxc convert mzidentml \\
             --mzid-path results.mzid \\
@@ -70,6 +80,7 @@ def convert_mzidentml_cmd(**kwargs):
             --include-spectra \\
             --output-folder ./qpx_output
 
+    \b
         # Convert with project accession
         qpxc convert mzidentml \\
             --mzid-path results.mzid \\
@@ -82,7 +93,6 @@ def convert_mzidentml_cmd(**kwargs):
     mgf_path = kwargs["mgf_path"]
     include_spectra = kwargs["include_spectra"]
     project_accession = kwargs["project_accession"]
-    compression = kwargs["compression"]
     verbose = kwargs["verbose"]
     metadata = kwargs["metadata"]
 
@@ -91,7 +101,7 @@ def convert_mzidentml_cmd(**kwargs):
 
     from qpx.converters.mzidentml.converter import MzIdentMLConverter
 
-    converter = MzIdentMLConverter(compression=compression)
+    converter = MzIdentMLConverter()
     converter.convert(
         mzid_path=mzid_path,
         output_folder=output_folder,
@@ -99,6 +109,7 @@ def convert_mzidentml_cmd(**kwargs):
         mgf_path=mgf_path,
         include_spectra=include_spectra,
         project_accession=project_accession,
+        rank1_only=kwargs["rank1_only"],
     )
 
     _finish_conversion(output_folder, output_prefix, project_accession, metadata)

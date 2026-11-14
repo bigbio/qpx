@@ -116,6 +116,7 @@ nav:
       - Community: community.md
   - Specification:
       - Overview: spec/index.md
+      - Scope: spec/scope.md
       - Data Model: spec/data-model.md
       - Common Concepts:
           - Peptidoform: spec/peptidoform.md
@@ -133,6 +134,8 @@ nav:
           - Peptide-Protein Map: spec/pepmap.md
           - Modification Sites: spec/site.md
           - Proteoforms: spec/proteoform.md
+          - Proteins: spec/protein.md
+          - Fragments: spec/fragment.md
           - API Views: spec/views.md
       - Expression Views:
           - AnnData Concepts: spec/anndata.md
@@ -144,10 +147,13 @@ nav:
           - Run: spec/run.md
           - Provenance: spec/provenance.md
           - SDRF Mapping: spec/sdrf-mapping.md
+          - Extensions: spec/extensions.md
       - Technical:
           - Serialization & Parquet: spec/serialization.md
           - File Naming: spec/file-naming.md
+          - Row Identity: spec/identity.md
           - Versioning: spec/versioning.md
+          - Producer Guide: spec/producer-guide.md
           - Tool Mappings: spec/tool-mappings.md
           - Schemas: spec/schemas.md
           - Ontology Mapping: spec/ontology.md

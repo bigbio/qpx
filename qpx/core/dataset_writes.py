@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pyarrow.parquet as pq
+
 from qpx._version import __version__
 from qpx.version import QPX_SPEC_VERSION
 
@@ -64,15 +66,7 @@ class _DatasetWriteMixin:
         record["project_description"] = metadata["project_description"]
         record["pubmed_id"] = metadata["pubmed_id"]
 
-        # Derive prefix from existing dataset file to overwrite in-place
-        prefix = None
-        if self.dataset_meta is not None:
-            ds_suffix = self._STRUCTURE_REGISTRY["dataset"][1]
-            existing_name = Path(self.dataset_meta.file_paths[0]).name
-            if existing_name.endswith(ds_suffix):
-                prefix = existing_name[: -len(ds_suffix)]
-
-        self.save_structure([record], "dataset", prefix=prefix)
+        self.save_structure([record], "dataset")
         self.refresh()
 
         return metadata
@@ -92,8 +86,59 @@ class _DatasetWriteMixin:
         "pepmap": ("PepMapWriter", ".pepmap.parquet"),
         "site": ("SiteWriter", ".site.parquet"),
         "proteoform": ("ProteoformWriter", ".proteoform.parquet"),
+        "protein": ("ProteinWriter", ".protein.parquet"),
+        "fragment": ("FragmentWriter", ".fragment.parquet"),
         "xic": ("XicWriter", ".xic.parquet"),
     }
+
+    def _existing_files(self, structure: str) -> list[tuple[str, Path]]:
+        """(structure, single file) of the local files of *structure*, then of the other structures."""
+        names = [structure, *(name for name in self._structures if name != structure)]
+        return [
+            (name, Path(path))
+            for name in names
+            if name in self._structures
+            for path in self._structures[name].file_paths[:1]
+            if Path(path).is_file()
+        ]
+
+    def _dataset_prefix(self, structure: str) -> str:
+        """The prefix of the dataset's files, so a write-back replaces a view rather than adding a shard beside it."""
+        if self._file_prefix:
+            return self._file_prefix
+        for name, path in self._existing_files(structure):
+            suffix = self._STRUCTURE_REGISTRY[name][1]
+            if path.name.endswith(suffix):
+                return path.name[: -len(suffix)]
+        return Path(self.path).name
+
+    def _source_writer_options(self, structure: str) -> dict:
+        """Writer options that keep what the structure's footer declares, and its ids.
+
+        Hashing other columns than the source's composite would change every id
+        and leave ``psm.feature_id`` dangling.
+        """
+        options: dict = {"override_provided_ids": False}
+        files = [path for name, path in self._existing_files(structure) if name == structure]
+        metadata = pq.read_schema(files[0]).metadata or {} if files else {}
+        for key, option in (
+            (b"creator", "creator"),
+            (b"software_provider", "software_provider"),
+            (b"scan_format", "scan_format"),
+        ):
+            if key in metadata:
+                options[option] = metadata[key].decode()
+        if b"identity_composite" in metadata:
+            options["identity_composite"] = metadata[b"identity_composite"].decode().split(",")
+        return options
+
+    @classmethod
+    def writer_for(cls, structure: str) -> tuple[type, str]:
+        """The writer class and file suffix of *structure*."""
+        import qpx.writers as writers_mod
+
+        writer_name, suffix = cls._WRITER_REGISTRY[structure]
+        return getattr(writers_mod, writer_name), suffix
 
     def save_structure(
         self,
@@ -102,6 +147,9 @@ class _DatasetWriteMixin:
         prefix: str | None = None,
     ) -> Path:
         """Write validated Parquet back into the dataset directory.
+
+        Rows keep their ids; a row without one gets it from the identity composite
+        the existing file declares, which the new footer declares too.
 
         Only supported for local datasets. For S3-backed datasets, use the
         appropriate writer (e.g. ``FeatureWriter(path)``) with an explicit
@@ -114,7 +162,9 @@ class _DatasetWriteMixin:
         structure : str
             Structure name (e.g., "feature", "pg", "sample").
         prefix : str | None
-            File name prefix. Defaults to the dataset directory name.
+            File name prefix. Defaults to the prefix of the dataset's files, which
+            replaces an existing view. Another prefix adds a file that is read
+            together with it.
 
         Returns
         -------
@@ -127,17 +177,13 @@ class _DatasetWriteMixin:
         if structure not in self._WRITER_REGISTRY:
             raise ValueError(f"Unknown structure '{structure}'. Valid: {list(self._WRITER_REGISTRY.keys())}")
 
-        writer_name, suffix = self._WRITER_REGISTRY[structure]
-
-        import qpx.writers as writers_mod
-
-        writer_cls = getattr(writers_mod, writer_name)
+        writer_cls, suffix = self.writer_for(structure)
 
         path = Path(self.path)
-        file_prefix = prefix or path.name
+        file_prefix = prefix or self._dataset_prefix(structure)
         output_path = path / f"{file_prefix}{suffix}"
 
-        with writer_cls(output_path) as writer:
+        with writer_cls(output_path, **self._source_writer_options(structure)) as writer:
             if isinstance(data, list):
                 writer.write_batch(data)
             elif isinstance(data, pa.Table):
@@ -191,8 +237,7 @@ class _DatasetWriteMixin:
         elif view is not None:
             if view not in self._ANNDATA_VIEWS:
                 raise ValueError(f"Unknown AnnData view '{view}'. Choose from: {sorted(self._ANNDATA_VIEWS)}")
-            prefix = path.name
-            output_path = path / f"{prefix}.{view}.h5ad"
+            output_path = path / f"{self._dataset_prefix('dataset')}.{view}.h5ad"
         else:
             raise ValueError("Either 'name' or 'view' must be provided")
         adata.uns["qpx_version"] = QPX_SPEC_VERSION

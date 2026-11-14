@@ -48,7 +48,14 @@ class BaseView:
 
     def __init__(self, dataset: Dataset):
         self._engine = dataset._engine
+        self._structures = set(dataset.available_structures)
         self._cache: OrderedDict[str, CachedQueryResult] = OrderedDict()
+
+    def _require(self, *structures: str) -> None:
+        """Raise a ValueError naming the structures the dataset lacks for this query."""
+        missing = [name for name in structures if name not in self._structures]
+        if missing:
+            raise ValueError(f"{type(self).__name__} requires the {' and '.join(missing)} structure(s)")
 
     def _execute_cached(self, key: str, sql: str) -> CachedQueryResult:
         """Execute SQL with LRU caching. Returns a reusable CachedQueryResult."""

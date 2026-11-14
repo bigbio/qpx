@@ -3,8 +3,9 @@
 Forward:  sp|P04114|APOB_HUMAN  →  P04114
 Reverse:  P04114  →  sp|P04114|APOB_HUMAN  (requires FASTA database)
 
-Handles prefixes: sp|, tr|, CONTAM_sp|, ENTRAP_sp|
-Contaminant/entrapment prefixes (CONTAM_, ENTRAP_) are preserved.
+Handles prefixes: sp|, tr|, CONTAM_sp|, ENTRAP_sp|, DECOY_sp|, REV__sp|, rev_sp|
+Decoy, contaminant and entrapment markers are preserved. The forward direction
+moves entry names into a null ``pg_names`` so they are not lost.
 """
 
 from __future__ import annotations
@@ -19,24 +20,20 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
+from qpx.converters.utils import canonical_accession, uniprot_entry_name
+from qpx.transforms.relayout import SORT_ORDER_FOOTER_KEY
+
 logger = logging.getLogger(__name__)
 
 # Matches:  sp|ACCESSION|NAME  or  tr|ACCESSION|NAME
 # Also:     CONTAM_sp|CONTAM_ACCESSION|...  or  ENTRAP_sp|ENTRAP_ACCESSION|...
 _FULL_RE = re.compile(
-    r"^(?P<prefix>(?:CONTAM_|ENTRAP_)?(?:sp|tr))\|"
+    r"^(?P<prefix>(?:CONTAM_|ENTRAP_|DECOY_|REV__|rev_)?(?:sp|tr))\|"
     r"(?P<accession>[^|]+)\|"
     r"(?P<name>.+)$"
 )
 
-# Target-decoy header form: DECOY_sp|P12345|NAME -> DECOY_P12345 (kept apart from _FULL_RE, which
-# to_full and parse_fasta_headers also use).
-_DECOY_FULL_RE = re.compile(r"^DECOY_(?:sp|tr)\|(?P<accession>[^|]+)\|.+$")
-
-# A UniProtKB accession (optionally an isoform); to_bare only strips headers whose accession matches.
-_UNIPROT_ACCESSION_RE = re.compile(
-    r"^(?:CONTAM_|ENTRAP_)?(?:[OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9](?:[A-Z][A-Z0-9]{2}[0-9]){1,2})(?:-\d+)?$"
-)
+_DECOY_MARKER = re.compile(r"^(?:DECOY_|REV__|rev_)")
 
 _SCALAR_ACCESSION_COLUMNS = ("anchor_protein", "protein_accession", "accession", "family")
 # List column -> the struct field holding the protein (a list<string> column uses its values).
@@ -53,25 +50,19 @@ def to_bare(accession: str) -> str:
 
     sp|P04114|APOB_HUMAN           → P04114
     CONTAM_sp|CONTAM_P02768|...    → CONTAM_P02768
+    REV__sp|P04114|APOB_HUMAN      → REV__P04114
     tr|A0A123|A0A123_HUMAN         → A0A123
     DECOY_sp|P04114|APOB_HUMAN     → DECOY_P04114
     P04114                         → P04114  (no-op)
     """
-    if accession is None:
-        return accession
-    decoy = _DECOY_FULL_RE.match(accession)
-    if decoy and _UNIPROT_ACCESSION_RE.match(decoy.group("accession")):
-        return "DECOY_" + decoy.group("accession")
-    m = _FULL_RE.match(accession)
-    if m and _UNIPROT_ACCESSION_RE.match(m.group("accession")):
-        return m.group("accession")
-    return accession
+    return canonical_accession(accession)
 
 
 def to_full(accession: str, lookup: dict[str, str]) -> str:
     """Convert bare accession to full UniProt format using a FASTA-derived lookup.
 
     P04114 → sp|P04114|APOB_HUMAN  (if in lookup)
+    REV__P04114 → REV__sp|P04114|APOB_HUMAN
     P04114 → P04114                (if not in lookup, returned as-is)
     """
     if accession is None:
@@ -79,7 +70,12 @@ def to_full(accession: str, lookup: dict[str, str]) -> str:
     # Already in full format?
     if _FULL_RE.match(accession):
         return accession
-    return lookup.get(accession, accession)
+    if accession in lookup:
+        return lookup[accession]
+    marker = _DECOY_MARKER.match(accession)
+    if marker and accession[marker.end() :] in lookup:
+        return marker.group() + lookup[accession[marker.end() :]]
+    return accession
 
 
 def parse_fasta_headers(fasta_path: str | Path) -> dict[str, str]:
@@ -124,7 +120,7 @@ def normalize_parquet(
     Parquet encoding.
 
     Args:
-        parquet_path: Input feature, pg, psm, site or proteoform Parquet file.
+        parquet_path: Input feature, pg, psm, pepmap, site or proteoform Parquet file.
         output_path: Where to write the normalized file.
         direction: "forward" (full → bare) or "reverse" (bare → full).
         fasta_lookup: Required for reverse. {bare_accession: full_header}.
@@ -152,7 +148,13 @@ def normalize_parquet(
     else:
         staging = output_path.with_name(f".{output_path.name}.normalizing")
         try:
-            _rewrite_view(parquet_path, staging, lambda table: _normalize_table(table, changes))
+            keep_names = direction == "forward"
+            _rewrite_view(
+                parquet_path,
+                staging,
+                lambda table: _normalize_table(table, changes, keep_names),
+                _normalization_footer(parquet),
+            )
             os.replace(staging, output_path)
         finally:
             staging.unlink(missing_ok=True)
@@ -186,6 +188,18 @@ def normalize_dataset_accessions(dataset_dir: Path, prefix: str) -> int:
     return sum(bool(normalize_parquet(f, f)["distinct_changed"]) for f in accession_view_files(dataset_dir, prefix))
 
 
+def _normalization_footer(parquet: pq.ParquetFile) -> dict[bytes, bytes | None]:
+    """Accession rewrites invalidate accession-derived ids and accession sort orders."""
+    metadata = parquet.metadata.metadata or {}
+    columns = {*_SCALAR_ACCESSION_COLUMNS, *_LIST_ACCESSION_COLUMNS}
+    footer: dict[bytes, bytes | None] = {}
+    if set(metadata.get(b"identity_composite", b"").decode().split(",")) & columns:
+        footer[b"identity_source"] = b"provided"
+    if set(metadata.get(SORT_ORDER_FOOTER_KEY, b"").decode().split(",")) & columns:
+        footer[SORT_ORDER_FOOTER_KEY] = None
+    return footer
+
+
 def _scan_accessions(parquet: pq.ParquetFile) -> tuple[dict[str, int], set[str]]:
     """Count the first scalar accession column (else the first list column's members) and collect
     every distinct accession."""
@@ -199,22 +213,26 @@ def _scan_accessions(parquet: pq.ParquetFile) -> tuple[dict[str, int], set[str]]
         return accession_counts, accessions
     for batch in parquet.iter_batches(columns=columns):
         for name in scalar_columns:
-            for entry in pc.call_function("value_counts", [batch.column(name)]).to_pylist():
-                if entry["values"] is not None:
-                    accessions.add(entry["values"])
-                    if name == scalar_columns[0]:
-                        accession_counts[entry["values"]] = accession_counts.get(entry["values"], 0) + entry["counts"]
+            _add_value_counts(batch.column(name), accessions, accession_counts if name == scalar_columns[0] else None)
         for name in list_columns:
             members = _member_accessions(batch.column(name), _LIST_ACCESSION_COLUMNS[name])
             if members is None:
                 continue
             if not scalar_columns and name == list_columns[0]:
-                for entry in pc.call_function("value_counts", [members]).to_pylist():
-                    if entry["values"] is not None:
-                        accession_counts[entry["values"]] = accession_counts.get(entry["values"], 0) + entry["counts"]
-            accessions.update(pc.call_function("unique", [members]).to_pylist())
+                _add_value_counts(members, accessions, accession_counts)
+            else:
+                accessions.update(pc.call_function("unique", [members]).to_pylist())
     accessions.discard(None)
     return accession_counts, accessions
+
+
+def _add_value_counts(values: pa.Array, accessions: set[str], counts: dict[str, int] | None) -> None:
+    """Collect the distinct non-null *values*, and add their occurrences to *counts* when given."""
+    for entry in pc.call_function("value_counts", [values]).to_pylist():
+        if entry["values"] is not None:
+            accessions.add(entry["values"])
+            if counts is not None:
+                counts[entry["values"]] = counts.get(entry["values"], 0) + entry["counts"]
 
 
 def _member_accessions(column: pa.Array, field: str) -> pa.Array | None:
@@ -226,8 +244,27 @@ def _member_accessions(column: pa.Array, field: str) -> pa.Array | None:
     return None
 
 
-def _normalize_table(table: pa.Table, changes: dict[str, str]) -> pa.Table:
+def _names_from_members(table: pa.Table) -> pa.Table:
+    """Fill a null ``pg_names`` with the entry names of ``db|ACC|NAME`` members, before those are stripped."""
+    index = table.schema.get_field_index("pg_names")
+    names = [
+        name if name is not None else _entry_names(members)
+        for name, members in zip(table.column(index).to_pylist(), table.column("pg_accessions").to_pylist())
+    ]
+    return table.set_column(index, table.schema.field(index), pa.array(names, type=table.schema.field(index).type))
+
+
+def _entry_names(members: list[str] | None) -> list[str] | None:
+    """Entry names aligned with *members*, or None unless every member has one."""
+    names = [uniprot_entry_name(member) for member in members or []]
+    return names if names and all(names) else None
+
+
+def _normalize_table(table: pa.Table, changes: dict[str, str], keep_names: bool = False) -> pa.Table:
     """Apply *changes* to scalar accession columns and accession list members of one batch."""
+    if keep_names and {"pg_names", "pg_accessions"} <= set(table.schema.names):
+        if _is_list_of_strings(table.schema.field("pg_accessions").type):
+            table = _names_from_members(table)
     for name in _SCALAR_ACCESSION_COLUMNS:
         if name in table.schema.names:
             index = table.schema.get_field_index(name)

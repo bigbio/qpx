@@ -19,6 +19,7 @@ from qpx.converters.ptm import compute_precursor_mz
 from qpx.core.cleavage import count_missed_cleavages
 from qpx.core.engine import create_converter_connection
 from qpx.core.sql import escape_path, sql_build, validate_identifier, validate_table
+from qpx.writers.pepmap import PepMapWriter
 
 
 def resolve_columns(
@@ -60,10 +61,8 @@ class BaseConverter(ABC):
         duckdb_memory: str | None = None,
         duckdb_threads: int | None = None,
         conn: duckdb.DuckDBPyConnection | None = None,
-        compression: str = "zstd",
     ):
         self.logger = logging.getLogger(f"{self.__class__.__module__}.{self.__class__.__name__}")
-        self._compression = compression
         if conn is not None:
             self._conn = conn
             self._owns_conn = False
@@ -119,6 +118,26 @@ class BaseConverter(ABC):
     # ------------------------------------------------------------------
     # Helpers shared by all converters
     # ------------------------------------------------------------------
+
+    def _write_pepmap(self, output_path: str, pepmap: dict[str, tuple[str, list[str]]], creator: str) -> bool:
+        """Write ``{peptidoform: (sequence, proteins)}`` as the pepmap view; returns whether there was anything to write."""
+        if not pepmap:
+            return False
+        records = [
+            {
+                "sequence": sequence,
+                "peptidoform": peptidoform,
+                "pg_accessions": [
+                    {"accession": acc, "start": None, "end": None, "pre": None, "post": None} for acc in accessions
+                ],
+                "is_unique": len(accessions) == 1,
+            }
+            for peptidoform, (sequence, accessions) in pepmap.items()
+        ]
+        with PepMapWriter(output_path, creator=creator) as writer:
+            writer.write_batch(records)
+        self.logger.info("Wrote %d pepmap entries to %s", len(records), output_path)
+        return True
 
     @staticmethod
     def _load_sdrf_enzyme(sdrf_path: str) -> str | None:
@@ -261,8 +280,8 @@ class BaseConverter(ABC):
         """Collect score names from a batch of records into ``_discovered_scores``.
 
         Scans both ``additional_scores`` and per-position scores inside
-        ``modifications`` so that phospho site localization scores (e.g.
-        phospho_sty_probability) are included in ontology.parquet.
+        ``modifications`` so that site localization scores (e.g.
+        localization_probability) are included in ontology.parquet.
         """
         for rec in records:
             scores = rec.get("additional_scores")

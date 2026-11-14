@@ -8,26 +8,46 @@ crosslinking modifications (``crosslink donor``, ``crosslink acceptor``).
 
 from __future__ import annotations
 
-import gzip
 import logging
-from typing import Any
-
-try:
-    from lxml import etree
-except ImportError:
-    etree: Any = None
+from itertools import chain
+from typing import Iterator
 
 from qpx.converters.base import BaseConverter
-from qpx.converters.mzidentml.psm_records import _build_psm_records
-from qpx.core.cv_terms import CV_SCAN_START_TIME, CV_XL_ACCEPTOR, CV_XL_DONOR
+from qpx.converters.mzidentml.document import MzidDocument, stream_results
+from qpx.converters.mzidentml.psm_records import _build_psm_records, declare_scan_format, scan_schemes
+from qpx.converters.ptm import build_proforma, canonical_mod_tag
+from qpx.converters.utils import canonical_accession
+from qpx.core.cv_terms import (
+    CV_MODIFICATION_INDEX,
+    CV_SCAN_START_TIME,
+    CV_XL_ACCEPTOR,
+    CV_XL_DONOR,
+    MODIFICATION_NON_IDENTITY_ACCESSIONS,
+)
 from qpx.core.files import run_file_stem
 from qpx.writers.psm import PsmWriter
 
 logger = logging.getLogger(__name__)
 
+# Results of a file converted to records at a time.
+_RESULT_BATCH = 20_000
+
+
+def modification_identity_param(element, ns: str):
+    """The cvParam that names a Modification or SearchModification; ``None`` when none does."""
+    for cv in element.findall(f"{{{ns}}}cvParam"):
+        if cv.get("accession") not in MODIFICATION_NON_IDENTITY_ACCESSIONS:
+            return cv
+    return None
+
 
 class MzIdentMLPsmAdapter(BaseConverter):
     """Convert mzIdentML files (including XL-MS 1.3) to QPX PSM Parquet."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        # Sections of the last file that its records refer to; set with its first result.
+        self.parsed: dict = {}
 
     def convert(
         self,
@@ -35,52 +55,52 @@ class MzIdentMLPsmAdapter(BaseConverter):
         output_path: str,
         creator: str = "mzidentml",
     ) -> None:
-        """Parse *mzid_path* and write QPX PSM records to *output_path*."""
-        parsed = self._parse_mzidentml(mzid_path)
-        records = _build_psm_records(parsed)
-
-        if not records:
+        """Parse *mzid_path* and write QPX PSM records to *output_path*, declaring the scan format."""
+        batches = (records for records in self.iter_psm_batches(mzid_path, MzidDocument()) if records)
+        first = next(batches, None)
+        if first is None:
             logger.warning("No PSM records produced from %s", mzid_path)
             return
-
-        self._track_scores(records)
-
-        with PsmWriter(output_path, creator=creator, compression=self._compression) as writer:
-            writer.write_batch(records)
-
-        logger.info(
-            "Wrote %d PSMs (%d with cross-links) to %s",
-            len(records),
-            sum(1 for r in records if r.get("cross_links")),
-            output_path,
-        )
+        total = 0
+        with_links = 0
+        formats: set = set()
+        with PsmWriter(output_path, creator=creator) as writer:
+            for records in chain([first], batches):
+                self._track_scores(records)
+                formats |= scan_schemes(records)
+                writer.write_batch(records)
+                total += len(records)
+                with_links += sum(1 for r in records if r.get("cross_links"))
+            declare_scan_format(writer, formats)
+        logger.info("Wrote %d PSMs (%d with cross-links) to %s", total, with_links, output_path)
 
     # ------------------------------------------------------------------
     # XML parsing
     # ------------------------------------------------------------------
 
-    def _parse_mzidentml(self, path: str) -> dict:
-        """Parse mzIdentML XML into intermediate data structures.
+    def iter_psm_batches(self, path, document: MzidDocument, rank1_only: bool = False) -> Iterator[list[dict]]:
+        """Yield QPX PSM records in batches, parsing *path* once; *document* keeps the rest of the file."""
+        results: list[dict] = []
+        for result in stream_results(path, document):
+            if not self.parsed:
+                self.parsed = self._parse_sections(document.root, document.ns)
+                document.release_sequences()
+            results.append(self._parse_spectrum_result(result, document.ns))
+            if len(results) == _RESULT_BATCH:
+                yield _build_psm_records({**self.parsed, "spectrum_results": results}, rank1_only)
+                results = []
+        if results:
+            yield _build_psm_records({**self.parsed, "spectrum_results": results}, rank1_only)
 
-        Transparently handles gzip-compressed files (``*.gz``).
-        """
-        if etree is None:
-            raise ImportError("lxml is required for mzIdentML conversion. Install it with: pip install qpx[mzidentml]")
-        if str(path).endswith(".gz"):
-            with gzip.open(path, "rb") as fh:
-                tree = etree.parse(fh)
-        else:
-            tree = etree.parse(path)
-        root = tree.getroot()
-        ns = root.nsmap.get(None, "")
-
+    def _parse_sections(self, root, ns: str) -> dict:
+        """Parse the sections that come before the first result into intermediate data structures."""
         return {
             "spectra_data": self._parse_spectra_data(root, ns),
             "db_sequences": self._parse_db_sequences(root, ns),
             "peptides": self._parse_peptides(root, ns),
             "peptide_evidence": self._parse_peptide_evidence(root, ns),
             "linker_info": self._parse_linker_info(root, ns),
-            "spectrum_results": self._parse_spectrum_results(root, ns),
+            "modification_tags": self._parse_modification_tags(root, ns),
         }
 
     def _parse_spectra_data(self, root, ns: str) -> dict[str, str]:
@@ -97,7 +117,7 @@ class MzIdentMLPsmAdapter(BaseConverter):
         """Map DBSequence id → protein accession."""
         result = {}
         for db in root.iter(f"{{{ns}}}DBSequence"):
-            result[db.get("id")] = db.get("accession", "")
+            result[db.get("id")] = canonical_accession(db.get("accession", ""))
         return result
 
     def _parse_peptides(self, root, ns: str) -> dict[str, dict]:
@@ -112,24 +132,49 @@ class MzIdentMLPsmAdapter(BaseConverter):
             seq_el = pep.find(f"{{{ns}}}PeptideSequence")
             sequence = seq_el.text if seq_el is not None else ""
 
-            mods, xl_mods = self._parse_peptide_modifications(pep, ns)
+            mods, xl_mods, tags = self._parse_peptide_modifications(pep, ns, sequence or "")
 
             peptides[pep_id] = {
                 "sequence": sequence,
+                "peptidoform": build_proforma(sequence, tags) if sequence else "",
                 "modifications": mods or None,
                 "xl_mods": xl_mods,
             }
         return peptides
 
     @staticmethod
-    def _parse_peptide_modifications(pep, ns: str) -> tuple[list, dict]:
-        """Separate regular modifications from crosslink donor/acceptor sites."""
+    def _regular_modification(mod, ns: str, location: int, mass_text, sequence: str) -> tuple[dict, str]:
+        """The QPX modification and canonical ProForma tag of a non-cross-link Modification."""
+        identity = modification_identity_param(mod, ns)
+        mod_name = identity.get("name", "") if identity is not None else ""
+        mod_accession = identity.get("accession") if identity is not None else None
+        residue = sequence[location - 1] if 0 < location <= len(sequence) else None
+        mass = float(mass_text) if mass_text else None
+        terminus = "N" if location == 0 else "C" if location > len(sequence) else None
+        tag = canonical_mod_tag(mod_accession, mod_name, mass, residue, terminus)
+        head = tag.split("|", 1)[0]
+        is_unimod = head.startswith("UNIMOD:")
+        return {
+            "name": mod_name if is_unimod and mod_name else head,
+            "accession": head if is_unimod else None,
+            "positions": [{"position": location, "amino_acid": mod.get("residues", "") or None, "scores": None}],
+        }, tag
+
+    @staticmethod
+    def _parse_peptide_modifications(pep, ns: str, sequence: str) -> tuple[list, dict, list[tuple[int, str]]]:
+        """Separate regular modifications from crosslink donor/acceptor sites.
+
+        Also returns the ``(position, tag)`` pairs of the regular modifications
+        in canonical ProForma form, checked against the reported mass.
+        """
         mods = []
+        tags: list[tuple[int, str]] = []
         xl_mods: dict[str, list[dict]] = {}  # keyed by xl pair value
 
         for mod in pep.findall(f"{{{ns}}}Modification"):
             location = int(mod.get("location", "0"))
-            mass_delta = float(mod.get("monoisotopicMassDelta", "0"))
+            mass_text = mod.get("monoisotopicMassDelta")
+            mass_delta = float(mass_text) if mass_text else 0.0
             residues = mod.get("residues", "")
 
             # Check for XL cvParams
@@ -151,28 +196,11 @@ class MzIdentMLPsmAdapter(BaseConverter):
                     break
 
             if not is_xl:
-                # Regular modification
-                mod_name = ""
-                mod_accession = None
-                for cv in mod.findall(f"{{{ns}}}cvParam"):
-                    mod_name = cv.get("name", "")
-                    mod_accession = cv.get("accession")
-                    break  # Take first cvParam as the mod identity
-                mods.append(
-                    {
-                        "name": mod_name or f"CHEMMOD:+{mass_delta}",
-                        "accession": mod_accession,
-                        "positions": [
-                            {
-                                "position": location,
-                                "amino_acid": residues or None,
-                                "scores": None,
-                            }
-                        ],
-                    }
-                )
+                mod_dict, tag = MzIdentMLPsmAdapter._regular_modification(mod, ns, location, mass_text, sequence)
+                mods.append(mod_dict)
+                tags.append((location, tag))
 
-        return mods, xl_mods
+        return mods, xl_mods, tags
 
     def _parse_peptide_evidence(self, root, ns: str) -> dict[str, dict]:
         """Map PeptideEvidence id → {peptide_ref, db_ref, is_decoy, start, end, pre, post}."""
@@ -190,6 +218,25 @@ class MzIdentMLPsmAdapter(BaseConverter):
                 "post": pe.get("post", None),
             }
         return result
+
+    @staticmethod
+    def _parse_modification_tags(root, ns: str) -> dict[int, str]:
+        """Canonical tag of each SearchModification with a ``modification index``, the key of MS:1002505 scores."""
+        tags: dict[int, str] = {}
+        for search_mod in root.iter(f"{{{ns}}}SearchModification"):
+            index = search_mod.find(f"{{{ns}}}cvParam[@accession='{CV_MODIFICATION_INDEX}']")
+            identity = modification_identity_param(search_mod, ns)
+            if index is None or identity is None:
+                continue
+            residue = search_mod.get("residues", ".")[0]
+            tag = canonical_mod_tag(
+                identity.get("accession"),
+                identity.get("name", ""),
+                float(search_mod.get("massDelta", "0")),
+                None if residue == "." else residue,
+            )
+            tags[int(index.get("value"))] = tag.split("|", 1)[0]
+        return tags
 
     def _parse_linker_info(self, root, ns: str) -> dict:
         """Extract cross-linker name, accession and mass from SearchModification elements."""
@@ -243,53 +290,34 @@ class MzIdentMLPsmAdapter(BaseConverter):
 
         return linker_info
 
-    def _parse_spectrum_results(self, root, ns: str) -> list[dict]:
-        """Parse SpectrumIdentificationResult elements."""
-        results = []
-        for sir in root.iter(f"{{{ns}}}SpectrumIdentificationResult"):
-            spectrum_id = sir.get("spectrumID", "")
-            spectra_data_ref = sir.get("spectraData_ref", "")
-
-            # Extract retention time from SIR cvParams
-            rt_seconds = self._spectrum_rt(sir, ns)
-
-            siis = []
-            for sii in sir.findall(f"{{{ns}}}SpectrumIdentificationItem"):
-                sii_data = {
-                    "id": sii.get("id", ""),
-                    "charge": int(sii.get("chargeState", "0")),
-                    "exp_mz": float(sii.get("experimentalMassToCharge", "0")),
-                    "calc_mz": float(sii.get("calculatedMassToCharge", "0")),
-                    "rank": int(sii.get("rank", "1")),
-                    "pass_threshold": sii.get("passThreshold", "false").lower() == "true",
-                    "peptide_ref": sii.get("peptide_ref", ""),
-                    "cv_params": [],
-                    "peptide_evidence_refs": [],
-                }
-
-                for cv in sii.findall(f"{{{ns}}}cvParam"):
-                    sii_data["cv_params"].append(
-                        {
-                            "accession": cv.get("accession", ""),
-                            "name": cv.get("name", ""),
-                            "value": cv.get("value", ""),
-                        }
-                    )
-
-                for per in sii.findall(f"{{{ns}}}PeptideEvidenceRef"):
-                    sii_data["peptide_evidence_refs"].append(per.get("peptideEvidence_ref", ""))
-
-                siis.append(sii_data)
-
-            results.append(
-                {
-                    "spectrum_id": spectrum_id,
-                    "spectra_data_ref": spectra_data_ref,
-                    "rt": rt_seconds,
-                    "siis": siis,
-                }
-            )
-        return results
+    def _parse_spectrum_result(self, sir, ns: str) -> dict:
+        """Parse one SpectrumIdentificationResult element."""
+        siis = []
+        for sii in sir.findall(f"{{{ns}}}SpectrumIdentificationItem"):
+            sii_data = {
+                "id": sii.get("id", ""),
+                "charge": int(sii.get("chargeState", "0")),
+                "exp_mz": float(sii.get("experimentalMassToCharge", "0")),
+                # Optional in mzIdentML; cross-link SIIs commonly leave it out.
+                "calc_mz": float(sii.get("calculatedMassToCharge")) if sii.get("calculatedMassToCharge") else None,
+                "rank": int(sii.get("rank", "1")),
+                "pass_threshold": sii.get("passThreshold", "false").lower() == "true",
+                "peptide_ref": sii.get("peptide_ref", ""),
+                "cv_params": [
+                    {"accession": cv.get("accession", ""), "name": cv.get("name", ""), "value": cv.get("value", "")}
+                    for cv in sii.findall(f"{{{ns}}}cvParam")
+                ],
+                "peptide_evidence_refs": [
+                    per.get("peptideEvidence_ref", "") for per in sii.findall(f"{{{ns}}}PeptideEvidenceRef")
+                ],
+            }
+            siis.append(sii_data)
+        return {
+            "spectrum_id": sir.get("spectrumID", ""),
+            "spectra_data_ref": sir.get("spectraData_ref", ""),
+            "rt": self._spectrum_rt(sir, ns),
+            "siis": siis,
+        }
 
     @staticmethod
     def _spectrum_rt(sir, ns: str) -> float | None:
