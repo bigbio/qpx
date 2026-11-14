@@ -14,7 +14,7 @@ import pyarrow.parquet as pq
 
 from qpx._version import __version__
 from qpx.core.data.schema import SOURCE_DATASET_COLUMN
-from qpx.core.sql import validate_identifier
+from qpx.core.sql import sql_build, validate_identifier
 from qpx.transforms.mantissa import MANTISSA_BITS_FOOTER_KEY
 from qpx.writers.xic import XIC_FOOTER_KEYS
 
@@ -101,7 +101,7 @@ class _Merge:
 
     def _columns(self, name: str, index: int) -> list[str]:
         """The columns of a source's view."""
-        return [row[0] for row in self._conn.execute(f'DESCRIBE "{name}_{index}"').fetchall()]
+        return [row[0] for row in self._conn.execute(sql_build("DESCRIBE $view", view=_quoted(f"{name}_{index}"))).fetchall()]
 
     def _writer_class(self, name: str):
         return self._datasets[0].writer_for(name)[0]
@@ -120,9 +120,13 @@ class _Merge:
         """The values seen in more than one source, as (count, examples)."""
         if len(values_sql) < 2:
             return 0, []
-        union = " UNION ALL ".join(f"SELECT DISTINCT v, {index} AS s FROM ({sql}) t(v)" for index, sql in values_sql.items())
-        sql = f"SELECT v FROM ({union}) GROUP BY v HAVING COUNT(*) > 1"
-        rows = self._conn.execute(f"SELECT COUNT(*), list(CAST(v AS VARCHAR))[1:3] FROM ({sql})").fetchall()[0]
+        union = " UNION ALL ".join(
+            sql_build("SELECT DISTINCT v, ? AS s FROM ($source) t(v)", source=sql) for sql in values_sql.values()
+        )
+        sql = sql_build("SELECT v FROM ($union) GROUP BY v HAVING COUNT(*) > 1", union=union)
+        rows = self._conn.execute(
+            sql_build("SELECT COUNT(*), list(CAST(v AS VARCHAR))[1:3] FROM ($query)", query=sql), list(values_sql)
+        ).fetchall()[0]
         return rows[0], rows[1] or []
 
     def _run_values(self, views: list[str], index: int) -> str | None:
@@ -195,26 +199,42 @@ class _Merge:
     def _deduplicated_rows(self, name: str, index: int, first: bool) -> str:
         """Rows of a source not already written; a key seen with different values raises."""
         key = self._key_sql(name)
-        seen = f"merge_seen_{name}"
-        source = f'"{name}_{index}"'
+        seen = _quoted(f"merge_seen_{name}")
+        source = _quoted(f"{name}_{index}")
         if first:
-            self._conn.execute(f"CREATE OR REPLACE TEMP TABLE {seen} AS SELECT {key}, hash(t) AS row_hash FROM {source} t")
+            create_seen = "CREATE OR REPLACE TEMP TABLE $seen AS SELECT $key, hash(t) AS row_hash FROM $source t"
+            self._conn.execute(sql_build(create_seen, seen=seen, key=key, source=source))
             return self._rows_sql(name, index)
         different = self._conn.execute(
-            f"SELECT COUNT(*) FROM (SELECT {key}, hash(t) AS row_hash FROM {source} t) a "
-            f"JOIN {seen} b USING ({key}) WHERE a.row_hash <> b.row_hash"
+            sql_build(
+                "SELECT COUNT(*) FROM (SELECT $key, hash(t) AS row_hash FROM $source t) a "
+                "JOIN $seen b USING ($key) WHERE a.row_hash <> b.row_hash",
+                key=key,
+                source=source,
+                seen=seen,
+            )
         ).fetchall()[0][0]
         if different:
             raise ValueError(
                 f"{different} {name} row(s) of {self._labels[index]} share a key with an earlier dataset but differ from it; "
                 "they are not identical, so on_collision='dedupe-identical' cannot merge them. Use on_collision='namespace'."
             )
-        rows = f"SELECT r.* FROM ({self._rows_sql(name, index)}) r ANTI JOIN {seen} USING ({key})"
+        rows = sql_build(
+            "SELECT r.* FROM ($source) r ANTI JOIN $seen USING ($key)",
+            source=self._rows_sql(name, index),
+            seen=seen,
+            key=key,
+        )
         run = _RUN_VIEWS.get(name)
         if run:
             # A run shared without identical rows is two analyses of it: writing both double-counts it.
             shared = self._conn.execute(
-                f"SELECT COUNT(*) FROM (SELECT {run} AS v FROM ({rows})) WHERE v IN (SELECT run_name FROM merge_runs_{name})"
+                sql_build(
+                    "SELECT COUNT(*) FROM (SELECT $run AS v FROM ($rows)) WHERE v IN (SELECT run_name FROM $runs)",
+                    run=run,
+                    rows=rows,
+                    runs=_quoted(f"merge_runs_{name}"),
+                )
             ).fetchall()[0][0]
             if shared:
                 raise ValueError(
@@ -227,8 +247,13 @@ class _Merge:
         """Remember the keys and row hashes of a written source."""
         key = self._key_sql(name)
         self._conn.execute(
-            f'INSERT INTO merge_seen_{name} SELECT a.* FROM (SELECT {key}, hash(t) AS row_hash FROM "{name}_{index}" t) a '
-            f"ANTI JOIN merge_seen_{name} USING ({key})"
+            sql_build(
+                "INSERT INTO $seen SELECT a.* FROM (SELECT $key, hash(t) AS row_hash FROM $source t) a "
+                "ANTI JOIN $seen USING ($key)",
+                seen=_quoted(f"merge_seen_{name}"),
+                key=key,
+                source=_quoted(f"{name}_{index}"),
+            )
         )
 
     # --- Data views ---
@@ -307,7 +332,9 @@ class _Merge:
         dedupe = self._on_collision == "dedupe-identical"
         run = _RUN_VIEWS.get(name)
         if dedupe and run:
-            self._conn.execute(f"CREATE OR REPLACE TEMP TABLE merge_runs_{name} (run_name VARCHAR)")
+            self._conn.execute(
+                sql_build("CREATE OR REPLACE TEMP TABLE $runs (run_name VARCHAR)", runs=_quoted(f"merge_runs_{name}"))
+            )
         groups = self._composite_groups(name, sources)
         suffix = self._suffix(name)
         first_source = True
@@ -322,7 +349,14 @@ class _Merge:
                         if not first_source:
                             self._record_seen(name, index)
                         if run:
-                            self._conn.execute(f'INSERT INTO merge_runs_{name} SELECT DISTINCT {run} FROM "{name}_{index}"')
+                            self._conn.execute(
+                                sql_build(
+                                    "INSERT INTO $runs SELECT DISTINCT $run FROM $source",
+                                    runs=_quoted(f"merge_runs_{name}"),
+                                    run=run,
+                                    source=_quoted(f"{name}_{index}"),
+                                )
+                            )
                     first_source = False
 
     # --- Metadata views ---
@@ -353,7 +387,10 @@ class _Merge:
         union = " UNION ALL BY NAME ".join(f'SELECT * FROM "ontology_{i}"' for i in sources)
         firsts = ", ".join(f"first({column}) AS {column}" for column in _ONTOLOGY_FIRST)
         conflicts = self._conn.execute(
-            f'SELECT field_name, "view" FROM ({union}) GROUP BY field_name, "view" HAVING COUNT(DISTINCT ontology_accession) > 1'
+            sql_build(
+                'SELECT field_name, "view" FROM ($union) GROUP BY field_name, "view" HAVING COUNT(DISTINCT ontology_accession) > 1',
+                union=union,
+            )
         ).fetchall()
         if conflicts:
             logger.warning("%d ontology field(s) have different terms across the datasets; keeping the first: %s",

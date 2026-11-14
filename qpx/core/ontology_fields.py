@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from qpx.core.data.schema import ValidationIssue
+from qpx.core.sql import sql_build
 
 _NESTED_NAME_QUERIES = {
-    "additional_scores": "SELECT DISTINCT unnest(additional_scores).score_name AS name FROM {relation}",
-    "cv_params": "SELECT DISTINCT unnest(cv_params).cv_name AS name FROM {relation}",
+    "additional_scores": "SELECT DISTINCT unnest(additional_scores).score_name AS name FROM $relation",
+    "cv_params": "SELECT DISTINCT unnest(cv_params).cv_name AS name FROM $relation",
     "additional_intensities": (
         "SELECT DISTINCT unnest(pairs).intensity_name AS name FROM "
-        "(SELECT unnest(additional_intensities).intensities AS pairs FROM {relation})"
+        "(SELECT unnest(additional_intensities).intensities AS pairs FROM $relation)"
     ),
 }
 
@@ -20,10 +21,10 @@ def emitted_field_names(con, relation: str) -> set[str]:
     ``con`` is anything with a DuckDB-style ``execute`` method, and ``relation`` a
     table, view or ``read_parquet`` expression.
     """
-    columns = {row[0] for row in con.execute(f"DESCRIBE SELECT * FROM {relation}").fetchall()}
+    columns = {row[0] for row in con.execute(sql_build("DESCRIBE SELECT * FROM $relation", relation=relation)).fetchall()}
     names = set(columns)
     for column in sorted(columns & set(_NESTED_NAME_QUERIES)):
-        rows = con.execute(_NESTED_NAME_QUERIES[column].format(relation=relation)).fetchall()
+        rows = con.execute(sql_build(_NESTED_NAME_QUERIES[column], relation=relation)).fetchall()
         names.update(row[0] for row in rows if row[0] is not None)
     return names
 

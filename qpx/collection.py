@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from qpx.core.convert import QueryResult
 from qpx.core.engine import DuckDBEngine
+from qpx.core.sql import sql_build
 
 if TYPE_CHECKING:
     from qpx.dataset import Dataset
@@ -82,7 +83,7 @@ class DatasetCollection:
                 for i, (label, ds) in enumerate(zip(labels, self.datasets))
                 if name in ds.available_structures
             )
-            self._engine.connection.execute(f"CREATE VIEW {_quoted(name)} AS {selects}")
+            self._engine.connection.execute(sql_build("CREATE VIEW $name AS $selects", name=_quoted(name), selects=selects))
 
     def _source_key(self, view: str, label: str) -> str:
         """The select item naming a view's dataset; a merged dataset has the column already."""
