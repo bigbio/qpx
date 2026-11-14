@@ -105,7 +105,9 @@ class PdPsmTable(BaseConverter):
 
     def runs_by_file_id(self) -> dict[str, str]:
         """File ID -> run as the PSM export itself names them, for the file groups of the pg view."""
-        rows = self._conn.execute(f"SELECT DISTINCT {self._column('file_id')}, _run FROM pd_psms").fetchall()
+        rows = self._conn.execute(
+            sql_build("SELECT DISTINCT $file_id, _run FROM pd_psms", file_id=self._column("file_id"))
+        ).fetchall()
         return dict(rows)
 
     def spectrum_fields(self, row: dict) -> dict:

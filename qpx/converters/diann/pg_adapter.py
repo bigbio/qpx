@@ -345,7 +345,7 @@ class DiannPgAdapter(DiaNNBaseAdapter):
         with PgWriter(output_path, creator=creator) as writer:
             done = 0
             for batch_runs in self._run_batches(validate_identifier(self._resolved_pg["run_file_name"]), runs, batch_rows):
-                self.logger.info(f"Processing PG runs {done + 1}-{done + len(batch_runs)} of {len(runs)}")
+                self.logger.info("Processing PG runs %d-%d of %d", done + 1, done + len(batch_runs), len(runs))
                 done += len(batch_runs)
                 records = self._process_batch(
                     batch_runs,

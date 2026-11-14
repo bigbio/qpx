@@ -126,6 +126,11 @@ class Dataset(_OptionalViews, _DatasetValidationMixin, _DatasetQueryMixin, _Data
         """
         return list(cls._STRUCTURE_REGISTRY)
 
+    @classmethod
+    def structure_for(cls, structure: str) -> tuple[type[BaseStructure], str]:
+        """The structure class and file suffix of *structure*."""
+        return cls._STRUCTURE_REGISTRY[structure]
+
     def __init__(
         self,
         path: str | Path,

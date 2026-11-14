@@ -130,7 +130,8 @@ def _validate_single_file(file_path: Path, semantic: bool, check_identity: bool,
     """Validate a single Parquet file by inferring its structure type."""
     from qpx.dataset import Dataset
 
-    for name, (cls, suffix) in Dataset._STRUCTURE_REGISTRY.items():
+    structures = {name: Dataset.structure_for(name) for name in Dataset.structure_names()}
+    for name, (cls, suffix) in structures.items():
         if file_path.name.endswith(suffix):
             try:
                 result = cls.from_file(file_path).validate(strict=True, semantic=semantic, check_identity=check_identity)
@@ -143,7 +144,7 @@ def _validate_single_file(file_path: Path, semantic: bool, check_identity: bool,
 
     raise click.ClickException(
         f"Cannot infer structure type from filename '{file_path.name}'. "
-        "Expected a filename ending with one of: " + ", ".join(suffix for _, suffix in Dataset._STRUCTURE_REGISTRY.values())
+        "Expected a filename ending with one of: " + ", ".join(suffix for _, suffix in structures.values())
     )
 
 

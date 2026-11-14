@@ -288,7 +288,9 @@ class FragPipeFeatureAdapter(BaseConverter):
                 self._add_psm_lookup_row(lookup, values)
 
         self._conn.execute("DROP VIEW IF EXISTS _fp_psm_lookup")
-        self.logger.info(f"PSM lookup: {len(lookup):,} unique keys from {count:,} PSM rows of {psm_path}")
+        self.logger.info(
+            "PSM lookup: %s unique keys from %s PSM rows of %s", format(len(lookup), ","), format(count, ","), psm_path
+        )
 
         return lookup
 

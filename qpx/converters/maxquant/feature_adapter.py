@@ -73,7 +73,7 @@ _EVIDENCE_IDS = "__evidence_ids"
 _FEATURE_IDENTITY_COMPOSITE = ("peptidoform", "charge", "run_file_name", "rt_start", "rt_stop", "scan")
 
 
-class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
+class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):  # pylint: disable=too-many-instance-attributes
     """Convert MaxQuant ``evidence.txt`` to ``feature.parquet``.
 
     Usage::
@@ -493,7 +493,14 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):
         if "Proteins" not in columns:
             return False
         target = "" if "Reverse" not in columns else """WHERE COALESCE("Reverse", '') <> '+'"""
-        rows = self._conn.execute(f"""SELECT DISTINCT "{sequence}", "{modified}", "Proteins" FROM evidence {target}""").fetchall()
+        rows = self._conn.execute(
+            sql_build(
+                'SELECT DISTINCT $sequence, $modified, "Proteins" FROM evidence $target',
+                sequence=validate_identifier(sequence),
+                modified=validate_identifier(modified),
+                target=target,
+            )
+        ).fetchall()
         pepmap: dict[str, tuple[str, list[str]]] = {}
         for seq, mod, proteins in rows:
             peptidoform = to_proforma(str(mod), self._fixed)

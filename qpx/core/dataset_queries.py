@@ -560,7 +560,7 @@ class _DatasetQueryMixin:
     def _pivot_to_parquet(self, sql: str, keys: list[str], aggregate: str, output_path: Path) -> Path:
         """Pivot the long form into *output_path* out-of-core with DuckDB."""
         # DuckDB 1.6 development builds crash on PIVOT of a subquery holding CTEs, but not of a view.
-        self._engine.execute(f"CREATE OR REPLACE TEMP VIEW _matrix_source AS {sql}")
+        self._engine.execute(sql_build("CREATE OR REPLACE TEMP VIEW _matrix_source AS $query", query=sql))
         pivot_sql = sql_build(
             """COPY (
                 PIVOT (SELECT $keys, feature_id, intensity FROM _matrix_source)

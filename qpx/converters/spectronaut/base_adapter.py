@@ -98,15 +98,14 @@ class SpectronautBaseAdapter(BaseConverter):
 
     def _load_pivot_report(self, path: str, header: list[str]) -> None:
         """Melt a pivot report into the ``report`` table; a quantity column can hold ``Filtered``, so all are read as text."""
-        safe_path = escape_path(path)
         reader = (
-            f"read_parquet('{safe_path}')"
+            "read_parquet(?)"
             if path.endswith(".parquet")
-            else f"read_csv('{safe_path}', delim='\t', header=true, all_varchar=true, null_padding=true)"
+            else "read_csv(?, delim='\t', header=true, all_varchar=true, null_padding=true)"
         )
         self.logger.info("Melting Spectronaut pivot report: %d runs", len(pivot_columns(header)))
-        self._conn.execute(f"CREATE TEMP TABLE report_pivot AS SELECT * FROM {reader}")
-        self._conn.execute(f"CREATE TEMP TABLE report AS {melted_report_sql(header, 'report_pivot')}")
+        self._conn.execute(sql_build("CREATE TEMP TABLE report_pivot AS SELECT * FROM $reader", reader=reader), [path])
+        self._conn.execute(sql_build("CREATE TEMP TABLE report AS $query", query=melted_report_sql(header, "report_pivot")))
         self._conn.execute("DROP TABLE report_pivot")
 
     def _require_view(self, path: str, view: str) -> None:

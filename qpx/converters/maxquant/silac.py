@@ -12,6 +12,7 @@ from sdrf_pipelines.converters.channel_map import CHANNEL_LABELS
 
 from qpx.converters.maxquant.constants import MQ_LABEL_LETTERS
 from qpx.converters.utils import safe_float
+from qpx.core.sql import sql_build
 
 # MaxQuant's whole-multiplet ratio columns: "Ratio H/L".
 _RATIO_COLUMN = re.compile(r"Ratio ([LMH])/([LMH])")
@@ -105,7 +106,11 @@ def identified_states(conn: duckdb.DuckDBPyConnection, columns: set[str], eviden
         )
         params.append(str(msms_path))
     rows = conn.execute(
-        f"SELECT id, LIST(DISTINCT state) FROM ({' UNION ALL '.join(sources)}) WHERE state >= 0 GROUP BY id", params
+        sql_build(
+            "SELECT id, LIST(DISTINCT state) FROM ($sources) WHERE state >= 0 GROUP BY id",
+            sources=" UNION ALL ".join(sources),
+        ),
+        params,
     ).fetchall()
     return dict(rows)
 

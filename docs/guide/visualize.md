@@ -20,7 +20,7 @@ ds.sample_summary.plot("peptides_per_sample").write_html("./plots/peptides_per_s
 ```
 
 | View | Plot | `plot()` shows |
-|---|---|---|
+| --- | --- | --- |
 | `ds.identification_summary` | Grouped bar | Proteins and peptides per run |
 | `ds.run_summary` | Grouped bar | Peptides, proteins and features per run |
 | `ds.modification_view` | Bar | The `top_n` modifications by PSM count |

@@ -265,13 +265,16 @@ _PROTEIN_LAYER_QUERY = f"""
     WHERE x.intensity_value IS NOT NULL
     """
 
-_PROTEIN_VAR_QUERY = f"""
-    SELECT {_GROUP_SQL} AS protein_group,
+_PROTEIN_VAR_QUERY = sql_build(
+    """
+    SELECT $group AS protein_group,
            min(p.anchor_protein) AS anchor_protein,
            min(p.gg_names[1]) AS gene_name
     FROM pg p
     GROUP BY ALL
-    """
+    """,
+    group=_GROUP_SQL,
+)
 
 # Decoys are left out unless asked for: pg.md requires consumers to filter them,
 # and a MuData matrix has no row-level flag a consumer could filter on.

@@ -91,6 +91,8 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
 
     # Pepmap query of the converted runs, run by write_pepmap().
     _pepmap_query: str | None = None
+    # Modification masses declared in the DIA-NN log, set by convert().
+    _mod_masses: tuple[tuple[str, float], ...] = ()
 
     def convert(
         self,
@@ -229,7 +231,7 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
         run_col = validate_identifier(self._resolved["run_file_name"])
         done = 0
         for batch_runs in self._run_batches(run_col, self._report_runs(run_names), batch_rows):
-            self.logger.info(f"Processing runs {done + 1}-{done + len(batch_runs)} of {len(run_names)}")
+            self.logger.info("Processing runs %d-%d of %d", done + 1, done + len(batch_runs), len(run_names))
             done += len(batch_runs)
             table = self._process_batch_arrow(
                 batch_runs,
