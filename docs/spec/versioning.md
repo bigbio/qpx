@@ -174,13 +174,13 @@ This version defines all core serialized views (PSM, Feature, PG, MZ), the deriv
 Re-converting from the source files is the better route: it also picks up converter fixes. Where only QPX files survive, `qpxc migrate --dataset-path OLD --output-folder NEW` rewrites the dataset under the current specification, by these rules:
 
 - **`pg` from 1.0.** Wrap `run_file_name` in a one-element `grouped_runs`, flatten `intensities` to one row per label with `label` and `intensity`, and derive `pg_id` from `pg_accessions, grouped_runs, label`. This reproduced all `pg_id` values of a re-converted file.
-- **`feature_id` and `psm_id`.** Hash the composite the producer used, which is not always the schema default: [Row Identity](identity.md#composites) lists each one (DIA-NN, for instance, hashes `peptidoform, charge, run_file_name`). Hash the persisted values, in canonical peptidoform spelling from 1.3 on.
+- **`feature_id` and `psm_id`.** Hash the persisted values in canonical peptidoform spelling, using the producer's [identity composite](identity.md#composites). DIA-NN uses the current `peptidoform, charge, run_file_name, is_decoy, is_library_decoy` composite even when an old footer declares only the first three fields; the old `^` prefix is removed from the peptidoform and recovered as `is_library_decoy`, separately from `is_decoy`. Other producers keep their declared feature composite. PSM ids are derived again except for files whose `creator` is `mzidentml`, whose ids cannot be reproduced from the stored columns.
 - **Links between views.** `psm.feature_id` and `fragment.feature_id` take the new `feature_id` of their feature, `site.pg_id` and `proteoform.pg_id` the new `pg_id`, and their `best_psm_id` the new `psm_id`. `xic.feature_ids` and `xic.feature_scores[].feature_id` take the new `feature_id` too. This matters most for a relayouted dataset, whose ids 1, 2, 3, … are derived again.
 - **Labels in 1.0.2 files.** DIA-NN wrote `raw` and CDAP wrote `precursor_area` as label-free feature labels. These were non-conformant output, not an older vocabulary: rewrite both to `LFQ`.
 - **m/z sentinels.** `observed_mz` and `calculated_mz` of `0.0` meant not reported and become null.
 - **`mz.scan`.** Wrap an `int32` in a one-element list.
 
-A migration cannot recover what the old file left out: fixed modifications missing from a MaxQuant peptidoform, the columns added since, or a `.h5mu`, which is built again from the views. On a DIA-NN dataset written by QPX 1.0.2, every `feature_id` and `pg_id` of the migrated files equals those of a new conversion of the same report.
+A migration cannot recover source values the old file left out, such as fixed modifications missing from a MaxQuant peptidoform. `.h5ad` and `.h5mu` files are not migrated; rebuild them from the migrated views. On a DIA-NN dataset written by QPX 1.0.2, every `feature_id` and `pg_id` of the migrated files equals those of a new conversion of the same report.
 
 ## Software Provider
 
@@ -207,8 +207,8 @@ Both fields are free-text strings in the Parquet metadata.
 | 1.1 | 1.1 | Yes | Exact match |
 | 1.1 | 1.0 | No\* | 1.0 core files lack the mandatory identity-ID columns, and 1.0 PG uses scalar `run_file_name`; re-convert the dataset. |
 | 1.0 | 1.1 | No | 1.1 adds mandatory identity-ID columns and replaces PG `run_file_name` with `grouped_runs`; a strict 1.0 reader cannot read it. |
-| 1.3 | 1.2 | Yes\* | Same columns; identities of rewritten peptidoforms differ, so do not merge 1.2 and 1.3 files of one dataset |
-| 1.2 | 1.3 | Yes\* | Same columns; see the 1.3 changelog for value changes |
+| 1.3 | 1.2 | Yes\* | Existing 1.2 columns remain readable; 1.3 adds optional fields and views and changes identity and value conventions. Do not merge 1.2 and 1.3 files of one dataset |
+| 1.2 | 1.3 | Partly | New optional fields may be ignored, but struct-list files require a reader that understands `qpx.struct_lists`; identity and value conventions also differ |
 | 1.2 | 1.1 | Yes | 1.2 only adds views and optional columns |
 | 1.1 | 1.2 | Partly | A 1.1 reader ignores the new views and optional columns, but 1.1 validation reports run, MZ and PSM files that leave out columns 1.1 requires. |
 | 2.0 | 1.0–1.3 | Maybe | Major version change; check migration guide |

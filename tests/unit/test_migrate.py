@@ -6,11 +6,13 @@ import pytest
 from click.testing import CliRunner
 
 from qpx.cli.main import qpx_main
+from qpx.converters.diann.feature_adapter import _FEATURE_IDENTITY_COMPOSITE
 from qpx.core.data.identity import derive_composite_id
 from qpx.transforms.migrate import migrate_dataset
 from qpx.version import QPX_SPEC_VERSION
 from qpx.writers import ProteoformWriter, PsmWriter, SiteWriter
-from tests.conftest import make_psm_record, make_xic_record
+from tests.conftest import make_feature_record, make_psm_record, make_xic_record
+from tests.converters.test_diann_converter import _feature_rows_single_run
 from tests.unit.test_site_proteoform import make_proteoform_record, make_site_record
 
 RUN = "run_01"
@@ -95,8 +97,100 @@ def test_a_feature_takes_the_producers_composite_and_canonical_values(old_datase
     assert row["observed_mz"] is None
     assert row["calculated_mz"] is None
     footer = pq.read_schema(out / "old.feature.parquet").metadata
-    assert footer[b"identity_composite"] == b"peptidoform,charge,run_file_name"
-    assert row["feature_id"] == derive_composite_id(row, ("peptidoform", "charge", "run_file_name"))
+    assert footer[b"identity_composite"] == ",".join(_FEATURE_IDENTITY_COMPOSITE).encode()
+    assert row["is_library_decoy"] is False
+    assert row["feature_id"] == derive_composite_id(row, _FEATURE_IDENTITY_COMPOSITE)
+
+
+def _diann_migration_features(tmp_path):
+    """Current converter output and the caret-bearing peptidoforms older releases wrote."""
+    current = tmp_path / "current"
+    current.mkdir()
+    common = {"Run": RUN, "Protein.Group": PROTEIN, "Precursor.Charge": 2, "Q.Value": 0.001, "Precursor.Quantity": 100.0}
+    inputs = [("PEPTIDEK", "PEPTIDEK", 0), ("^PEPTIDEK", "PEPTIDEK", 1), ("^(UniMod:1)MEPSM(UniMod:35)K", "MEPSMK", 1)]
+    report = [
+        {**common, "Modified.Sequence": modified, "Stripped.Sequence": sequence, "Precursor.Id": f"{modified}2", "Decoy": decoy}
+        for modified, sequence, decoy in inputs
+    ]
+    expected = _feature_rows_single_run(current, report)
+    old_peptidoforms = {
+        ("PEPTIDEK", False): "PEPTIDEK",
+        ("PEPTIDEK", True): "^PEPTIDEK",
+        ("MEPSMK", True): "^[UNIMOD:1]MEPSM[UNIMOD:35]K",
+    }
+    fields = ("sequence", "charge", "run_file_name", "is_decoy", "scan")
+    legacy = [
+        {**{name: row[name] for name in fields}, "peptidoform": old_peptidoforms[row["sequence"], row["is_decoy"]]}
+        for row in expected
+    ]
+    return expected, legacy
+
+
+def _write_legacy_feature_references(folder, feature):
+    """Write PSM, fragment and trace references to one old DIA-NN library decoy."""
+    psm = {**make_psm_record(is_decoy=True), "psm_id": 1, "feature_id": feature["feature_id"]}
+    _write(folder / "old.psm.parquet", [psm])
+    fragment = {
+        "feature_id": feature["feature_id"],
+        "run_file_name": RUN,
+        "peptidoform": "PEPTIDEK",
+        "charge": 2,
+        "fragment_index": 1,
+    }
+    _write(folder / "old.fragment.parquet", [fragment])
+    _write(folder / "old.xic.parquet", [make_xic_record(feature["feature_id"])])
+
+
+@pytest.mark.parametrize("composite", [None, b"peptidoform,charge,run_file_name"], ids=["qpx-1.0.x", "qpx-1.3.0"])
+def test_diann_migration_matches_a_new_conversion(tmp_path, composite):
+    """Both legacy layouts recover the current target and library-decoy identities and links."""
+    expected, legacy = _diann_migration_features(tmp_path)
+    source = tmp_path / "old"
+    source.mkdir()
+    metadata = {b"qpx_version": b"1.0.2" if composite is None else b"1.2"}
+    if composite is not None:
+        metadata[b"identity_composite"] = composite
+        for row in legacy:
+            row["feature_id"] = derive_composite_id(row, tuple(composite.decode().split(",")))
+        _write_legacy_feature_references(source, next(row for row in legacy if row["peptidoform"] == "^PEPTIDEK"))
+    _write(source / "old.feature.parquet", legacy, extra_metadata=metadata)
+    output = tmp_path / "migrated"
+    migrate_dataset(source, output)
+
+    columns = ["feature_id", "peptidoform", "is_decoy", "is_library_decoy"]
+    migrated = pq.read_table(output / "old.feature.parquet", columns=columns).to_pylist()
+    assert migrated == [{name: row[name] for name in columns} for row in expected]
+    footer = pq.read_schema(output / "old.feature.parquet").metadata
+    assert footer[b"identity_composite"] == ",".join(_FEATURE_IDENTITY_COMPOSITE).encode()
+    if composite is not None:
+        library_id = next(row["feature_id"] for row in migrated if row["peptidoform"] == "PEPTIDEK" and row["is_library_decoy"])
+        for view in ("psm", "fragment"):
+            assert pq.read_table(output / f"old.{view}.parquet").column("feature_id").to_pylist() == [library_id]
+        trace = pq.read_table(output / "old.xic.parquet").to_pylist()[0]
+        assert trace["feature_ids"] == [library_id]
+        assert trace["feature_scores"][0]["feature_id"] == library_id
+    repeated = tmp_path / "repeated"
+    migrate_dataset(output, repeated)
+    assert pq.read_table(repeated / "old.feature.parquet", columns=columns).to_pylist() == migrated
+
+
+def test_a_non_diann_feature_keeps_its_declared_composite(tmp_path):
+    """A native OpenMS producer keeps its own declared composite during migration."""
+    source = tmp_path / "old"
+    source.mkdir()
+    composite = ("peptidoform", "charge", "run_file_name", "scan")
+    _write(
+        source / "old.feature.parquet",
+        [make_feature_record()],
+        creator=b"openms",
+        extra_metadata={b"identity_composite": ",".join(composite).encode()},
+    )
+    output = tmp_path / "migrated"
+    migrate_dataset(source, output)
+    table = pq.read_table(output / "old.feature.parquet")
+    assert table.schema.metadata[b"identity_composite"] == ",".join(composite).encode()
+    row = table.to_pylist()[0]
+    assert row["feature_id"] == derive_composite_id(row, composite)
 
 
 def test_labels_of_runs_become_canonical_and_only_views_are_rewritten(old_dataset, tmp_path):

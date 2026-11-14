@@ -12,7 +12,7 @@ import pyarrow.parquet as pq
 
 from qpx.converters.channel_labels import normalize_label
 from qpx.converters.ontology_util import dedupe_ontology_entries, reconcile_ontology_entries
-from qpx.converters.ptm import normalize_peptidoform
+from qpx.converters.ptm import _add_nterm_dash, normalize_peptidoform
 from qpx.core.engine import create_connection
 from qpx.core.struct_lists import file_layouts, restore_table
 from qpx.dataset import Dataset
@@ -30,7 +30,7 @@ _DROPPED_ID_COLUMNS = ("feature_id", "psm_id", "pg_id", "psm_ids", "pg_ids")
 _ID_REFERENCES = {view: columns for view, columns in ID_REFERENCES.items() if view != "feature"}
 # The feature composite each producer declares (docs/spec/identity.md), by footer `creator`.
 _PRODUCER_FEATURE_COMPOSITES = {
-    "diann": ("peptidoform", "charge", "run_file_name"),
+    "diann": ("peptidoform", "charge", "run_file_name", "is_decoy", "is_library_decoy"),
     "spectronaut": ("peptidoform", "charge", "run_file_name"),
     "cdap": ("peptidoform", "charge", "run_file_name"),
     "maxquant": ("peptidoform", "charge", "run_file_name", "rt_start", "rt_stop", "scan"),
@@ -97,6 +97,16 @@ def _identity_row(record: dict) -> dict:
     return row
 
 
+def _diann_feature_row(record: dict) -> dict:
+    """Recover the library-decoy prefix separately from the report's is_decoy flag."""
+    peptidoform = record["peptidoform"]
+    library_prefix = peptidoform.startswith("^")
+    row = {**record, "is_library_decoy": record.get("is_library_decoy") or library_prefix}
+    if library_prefix:
+        row["peptidoform"] = _add_nterm_dash(peptidoform.removeprefix("^"))
+    return _identity_row(row)
+
+
 def _flat_pg_rows(record: dict) -> list[dict]:
     """One pg row per label of a pre-1.1 row, keyed by a one-run grouped_runs."""
     row = {key: value for key, value in record.items() if key not in _DROPPED_ID_COLUMNS}
@@ -149,6 +159,14 @@ _ROW_MIGRATIONS = {
 }
 
 
+def _migrated_pairs(view: str, creator: bytes | None, records: list[dict]) -> list[tuple[dict, dict]]:
+    """Keep each source row beside its migrated rows, including producer-specific identities."""
+    if view == "feature" and creator == b"diann":
+        return [(record, _diann_feature_row(record)) for record in records]
+    migrate_row = _ROW_MIGRATIONS.get(view, lambda record: [record])
+    return [(record, row) for record in records for row in migrate_row(record)]
+
+
 def _writer_options(view: str, footer: dict[bytes, bytes]) -> dict:
     creator = footer.get(b"creator", b"qpx").decode()
     options = {"creator": creator}
@@ -157,6 +175,9 @@ def _writer_options(view: str, footer: dict[bytes, bytes]) -> dict:
     if view == "feature":
         declared = footer.get(b"identity_composite")
         composite = tuple(declared.decode().split(",")) if declared else _PRODUCER_FEATURE_COMPOSITES.get(creator)
+        # Files written before the decoy flags joined the DIA-NN composite declare its first three fields.
+        if creator == "diann":
+            composite = _PRODUCER_FEATURE_COMPOSITES[creator]
         if composite is not None:
             options["identity_composite"] = composite
     return options
@@ -208,7 +229,6 @@ def _migrate_view(view: str, source: Path, target: Path, ids: dict[str, dict[int
     if view == "ontology":
         return _migrate_ontology(source, target)
     writer_class, _ = Dataset.writer_for(view)
-    migrate_row = _ROW_MIGRATIONS.get(view, lambda record: [record])
     footer = _footer(source)
     keep_ids = view == "psm" and footer.get(b"creator", b"").decode() in _PRODUCER_PSM_IDS
     references = {column: ids.get(referenced, {}) for column, referenced in _ID_REFERENCES.get(view, {}).items()}
@@ -219,7 +239,7 @@ def _migrate_view(view: str, source: Path, target: Path, ids: dict[str, dict[int
         if kept := _kept_footer(footer):
             writer.add_footer_metadata(kept)
         for records in _batches(source):
-            pairs = [(record, row) for record in records for row in migrate_row(record)]
+            pairs = _migrated_pairs(view, footer.get(b"creator"), records)
             _follow_ids(pairs, references, keep_ids)
             if track:
                 old_ids.extend(record.get(ORDINAL_IDS[view]) for record, _ in pairs)
@@ -259,8 +279,10 @@ def migrate_dataset(source: Path, output: Path) -> dict[str, int]:
     again, except for mzIdentML psm_id values that cannot be reproduced from the
     stored columns. The columns that hold ids, such as `psm.feature_id` and
     `site.pg_id`, follow them, and labels and peptidoforms take their canonical
-    spelling. A fixed modification the old file left out cannot be recovered:
-    re-convert from the source files to get one.
+    spelling. DIA-NN feature ids use the current composite and library-decoy
+    flags, with the old caret prefix removed from their peptidoforms. A fixed
+    modification the old file left out cannot be recovered: re-convert from the
+    source files to get one.
     """
     source, output = Path(source), Path(output)
     output.mkdir(parents=True, exist_ok=False)

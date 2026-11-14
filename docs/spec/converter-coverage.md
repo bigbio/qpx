@@ -13,10 +13,10 @@ This page lists which QPX data views each converter produces and explains the so
 | **Spectronaut** | No | Yes | Yes | No | If SDRF | If SDRF | Yes | Yes | Yes | No |
 | **OpenMS native QPX** | Yes | Yes | Yes | No | Yes | Yes | Yes | Yes | Yes | No |
 | **OpenMS consensusXML** | Yes | Yes | Yes | No | If SDRF | If SDRF | Yes | If terms | Yes | No |
-| **CDAP** | Yes | Yes | Yes | No | If PDC | If PDC | Yes | Yes | Yes | No |
-| **mzIdentML** | Yes | No | If in file | Yes | If SDRF | If SDRF | Yes | Yes | Yes | No |
+| **CDAP** | Yes | Yes | Yes | No | No (direct CLI) | No (direct CLI) | Yes | Yes | Yes | No |
+| **mzIdentML** | Yes | No | If in file | Yes | No | No | Yes | Yes | Yes | No |
 | **QuantMS MSstats** | No | Yes | No | No | Yes | Yes | Yes | Yes | Yes | No |
-| **SDRF** | No | No | No | No | Yes | Yes | No | Optional | No | No |
+| **SDRF** | No | No | No | No | Yes | Yes | No | No | No | No |
 
 - **Yes** — the converter produces this view.
 - **No** — the converter does not produce this view (e.g. DIA-NN has no PSM view; mzIdentML has no Feature).
@@ -25,7 +25,7 @@ This page lists which QPX data views each converter produces and explains the so
 - **If terms** — the view is produced when the converter discovers resolvable ontology entries.
 - **If in file** — the view is produced only when the input contains the source section (mzIdentML: a `ProteinDetectionList`).
 - **If MS2 info** — the view is produced only when `--mzml-info-folder` contains `*_ms2_info.parquet` files (quantms-utils mzML statistics run with `--ms2_file`) and the generated feature view can be read. It holds the MS2 spectra matched to features; if no spectrum matches, no file is written.
-- **If PDC** — CPTAC/PDC studies ship no SDRF, and CDAP `.psm` files carry no sample metadata. When run through `qpxc pdc2qpx` (default), the sample/run views are built from PDC GraphQL metadata, which also recovers the TMT/iTRAQ channel → biological-sample mapping. Disable with `--no-metadata`.
+- **CDAP sample/run** — `qpxc convert cdap` does not write these views; its `--sdrf-file` only defines quantification units. `qpxc pdc2qpx` builds them from PDC GraphQL metadata by default, including the TMT/iTRAQ channel → biological-sample mapping. Disable with `--no-metadata`.
 
 > The `mz` (full-spectra) view is produced by the standalone `qpxc convert mz` command, or automatically by `qpxc pdc2qpx --include-spectra`. Of the per-tool converters above, only DIA-NN emits it, and only with the feature-matched MS2 spectra (see **If MS2 info**).
 
@@ -185,13 +185,13 @@ mzIdentML produces no feature view.
 | Field | MaxQuant | FragPipe | Spectronaut | CDAP | QuantMS MSstats |
 | ------- | ---------- | ---------- | ------------- | ------ | ----------------- |
 | `posterior_error_probability` | `PEP`. Null for match-between-runs rows (`Type` `MULTI-MATCH`), which have no MS/MS. | 1 − `PeptideProphet Probability` (`Probability` in FragPipe 22) of the matching PSM (see below). | `EG.PEP`, when exported. | Not provided: `.psm` files report MS-GF+ scores and q-values, not a PEP. | Not provided: the MSstats input has no identification scores. |
-| `peptide_qvalue` | Not provided: `evidence.txt` reports a PEP, not a peptide q-value. | Not implemented. | Not implemented: the precursor-level `EG.Qvalue` is stored as `qvalue` in `additional_scores`. | Not implemented: the best `PepQvalue` is stored as `peptide_level_qvalue` in `additional_scores`. | Not provided. |
+| `peptide_qvalue` | Not provided: `evidence.txt` reports a PEP, not a peptide q-value. | Not implemented. | No peptide-level q-value: `EG.Qvalue` fills `precursor_qvalue` and remains under the alias `qvalue` in `additional_scores`. | Filled from the best `PepQvalue` via the `additional_scores` alias `peptide_level_qvalue`, which remains in the list. | Not provided. |
 | `calculated_mz` / `observed_mz` | Filled. | `calculated_mz`: `Calculated M/Z` of the matching PSM, else `M/Z`, which is also calculated. `observed_mz`: `Calibrated Observed M/Z` of the matching PSM; null without one. | `calculated_mz` from the peptidoform; `observed_mz` from `FG.PrecMzCalibrated`, when exported. `FG.PrecMz` is theoretical and is not read. | Filled. | `calculated_mz`: not implemented, although it can be calculated from the peptidoform and charge. `observed_mz`: not provided. |
 | `mass_error_ppm` | From the experimental and calculated m/z; null for `Type` `MSMS` rows, where MaxQuant reports no mass error. | From the matching PSM. | Not implemented: the report's mass-accuracy columns (`F.*MassAccuracy (PPM)`) are fragment-level. | Filled. | Not provided. |
 | `additional_scores` | `Score` and `Delta score`. Null for match-between-runs rows. | Not implemented. | Spectronaut q-values and C-scores, when exported. | Filled. | Not provided. |
 | `predicted_rt` | Not provided. | Not implemented. | `EG.RTPredicted`, when exported. | Not provided. | Not provided. |
 | `quantification_unit_id` | Not implemented. | The FragPipe experiment. | Not implemented. | Not implemented. | Not implemented. |
-| `cv_params` | Not implemented. | Not implemented. | `EG.iRTPredicted`, `EG.iRTEmpirical` and `EG.IsImputed`, when exported. | Experiment type and PSM count. | Not implemented. |
+| `cv_params` | Not implemented. | Not implemented. | `EG.iRTPredicted` and `EG.iRTEmpirical`, when exported. `EG.IsImputed` fills `identification_type` and `imputed_labels` instead. | Experiment type and PSM count. | Not implemented. |
 | `scan` | `MS/MS scan number`. Empty for match-between-runs rows. | From the matching PSM. | Not implemented: always empty. | Filled. | The `scan=` number in `Reference`, which only isobaric inputs carry. Empty for label-free inputs, whose `Reference` is a file name, and DIA-NN inputs, which have no `Reference`. |
 | `rt` | Filled. | Not implemented. | Filled. | Filled. | `RetentionTime`, which only isobaric inputs carry. Not provided by label-free and DIA-NN inputs. |
 | `ion_mobility` | `1/K0`, when present. | From the matching PSM's `Ion Mobility`, when present. | `FG.ApexIonMobility`, when exported; null when 0. | Not provided. | Not provided. |
@@ -361,7 +361,7 @@ Reporter labels come from the column (`127N` is `TMT127N`), and must match the S
 | OpenMS native QPX | `-out_qpx` Parquet directory; SDRF; optional companion consensusXML |
 | OpenMS consensusXML | consensusXML; optional SDRF |
 | CDAP | CPTAC CDAP `.psm` files in one study directory |
-| mzIdentML | .mzid / .mzid.gz; optional MGF or mzML (file/folder) for spectra; optional SDRF |
+| mzIdentML | .mzid / .mzid.gz; optional MGF file (`--mgf-path`); `--include-spectra` embeds peaks in PSM rows |
 | QuantMS MSstats | QuantMS-generated `*_msstats_in.csv`; required SDRF |
 | SDRF | Single SDRF TSV file |
 

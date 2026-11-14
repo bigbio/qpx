@@ -312,7 +312,7 @@ Fields defined by QPX without standardized ontology terms.
 | `peptide_counts` / `feature_counts` | PG | Count structures for peptides and features |
 | `contaminant` | PG | Contaminant indicator |
 | `pg_positions` | Feature | Peptide positions within each protein |
-| `id_run_file_name` / `id_scan` | Feature | Reference to best PSM for the feature |
+| `id_run_file_name` / `scan` | Feature | Reference to best PSM for the feature |
 | `protein_accessions` | PSM | Protein accessions (optional column) |
 | `charge_array` / `ion_type_array` / `ion_mobility_array` | PSM | Fragment ion annotation arrays |
 | `parent_ion_fraction` | Score | Fraction of target peak intensity in the isolation window |

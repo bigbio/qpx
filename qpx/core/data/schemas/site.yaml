@@ -69,7 +69,7 @@ fields:
     minimum: 0
     maximum: 1
     nullable: true
-    doc: "Probability that the residue carries some modification, from the spectra of the peptides that cover it. Not stoichiometry (the fraction of the protein's copies that are modified), which this view does not report."
+    doc: "Probability that the residue carries some modification, from the spectra of the peptides that cover it. Not stoichiometry (the fraction of the protein's copies that are modified), which the `stoichiometry` field holds."
   evidence_fraction:
     type: float64
     minimum: 0
