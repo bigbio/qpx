@@ -127,7 +127,7 @@ The `convert` command group provides converters for multiple proteomics software
 `--max-memory` limits DuckDB's buffer pool. Above that limit DuckDB spills to `--temp-dir`, so a *lower* limit usually gives a lower peak, while the Python side of the converter comes on top in every case.
 
 | Converter | Options | What sets the peak | If it runs out of memory |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `diann` | `--max-memory` | DuckDB, plus Python columns of about one million report rows at a time. A 10× Parquet report peaked at 3.8 GB by default or with `8GB`, and at 2.4 GB with `2GB` | Lower `--max-memory` and put `--temp-dir` on a large disk. Convert a Parquet report rather than a TSV one |
 | `spectronaut`, `cdap`, `quantms-msstats` | `--max-memory` | DuckDB plus one batch of Python rows | Lower `--max-memory` and put `--temp-dir` on a large disk |
 | `proteome-discoverer` | `--max-memory` | DuckDB holds the PSM export twice, once per view; `Proteins.txt` is read whole in pandas | Lower `--max-memory`, then use a machine with more RAM |
@@ -380,16 +380,16 @@ Output files generated:
 
 The converter auto-detects column names from the Spectronaut report, supporting both standard and custom column naming. Key mapped columns include:
 
-| Spectronaut Column       | QPX Field                  | Notes                              |
-| ------------------------ | -------------------------- | ---------------------------------- |
-| `R.FileName`             | `run_file_name`            | File extensions auto-stripped      |
-| `PEP.StrippedSequence`   | `sequence`                 | Bare amino acid sequence           |
-| `EG.ModifiedSequence`    | `peptidoform`              | Converted to ProForma notation     |
-| `FG.Charge`              | `charge`                   | Precursor charge state             |
-| `FG.Quantity`            | `intensities[0].intensity` | Raw precursor intensity            |
-| `EG.Qvalue`              | `additional_scores`        | Mapped to PSI-MS CV terms          |
-| `PG.ProteinGroups`       | `pg_accessions`            | Semicolon-delimited protein groups |
-| `PG.Quantity`            | PG `intensities`           | Protein group quantity             |
+| Spectronaut Column | QPX Field | Notes |
+| --- | --- | --- |
+| `R.FileName` | `run_file_name` | File extensions auto-stripped |
+| `PEP.StrippedSequence` | `sequence` | Bare amino acid sequence |
+| `EG.ModifiedSequence` | `peptidoform` | Converted to ProForma notation |
+| `FG.Charge` | `charge` | Precursor charge state |
+| `FG.Quantity` | `intensities[0].intensity` | Raw precursor intensity |
+| `EG.Qvalue` | `additional_scores` | Mapped to PSI-MS CV terms |
+| `PG.ProteinGroups` | `pg_accessions` | Semicolon-delimited protein groups |
+| `PG.Quantity` | PG `intensities` | Protein group quantity |
 
 ### Common Issues {#spectronaut-issues}
 
@@ -667,7 +667,7 @@ qpxc convert mzidentml \
 The converter supports multiple native ID formats for scan number extraction:
 
 | Format | Vendor/Source | Example |
-|--------|---------------|---------|
+| --- | --- | --- |
 | `scan=XXX` | Thermo | `controllerType=0 controllerNumber=1 scan=12345` |
 | `cycle=XXX` | Waters/Agilent | `sample=1 period=1 cycle=1055 experiment=4` |
 | `index=XXX` | Generic | `index=500` |

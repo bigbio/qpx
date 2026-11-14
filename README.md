@@ -62,7 +62,7 @@ for `include_decoys=True`, imputation masks and optional expression modalities.
 Local measurements use the LFQ and TMT outputs of [PXD007683](https://www.ebi.ac.uk/pride/archive/projects/PXD007683). The LFQ query comparison uses a gzip mzTab PSM section read with pandas and the corresponding QPX PSM view read with DuckDB. Each query ran in five fresh processes with a warm OS page cache; the table shows medians. Imports, conversion and `relayout` are outside the timed interval.
 
 | LFQ PSM query | gzip mzTab + pandas | QPX + DuckDB | Matching result |
-|---|---:|---:|---|
+| --- | ---: | ---: | --- |
 | Count all PSMs | 2.361 s | 1.71 ms | 542,403 |
 | Count PSMs with `charge = 2` | 2.332 s | 2.53 ms | 382,341 |
 | Read `sequence` and `charge` | 2.320 s | 26.43 ms | 542,403 rows; identical multisets |

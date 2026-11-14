@@ -36,19 +36,19 @@ The figure uses the LFQ and TMT outputs of [PXD007683](https://www.ebi.ac.uk/pri
 
 ## Supported Input Formats
 
-| Software                | PSM              | Feature              | Protein Group            |
-| ----------------------- | ---------------- | -------------------- | ------------------------ |
-| **MaxQuant**            | msms.txt         | evidence.txt         | proteinGroups.txt        |
-| **DIA-NN**              | -                | report.tsv           | pg_matrix.tsv            |
-| **Spectronaut**         | -                | report.tsv           | report.tsv (PG.Quantity) |
-| **FragPipe**            | psm.tsv          | combined_ion.tsv     | combined_protein.tsv     |
-| **Proteome Discoverer** | PSMs.txt         | PSMs.txt             | Proteins.txt         |
-| **OpenMS native QPX**   | psm.parquet      | feature.parquet      | pg.parquet               |
-| **OpenMS consensusXML** | consensusXML     | consensusXML         | consensusXML             |
-| **CPTAC CDAP**          | .psm             | .psm reporter ions   | feature-derived          |
-| **mzIdentML**           | .mzid / .mzid.gz | -                    | -                        |
-| **QuantMS MSstats**     | -                | `*_msstats_in.csv`   | -                        |
-| **SDRF**                | -                | -                    | - (sample + run)         |
+| Software | PSM | Feature | Protein Group |
+| --- | --- | --- | --- |
+| **MaxQuant** | msms.txt | evidence.txt | proteinGroups.txt |
+| **DIA-NN** | - | report.tsv | pg_matrix.tsv |
+| **Spectronaut** | - | report.tsv | report.tsv (PG.Quantity) |
+| **FragPipe** | psm.tsv | combined_ion.tsv | combined_protein.tsv |
+| **Proteome Discoverer** | PSMs.txt | PSMs.txt | Proteins.txt |
+| **OpenMS native QPX** | psm.parquet | feature.parquet | pg.parquet |
+| **OpenMS consensusXML** | consensusXML | consensusXML | consensusXML |
+| **CPTAC CDAP** | .psm | .psm reporter ions | feature-derived |
+| **mzIdentML** | .mzid / .mzid.gz | - | - |
+| **QuantMS MSstats** | - | `*_msstats_in.csv` | - |
+| **SDRF** | - | - | - (sample + run) |
 
 All conversions produce standardized Parquet and AnnData files following the [QPX specification](spec/index.md). `qpxc convert mz` reads spectra from mzML files into the `mz` view.
 
@@ -56,14 +56,14 @@ All conversions produce standardized Parquet and AnnData files following the [QP
 
 ## Documentation
 
-| Section                                             | Description                                     |
-| --------------------------------------------------- | ----------------------------------------------- |
-| **[Quick Start](quickstart.md)**                    | Installation and basic usage                    |
-| **[Format Specification](spec/index.md)**           | Data format schemas and specifications          |
-| **[User Guide](guide/index.md)**                    | CLI reference and command documentation         |
-| **[Examples & Tutorials](examples/index.md)**       | Usage examples and integrations                 |
-| **[Troubleshooting](troubleshooting.md)**           | Common issues and solutions                     |
-| **[Community & Support](community.md)**             | Get help, contribute, license & acknowledgments |
+| Section | Description |
+| --- | --- |
+| **[Quick Start](quickstart.md)** | Installation and basic usage |
+| **[Format Specification](spec/index.md)** | Data format schemas and specifications |
+| **[User Guide](guide/index.md)** | CLI reference and command documentation |
+| **[Examples & Tutorials](examples/index.md)** | Usage examples and integrations |
+| **[Troubleshooting](troubleshooting.md)** | Common issues and solutions |
+| **[Community & Support](community.md)** | Get help, contribute, license & acknowledgments |
 
 ---
 

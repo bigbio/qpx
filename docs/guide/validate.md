@@ -130,7 +130,7 @@ Each check reports an error, a warning, or a *strict* issue: a warning from
 The validator performs the following checks on each structure:
 
 | Check | Severity | Description |
-|-------|----------|-------------|
+| --- | --- | --- |
 | **Readable** | error | The structure's files can be read; a file in an incompatible older layout, such as a QPX 1.0 `pg.parquet`, fails validation with the reason instead of being left out |
 | **Column presence** | error | All required columns defined in the canonical schema must exist |
 | **Type matching** | error | Column Arrow types must match the schema definition |
@@ -146,7 +146,7 @@ The validator performs the following checks on each structure:
 When a dataset holds several views, it also checks the references between them:
 
 | Check | Severity | Description |
-|-------|----------|-------------|
+| --- | --- | --- |
 | **Run references** | error | Every `run_file_name` of feature, psm and mz, and every member of `pg.grouped_runs`, is a run in `run.parquet` |
 | **Label → sample** | error | Each `(run, label)` of `feature.intensities` and each `(grouped_runs, label)` of pg resolves to exactly one `run.samples` entry, and a feature row lists each label once. A feature label that matches no sample of a single-sample run is only a warning, because the query helpers fall back to that sample |
 | **PSM label** | strict | `psm.label` is one of the `identified_labels` of the feature it links to |
@@ -160,7 +160,7 @@ A cross-view check whose query fails is reported as skipped, with the reason (I/
 `--semantic` (`validate(semantic=True)` in Python) also checks what the PSM and feature values mean. It parses each distinct peptidoform, so it takes longer on large views:
 
 | Check | Severity | Description |
-|-------|----------|-------------|
+| --- | --- | --- |
 | **Peptidoform syntax** | strict | The peptidoform is [canonical ProForma](../spec/peptidoform.md#canonical-form) |
 | **Peptidoform sequence** | strict | The peptidoform without its modifications is `sequence` |
 | **Modification accessions** | strict | Every tag is a known `UNIMOD:n` accession, a signed mass shift or a name (other accession namespaces are not canonical) |
@@ -175,7 +175,7 @@ Cross-linked PSMs (`cross_links` set) carry the partner peptide's mass and skip 
 When a dataset has a run view, rows are also resolved through it. A row that names no run, or a label that names no single sample, drops out of every per-sample view or is counted twice, so these findings are errors with or without strict validation:
 
 | Check | View | Description |
-| ----- | ---- | ----------- |
+| --- | --- | --- |
 | `dangling_grouped_run` | pg | Every `grouped_runs` element must be a `run.run_file_name` |
 | `ambiguous_grouped_run_sample` | pg | Each `label` must match the channel of exactly one sample across the row's grouped runs; reported once per distinct (grouped runs, label) unit |
 | `dangling_run_file_name` | feature, psm, mz | `run_file_name` must be a `run.run_file_name` (skipped for an mz view without the optional column) |
@@ -202,7 +202,7 @@ with qpx.open_dataset("./PXD014414") as ds:
 `validate()` takes:
 
 | Argument | Default | Meaning |
-|----------|---------|---------|
+| --- | --- | --- |
 | `structures` | all | Structure names to validate; a requested structure the dataset does not have, or could not read, is an error |
 | `strict` | `False` | Report the *strict* issues as errors, as `qpxc validate` does |
 | `semantic` | `False` | Also run the [semantic checks](#semantic-checks) |
@@ -212,6 +212,6 @@ with qpx.open_dataset("./PXD014414") as ds:
 ## Exit Codes
 
 | Code | Meaning |
-|------|---------|
+| --- | --- |
 | `0` | All validated structures are valid |
 | `1` | One or more structures have validation errors |

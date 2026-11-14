@@ -236,7 +236,7 @@ qpxc transform site --dataset ./qpx_output --modification Phospho --in-place
 ```
 
 | Parameter | Description | Required |
-|-----------|-------------|----------|
+| --- | --- | --- |
 | `--dataset` | Dataset directory | Yes |
 | `--modification` | Unimod name or accession; repeat for several | Yes |
 | `--in-place` / `--output-folder` | Where to write: exactly one | Yes |
@@ -340,7 +340,7 @@ print(generate_params_table(transform_quantify_cmd))
 ### Supported Methods
 
 | Method | Description | Extra Requirements |
-|--------|-------------|-------------------|
+| --- | --- | --- |
 | `directlfq` | DirectLFQ intensity traces (default) | `pip install "qpx[quantify]"` |
 | `maxlfq` | MaxLFQ delayed normalization | `pip install "qpx[quantify]"` |
 | `topn` | Average of N most intense peptides | `pip install "qpx[quantify]"` |

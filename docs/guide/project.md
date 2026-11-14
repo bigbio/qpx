@@ -3,7 +3,7 @@
 QPX keeps project metadata in tables next to the data views. Examples run on a converted dataset in `./output/`.
 
 | Table | Holds | Source |
-|---|---|---|
+| --- | --- | --- |
 | `dataset` | Project accession, title, software, file checksums | Converter options, PRIDE |
 | `sample` | Organism, tissue, disease and other properties, per sample | SDRF |
 | `run` | Instrument, fraction, enzyme, the samples of each run | SDRF |
