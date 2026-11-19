@@ -18,6 +18,7 @@ from qpx.converters.fragpipe.constants import (
     to_modifications,
     to_proforma,
     unassigned_mass_shift,
+    with_sequence_mods,
 )
 from qpx.converters.fragpipe.isobaric import channel_intensities, ms1_additional_intensity, require_channel_columns
 from qpx.converters.fragpipe.pg_adapter import normalize_run_name, require_label_free, resolve_experiment_runs
@@ -494,10 +495,14 @@ class FragPipeFeatureAdapter(BaseConverter):
         # Sequence
         sequence = str(row.get(r.get("sequence", "Peptide Sequence"), ""))
 
-        # Peptidoform -- build ProForma from sequence + Assigned Modifications
+        # Peptidoform -- build ProForma from sequence + Assigned Modifications,
+        # adding those only Modified Sequence gives
         mods_col = r.get("modifications", "Assigned Modifications")
         assigned_mods_raw = row.get(mods_col, "")
         assigned_mods_str = str(assigned_mods_raw) if pd.notna(assigned_mods_raw) and assigned_mods_raw else ""
+        modified_sequence = row.get(r.get("modified_sequence", "Modified Sequence"))
+        if isinstance(modified_sequence, str):
+            assigned_mods_str = with_sequence_mods(assigned_mods_str, modified_sequence)
         peptidoform = to_proforma(assigned_mods_str, sequence)
 
         # Protein group: the lead protein's group members; every protein the

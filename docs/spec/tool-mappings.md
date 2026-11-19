@@ -39,7 +39,7 @@ The Feature view captures quantified peptide features with intensity data. Featu
 | QPX Field | MaxQuant | DIA-NN | FragPipe | QuantMS MSstats |
 | --- | --- | --- | --- | --- |
 | `sequence` | Sequence | Stripped.Sequence | Peptide | PeptideSequence (unmodified) |
-| `peptidoform` | Modified sequence, plus the fixed modifications MaxQuant leaves out (SDRF, else parameters.txt or summary.txt; the isobaric label from the SDRF channel labels) | Modified.Sequence | Modified Peptide | PeptideSequence (ProForma-normalized) |
+| `peptidoform` | Modified sequence, plus the fixed modifications MaxQuant leaves out (SDRF, else parameters.txt or summary.txt; the isobaric label from the SDRF channel labels) | Modified.Sequence | Assigned Modifications, plus the delta masses of Modified Sequence at sites they leave out | PeptideSequence (ProForma-normalized) |
 | `charge` | Charge | Precursor.Charge | --- | Charge / PrecursorCharge |
 | `is_decoy` | Reverse | Decoy (`--report-decoys`), else accession prefix | --- | ProteinName prefix |
 | `is_library_decoy` | --- | `^` prefix of Modified.Sequence (2.x) | --- | --- |

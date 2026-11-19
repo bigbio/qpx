@@ -227,6 +227,12 @@ first raw run of the experiment (from `experiment_annotation.tsv`, else the SDRF
 protein, and the pepmap view lists those proteins for each converted
 peptidoform.
 
+A FragPipe feature's peptidoform is built from `Assigned Modifications`, plus
+the delta masses of `Modified Sequence` at sites they leave out: IonQuant can
+write an ion of `combined_ion.tsv` without some of its modifications in
+Assigned Modifications. Philosopher's `ion.tsv` writes integer residue masses
+in `Modified Sequence`, which are not read, and leaves out fixed modifications.
+
 FragPipe features take PEP, mass error, scan, ion mobility and missed cleavages
 from the best `psm.tsv` PSM (lowest PEP, then lowest scan) with the same
 peptidoform and charge in the experiment's raw file. These fields are null
