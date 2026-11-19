@@ -516,6 +516,10 @@ Depending on `--structures` parameter:
 
 - **Solution**: Each `Reporter intensity N` column is read as the channel at that position of the TMT or iTRAQ plex (TMT6 to TMTpro 18, iTRAQ 4 and 8; partial plexes too) that holds all SDRF `comment[label]` values, so labels from different plexes cannot be mapped. When MaxQuant was set up with only the SDRF's channels, so that the table has one reporter column per label and no plex has that many channels (TMT128N to TMT131C of TMT11 in eight columns), the columns are those channels in plex order. Every conversion given `--sdrf-file`, a PSM-only one too, resolves the plex first and stops before writing any file.
 
+**Issue**: `proteinGroups.txt has no per-experiment intensity columns`
+
+- **Solution**: MaxQuant set up without experiment names writes only the total columns (`Intensity`, `Reporter intensity N`), the quantities of one experiment of all its raw files. Give `--evidence-file`: its raw files are the `grouped_runs` of the protein groups
+
 ### Best Practices {#maxquant-best-practices}
 
 - Use `--structures` to control which output files are generated

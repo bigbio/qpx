@@ -205,6 +205,38 @@ def test_pg_spectral_count_per_experiment(tmp_path):
     assert counts == {("run1",): {"spectral_count": 7.0}, ("run2",): {"spectral_count": 0.0}}
 
 
+@pytest.mark.parametrize("experiment", ["Mix1", ""])
+def test_pg_reads_the_reporter_columns_of_maxquant_set_up_without_experiment_names(tmp_path, experiment):
+    """Without experiment names, the one experiment has unsuffixed columns and evidence.txt no Experiment column."""
+    from qpx.converters.maxquant.pg_adapter import MaxQuantPgAdapter
+
+    labels = ["TMT126", "TMT127", "TMT128", "TMT129", "TMT130", "TMT131"]
+    columns = [f"Reporter intensity {i}" for i in range(6)] + ["MS/MS count"]
+    values = [str(100 * (i + 1)) for i in range(6)] + ["3"]
+    evidence = tmp_path / "evidence.txt"
+    if experiment:
+        # Named experiments have their own columns; the unsuffixed ones sum over all experiments.
+        header, row = columns + [f"{column} {experiment}" for column in columns], ["999"] * len(columns) + values
+        evidence.write_text(f"Raw file\tExperiment\nrun1\t{experiment}\nrun2\t{experiment}\n")
+    else:
+        header, row = columns, values
+        evidence.write_text("Raw file\nrun1\nrun2\n")
+    protein_groups = tmp_path / "proteinGroups.txt"
+    protein_groups.write_text("Protein IDs\tMajority protein IDs\t" + "\t".join(header) + "\nP1\tP1\t" + "\t".join(row) + "\n")
+    sdrf = tmp_path / "sdrf.tsv"
+    sdrf.write_text(
+        "source name\tcomment[data file]\tcomment[label]\n"
+        + "".join(f"S{i}\t{run}.raw\t{label}\n" for run in ("run1", "run2") for i, label in enumerate(labels))
+    )
+    output = tmp_path / "pg.parquet"
+    with MaxQuantPgAdapter() as adapter:
+        adapter.convert(str(protein_groups), str(output), sdrf_path=str(sdrf), evidence_path=str(evidence))
+
+    rows = pq.read_table(output).to_pylist()
+    assert {r["label"]: r["intensity"] for r in rows} == {label: 100.0 * (i + 1) for i, label in enumerate(labels)}
+    assert all(r["grouped_runs"] == ["run1", "run2"] for r in rows)
+
+
 def test_feature_spectral_count_from_evidence(tmp_path):
     """Evidence ``MS/MS count`` is the feature's ``spectral_count``, also without an MS1 quantity."""
     from qpx.converters.maxquant.feature_adapter import MaxQuantFeatureAdapter
