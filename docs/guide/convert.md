@@ -514,7 +514,7 @@ Depending on `--structures` parameter:
 
 **Issue**: `The SDRF TMT labels [...] match no TMT plex`
 
-- **Solution**: Each `Reporter intensity N` column is read as the channel at that position of the TMT or iTRAQ plex (TMT6 to TMTpro 18, iTRAQ 4 and 8; partial plexes too) that holds all SDRF `comment[label]` values, so labels from different plexes cannot be mapped. Every conversion given `--sdrf-file`, a PSM-only one too, resolves the plex first and stops before writing any file.
+- **Solution**: Each `Reporter intensity N` column is read as the channel at that position of the TMT or iTRAQ plex (TMT6 to TMTpro 18, iTRAQ 4 and 8; partial plexes too) that holds all SDRF `comment[label]` values, so labels from different plexes cannot be mapped. When MaxQuant was set up with only the SDRF's channels, so that the table has one reporter column per label and no plex has that many channels (TMT128N to TMT131C of TMT11 in eight columns), the columns are those channels in plex order. Every conversion given `--sdrf-file`, a PSM-only one too, resolves the plex first and stops before writing any file.
 
 ### Best Practices {#maxquant-best-practices}
 

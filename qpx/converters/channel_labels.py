@@ -268,6 +268,9 @@ def plex_for_columns(family: str, labels: set[str], n_columns: int) -> dict[int,
 
     A label's position depends on the plex: ``ITRAQ114`` is channel 1 of iTRAQ4
     and channel 2 of iTRAQ8, so four labels in an 8-column table read 8-plex columns.
+    A table with one column per label and no plex of that size was set up with
+    these channels only, which take its columns in plex order: TMT128N to TMT131C
+    of TMT11 in eight columns read columns 1 to 8.
     """
     plex = resolve_channel_labels(family, labels)
     if not plex or not n_columns or len(plex) == n_columns:
@@ -275,6 +278,8 @@ def plex_for_columns(family: str, labels: set[str], n_columns: int) -> dict[int,
     for name, channels in CHANNEL_LABELS.items():
         if name.startswith(_FAMILY_PREFIX[family]) and len(channels) == n_columns and labels <= set(channels.values()):
             return channels
+    if len(labels) == n_columns:
+        return dict(enumerate((label for _, label in sorted(plex.items()) if label in labels), start=1))
     logger.warning(
         "The table has %d reporter columns, but the SDRF labels %s are channels of a %d-channel %s plex; "
         "each is read from the column of its position in that plex, so check the labels if the run used another plex",

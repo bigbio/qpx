@@ -1,7 +1,8 @@
 """MaxQuant reporter columns -> SDRF channels, checked against a known channel -> sample truth.
 
-MaxQuant numbers ``Reporter intensity N`` by the channel's position in the plex
-(mass order). Each synthetic input gives the channel at position ``p``
+MaxQuant numbers ``Reporter intensity N`` by the channel's position among the
+channels it was set up with, in plex (mass) order: the whole plex, or only the
+SDRF's channels. Each synthetic input gives the channel at position ``p``
 (1-based) the intensity ``p * 1000`` and lists the SDRF labels shuffled, so a
 label must come back with the intensity of its own position in its plex.
 """
@@ -13,12 +14,13 @@ import pytest
 
 TMT6 = ["TMT126", "TMT127", "TMT128", "TMT129", "TMT130", "TMT131"]
 TMT10 = ["TMT126", "TMT127N", "TMT127C", "TMT128N", "TMT128C", "TMT129N", "TMT129C", "TMT130N", "TMT130C", "TMT131"]
-TMT16 = TMT10[:9] + ["TMT131N", "TMT131C", "TMT132N", "TMT132C", "TMT133N", "TMT133C", "TMT134N"]
+TMT11 = TMT10[:9] + ["TMT131N", "TMT131C"]
+TMT16 = TMT11 + ["TMT132N", "TMT132C", "TMT133N", "TMT133C", "TMT134N"]
 TMT18 = TMT16 + ["TMT134C", "TMT135N"]
 ITRAQ4 = ["ITRAQ114", "ITRAQ115", "ITRAQ116", "ITRAQ117"]
 ITRAQ8 = ["ITRAQ113", "ITRAQ114", "ITRAQ115", "ITRAQ116", "ITRAQ117", "ITRAQ118", "ITRAQ119", "ITRAQ121"]
 
-# (case id, plex in position order, SDRF labels used, first MaxQuant column index)
+# (case id, channels MaxQuant was set up with in position order, SDRF labels used, first MaxQuant column index)
 CASES = [
     ("tmt6", TMT6, TMT6, 1),
     ("tmt10", TMT10, TMT10, 0),
@@ -28,6 +30,8 @@ CASES = [
     ("itraq8", ITRAQ8, ITRAQ8, 1),
     # iTRAQ114-117 are channels 2-5 of an 8-plex: the eight reporter columns decide.
     ("itraq8_partial", ITRAQ8, ITRAQ4, 1),
+    # Eight TMT11 channels in eight columns, as in PXD014145: no plex has eight channels.
+    ("tmt11_set_up_partial", TMT11[3:], TMT11[3:], 0),
 ]
 
 _EVIDENCE_COLUMNS = [

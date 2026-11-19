@@ -241,7 +241,8 @@ class MaxQuantBaseAdapter(BaseConverter):
         family = {"TMT": "TMT", "ITRAQ": "iTRAQ"}.get(re.sub(r"\d+", "", experiment_type))
         if family:
             labels = set().union(*run_labels.values())
-            # MaxQuant numbers reporter columns by plex position, N-isomer before C-isomer.
+            # MaxQuant numbers reporter columns by the plex order of the channels it was set up with,
+            # N-isomer before C-isomer.
             n_columns = len({match.group(1) for column in columns if (match := _REPORTER_COLUMN.fullmatch(column))})
             index = {label: position - 1 for position, label in plex_for_columns(family, labels, n_columns).items()}
             channels = sorted(((label, index[label]) for label in labels), key=lambda channel: channel[1])
