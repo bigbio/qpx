@@ -11,7 +11,7 @@ from qpx.core.data.identity import derive_composite_id
 from qpx.transforms.migrate import migrate_dataset
 from qpx.version import QPX_SPEC_VERSION
 from qpx.writers import ProteoformWriter, PsmWriter, SiteWriter
-from tests.conftest import make_feature_record, make_psm_record, make_xic_record
+from tests.conftest import make_feature_record, make_pg_record, make_psm_record, make_sample_record, make_xic_record
 from tests.converters.test_diann_converter import _feature_rows_single_run
 from tests.unit.test_site_proteoform import make_proteoform_record, make_site_record
 
@@ -354,3 +354,254 @@ def test_the_command_refuses_an_existing_folder(old_dataset, tmp_path):
     result = CliRunner().invoke(qpx_main, ["migrate", "--dataset-path", str(old_dataset), "--output-folder", str(out)])
     assert result.exit_code != 0
     assert "exists" in result.output
+
+
+def _lfq_feature(**values):
+    return {**make_feature_record(intensities=[{"label": "LFQ", "intensity": 10.0}]), **values}
+
+
+def _composite(path):
+    return tuple(pq.read_schema(path).metadata[b"identity_composite"].decode().split(","))
+
+
+def test_accessions_and_modifications_take_the_converters_spelling(tmp_path):
+    """UniProt headers become bare accessions before ids are derived; a modification gets its title and accession,
+    and the sequence is read from the peptidoform."""
+    source = tmp_path / "old"
+    source.mkdir()
+    header = f"sp|{PROTEIN}|TEST_HUMAN"
+    modifications = [
+        {"name": "Oxidation", "accession": None, "positions": [{"position": 5, "amino_acid": "M", "scores": None}]},
+        {"name": "UNIMOD:4", "accession": "UNIMOD:4", "positions": [{"position": 7, "amino_acid": "C", "scores": None}]},
+    ]
+    feature = _lfq_feature(
+        sequence="PEPTMOXIDATIONICCARBAMIDOMETHYLEK",
+        missed_cleavages=1,
+        peptidoform="PEPTM[Oxidation]IC[Carbamidomethyl]EK",
+        modifications=modifications,
+        anchor_protein=header,
+        pg_accessions=[{"accession": header, "start": None, "end": None}],
+    )
+    _write(source / "old.feature.parquet", [feature], creator=b"quantms-msstats")
+    pg = make_pg_record(anchor_protein=header, pg_accessions=[header, "REV__sp|Q00402|NUM1_YEAST"])
+    _write(source / "old.pg.parquet", [pg], creator=b"quantms")
+    out = tmp_path / "new"
+    migrate_dataset(source, out)
+
+    row = pq.read_table(out / "old.feature.parquet").to_pylist()[0]
+    assert row["anchor_protein"] == PROTEIN
+    assert (row["sequence"], row["peptidoform"], row["missed_cleavages"]) == ("PEPTMICEK", "PEPTM[UNIMOD:35]IC[UNIMOD:4]EK", None)
+    assert [entry["accession"] for entry in row["pg_accessions"]] == [PROTEIN]
+    assert [(entry["name"], entry["accession"]) for entry in row["modifications"]] == [
+        ("Oxidation", "UNIMOD:35"),
+        ("Carbamidomethyl", "UNIMOD:4"),
+    ]
+    group = pq.read_table(out / "old.pg.parquet").to_pylist()[0]
+    assert (group["anchor_protein"], group["pg_accessions"]) == (PROTEIN, [PROTEIN, "REV__Q00402"])
+    assert group["pg_names"] == ["TEST_HUMAN", "NUM1_YEAST"]
+    assert group["pg_id"] == derive_composite_id(group, _composite(out / "old.pg.parquet"))
+
+
+@pytest.mark.parametrize(("spec", "measured"), [(b"1.2", False), (b"1.3", True)])
+def test_a_diann_feature_takes_the_current_intensity_names_and_measured_mz(tmp_path, spec, measured):
+    """Before 1.3 a DIA-NN observed_mz was the theoretical Precursor.Mz; 1.3 renamed two intensities."""
+    source = tmp_path / "old"
+    source.mkdir()
+    names = [("maxlfq", 3.0), ("precursor_normalised", 2.0), ("ms1_area", 1.0)]
+    feature = _lfq_feature(
+        mass_error_ppm=0.01,
+        additional_intensities=[
+            {"label": "LFQ", "intensities": [{"intensity_name": name, "intensity_value": value} for name, value in names]}
+        ],
+    )
+    _write(source / "old.feature.parquet", [feature], extra_metadata={b"qpx_version": spec})
+    out = tmp_path / "new"
+    migrate_dataset(source, out)
+
+    row = pq.read_table(out / "old.feature.parquet").to_pylist()[0]
+    entries = row["additional_intensities"][0]["intensities"]
+    assert [entry["intensity_name"] for entry in entries] == ["pg_maxlfq", "normalize_intensity", "ms1_area"]
+    expected = (pytest.approx(450.26), pytest.approx(0.01)) if measured else (None, None)
+    assert (row["observed_mz"], row["mass_error_ppm"]) == expected
+
+
+def test_rows_that_repeat_an_id_keep_one_copy(tmp_path):
+    """1.0.2 repeated a quantms feature per q-value of its first protein; the copy holding its group's q-value stays."""
+    source = tmp_path / "old"
+    source.mkdir()
+    feature = _lfq_feature(pg_accessions=[{"accession": PROTEIN, "start": None, "end": None}])
+    features = [{**feature, "pg_global_qvalue": 0.01}, {**feature, "pg_global_qvalue": 0.02}]
+    _write(source / "old.feature.parquet", features, creator=b"quantms-msstats")
+    _write(source / "old.pg.parquet", [{**make_pg_record(pg_accessions=[PROTEIN]), "global_qvalue": 0.02}], creator=b"quantms")
+    psm = make_psm_record()
+    _write(source / "old.psm.parquet", [psm, {**psm, "posterior_error_probability": 0.5}], creator=b"quantms")
+    out = tmp_path / "new"
+    written = migrate_dataset(source, out)
+
+    assert (written["feature"], written["psm"]) == (1, 1)
+    assert pq.read_table(out / "old.feature.parquet").column("pg_global_qvalue").to_pylist() == [0.02]
+    assert pq.read_table(out / "old.psm.parquet").column("posterior_error_probability").to_pylist() == [0.001]
+    assert pq.read_metadata(out / "old.feature.parquet").metadata[b"identity_source"] == b"derived"
+
+
+def test_a_feature_holding_a_label_twice_is_dropped_with_its_links(tmp_path):
+    """Two features merged into one row cannot be told apart; a PSM of it loses its feature_id."""
+    source = tmp_path / "old"
+    source.mkdir()
+    merged = make_feature_record(intensities=[{"label": "TMT126", "intensity": 1.0}, {"label": "TMT126", "intensity": 2.0}])
+    features = [
+        {**merged, "sequence": "MERGEDK", "peptidoform": "MERGEDK", "feature_id": 7},
+        {**make_feature_record(), "feature_id": 8},
+    ]
+    _write(source / "old.feature.parquet", features, creator=b"quantms-msstats")
+    psm = make_psm_record()
+    _write(
+        source / "old.psm.parquet",
+        [{**psm, "psm_id": 1, "feature_id": 7}, {**psm, "scan": [1002], "psm_id": 2, "feature_id": 8}],
+        creator=b"quantms",
+    )
+    out = tmp_path / "new"
+    assert migrate_dataset(source, out)["feature"] == 1
+
+    kept = pq.read_table(out / "old.feature.parquet").to_pylist()
+    assert [row["sequence"] for row in kept] == ["PEPTIDEK"]
+    assert pq.read_table(out / "old.psm.parquet").column("feature_id").to_pylist() == [None, kept[0]["feature_id"]]
+
+
+def test_sdrf_characteristics_and_msnet_consensus_support_are_kept(old_dataset, tmp_path):
+    """A sample keeps its columns outside the schema; MSNet's consensus_support becomes a score."""
+    _write(old_dataset / "old.sample.parquet", [{**make_sample_record(), "treatment": "drug"}])
+    feature = pq.read_table(old_dataset / "old.feature.parquet").to_pylist()[0]
+    psm = {key: feature[key] for key in ("sequence", "peptidoform", "charge", "is_decoy", "run_file_name", "scan")}
+    _write(old_dataset / "old.psm.parquet", [{**psm, "consensus_support": 0.75}], creator=b"msnet")
+    out = tmp_path / "new"
+    migrate_dataset(old_dataset, out)
+
+    assert pq.read_table(out / "old.sample.parquet").to_pylist()[0]["treatment"] == "drug"
+    scores = pq.read_table(out / "old.psm.parquet").to_pylist()[0]["additional_scores"]
+    assert scores == [{"score_name": "consensus_support", "score_value": 0.75, "higher_better": None}]
+
+
+def test_an_msnet_psm_convert_msnet_never_read_takes_its_columns(tmp_path):
+    """The MSNet layout scripts/convert_msnet.py reads, without a footer, becomes what it writes."""
+    folder = tmp_path / "msnet"
+    folder.mkdir()
+    raw = {
+        "sequence": "LGMFNIQHCK",
+        "modifications": [{"name": "Carbamidomethyl (C)", "positions": [{"position": "9"}]}],
+        "precursor_charge": 2,
+        "exp_mass_to_charge": 600.3,
+        "cal_mass_to_charge": 600.0,
+        "peptidoform": "LGMFNIQHC(Carbamidomethyl)K",
+        "posterior_error_probability": 0.01,
+        "global_qvalue": 0.25,
+        "consensus_support": 0.5,
+        "retention_time": 1200.5,
+        "cv_params": {"Instrument": "Q Exactive", "Collision Energy": None, "isotope_error": 0},
+        "reference_file_name": RUN,
+        "scan": 4021,
+        "is_decoy": False,
+    }
+    pq.write_table(pa.Table.from_pylist([raw]), folder / "msnet.psm.parquet")
+    migrate_dataset(folder, tmp_path / "new")
+
+    row = pq.read_table(tmp_path / "new" / "msnet.psm.parquet").to_pylist()[0]
+    assert row["psm_id"] is not None
+    assert (row["peptidoform"], row["charge"], row["run_file_name"], row["scan"], row["rt"]) == (
+        "LGMFNIQHC[UNIMOD:4]K",
+        2,
+        RUN,
+        [4021],
+        1200.5,
+    )
+    # float32(600.3) is 600.2999878, so the ppm convert_msnet writes is 499.97965, not 500
+    assert (row["observed_mz"], row["calculated_mz"], row["mass_error_ppm"]) == pytest.approx((600.3, 600.0, 499.97965494791667))
+    assert row["modifications"] == [
+        {
+            "name": "Carbamidomethyl (C)",
+            "accession": "UNIMOD:4",
+            "positions": [{"position": 9, "amino_acid": None, "scores": None}],
+        }
+    ]
+    assert row["cv_params"] == [
+        {"cv_name": "Instrument", "cv_value": "Q Exactive"},
+        {"cv_name": "isotope_error", "cv_value": "0"},
+    ]
+    assert row["additional_scores"] == [
+        {"score_name": "global_qvalue", "score_value": 0.25, "higher_better": None},
+        {"score_name": "consensus_support", "score_value": 0.5, "higher_better": None},
+    ]
+
+
+def test_an_msnet_psm_of_writer_1_2_1_dev5_gets_listed_scores_accessions_and_targets(tmp_path):
+    """One struct of scores, empty accessions, null is_decoy and cv values, and the dot before an N-terminal tag."""
+    folder = tmp_path / "msnet"
+    folder.mkdir()
+    score = pa.struct([("score_name", pa.string()), ("score_value", pa.float64()), ("higher_better", pa.bool_())])
+    position = pa.struct([("position", pa.int32()), ("amino_acid", pa.string()), ("scores", score)])
+    modification = pa.struct([("name", pa.string()), ("accession", pa.string()), ("positions", pa.list_(position))])
+    schema = pa.schema(
+        [
+            ("sequence", pa.string()),
+            ("peptidoform", pa.string()),
+            ("modifications", pa.list_(modification)),
+            ("charge", pa.int16()),
+            ("is_decoy", pa.bool_()),
+            ("run_file_name", pa.string()),
+            ("scan", pa.list_(pa.int32())),
+            ("cv_params", pa.list_(pa.struct([("cv_name", pa.string()), ("cv_value", pa.string())]))),
+            ("consensus_support", pa.float32()),
+        ],
+        metadata={b"qpx_version": b"1.2", b"creator": b"chengxin", b"writer_version": b"1.2.1.dev5"},
+    )
+    empty = {"score_name": "", "score_value": None, "higher_better": True}
+    flr = {"score_name": "Luciphor_local_flr", "score_value": 0.01, "higher_better": False}
+    row = {
+        "sequence": "PEPSK",
+        "peptidoform": ".[TMTpro]PEPS[Phospho]K",
+        "modifications": [
+            {"name": "TMTpro", "accession": "", "positions": [{"position": 0, "amino_acid": None, "scores": empty}]},
+            {"name": "Phospho", "accession": "", "positions": [{"position": 4, "amino_acid": "S", "scores": flr}]},
+        ],
+        "charge": 2,
+        "is_decoy": None,
+        "run_file_name": RUN,
+        "scan": [7],
+        "cv_params": [{"cv_name": "instrument", "cv_value": "Orbitrap"}, {"cv_name": "isotope error", "cv_value": None}],
+        "consensus_support": 1.0,
+    }
+    pq.write_table(pa.Table.from_pylist([row], schema=schema), folder / "msnet.psm.parquet")
+    migrate_dataset(folder, tmp_path / "new")
+
+    row = pq.read_table(tmp_path / "new" / "msnet.psm.parquet").to_pylist()[0]
+    assert (row["peptidoform"], row["is_decoy"]) == ("[UNIMOD:2016]-PEPS[UNIMOD:21]K", False)
+    assert row["cv_params"] == [{"cv_name": "instrument", "cv_value": "Orbitrap"}]
+    assert row["modifications"] == [
+        {"name": "TMTpro", "accession": "UNIMOD:2016", "positions": [{"position": 0, "amino_acid": None, "scores": None}]},
+        {"name": "Phospho", "accession": "UNIMOD:21", "positions": [{"position": 4, "amino_acid": "S", "scores": [flr]}]},
+    ]
+
+
+@pytest.mark.parametrize(
+    ("runs", "names", "expected"),
+    [
+        (
+            ["a_f01", "b_R1_CID", "c_8%_DDA"],
+            ["a_f01_consensus_fdr_filter.idXML", "b_R1", "c_8_DDA"],
+            ["a_f01", "b_R1_CID", "c_8%_DDA"],
+        ),
+        (["a_f01"], ["a_f01_consensus_fdr_filter.idXML", "S1"], ["a_f01_consensus_fdr_filter.idXML", "S1"]),
+        (["b_R1_CID"], ["b_R1", "b_R1_CID"], ["b_R1", "b_R1_CID"]),
+    ],
+    ids=["respelled", "a-name-matching-no-run", "a-run-named-already"],
+)
+def test_run_names_take_the_run_views_spelling_when_each_matches_one_run(tmp_path, runs, names, expected):
+    """Old converters wrote an idXML suffix, left out a dissociation suffix or dropped a '%' from a psm run name."""
+    folder = tmp_path / "old"
+    folder.mkdir()
+    samples = [{"sample_accession": "S1", "label": "LFQ"}]
+    _write(folder / "old.run.parquet", [{"run_accession": run, "run_file_name": run, "samples": samples} for run in runs])
+    _write(folder / "old.psm.parquet", [make_psm_record(run_file_name=name) for name in names])
+    migrate_dataset(folder, tmp_path / "new")
+
+    assert pq.read_table(tmp_path / "new" / "old.psm.parquet").column("run_file_name").to_pylist() == expected
