@@ -520,7 +520,7 @@ def _repeated_rows(target: Path, id_field: str) -> list[int]:
         _REPEATED_ROWS_SQL,
         id=validate_identifier(id_field),
         target=_quoted(target),
-        preferred="v.pg_global_qvalue IS NOT DISTINCT FROM g.qvalue" if grouped else "true",
+        preferred="g.members IS NOT NULL AND v.pg_global_qvalue IS NOT DISTINCT FROM g.qvalue" if grouped else "true",
         join=sql_build(_GROUP_QVALUE_JOIN, pg=_quoted(pg)) if grouped else "",
     )
     with create_connection() as con:
@@ -529,8 +529,8 @@ def _repeated_rows(target: Path, id_field: str) -> list[int]:
 
 def _drop_repeated_ids(target: Path) -> int:
     """Keep one row per id of *target*, returning the rows dropped."""
-    id_field = _footer(target).get(b"primary_key", b"").decode()
-    positions = _repeated_rows(target, id_field) if id_field else []
+    id_field = _footer(target)[b"primary_key"].decode()
+    positions = _repeated_rows(target, id_field)
     if not positions:
         return 0
     logger.warning("Dropping %d rows of %s that repeat a %s", len(positions), target.name, id_field)

@@ -425,21 +425,25 @@ def test_a_diann_feature_takes_the_current_intensity_names_and_measured_mz(tmp_p
     assert (row["observed_mz"], row["mass_error_ppm"]) == expected
 
 
-def test_rows_that_repeat_an_id_keep_one_copy(tmp_path):
-    """1.0.2 repeated a quantms feature per q-value of its first protein; the copy holding its group's q-value stays."""
+@pytest.mark.parametrize(("group", "second", "kept"), [(PROTEIN, 0.02, 0.02), ("Q00402", None, 0.01)], ids=["group", "no-group"])
+def test_rows_that_repeat_an_id_keep_one_copy(tmp_path, group, second, kept):
+    """1.0.2 repeated a quantms feature per q-value of its first protein; the copy holding its group's q-value stays.
+
+    Without the group in the pg view, the first copy stays.
+    """
     source = tmp_path / "old"
     source.mkdir()
     feature = _lfq_feature(pg_accessions=[{"accession": PROTEIN, "start": None, "end": None}])
-    features = [{**feature, "pg_global_qvalue": 0.01}, {**feature, "pg_global_qvalue": 0.02}]
+    features = [{**feature, "pg_global_qvalue": 0.01}, {**feature, "pg_global_qvalue": second}]
     _write(source / "old.feature.parquet", features, creator=b"quantms-msstats")
-    _write(source / "old.pg.parquet", [{**make_pg_record(pg_accessions=[PROTEIN]), "global_qvalue": 0.02}], creator=b"quantms")
+    _write(source / "old.pg.parquet", [{**make_pg_record(pg_accessions=[group]), "global_qvalue": 0.02}], creator=b"quantms")
     psm = make_psm_record()
     _write(source / "old.psm.parquet", [psm, {**psm, "posterior_error_probability": 0.5}], creator=b"quantms")
     out = tmp_path / "new"
     written = migrate_dataset(source, out)
 
     assert (written["feature"], written["psm"]) == (1, 1)
-    assert pq.read_table(out / "old.feature.parquet").column("pg_global_qvalue").to_pylist() == [0.02]
+    assert pq.read_table(out / "old.feature.parquet").column("pg_global_qvalue").to_pylist() == [kept]
     assert pq.read_table(out / "old.psm.parquet").column("posterior_error_probability").to_pylist() == [0.001]
     assert pq.read_metadata(out / "old.feature.parquet").metadata[b"identity_source"] == b"derived"
 

@@ -17,7 +17,7 @@ The PSM (Peptide Spectrum Match) view captures spectrum-level identification res
 | QPX Field | MaxQuant | DIA-NN | FragPipe |
 | --- | --- | --- | --- |
 | `sequence` | Sequence | Stripped.Sequence | Peptide |
-| `peptidoform` | Modified sequence, plus the fixed modifications MaxQuant leaves out (SDRF, else parameters.txt or summary.txt; the isobaric label from the SDRF channel labels) and the SILAC label modifications of the `Labeling state` (summary.txt `Labels<n>`) | Modified.Sequence | Assigned Modifications, plus the mass shift they leave unexplained (`Calculated Peptide Mass` + `Delta Mass`) |
+| `peptidoform` | Modified sequence, plus the fixed modifications MaxQuant leaves out (SDRF, else parameters.txt or summary.txt; the isobaric label from the SDRF channel labels) and the SILAC label modifications of the `Labeling state` (summary.txt `Labels<n>`) | Modified.Sequence | Assigned Modifications, plus the mass shift they leave unexplained in the measured mass (`Calculated Peptide Mass` + `Delta Mass`) |
 | `label` | Labeling state (SILAC) | --- | --- |
 | `charge` | Charge | Precursor.Charge | Charge |
 | `posterior_error_probability` | PEP | PEP | 1 − PeptideProphet Probability (Probability in FragPipe 22) |
