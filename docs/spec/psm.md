@@ -103,7 +103,7 @@ The `cross_links` field supports XL-MS (cross-linking mass spectrometry) experim
 | `partner_protein_starts` | First residue of the partner peptide in each of those proteins (1-indexed): the linked residue is at `start + acceptor_position - 1` | array[int32], null |
 | `crosslink_decoy_class` | `target_target`, `target_decoy` or `decoy_decoy`. `is_decoy` is true for both of the latter | string, null |
 
-A false-discovery rate at the level of the residue pair or protein pair goes in `additional_scores` under its own name, next to that of the PSM. One row per residue pair is a query away:
+A false-discovery rate at the level of the residue pair or protein pair goes in `additional_scores` under its own name, next to that of the PSM; the [Cross-Links](crosslink.md) proposal would move both to views of their own. One row per residue pair is a query away:
 
 ```sql
 SELECT protein_accessions[1] AS protein_a, partner_protein_accessions[1] AS protein_b,
