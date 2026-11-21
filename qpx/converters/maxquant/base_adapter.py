@@ -19,7 +19,7 @@ from qpx.converters.maxquant.protein_fields import parse_genes
 from qpx.converters.utils import canonical_accession, safe_float
 from qpx.core.files import run_file_stem
 
-_REPORTER_COLUMN = re.compile(r"Reporter intensity (\d+)(?: .+)?")
+_REPORTER_COLUMN = re.compile(r"Reporter intensity (?:corrected )?(\d+)(?: .+)?")
 
 
 class MaxQuantBaseAdapter(BaseConverter):

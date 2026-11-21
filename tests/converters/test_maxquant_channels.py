@@ -105,6 +105,21 @@ def test_reporter_columns_map_to_sdrf_channels(tmp_path, plex, labels, offset):
     assert {row["label"]: row["intensity"] for row in pg} == expected
 
 
+@pytest.mark.parametrize(("plex", "labels", "offset"), [case[1:] for case in CASES], ids=[case[0] for case in CASES])
+def test_reporter_sites_map_to_sdrf_channels(tmp_path, plex, labels, offset):
+    """Sites.txt holds only the corrected reporter columns, which size the plex as the primary ones do."""
+    from qpx.converters.maxquant.pg_adapter import MaxQuantPgAdapter
+    from qpx.writers import SiteWriter
+
+    evidence, _, sdrf = _write_inputs(tmp_path, plex, labels, offset)
+    corrected = [pair for pair in _reporter(len(plex), offset, " EXP1") if "corrected" in pair[0]]
+    sites = _write_tsv(tmp_path / "Phospho (STY)Sites.txt", [("Protein", "P1"), ("Position", "12"), *corrected])
+    with MaxQuantPgAdapter() as adapter, SiteWriter(tmp_path / "x.site.parquet") as writer:
+        adapter.write_sites([sites], evidence, sdrf, writer)
+    rows = pq.read_table(tmp_path / "x.site.parquet").to_pylist()
+    assert {row["label"]: row["intensity"] for row in rows} == {label: (plex.index(label) + 1) * 1000.0 + 1 for label in labels}
+
+
 _ITRAQ4_REAGENT = ["iTRAQ reagent 114", "iTRAQ reagent 115", "iTRAQ reagent 116", "iTRAQ reagent 117"]
 
 
