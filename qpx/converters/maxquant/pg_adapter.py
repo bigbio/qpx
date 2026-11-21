@@ -56,11 +56,7 @@ def _intensity_columns(columns: list[str], unnamed: bool) -> list[str]:
 
 def _reporter_columns(columns: list[str], unnamed: bool) -> list[str]:
     """``Reporter intensity N <experiment>``, or the unsuffixed ones of MaxQuant's one unnamed experiment."""
-    return [
-        c
-        for c in columns
-        if (m := _REPORTER_EXPERIMENT.fullmatch(c)) and (m.group(2) is None) == unnamed and "corrected" not in c.lower()
-    ]
+    return [c for c in columns if (m := _REPORTER_EXPERIMENT.fullmatch(c)) and (m.group(2) is None) == unnamed]
 
 
 def _positive(value) -> Optional[float]:

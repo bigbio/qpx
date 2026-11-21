@@ -205,9 +205,12 @@ def test_pg_spectral_count_per_experiment(tmp_path):
     assert counts == {("run1",): {"spectral_count": 7.0}, ("run2",): {"spectral_count": 0.0}}
 
 
-@pytest.mark.parametrize("experiment", ["Mix1", ""])
+@pytest.mark.parametrize("experiment", ["Mix1", "batch_corrected", ""])
 def test_pg_reads_the_reporter_columns_of_maxquant_set_up_without_experiment_names(tmp_path, experiment):
-    """Without experiment names, the one experiment has unsuffixed columns and evidence.txt no Experiment column."""
+    """Without experiment names, the one experiment has unsuffixed columns and evidence.txt no Experiment column.
+
+    An experiment name may contain ``corrected``: only ``Reporter intensity corrected N`` is a corrected column.
+    """
     from qpx.converters.maxquant.pg_adapter import MaxQuantPgAdapter
 
     labels = ["TMT126", "TMT127", "TMT128", "TMT129", "TMT130", "TMT131"]
