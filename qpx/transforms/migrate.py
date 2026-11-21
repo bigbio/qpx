@@ -3,22 +3,31 @@
 from __future__ import annotations
 
 import logging
+import os
+import re
 import shutil
 import uuid
+from functools import lru_cache
 from pathlib import Path
 
+import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
 
 from qpx.converters.channel_labels import normalize_label
 from qpx.converters.ontology_util import dedupe_ontology_entries, reconcile_ontology_entries
-from qpx.converters.ptm import _add_nterm_dash, normalize_peptidoform
+from qpx.converters.ptm import _add_nterm_dash, _unimod_title_of, name_to_unimod, normalize_peptidoform
+from qpx.converters.utils import canonical_accession
 from qpx.core.engine import create_connection
+from qpx.core.semantic_validation import _CANONICAL, _TAGS
+from qpx.core.sql import sql_build, validate_identifier
 from qpx.core.struct_lists import file_layouts, restore_table
 from qpx.dataset import Dataset
+from qpx.transforms.accession_normalizer import _LIST_ACCESSION_COLUMNS, _SCALAR_ACCESSION_COLUMNS, ACCESSION_VIEWS, _entry_names
 from qpx.transforms.mantissa import MANTISSA_BITS_FOOTER_KEY
-from qpx.transforms.relayout import ID_REFERENCES, ORDINAL_IDS
-from qpx.version import QPX_SPEC_VERSION
+from qpx.transforms.protein_properties import _rewrite_view
+from qpx.transforms.relayout import ID_REFERENCES, ORDINAL_IDS, _quoted
+from qpx.version import QPX_SPEC_VERSION, parse_spec_version
 from qpx.writers.xic import XIC_FOOTER_KEYS
 
 logger = logging.getLogger(__name__)
@@ -43,6 +52,41 @@ _PRODUCER_PSM_IDS = {"mzidentml"}
 _LABEL_ERRATA = {"raw": "LFQ", "precursor_area": "LFQ"}
 _FILE_LEVEL_DATASET_COLUMNS = ("file_checksums", "file_row_counts", "file_sizes_bytes", "total_structures", "packaged_at")
 _NOT_MIGRATED_SUFFIXES = (".h5mu", ".h5ad")
+# The accession lists of normalize-accessions, and feature.pg_positions, which names proteins too.
+_ACCESSION_LISTS = {**_LIST_ACCESSION_COLUMNS, "pg_positions": "protein_accession"}
+# What the semantic validator removes from a peptidoform to compare it with its sequence.
+_MODIFICATION_MARKS = re.compile(rf"{_TAGS}|[-?]")
+# The MSNet psm columns that scripts/convert_msnet.py renames, in files it did not convert.
+_RAW_MSNET_COLUMNS = {
+    "precursor_charge": "charge",
+    "exp_mass_to_charge": "observed_mz",
+    "cal_mass_to_charge": "calculated_mz",
+    "retention_time": "rt",
+    "reference_file_name": "run_file_name",
+}
+# Run names old converters spelled apart from run.parquet: with the suffix of a quantms idXML, without the
+# dissociation suffix of a dataset split by it, or without a "%".
+_IDXML_RUN_SUFFIX = "_consensus_fdr_filter.idXML"
+_SPLIT_RUN_SUFFIXES = ("_CID", "_HCD")
+_RUN_NAMES_SQL = "SELECT DISTINCT $column FROM read_parquet($source)"
+# DIA-NN feature intensity names before specification 1.3.
+_DIANN_INTENSITY_NAMES = {"maxlfq": "pg_maxlfq", "precursor_normalised": "normalize_intensity"}
+# The first specification whose DIA-NN observed_mz is the measured MS1 apex rather than Precursor.Mz.
+_MEASURED_DIANN_MZ = (1, 3)
+# The rows that repeat an id, except the first, or for a feature the first copy holding its group's
+# q-value: QPX 1.0.2 repeated a quantms feature once per q-value of its first protein.
+_REPEATED_ROWS_SQL = (
+    "SELECT position FROM (SELECT v.file_row_number AS position, row_number() OVER "
+    "(PARTITION BY v.$id ORDER BY $preferred DESC, v.file_row_number) AS copy "
+    "FROM read_parquet($target, file_row_number=true) AS v $join "
+    "WHERE v.$id IN (SELECT $id FROM read_parquet($target) GROUP BY $id HAVING count(*) > 1)) "
+    "WHERE copy > 1 ORDER BY position"
+)
+_GROUP_QVALUE_JOIN = (
+    "LEFT JOIN (SELECT list_sort(pg_accessions) AS members, min(global_qvalue) AS qvalue "
+    "FROM read_parquet($pg) GROUP BY members) AS g "
+    "ON list_sort([member.accession FOR member IN v.pg_accessions]) = g.members"
+)
 
 
 def _label(value):
@@ -78,13 +122,130 @@ def _keep_schema_fields(writer, records: list[dict]) -> list[dict]:
     return [{key: value for key, value in record.items() if key in names} for record in records]
 
 
+@lru_cache(maxsize=65536)
+def _accession(value: str) -> str:
+    return canonical_accession(value)
+
+
+def _member(value, field: str):
+    """A list member with a bare accession: a string, or a struct whose *field* holds it."""
+    if isinstance(value, str):
+        return _accession(value)
+    if value and value.get(field):
+        return {**value, field: _accession(value[field])}
+    return value
+
+
+def _canonical_accessions(row: dict) -> dict:
+    """Bare UniProt accessions, as the converters write them; a null pg_names takes the members' entry names."""
+    row = dict(row)
+    members = row.get("pg_accessions")
+    if "pg_names" in row and row["pg_names"] is None and members and isinstance(members[0], str):
+        row["pg_names"] = _entry_names(members)
+    for column in _SCALAR_ACCESSION_COLUMNS:
+        if row.get(column):
+            row[column] = _accession(row[column])
+    for column, field in _ACCESSION_LISTS.items():
+        if row.get(column):
+            row[column] = [_member(value, field) for value in row[column]]
+    return row
+
+
+def _listed_scores(position: dict) -> dict:
+    """The scores of a position as a list: writer 1.2.1.dev5 wrote one struct, with an empty name for none."""
+    scores = position.get("scores")
+    if isinstance(scores, dict):
+        return {**position, "scores": [scores] if scores["score_name"] else None}
+    return position
+
+
+def _modification(entry: dict) -> dict:
+    """The Unimod title and accession the converters write, where the old entry named only one of them.
+
+    Writer 1.2.1.dev5 wrote a missing accession as an empty string.
+    """
+    name, accession = entry["name"], entry["accession"] or None
+    positions = entry.get("positions") and [_listed_scores(position) for position in entry["positions"]]
+    if accession is None and name:
+        number = name_to_unimod(name, (positions or [{}])[0].get("amino_acid"))
+        accession = None if number is None else f"UNIMOD:{number}"
+    if name and name.startswith("UNIMOD:"):
+        name = _unimod_title_of(name)
+    return {**entry, "name": name, "accession": accession, "positions": positions}
+
+
+def _msnet_row(row: dict) -> dict:
+    """MSNet's consensus_support, is_decoy and cv_params as scripts/convert_msnet.py writes them.
+
+    consensus_support becomes a score of additional_scores. MSNet holds targets only; writer 1.2.1.dev5
+    left the is_decoy of some files null and kept cv_params without a value, which convert_msnet leaves out.
+    """
+    value = row.pop("consensus_support")
+    if value is not None:
+        score = {"score_name": "consensus_support", "score_value": float(value), "higher_better": None}
+        row["additional_scores"] = [*(row.get("additional_scores") or []), score]
+    if row.get("is_decoy") is None:
+        row["is_decoy"] = False
+    if row.get("cv_params"):
+        row["cv_params"] = [entry for entry in row["cv_params"] if entry["cv_value"] is not None]
+    return row
+
+
+def _raw_msnet_row(record: dict) -> dict:
+    """An MSNet psm row that scripts/convert_msnet.py did not convert, in the columns it writes.
+
+    mass_error_ppm is computed from the float32 m/z values the row keeps. The global q-value
+    becomes the first score; _msnet_row adds consensus_support after it.
+    """
+    row = {_RAW_MSNET_COLUMNS.get(key, key): value for key, value in record.items()}
+    observed, calculated = float(np.float32(row["observed_mz"])), float(np.float32(row["calculated_mz"]))
+    row["mass_error_ppm"] = 1e6 * (observed - calculated) / calculated
+    qvalue = row.pop("global_qvalue")
+    row["additional_scores"] = [{"score_name": "global_qvalue", "score_value": float(qvalue), "higher_better": None}]
+    row["cv_params"] = [{"cv_name": key, "cv_value": str(value)} for key, value in row["cv_params"].items() if value is not None]
+    row["scan"] = [row["scan"]]
+    row["modifications"] = row["modifications"] and [
+        {
+            "name": entry["name"],
+            "accession": None,
+            "positions": [{"position": int(site["position"]), "amino_acid": None, "scores": None} for site in entry["positions"]],
+        }
+        for entry in row["modifications"]
+    ]
+    return row
+
+
+def _peptidoform(peptidoform: str) -> str:
+    """The canonical peptidoform; MSNet wrote ProForma tags after the mzTab dot of the N-terminus, .[Acetyl]PEPTIDE."""
+    if peptidoform.startswith("."):
+        peptidoform = _add_nterm_dash(peptidoform.removeprefix("."))
+    return normalize_peptidoform(peptidoform)
+
+
+@lru_cache(maxsize=65536)
+def _residues(peptidoform: str) -> str | None:
+    """The sequence of a canonical peptidoform; quantms 1.0.2 TMT features spelled modification names into it."""
+    return _MODIFICATION_MARKS.sub("", peptidoform) if _CANONICAL.fullmatch(peptidoform) else None
+
+
+def _repaired_sequence(peptidoform: str, sequence: str | None) -> dict:
+    """The sequence read from the peptidoform where they differ, and no missed cleavages counted on the old one."""
+    residues = _residues(peptidoform)
+    return {"sequence": residues, "missed_cleavages": None} if residues and residues != sequence else {}
+
+
 def _identity_row(record: dict) -> dict:
-    """The rewritten peptidoform and labels of a psm or feature row, without its old id."""
+    """The rewritten peptidoform, modifications and labels of a psm or feature row, without its old id."""
     row = {key: value for key, value in record.items() if key not in _DROPPED_ID_COLUMNS}
     if record.get("feature_id") is not None and "psm_id" in record:
         row["feature_id"] = record["feature_id"]
     if row.get("peptidoform"):
-        row["peptidoform"] = normalize_peptidoform(row["peptidoform"])
+        row["peptidoform"] = _peptidoform(row["peptidoform"])
+        row.update(_repaired_sequence(row["peptidoform"], row.get("sequence")))
+    if row.get("modifications"):
+        row["modifications"] = [_modification(entry) for entry in row["modifications"]]
+    if "consensus_support" in row:
+        row = _msnet_row(row)
     for column in ("calculated_mz", "observed_mz"):
         # 0.0 was the old sentinel for an m/z the producer did not report
         if row.get(column) == 0.0:
@@ -97,13 +258,34 @@ def _identity_row(record: dict) -> dict:
     return row
 
 
-def _diann_feature_row(record: dict) -> dict:
-    """Recover the library-decoy prefix separately from the report's is_decoy flag."""
+def _diann_intensity_names(entries: list[dict]) -> list[dict]:
+    return [
+        {
+            **entry,
+            "intensities": [
+                {**item, "intensity_name": _DIANN_INTENSITY_NAMES.get(item["intensity_name"], item["intensity_name"])}
+                for item in entry["intensities"]
+            ],
+        }
+        for entry in entries
+    ]
+
+
+def _diann_feature_row(record: dict, measured_mz: bool) -> dict:
+    """Recover the library-decoy prefix separately from the report's is_decoy flag, and the current intensity names.
+
+    Without *measured_mz*, observed_mz held the theoretical Precursor.Mz and mass_error_ppm a float32 rounding
+    step; both become null, as a conversion writes them where DIA-NN measured no MS1 apex.
+    """
     peptidoform = record["peptidoform"]
     library_prefix = peptidoform.startswith("^")
     row = {**record, "is_library_decoy": record.get("is_library_decoy") or library_prefix}
     if library_prefix:
         row["peptidoform"] = _add_nterm_dash(peptidoform.removeprefix("^"))
+    if not measured_mz:
+        row["observed_mz"] = row["mass_error_ppm"] = None
+    if row.get("additional_intensities"):
+        row["additional_intensities"] = _diann_intensity_names(row["additional_intensities"])
     return _identity_row(row)
 
 
@@ -151,7 +333,7 @@ def _mz_row(record: dict) -> dict:
 
 _ROW_MIGRATIONS = {
     "feature": lambda record: [_identity_row(record)],
-    "psm": lambda record: [_identity_row(record)],
+    "psm": lambda record: [_identity_row(_raw_msnet_row(record) if "reference_file_name" in record else record)],
     "pg": _flat_pg_rows,
     "run": lambda record: [_run_row(record)],
     "dataset": lambda record: [_dataset_row(record)],
@@ -159,12 +341,27 @@ _ROW_MIGRATIONS = {
 }
 
 
-def _migrated_pairs(view: str, creator: bytes | None, records: list[dict]) -> list[tuple[dict, dict]]:
-    """Keep each source row beside its migrated rows, including producer-specific identities."""
-    if view == "feature" and creator == b"diann":
-        return [(record, _diann_feature_row(record)) for record in records]
-    migrate_row = _ROW_MIGRATIONS.get(view, lambda record: [record])
-    return [(record, row) for record in records for row in migrate_row(record)]
+def _holds_each_label_once(row: dict) -> bool:
+    labels = [entry["label"] for entry in row.get("intensities") or []]
+    return len(labels) == len(set(labels))
+
+
+def _migrated_pairs(view: str, footer: dict[bytes, bytes], records: list[dict]) -> list[tuple[dict, dict]]:
+    """Keep each source row beside its migrated rows, including producer-specific identities.
+
+    A feature holding a label twice is two features merged into one row, which cannot be told apart: it is left out.
+    """
+    if view == "feature" and footer.get(b"creator") == b"diann":
+        measured_mz = (parse_spec_version(footer.get(b"qpx_version", b"").decode()) or (0, 0)) >= _MEASURED_DIANN_MZ
+        pairs = [(record, _diann_feature_row(record, measured_mz)) for record in records]
+    else:
+        migrate_row = _ROW_MIGRATIONS.get(view, lambda record: [record])
+        pairs = [(record, row) for record in records for row in migrate_row(record)]
+    if view in ACCESSION_VIEWS:
+        pairs = [(record, _canonical_accessions(row)) for record, row in pairs]
+    if view == "feature":
+        pairs = [(record, row) for record, row in pairs if _holds_each_label_once(row)]
+    return pairs
 
 
 def _writer_options(view: str, footer: dict[bytes, bytes]) -> dict:
@@ -181,6 +378,19 @@ def _writer_options(view: str, footer: dict[bytes, bytes]) -> dict:
         if composite is not None:
             options["identity_composite"] = composite
     return options
+
+
+def _extra_column_options(writer_class, source: Path) -> dict:
+    """The writer option keeping the source columns outside the schema, such as the SDRF characteristics of a sample."""
+    schema = writer_class.view_schema()
+    known = set(schema.get_arrow_schema().names)
+    extra = [name for name in pq.read_schema(source).names if name not in known]
+    refused = schema.undeclared_columns(extra)
+    kept = [name for name in extra if name not in refused]
+    if not kept:
+        return {}
+    logger.info("Keeping the %s columns outside the schema as strings: %s", schema.view_name, kept)
+    return {"extra_columns": kept}
 
 
 def _migrate_ontology(source: Path, target: Path) -> int:
@@ -220,6 +430,50 @@ def _kept_footer(footer: dict[bytes, bytes]) -> dict[bytes, bytes]:
     return {key: footer[key] for key in (MANTISSA_BITS_FOOTER_KEY, *XIC_FOOTER_KEYS) if key in footer}
 
 
+def _run_names(folder: Path) -> set[str]:
+    paths = folder.glob(f"*{Dataset.writer_for('run')[1]}")
+    return {name for path in paths for name in pq.read_table(path, columns=["run_file_name"]).column(0).to_pylist()}
+
+
+def _old_spellings(run: str) -> set[str]:
+    """The spellings of *run* that old converters wrote in psm files."""
+    return {run + _IDXML_RUN_SUFFIX, run.replace("%", ""), *(run.removesuffix(s) for s in _SPLIT_RUN_SUFFIXES)} - {run}
+
+
+def _run_spellings(view: str, source: Path) -> dict[str, str]:
+    """The spelling in run.parquet of the run names of a psm *source* it lacks, when each matches one run.
+
+    A matched run the file names already would merge two runs, so then no name is respelled.
+    """
+    runs = _run_names(source.parent) if view == "psm" else set()
+    if not runs:
+        return {}
+    column = "reference_file_name" if "reference_file_name" in pq.read_schema(source).names else "run_file_name"
+    sql = sql_build(_RUN_NAMES_SQL, column=validate_identifier(column), source=_quoted(source))
+    with create_connection() as con:
+        names = {name for (name,) in con.sql(sql).fetchall()}
+    missing = names - runs - {None}
+    if not missing:
+        return {}
+    matches: dict[str, set[str]] = {}
+    for run in runs:
+        for spelling in _old_spellings(run):
+            matches.setdefault(spelling, set()).add(run)
+    spellings = {name: next(iter(matches[name])) for name in missing if len(matches.get(name, ())) == 1}
+    if len(spellings) < len(missing) or len(set(spellings.values())) < len(spellings) or set(spellings.values()) & names:
+        logger.warning("%d run_file_name values of %s are not in run.parquet", len(missing), source.name)
+        return {}
+    logger.warning("Respelling %d run_file_name values of %s as run.parquet does", len(spellings), source.name)
+    return spellings
+
+
+def _respell_runs(pairs: list[tuple[dict, dict]], spellings: dict[str, str]) -> None:
+    if not spellings:
+        return
+    for _, row in pairs:
+        row["run_file_name"] = spellings.get(row["run_file_name"], row["run_file_name"])
+
+
 def _migrate_view(view: str, source: Path, target: Path, ids: dict[str, dict[int, int]], *, track: bool) -> int:
     """Migrate the rows of *source* to *target*, following the views already in *ids*.
 
@@ -232,23 +486,84 @@ def _migrate_view(view: str, source: Path, target: Path, ids: dict[str, dict[int
     footer = _footer(source)
     keep_ids = view == "psm" and footer.get(b"creator", b"").decode() in _PRODUCER_PSM_IDS
     references = {column: ids.get(referenced, {}) for column, referenced in _ID_REFERENCES.get(view, {}).items()}
+    spellings = _run_spellings(view, source)
     old_ids = []
-    rows = 0
-    with writer_class(target, **_writer_options(view, footer)) as writer:
+    rows = source_rows = 0
+    options = {**_writer_options(view, footer), **_extra_column_options(writer_class, source)}
+    with writer_class(target, **options) as writer:
         # Added before the rows, the keys are in the Arrow schema too.
         if kept := _kept_footer(footer):
             writer.add_footer_metadata(kept)
         for records in _batches(source):
-            pairs = _migrated_pairs(view, footer.get(b"creator"), records)
+            pairs = _migrated_pairs(view, footer, records)
+            _respell_runs(pairs, spellings)
             _follow_ids(pairs, references, keep_ids)
             if track:
                 old_ids.extend(record.get(ORDINAL_IDS[view]) for record, _ in pairs)
             writer.write_batch(_keep_schema_fields(writer, [row for _, row in pairs]))
             rows += len(pairs)
+            source_rows += len(records)
+    if view == "feature" and source_rows > rows:
+        logger.warning("Dropped %d features of %s that hold a label twice", source_rows - rows, source.name)
     if track:
         new_ids = pq.read_table(target, columns=[ORDINAL_IDS[view]]).column(0).to_pylist()
         ids.setdefault(view, {}).update((old, new) for old, new in zip(old_ids, new_ids) if old is not None)
     return rows
+
+
+def _repeated_rows(target: Path, id_field: str) -> list[int]:
+    """The positions of the rows of *target* that repeat an id, without the copy that stays."""
+    feature_suffix, pg_suffix = Dataset.writer_for("feature")[1], Dataset.writer_for("pg")[1]
+    pg = target.with_name(target.name.removesuffix(feature_suffix) + pg_suffix)
+    grouped = target.name.endswith(feature_suffix) and pg.is_file()
+    sql = sql_build(
+        _REPEATED_ROWS_SQL,
+        id=validate_identifier(id_field),
+        target=_quoted(target),
+        preferred="g.members IS NOT NULL AND v.pg_global_qvalue IS NOT DISTINCT FROM g.qvalue" if grouped else "true",
+        join=sql_build(_GROUP_QVALUE_JOIN, pg=_quoted(pg)) if grouped else "",
+    )
+    with create_connection() as con:
+        return [position for (position,) in con.sql(sql).fetchall()]
+
+
+def _drop_repeated_ids(target: Path) -> int:
+    """Keep one row per id of *target*, returning the rows dropped."""
+    id_field = _footer(target)[b"primary_key"].decode()
+    positions = _repeated_rows(target, id_field)
+    if not positions:
+        return 0
+    logger.warning("Dropping %d rows of %s that repeat a %s", len(positions), target.name, id_field)
+    dropped = np.asarray(positions, dtype=np.int64)
+    offset = 0
+
+    def without_repeats(table: pa.Table) -> pa.Table:
+        nonlocal offset
+        index = np.arange(offset, offset + table.num_rows, dtype=np.int64)
+        offset += table.num_rows
+        return table.filter(pa.array(np.isin(index, dropped, invert=True)))
+
+    staging = target.with_name(f".{target.name}.deduplicated")
+    try:
+        _rewrite_view(target, staging, without_repeats)
+        os.replace(staging, target)
+    finally:
+        staging.unlink(missing_ok=True)
+    return len(positions)
+
+
+def _without_repeated_ids(output: Path, files: dict[str, list[Path]], written: dict[str, int]) -> dict[str, int]:
+    """The rows left per view once the repeated feature and psm ids are dropped.
+
+    Runs after every view: a feature copy is chosen by its pg group, and a dropped
+    copy shares its id with the kept one, which the references follow.
+    """
+    dropped = {
+        view: sum(_drop_repeated_ids(output / path.name) for path in files[view])
+        for view in ("feature", "psm")
+        if view in written
+    }
+    return {view: rows - dropped.get(view, 0) for view, rows in written.items()}
 
 
 def _append_migration_step(target: Path, source_version: str) -> None:
@@ -278,11 +593,18 @@ def migrate_dataset(source: Path, output: Path) -> dict[str, int]:
     Returns the rows written per view. Views keep their file names. Ids are derived
     again, except for mzIdentML psm_id values that cannot be reproduced from the
     stored columns. The columns that hold ids, such as `psm.feature_id` and
-    `site.pg_id`, follow them, and labels and peptidoforms take their canonical
-    spelling. DIA-NN feature ids use the current composite and library-decoy
-    flags, with the old caret prefix removed from their peptidoforms. A fixed
-    modification the old file left out cannot be recovered: re-convert from the
-    source files to get one.
+    `site.pg_id`, follow them, and labels, peptidoforms, sequences, modification
+    names and UniProt accessions take their canonical spelling. DIA-NN feature ids use the
+    current composite and library-decoy flags, with the old caret prefix removed
+    from their peptidoforms; files before specification 1.3 lose their theoretical
+    `observed_mz`. Rows that repeat an id keep one copy, and a feature holding a
+    label twice is dropped. Sample and run keep their columns outside the schema.
+    MSNet psm files take the columns scripts/convert_msnet.py writes, also those it
+    never converted, and a null is_decoy there becomes False.
+    psm run names an old converter spelled apart from run.parquet take its spelling
+    when each matches one run.
+    A fixed modification the old file left out cannot be recovered: re-convert
+    from the source files to get one.
     """
     source, output = Path(source), Path(output)
     output.mkdir(parents=True, exist_ok=False)
@@ -302,6 +624,7 @@ def migrate_dataset(source: Path, output: Path) -> dict[str, int]:
             target = output / path.name
             written[view] = written.get(view, 0) + _migrate_view(view, path, target, ids, track=view in tracked)
             migrated_files.add(path)
+    written = _without_repeated_ids(output, files, written)
     for path in sorted(source.iterdir()):
         if path in migrated_files or not path.is_file():
             continue

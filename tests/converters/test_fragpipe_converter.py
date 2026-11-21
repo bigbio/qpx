@@ -417,6 +417,25 @@ def test_feature_decoy_from_raw_accession_without_psm(tmp_path):
     assert bool(df.iloc[0]["is_decoy"]) is True
 
 
+def test_feature_peptidoform_adds_the_modifications_only_modified_sequence_gives(tmp_path):
+    """IonQuant can leave an ion's modifications out of Assigned Modifications (PXD041421),
+    so the oxidised ion took the peptidoform and feature_id of the unoxidised one. Integer
+    masses, Philosopher's residue plus modification, are not read."""
+    ion = tmp_path / "combined_ion.tsv"
+    ion.write_text(
+        "Peptide Sequence\tModified Sequence\tProtein\tGene\tM/Z\tCharge\tAssigned Modifications\tsampleA Intensity\n"
+        "PEPTMIDEK\tPEPTMIDEK\tsp|P12345|PROT_HUMAN\tGENE1\t531.25\t2\t\t1000\n"
+        "PEPTMIDEK\tPEPTM[15.9949]IDEK\tsp|P12345|PROT_HUMAN\tGENE1\t539.25\t2\t\t1000\n"
+        "PEPTMIDER\tPEPTM[147]IDER\tsp|P12345|PROT_HUMAN\tGENE1\t545.25\t2\t\t1000\n"
+    )
+    out = tmp_path / "feature.parquet"
+    with FragPipeFeatureAdapter() as adapter:
+        adapter.convert(feature_path=str(ion), output_path=str(out), experiment_to_runs={"sampleA": ["run_A"]})
+    rows = pq.read_table(out).to_pylist()
+    assert {row["peptidoform"] for row in rows} == {"PEPTMIDEK", "PEPTM[UNIMOD:35]IDEK", "PEPTMIDER"}
+    assert len({row["feature_id"] for row in rows}) == 3
+
+
 def test_feature_rows_are_keyed_by_the_experiment_run(tmp_path):
     """A feature names the raw run of its experiment, which run.parquet and the pg
     grouped_runs hold, and the run that identified it only when that is known."""
