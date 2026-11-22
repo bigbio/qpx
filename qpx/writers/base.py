@@ -22,7 +22,7 @@ from qpx.core.engine import create_connection
 from qpx.core.sql import sql_build, validate_identifier
 from qpx.core.struct_tables import FIXED_STRUCT_TABLES
 from qpx.version import QPX_SPEC_VERSION
-from qpx.writers.encoding import parquet_write_options, row_group_rows
+from qpx.writers.encoding import RowGroupQueue, parquet_write_options, row_group_rows
 from qpx.writers.struct_lists import pack_struct_lists, struct_schema
 
 if TYPE_CHECKING:
@@ -108,6 +108,9 @@ class BaseWriter:
         if struct_layouts is None:
             struct_layouts = FIXED_STRUCT_TABLES[creator][self._schema_class.view_name] if fixed_struct_lists else {}
         self._columns = _WriterColumns(extra_columns or [], struct_layouts)
+        # Tables from write_table that do not fill a row group yet: the next table
+        # or close() completes the group, so consecutive tables share row groups.
+        self._pending = RowGroupQueue(self._write_groups)
         # Override mode (e.g. consensusXML): re-derive the id even when the
         # producer supplied one, stashing the original as a cv_param so it is
         # preserved/traceable.
@@ -436,7 +439,7 @@ class BaseWriter:
         if result.errors:
             raise ValueError("Schema validation failed:\n" + "\n".join(issue.message for issue in result.errors))
         self._log_validation_warnings(result.warnings)
-        self._write_parquet(table)
+        self._pending.add(self._packed(table))
 
     def write_dataframe(self, df: "pd.DataFrame"):
         """Write a pandas DataFrame. Converts to Arrow and validates.
@@ -474,9 +477,12 @@ class BaseWriter:
         completed = False
         writer = None
         try:
-            if validate and self._buffer:
-                self._write_arrow_batch(self._buffer)
+            if validate:
+                if self._buffer:
+                    self._write_arrow_batch(self._buffer)
+                self._pending.flush()
             self._buffer = []
+            self._pending.clear()
             if validate and self._identity.sources:
                 self._add_footer_metadata(self.identity_source_metadata())
             wrote_file = self._writer is not None
@@ -500,6 +506,7 @@ class BaseWriter:
         finally:
             if not completed:
                 self._buffer = []
+                self._pending.clear()
                 self._writer = None
                 writer = None
                 self._discard_staged()
@@ -632,11 +639,19 @@ class BaseWriter:
         self._write_parquet(table)
 
     def _write_parquet(self, table: pa.Table) -> None:
+        """Write *table* in row groups of its own, after the queued tables."""
+        self._pending.flush()
+        self._write_groups(self._packed(table))
+
+    def _packed(self, table: pa.Table) -> pa.Table:
         if self._columns.struct_layouts:
             source = f"{self._file_metadata[b'creator'].decode()} {self._schema_class.view_name}"
             table = pack_struct_lists(table, self._parquet_schema, self._columns.struct_layouts, source)
+        return table
+
+    def _write_groups(self, table: pa.Table, group: int | None = None) -> None:
         self._ensure_writer(table)
-        self._writer.write_table(table, row_group_size=row_group_rows(table))
+        self._writer.write_table(table, row_group_size=group or row_group_rows(table))
 
     def _ensure_writer(self, sample: pa.Table):
         """Open the staging file at the first write, encoded as *sample*, the first rows, measures smallest."""

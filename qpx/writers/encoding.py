@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import pyarrow as pa
 import pyarrow.parquet as pq
 
@@ -123,6 +125,37 @@ def parquet_write_options(schema: pa.Schema, compression: str, sample: pa.Table 
     return options
 
 
+class RowGroupQueue:
+    """Tables written one after another, cut into full row groups so that only the last group is short."""
+
+    def __init__(self, write: Callable[[pa.Table, int | None], None]):
+        self._write = write
+        self._tables: list[pa.Table] = []
+
+    def add(self, table: pa.Table) -> None:
+        """Queue *table* behind the queued tables and write the full row groups they make."""
+        self._tables.append(table)
+        pending = pa.concat_tables(self._tables)
+        group = row_group_rows(pending)
+        full = pending.num_rows - pending.num_rows % group
+        if full:
+            rest = pending.slice(full)
+            # Copied: a slice would hold the caller's whole table until the next write.
+            self._tables = [rest.take(pa.array(range(rest.num_rows)))] if rest.num_rows else []
+            self._write(pending.slice(0, full), group)
+
+    def flush(self) -> None:
+        """Write the queued tables; their last row group may be short."""
+        if self._tables:
+            pending = pa.concat_tables(self._tables)
+            self._tables = []
+            self._write(pending, None)
+
+    def clear(self) -> None:
+        """Drop the queued tables without writing them."""
+        self._tables = []
+
+
 class SampledParquetWriter:
     """A ``pq.ParquetWriter`` opened at the first table written, encoded as :func:`parquet_write_options` picks for it."""
 
@@ -132,19 +165,29 @@ class SampledParquetWriter:
         self._compression = compression
         self._writer_options = writer_options
         self._writer: pq.ParquetWriter | None = None
+        self._queue = RowGroupQueue(self._write)
 
     def _open(self, sample: pa.Table | None) -> pq.ParquetWriter:
         options = parquet_write_options(self._schema, self._compression, sample)
         return pq.ParquetWriter(self._where, self._schema, **self._writer_options, **options)
 
     def write_table(self, table: pa.Table, row_group_size: int | None = None) -> None:
+        """Write *table* in row groups of *row_group_size* rows; without a size, tables fill row groups across calls."""
+        if row_group_size is None:
+            self._queue.add(table)
+        else:
+            self._queue.flush()
+            self._write(table, row_group_size)
+
+    def _write(self, table: pa.Table, row_group_size: int | None) -> None:
         """Write *table*, opening the file with the encodings *table* measures smallest when it is the first."""
         if self._writer is None:
             self._writer = self._open(table)
-        self._writer.write_table(table, row_group_size=row_group_size)
+        self._writer.write_table(table, row_group_size=row_group_size or row_group_rows(table))
 
     def close(self) -> None:
-        """Close the file, writing an empty one with the schema when no table was written."""
+        """Write the queued rows and close the file, writing an empty one with the schema when no table was written."""
+        self._queue.flush()
         if self._writer is None:
             self._writer = self._open(None)
         self._writer.close()
@@ -152,5 +195,8 @@ class SampledParquetWriter:
     def __enter__(self) -> SampledParquetWriter:
         return self
 
-    def __exit__(self, *exc_info) -> None:
+    def __exit__(self, exc_type, *exc_info) -> None:
+        if exc_type is not None:
+            # The body failed: queued rows are not written after the error.
+            self._queue.clear()
         self.close()
