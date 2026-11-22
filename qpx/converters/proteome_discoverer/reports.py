@@ -109,6 +109,8 @@ class PdPsmTable(BaseConverter):
                 f"CAST({self._column('scan')} AS INTEGER) AS _scan",
                 f"COALESCE({self._optional_double('rank')}, 1) AS _rank",
                 f"{self._optional_double('qvalue')} AS _qvalue",
+                # _pd_raw is read on one thread, so its rowid is the line order of the export.
+                "rowid AS _row",
             )
         )
 

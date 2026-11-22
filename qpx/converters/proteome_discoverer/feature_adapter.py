@@ -1,4 +1,4 @@
-"""Proteome Discoverer ``PSMs.txt`` to the feature view: the PSMs of one precursor in one run."""
+"""Proteome Discoverer ``PSMs.txt`` to the feature view: the spectra of one precursor in one run."""
 
 from __future__ import annotations
 
@@ -13,15 +13,17 @@ from qpx.writers.feature import FeatureWriter
 
 _REPORTER_COLUMN = re.compile(r"^Abundance:? (\d{3}[NCD]?)$")
 _ABUNDANCE_COLUMN = re.compile(r"^Abundance:? ")
+# The candidates of one spectrum carry its reporter values, so a spectrum counts once,
+# for the precursor of its first candidate.
 _FEATURE_SQL = """SELECT * EXCLUDE (_best) FROM (
     SELECT *, $aggregates, row_number() OVER (g ORDER BY _qvalue NULLS LAST, _scan) AS _best
-    FROM pd_psms WHERE _rank = 1 AND $used
+    FROM (SELECT * FROM pd_psms WHERE $used QUALIFY row_number() OVER (PARTITION BY _run, _scan ORDER BY $candidate) = 1)
     WINDOW g AS (PARTITION BY _run, _sequence, _modifications, _charge)
 ) WHERE _best = 1"""
 
 
 class ProteomeDiscovererFeatureAdapter(PdPsmTable):
-    """Sum the reporter abundances of a precursor's PSMs, or take its largest MS1 abundance."""
+    """Sum the reporter abundances of a precursor's spectra, or take their largest MS1 abundance."""
 
     _pepmap: dict[str, tuple[str, list[str]]] = {}
     _protein_groups: dict[str, list[str]] = {}
@@ -74,7 +76,11 @@ class ProteomeDiscovererFeatureAdapter(PdPsmTable):
         if quan_info:
             # The PSMs PD left out of its own quantification: "Excluded by Method"
             used.append(f"lower(replace(COALESCE(\"{quan_info}\", ''), ' ', '')) NOT LIKE 'excludedby%'")
-        return sql_build(_FEATURE_SQL, aggregates=", ".join(aggregates), used=" AND ".join(used) or "true")
+        candidate = (
+            f"_rank, _qvalue NULLS LAST, abs({self._optional_double('mass_error_ppm')}) NULLS LAST, "
+            f"{self._optional_double('posterior_error_probability')} NULLS LAST, _row"
+        )
+        return sql_build(_FEATURE_SQL, aggregates=", ".join(aggregates), used=" AND ".join(used) or "true", candidate=candidate)
 
     def _quantities(self, row: dict) -> tuple[list[dict] | None, list[dict] | None]:
         ms1 = row["_ms1"] if row["_ms1"] and row["_ms1"] > 0 else None

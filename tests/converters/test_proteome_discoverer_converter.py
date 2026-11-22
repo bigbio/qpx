@@ -182,7 +182,8 @@ def test_feature_sums_the_reporters_of_the_used_psms(tmp_path):
         _psm_row(**{"First Scan": "101", "Abundance 126": "5", "Abundance 127N": "7", "q-Value": "0.1"}),
         _psm_row(**{"First Scan": "102", "Abundance 126": "1000", "Quan Info": "ExcludedByMethod"}),
         _psm_row(**{"First Scan": "103", "Abundance 126": "1000", "PSM Ambiguity": "Rejected"}),
-        _psm_row(**{"First Scan": "104", "Abundance 126": "1000", "Rank": "2"}),
+        # A second engine's hit on the first spectrum counts that spectrum once.
+        _psm_row(**{"Identifying Node": "Comet", "q-Value": "0.01"}),
     ]
     features = pq.read_table(_convert(tmp_path, rows) / "pd.feature.parquet").to_pylist()
 
@@ -197,11 +198,43 @@ def test_feature_sums_the_reporters_of_the_used_psms(tmp_path):
     assert feature["gg_names"] == ["GENE1"]
 
 
+def test_feature_counts_each_spectrum_once_for_its_first_candidate(tmp_path):
+    """Rank, then q-value, absolute mass error, PEP and export row pick the candidate a spectrum counts for."""
+    phospho_s4 = "N-Term(TMTpro); S4(Phospho); K9(TMTpro)"
+    rows = [
+        _psm_row(**{"First Scan": "200", "q-Value": "0.01"}),
+        _psm_row(**{"First Scan": "200", "Annotated Sequence": "OTHERK", "Modifications": "", "Rank": "2"}),
+        _psm_row(**{"First Scan": "201", "Annotated Sequence": "OTHERK", "Modifications": "", "Rank": "2", "Abundance 126": "4"}),
+        _psm_row(**{"First Scan": "202", "Annotated Sequence": "THIRDK", "Modifications": "", "Delta M in ppm": "-2.0"}),
+        _psm_row(**{"First Scan": "202", "Annotated Sequence": "ANOTHERK", "Modifications": "", "Delta M in ppm": "1.0"}),
+        # Site candidates with equal scores: the first row of the export wins.
+        _psm_row(**{"First Scan": "203", "Annotated Sequence": "SPESTIDEK", "Modifications": phospho_s4, "Abundance 126": "3"}),
+        _psm_row(
+            **{
+                "First Scan": "203",
+                "Annotated Sequence": "SPESTIDEK",
+                "Modifications": "N-Term(TMTpro); S1(Phospho); K9(TMTpro)",
+                "Abundance 126": "3",
+            }
+        ),
+    ]
+    features = pq.read_table(_convert(tmp_path, rows) / "pd.feature.parquet").to_pylist()
+
+    assert {(f["peptidoform"], f["intensities"][0]["intensity"]) for f in features} == {
+        (peptide_identity("MPEPTIDEK", "N-Term(TMTpro); K9(TMTpro)")[0], 10.0),
+        (peptide_identity("OTHERK", "")[0], 4.0),
+        (peptide_identity("ANOTHERK", "")[0], 10.0),
+        (peptide_identity("SPESTIDEK", phospho_s4)[0], 3.0),
+    }
+
+
 def test_label_free_feature_takes_the_largest_ms1_abundance(tmp_path):
     rows = [
         {k: v for k, v in _psm_row(**{"Intensity": intensity, "First Scan": scan}).items() if not k.startswith("Abundance")}
         for intensity, scan in (("100", "1"), ("300", "2"))
     ]
+    # Two engines on one spectrum: spectral_count counts the spectrum once.
+    rows.append({**rows[1], "Identifying Node": "Comet"})
     feature = pq.read_table(_convert(tmp_path, rows) / "pd.feature.parquet").to_pylist()[0]
 
     assert feature["intensities"] == [{"label": "LFQ", "intensity": 300.0}]
