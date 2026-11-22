@@ -18,7 +18,7 @@ from qpx.writers.ontology import OntologyWriter
 from qpx.writers.pg import PgWriter
 from qpx.writers.psm import PsmWriter
 from qpx.writers.xic import XicWriter
-from tests.conftest import make_feature_record, make_pg_record, make_psm_record, make_xic_record, without_rounded_cv_values
+from tests.conftest import make_feature_record, make_pg_record, make_psm_record, make_xic_record
 
 REPORT = "tests/examples/spectronaut/small/spectronaut_report.tsv"
 
@@ -122,13 +122,12 @@ def test_relayout_sorts_rows_renumbers_ids_and_refreshes_integrity(tmp_path):
     assert after.schema.metadata[b"identity_source"] == b"provided"
     with Dataset(str(source), file_prefix="sn") as unsorted, Dataset(str(target), file_prefix="sn") as relayouted:
         before, read = unsorted.feature.to_arrow(), relayouted.feature.to_arrow()
-    # Measured values are rounded as the footer states, the cv_params ones compared in
-    # test_struct_lists; every other value is unchanged.
+    # Measured values are rounded as the footer states.
     plan = json.loads(after.schema.metadata[b"qpx.mantissa_bits"])
     assert (plan["intensities.intensity"], plan["rt"]) == (12, 16)
     before = round_table(before, plan)
     values = [name for name in before.schema.names if name != "feature_id"]
-    read_rows, before_rows = (without_rounded_cv_values(table.select(values).to_pylist(), "feature") for table in (read, before))
+    read_rows, before_rows = (table.select(values).to_pylist() for table in (read, before))
     assert sorted(map(repr, read_rows)) == sorted(map(repr, before_rows))
     assert read.schema.equals(before.schema)
     assert after.schema.metadata[b"qpx.sort_order"] == b"anchor_protein,peptidoform,charge,run_file_name"

@@ -20,8 +20,10 @@ from qpx.core.data.identity import IDENTITY_HASH_VERSION, derive_composite_id
 from qpx.core.data.schema import _scan_format_issues, _scan_format_violations, pg_referential_issues_from_parquet
 from qpx.core.engine import create_connection
 from qpx.core.sql import sql_build, validate_identifier
+from qpx.core.struct_tables import FIXED_STRUCT_TABLES
 from qpx.version import QPX_SPEC_VERSION
 from qpx.writers.encoding import parquet_write_options, row_group_rows
+from qpx.writers.struct_lists import pack_struct_lists, struct_schema
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -43,6 +45,14 @@ class _IdentityState:
 
     composite_override: tuple[str, ...] | None
     sources: set[str] = dataclass_field(default_factory=set)
+
+
+@dataclass(frozen=True)
+class _WriterColumns:
+    """Extra logical fields and the selected physical layouts."""
+
+    extensions: list[str]
+    struct_layouts: dict[str, list[dict]]
 
 
 class BaseWriter:
@@ -71,6 +81,8 @@ class BaseWriter:
         extra_columns: list[str] | None = None,
         override_provided_ids: bool = False,
         identity_composite: Optional[Sequence[str]] = None,
+        *,
+        fixed_struct_lists: bool = False,
     ):
         self._path = Path(path)
         # A per-instance nonce, not just the pid: two writers in the SAME process
@@ -92,7 +104,8 @@ class BaseWriter:
         # the truncated output the staging was added to prevent (bigbio/qpx#288).
         self._write_failed = False
         self._warned_checks: set[str] = set()
-        self._extra_columns = extra_columns or []
+        layouts = FIXED_STRUCT_TABLES[creator][self._schema_class.view_name] if fixed_struct_lists else {}
+        self._columns = _WriterColumns(extra_columns or [], layouts)
         # Override mode (e.g. consensusXML): re-derive the id even when the
         # producer supplied one, stashing the original as a cv_param so it is
         # preserved/traceable.
@@ -139,8 +152,8 @@ class BaseWriter:
         effective_composite = self._identity_composite
         if effective_composite:
             identity_schema = (
-                self._schema_class.get_extended_arrow_schema(self._extra_columns)
-                if self._extra_columns
+                self._schema_class.get_extended_arrow_schema(self._columns.extensions)
+                if self._columns.extensions
                 else self._schema_class.get_arrow_schema()
             )
             available_fields = set(identity_schema.names)
@@ -321,11 +334,15 @@ class BaseWriter:
 
     @property
     def arrow_schema(self) -> pa.Schema:
-        if self._extra_columns:
-            base = self._schema_class.get_extended_arrow_schema(self._extra_columns)
+        if self._columns.extensions:
+            base = self._schema_class.get_extended_arrow_schema(self._columns.extensions)
         else:
             base = self._schema_class.get_arrow_schema()
         return base.with_metadata(self._file_metadata)
+
+    @property
+    def _parquet_schema(self) -> pa.Schema:
+        return struct_schema(self.arrow_schema, self._columns.struct_layouts)
 
     def _guard(self, fn, *args, **kwargs):
         """Run a write, latching failure so close() can never promote the result."""
@@ -378,7 +395,7 @@ class BaseWriter:
             self._writer.add_key_value_metadata(
                 {
                     b"scan_format": self._file_metadata[b"scan_format"],
-                    b"ARROW:schema": base64.b64encode(self.arrow_schema.serialize().to_pybytes()),
+                    b"ARROW:schema": base64.b64encode(self._parquet_schema.serialize().to_pybytes()),
                 }
             )
 
@@ -417,8 +434,7 @@ class BaseWriter:
         if result.errors:
             raise ValueError("Schema validation failed:\n" + "\n".join(issue.message for issue in result.errors))
         self._log_validation_warnings(result.warnings)
-        self._ensure_writer(table)
-        self._writer.write_table(table, row_group_size=row_group_rows(table))
+        self._write_parquet(table)
 
     def write_dataframe(self, df: "pd.DataFrame"):
         """Write a pandas DataFrame. Converts to Arrow and validates.
@@ -604,15 +620,19 @@ class BaseWriter:
             self._write_identity_table(self._build_table(records, self._relaxed_id_schema()))
             return
         table = self._build_table(records, self.arrow_schema).combine_chunks()
-        batch = table.to_batches()[0]
-        self._check_required_non_null(batch)
-        self._ensure_writer(table)
-        self._writer.write_batch(batch, row_group_size=row_group_rows(batch))
+        self._check_required_non_null(table)
+        self._write_parquet(table)
 
     def _write_identity_table(self, table: pa.Table) -> None:
         """Derive the ids of a table built on the nullable-id schema, check it and write it."""
         table = self._fill_identity_table(table)
         self._check_required_non_null(table)
+        self._write_parquet(table)
+
+    def _write_parquet(self, table: pa.Table) -> None:
+        if self._columns.struct_layouts:
+            source = f"{self._file_metadata[b'creator'].decode()} {self._schema_class.view_name}"
+            table = pack_struct_lists(table, self._parquet_schema, self._columns.struct_layouts, source)
         self._ensure_writer(table)
         self._writer.write_table(table, row_group_size=row_group_rows(table))
 
@@ -622,7 +642,7 @@ class BaseWriter:
             self._staging_path.parent.mkdir(parents=True, exist_ok=True)
             self._writer = pq.ParquetWriter(
                 str(self._staging_path),
-                schema=self.arrow_schema,
+                schema=self._parquet_schema,
                 **self._parquet_write_options(sample),
             )
 
@@ -632,7 +652,7 @@ class BaseWriter:
         Encoding-only and lossless: the schema and values are untouched, so
         readers read the output unchanged.
         """
-        return parquet_write_options(self.arrow_schema, self._compression, sample=sample)
+        return parquet_write_options(self._parquet_schema, self._compression, sample=sample)
 
     def identified_table(self, table: pa.Table) -> pa.Table:
         """*table* with its id column filled as this writer would write it."""
@@ -641,7 +661,7 @@ class BaseWriter:
     @property
     def footer_metadata(self) -> dict[bytes, bytes]:
         """The footer this writer stamps on its files."""
-        return dict(self._file_metadata)
+        return self._parquet_schema.metadata
 
     @classmethod
     def view_schema(cls):

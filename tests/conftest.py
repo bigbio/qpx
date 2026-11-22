@@ -7,10 +7,12 @@ and a complete dataset directory with feature, pg, sample, and run parquets.
 from contextlib import ExitStack
 
 import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 
+from qpx.core.engine import create_connection
 from qpx.core.ontology import PublicOntology
-from qpx.transforms.mantissa import MANTISSA_BITS
+from qpx.core.struct_lists import file_layouts, restore_table
 from qpx.writers import (
     DatasetWriter,
     FeatureWriter,
@@ -25,6 +27,13 @@ from qpx.writers import (
 # ---------------------------------------------------------------------------
 # Shared schema/validation helpers (hoisted from unit tests)
 # ---------------------------------------------------------------------------
+
+
+def read_view_table(path):
+    """Read a view as an Arrow table with its logical list types."""
+    table = pq.read_table(path)
+    with create_connection() as con:
+        return restore_table(con, table, file_layouts(table.schema.metadata))
 
 
 def _placeholder(arrow_type):
@@ -71,20 +80,6 @@ def assert_pg_table_wellformed(table):
     for lbl in table.column("label").to_pylist():
         if lbl is not None:
             assert isinstance(lbl, str) and lbl
-
-
-def without_rounded_cv_values(rows, view):
-    """*rows* (``to_pylist``) with the ``cv_params`` values that relayout rounds set to None.
-
-    In the list form a cv value is a string, which ``round_table`` leaves alone, while
-    relayout rounds it as a struct field of the type it reads back from.
-    """
-    names = {path.split(".", 1)[1] for path in MANTISSA_BITS[view] if path.startswith("cv_params.")}
-    for row in rows:
-        for entry in row.get("cv_params") or []:
-            if entry["cv_name"] in names:
-                entry["cv_value"] = None
-    return rows
 
 
 def write_lfq_consensusxml(path, maps, trailing=""):
@@ -605,6 +600,8 @@ def _local_ms_ontology(tmp_path, monkeypatch):
             path.write_text(header + body)
             ontology = stack.enter_context(PublicOntology.from_obo(path))
             monkeypatch.setattr("qpx.core.ontology.PublicOntology", lambda *_args, **_kwargs: ontology)
+            monkeypatch.setattr("qpx.core.scores._ontology", ontology)
+            monkeypatch.setattr("qpx.core.scores._lookup_cache", {})
             return ontology
 
         yield install

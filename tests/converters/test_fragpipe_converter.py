@@ -16,6 +16,7 @@ from qpx.converters.fragpipe.feature_adapter import FragPipeFeatureAdapter
 from qpx.converters.fragpipe.pg_adapter import FragPipePgAdapter
 from qpx.converters.fragpipe.psm_adapter import FragPipePsmAdapter
 from qpx.converters.ptm import PROTON_MASS, compute_precursor_mz
+from tests.conftest import read_view_table
 
 _COMBINED_PROTEIN_TSV = (
     "Protein\tGene\tDescription\t"
@@ -177,7 +178,7 @@ def _read_pg(tmp_path, protein_tsv, **convert_kwargs):
     convert_kwargs.setdefault("experiment_to_runs", {"expA": ["run_A"]})
     with FragPipePgAdapter() as adapter:
         adapter.convert(protein_path=str(protein_path), output_path=str(out_path), **convert_kwargs)
-    return pq.read_table(str(out_path)).to_pandas()
+    return read_view_table(str(out_path)).to_pandas()
 
 
 def test_pg_qvalue_prefers_real_fdr_over_probability(tmp_path):
@@ -580,7 +581,7 @@ def test_psm_purity_is_the_parent_ion_fraction(tmp_path):
     out = tmp_path / "psm.parquet"
     with FragPipePsmAdapter() as adapter:
         adapter.convert(psm_path=str(psm), output_path=str(out))
-    scores = {s["score_name"]: s for s in pq.read_table(out).to_pylist()[0]["additional_scores"]}
+    scores = {s["score_name"]: s for s in read_view_table(out).to_pylist()[0]["additional_scores"]}
     assert scores["parent_ion_fraction"]["score_value"] == pytest.approx(0.87)
     assert scores["parent_ion_fraction"]["higher_better"] is True
 
@@ -630,7 +631,7 @@ def _convert_psm_rows(tmp_path, header: str, rows: list[str]) -> list[dict]:
     out = tmp_path / "psm.parquet"
     with FragPipePsmAdapter() as adapter:
         adapter.convert(psm_path=str(psm), output_path=str(out))
-    return sorted(pq.read_table(out).to_pylist(), key=lambda row: row["scan"])
+    return sorted(read_view_table(out).to_pylist(), key=lambda row: row["scan"])
 
 
 def test_open_search_mass_shift_is_part_of_the_peptidoform(tmp_path):

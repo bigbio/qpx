@@ -13,7 +13,6 @@ import pyarrow.parquet as pq
 
 from qpx.core.engine import create_connection
 from qpx.core.sql import sql_build, validate_identifier
-from qpx.core.struct_lists import STRUCT_LISTS_FOOTER_KEY, footer_value, struct_lists
 from qpx.transforms.mantissa import MANTISSA_BITS, MANTISSA_BITS_FOOTER_KEY, mantissa_footer, round_table, rounding_plan
 from qpx.transforms.protein_properties import _stamped_schema
 from qpx.writers.base import _cast_column
@@ -100,13 +99,12 @@ def _list_remap_join(column: str, field: str, source: Path, id_map: Path, alias:
     )
 
 
-def _select_sql(source: Path, schema: pa.Schema, remaps: dict[str, Path], order_by: str, items: list[str]) -> str:
+def _select_sql(source: Path, schema: pa.Schema, remaps: dict[str, Path], order_by: str) -> str:
     """The rows of *source* in *order_by*, each reference of *remaps* holding the new ids its map gives.
 
-    A reference that its map does not name keeps its value. *items* replace
-    further columns.
+    A reference that its map does not name keeps its value.
     """
-    joins, replace = [], list(items)
+    joins, replace = [], []
     for index, (reference, id_map) in enumerate(sorted(remaps.items())):
         column, _, field = reference.partition(".")
         name, alias = validate_identifier(column), f"m{index}"
@@ -205,36 +203,19 @@ def _kept_order(source: Path, remaps: dict[str, Path]) -> _Rewrite:
     return _Rewrite("v.file_row_number", keys, _identity_footer(source, remaps), remaps, renumber=None, mantissa_bits={})
 
 
-def _written_schema(con, source: Path, rewrite: _Rewrite) -> tuple[pa.Schema, str, list[str], dict[str, int]]:
-    """The schema and compression *source* is written with, the select items of its struct lists and its rounding.
-
-    Name-value lists with one layout in every row become structs
-    (:mod:`qpx.core.struct_lists`), and measured values are rounded
-    (:mod:`qpx.transforms.mantissa`).
-    """
-    schema, compression = _footer_schema(source)
-    footer = dict(rewrite.footer)
-    found = struct_lists(con, _quoted(source), schema)
-    for struct_list in found:
-        schema = schema.set(schema.get_field_index(struct_list.column), pa.field(struct_list.column, struct_list.arrow_type))
-    if found:
-        footer[STRUCT_LISTS_FOOTER_KEY] = footer_value(found, schema.metadata.get(STRUCT_LISTS_FOOTER_KEY))
-    plan = rounding_plan(rewrite.mantissa_bits, schema)
-    if plan:
-        footer[MANTISSA_BITS_FOOTER_KEY] = mantissa_footer(plan)
-    return schema.with_metadata({**schema.metadata, **footer}), compression, [item.select for item in found], plan
-
-
 def _write_view(source: Path, destination: Path, rewrite: _Rewrite, *, row_group_size: int) -> None:
     """Write the rows of *source* to *destination* as *rewrite* says.
 
     Rows stream from a DuckDB sort that spills to disk, so the view may be larger
-    than memory.
+    than memory. The source's physical column types and struct-list footer travel together.
     """
-    with create_connection() as con:
-        schema, compression, items, plan = _written_schema(con, source, rewrite)
-    sql = _select_sql(source, schema, rewrite.remaps, rewrite.order_by, items)
-    # Struct lists change the leaf columns that sorting_columns counts.
+    schema, compression = _footer_schema(source)
+    plan = rounding_plan(rewrite.mantissa_bits, schema)
+    footer = {**schema.metadata, **rewrite.footer}
+    if plan:
+        footer[MANTISSA_BITS_FOOTER_KEY] = mantissa_footer(plan)
+    schema = schema.with_metadata(footer)
+    sql = _select_sql(source, schema, rewrite.remaps, rewrite.order_by)
     sorting_columns = pq.SortingColumn.from_ordering(schema, rewrite.sorting)
     renumber = rewrite.renumber
     id_index = schema.get_field_index(renumber[0]) if renumber else -1

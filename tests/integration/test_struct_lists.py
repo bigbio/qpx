@@ -1,8 +1,7 @@
-"""relayout stores the name-value lists of one layout as structs, and QPX reads them back as lists."""
+"""Converters store fixed structs and QPX reads them back as name-value lists."""
 
 import json
 import shutil
-from itertools import chain
 from pathlib import Path
 
 import pyarrow as pa
@@ -11,13 +10,15 @@ import pytest
 from click.testing import CliRunner
 
 from qpx.cli.main import qpx_main
+from qpx.collection import DatasetCollection
 from qpx.core import engine as engine_module
 from qpx.core.engine import DuckDBEngine
+from qpx.core.struct_lists import STRUCT_LISTS_FOOTER_KEY, file_layouts
 from qpx.dataset import Dataset
 from qpx.transforms.mantissa import round_table
 from qpx.writers.feature import FeatureWriter
 from qpx.writers.psm import PsmWriter
-from tests.conftest import make_feature_record, make_psm_record, without_rounded_cv_values
+from tests.conftest import make_feature_record, make_psm_record
 
 EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
 DIANN = EXAMPLES / "diann" / "small"
@@ -40,11 +41,11 @@ def _rows(folder, view, prefix="d", rounded_like=None):
         footer = pq.read_metadata(rounded_like / f"{prefix}.{view}.parquet").metadata
         table = round_table(table, json.loads(footer[b"qpx.mantissa_bits"]))
     columns = [name for name in table.schema.names if name not in ("feature_id", "pg_id", "psm_id", "pg_ids", "psm_ids")]
-    return sorted(map(repr, without_rounded_cv_values(table.select(columns).to_pylist(), view)))
+    return sorted(map(repr, table.select(columns).to_pylist()))
 
 
-@pytest.fixture(scope="module")
-def diann(tmp_path_factory):
+@pytest.fixture(scope="module", name="diann")
+def _diann(tmp_path_factory):
     root = tmp_path_factory.mktemp("diann")
     _invoke(
         "convert", "diann", "--report-path", DIANN / "diann_report.tsv", "--sdrf-file", DIANN / "PXD019909-DIA.sdrf.tsv",
@@ -54,48 +55,32 @@ def diann(tmp_path_factory):
     return root
 
 
-def test_relayout_stores_the_lists_of_one_layout_as_structs(diann):
-    """Every feature lists the same scores and cv terms, so each is a field; a cv string is a float only if it reads back."""
-    path = diann / "sorted" / "d.feature.parquet"
-    schema = pq.read_schema(path)
-
-    scores, cv = schema.field("additional_scores").type, schema.field("cv_params").type
-    assert pa.types.is_struct(scores)
-    assert scores.field("diann_cscore").type == pa.float64()
-    # Proteotypic "1" would read back from a float as "1.0".
-    assert (cv.field("irt").type, cv.field("proteotypic").type) == (pa.float32(), pa.string())
-    # 118 features have no ms1_area entry, so their layout differs and the column stays a list.
-    assert pa.types.is_list(schema.field("additional_intensities").type)
-    assert b"qpx.struct_lists" in pq.read_metadata(path).metadata
-
-
 @pytest.mark.parametrize("view", ["feature", "pg"])
-def test_struct_lists_read_back_as_the_lists(diann, view):
+def test_relayout_keeps_fixed_structs_and_their_footer(diann, view):
+    before, after = (pq.ParquetFile(diann / folder / f"d.{view}.parquet") for folder in ("source", "sorted"))
+    for column in ("additional_scores", "cv_params"):
+        field = before.schema_arrow.field(column)
+        assert pa.types.is_struct(field.type)
+        assert after.schema_arrow.field(column) == field
+    assert pa.types.is_list(after.schema_arrow.field("additional_intensities").type)
+    assert after.metadata.metadata[STRUCT_LISTS_FOOTER_KEY] == before.metadata.metadata[STRUCT_LISTS_FOOTER_KEY]
     assert _rows(diann / "sorted", view) == _rows(diann / "source", view, rounded_like=diann / "sorted")
 
 
-def _cv_irt(folder):
-    """The cv iRT of each feature, by peptidoform, charge and run."""
-    with Dataset(str(folder), file_prefix="d") as dataset:
-        rows = dataset.feature.to_arrow().select(["peptidoform", "charge", "run_file_name", "cv_params"]).to_pylist()
-    return {
-        (row["peptidoform"], row["charge"], row["run_file_name"]): float(entry["cv_value"])
-        for row in rows
-        for entry in row["cv_params"] or []
-        if entry["cv_name"] == "irt"
-    }
+def test_relayout_keeps_homogeneous_name_value_lists(tmp_path):
+    source, target = tmp_path / "source", tmp_path / "sorted"
+    source.mkdir()
+    score = {"score_name": "andromeda_score", "score_value": 0.25, "higher_better": True}
+    cv = {"cv_name": "mass analyzer", "cv_value": "FTMS"}
+    with PsmWriter(source / "d.psm.parquet", creator="maxquant") as writer:
+        writer.write_batch([{**make_psm_record(scan=[scan]), "additional_scores": [score], "cv_params": [cv]} for scan in (2, 1)])
+    _invoke("transform", "relayout", "--dataset", source, "--output-folder", target)
 
-
-def test_the_cv_irt_is_rounded_as_a_retention_time(diann):
-    """Once cv_params is a struct, its iRT is a float, which keeps 16 mantissa bits."""
-    footer = pq.read_metadata(diann / "sorted" / "d.feature.parquet").metadata
-    assert json.loads(footer[b"qpx.mantissa_bits"])["cv_params.irt"] == 16
-
-    source, rounded = _cv_irt(diann / "source"), _cv_irt(diann / "sorted")
-
-    assert rounded.keys() == source.keys()
-    assert any(rounded[key] != value for key, value in source.items())
-    assert all(abs(rounded[key] - value) <= 2.0**-16 * abs(value) for key, value in source.items())
+    schema = pq.read_schema(target / "d.psm.parquet")
+    assert STRUCT_LISTS_FOOTER_KEY not in schema.metadata
+    for column in ("additional_scores", "cv_params"):
+        assert pa.types.is_list(schema.field(column).type)
+    assert _rows(target, "psm") == _rows(source, "psm", rounded_like=target)
 
 
 def test_a_dataset_with_struct_lists_validates(diann):
@@ -111,112 +96,160 @@ def test_a_dataset_with_struct_lists_validates(diann):
     ids=["gene-map", "migrate"],
 )
 def test_rewriting_a_view_reads_its_struct_lists_back(diann, tmp_path, command):
-    """Transforms that read the files themselves write the lists, as they do for the unsorted dataset.
-
-    The values stay rounded, and the footer still says how.
-    """
+    """Transforms that read the files themselves write lists and keep the rounding footer."""
     for name in ("source", "sorted"):
         _invoke(*command, diann / name, "--output-folder", tmp_path / name)
+        for view in ("feature", "pg"):
+            file = pq.ParquetFile(tmp_path / name / f"d.{view}.parquet")
+            footer = file.metadata.metadata
+            assert not file_layouts(footer)
+            assert pa.types.is_list(file.schema_arrow.field("additional_scores").type)
+            assert pa.types.is_list(file.schema_arrow.field("cv_params").type)
+            assert _rows(tmp_path / name, view) == _rows(diann / name, view)
+            original = pq.read_metadata(diann / name / f"d.{view}.parquet").metadata
+            assert footer.get(b"qpx.mantissa_bits") == original.get(b"qpx.mantissa_bits")
 
-    assert pa.types.is_list(pq.read_schema(tmp_path / "sorted" / "d.feature.parquet").field("additional_scores").type)
-    assert _rows(tmp_path / "sorted", "feature") == _rows(tmp_path / "source", "feature", rounded_like=tmp_path / "sorted")
+
+def test_merge_of_fixed_structs_writes_lists(diann, tmp_path):
+    """Merging a converter's fixed-layout input writes the logical lists."""
+    with (
+        Dataset(str(diann / "source"), file_prefix="d") as dataset,
+        DatasetCollection([dataset]) as collection,
+    ):
+        collection.merge(tmp_path / "merged", structures=["feature", "pg"])
     for view in ("feature", "pg"):
-        rounded = pq.read_metadata(diann / "sorted" / f"d.{view}.parquet").metadata[b"qpx.mantissa_bits"]
-        assert pq.read_metadata(tmp_path / "sorted" / f"d.{view}.parquet").metadata[b"qpx.mantissa_bits"] == rounded
+        schema = pq.read_schema(tmp_path / "merged" / f"merged.{view}.parquet")
+        assert not file_layouts(schema.metadata)
+        for column in ("additional_scores", "cv_params"):
+            assert pa.types.is_list(schema.field(column).type)
 
 
-def _psms(folder, scores):
-    folder.mkdir()
-    records = [
-        {**make_psm_record(peptidoform=f"PEP{index}K", scan=[index]), "additional_scores": entries}
-        for index, entries in enumerate(scores, start=1)
+def test_fixed_writer_round_trips_null_empty_and_partial_lists(tmp_path):
+    """The public writer schema stays logical, even for several streamed writes."""
+    path = tmp_path / "test.psm.parquet"
+    scores = [{"score_name": "andromeda_score", "score_value": 8.25, "higher_better": True}]
+    cv = [{"cv_name": "mass analyzer", "cv_value": "FTMS"}]
+    with PsmWriter(path, creator="maxquant", fixed_struct_lists=True, batch_size=1) as writer:
+        assert pa.types.is_list(writer.arrow_schema.field("additional_scores").type)
+        for scan, entries, params in ((1, scores, cv), (2, [], []), (3, None, None)):
+            writer.write_batch([{**make_psm_record(scan=[scan]), "additional_scores": entries, "cv_params": params}])
+        writer.set_scan_format("scan")
+
+    schema = pq.read_schema(path)
+    assert schema.field("additional_scores").type.field("andromeda_score").type == pa.float64()
+    assert schema.field("cv_params").type.field("mass analyzer").type == pa.string()
+    assert pq.read_metadata(path).metadata[b"scan_format"] == b"scan"
+    assert pq.read_table(path)["additional_scores"][0].as_py() == {
+        "andromeda_score": 8.25,
+        "andromeda_delta_score": None,
+        "parent_ion_fraction": None,
+    }
+    with Dataset(str(tmp_path), file_prefix="test") as dataset:
+        table = dataset.psm.to_arrow()
+    rows = {tuple(row["scan"]): row for row in table.to_pylist()}
+    assert [(rows[(i,)]["additional_scores"], rows[(i,)]["cv_params"]) for i in (1, 2, 3)] == [
+        (scores, cv),
+        ([], []),
+        (None, None),
     ]
-    with PsmWriter(folder / "ds.psm.parquet") as writer:
-        writer.write_batch(records)
-    return folder
-
-
-def _score(name, value):
-    return {"score_name": name, "score_value": value, "higher_better": name.startswith("s")}
 
 
 @pytest.mark.parametrize(
-    ("scores", "fields"),
+    ("creator", "names", "problem"),
     [
-        # 0.5 is a float32, 0.1 is not; a null list is a null struct.
-        (
-            [[_score("score", 0.5), _score("q", 0.1)], None, [_score("score", 2.0), _score("q", 0.2)]],
-            [pa.float32(), pa.float64()],
-        ),
-        ([[_score("score", 0.5), _score("q", 0.1)], [_score("q", 0.1), _score("score", 0.5)]], None),
-        ([[_score("score", 0.5)], []], None),
-        # DuckDB reads fields that differ only in case under other names.
-        ([[_score("score", 0.5), _score("Score", 0.1)]], None),
+        ("maxquant", ["new_score"], "outside the fixed layout"),
+        ("maxquant", ["andromeda_score", "andromeda_score"], "duplicate name 'andromeda_score'"),
     ],
-    ids=["one layout", "two orders", "an empty list", "names differing in case"],
+    ids=["unknown name", "duplicate in a row"],
 )
-def test_only_a_layout_that_one_struct_can_hold_becomes_a_struct(tmp_path, scores, fields):
-    _invoke("transform", "relayout", "--dataset", _psms(tmp_path / "ds", scores), "--output-folder", tmp_path / "sorted")
+def test_fixed_writer_rejects_unrepresentable_scores(tmp_path, creator, names, problem):
+    """Unknown and repeated scores cannot occupy the fields of the fixed struct."""
+    path = tmp_path / "test.psm.parquet"
+    scores = [{"score_name": name, "score_value": 1.25, "higher_better": True} for name in names]
+    with (
+        pytest.raises(ValueError, match=f"{creator} psm additional_scores: .*(?:{problem})"),
+        PsmWriter(path, creator=creator, fixed_struct_lists=True) as writer,
+    ):
+        writer.write_batch([{**make_psm_record(), "additional_scores": scores}])
+    assert not path.exists()
 
-    stored = pq.read_schema(tmp_path / "sorted" / "ds.psm.parquet").field("additional_scores").type
-    assert ([field.type for field in stored] if pa.types.is_struct(stored) else None) == fields
-    assert _rows(tmp_path / "sorted", "psm", "ds") == _rows(tmp_path / "ds", "psm", "ds", rounded_like=tmp_path / "sorted")
+
+def test_fixed_writer_rejects_an_entry_in_an_empty_layout(tmp_path):
+    """A column without declared fields stays a list that holds no entry."""
+    path = tmp_path / "test.feature.parquet"
+    scores = [{"score_name": "new_score", "score_value": 1.25, "higher_better": True}]
+    with (
+        pytest.raises(ValueError, match="fragpipe feature additional_scores: name 'new_score' is outside the fixed layout"),
+        FeatureWriter(path, creator="fragpipe", fixed_struct_lists=True) as writer,
+    ):
+        writer.write_batch([{**make_feature_record(), "additional_scores": scores}])
+    assert not path.exists()
 
 
-# The scores, cv terms and additional intensities (label to intensity names) of each
-# feature of a shard, and the cv values of its three features where they read as
-# numbers; a ragged shard drops an intensity from its first feature, so that its
-# additional_intensities keeps two layouts and stays a list.
-_BETA = {
-    "scores": ["beta_score"],
-    "cv": ["beta_term"],
-    "intensities": {"LFQ": ["beta_raw", "beta_norm"]},
-    "cv_values": ["52.822754", "1.1", "33.3"],
-}
+def test_fixed_writer_rejects_a_null_value(tmp_path):
+    """A null struct field reads back as no entry, so an entry without a value cannot be stored."""
+    path = tmp_path / "test.psm.parquet"
+    scores = [{"score_name": "andromeda_score", "score_value": None, "higher_better": True}]
+    with (
+        pytest.raises(ValueError, match="maxquant psm additional_scores: name 'andromeda_score' has a null value"),
+        PsmWriter(path, creator="maxquant", fixed_struct_lists=True) as writer,
+    ):
+        writer.write_batch([{**make_psm_record(), "additional_scores": scores}])
+    assert not path.exists()
+
+
+_BETA = ("spectronaut", "spectronaut_cscore", "empirical_irt")
 _SHARDS = {
-    "alpha": {"scores": ["alpha_score", "alpha_q"], "cv": ["alpha_term"], "intensities": {"TMT126": ["alpha_norm"]}},
+    "alpha": ("diann", "diann_cscore", "irt"),
     "beta": _BETA,
     "beta_too": _BETA,
-    # beta's layout; 0.1 and 0.1234567891 are no float32, so its scores and cv term
-    # are stored as DOUBLE where beta's are FLOAT.
-    "beta_double": {**_BETA, "step": 0.1, "cv_values": ["0.1234567891", "2.5", "3.75"]},
-    "gamma": {"scores": ["gamma_score"], "cv": ["gamma_term"], "intensities": {"TMT127": ["gamma_a", "gamma_b"]}, "ragged": True},
+    "gamma": ("proteome_discoverer", "sequest_xcorr", None),
 }
 
 
-def _features(folder, run, scores, cv, intensities, cv_values=None, step=0.25, ragged=False):
-    folder.mkdir()
+def _features(path, run, creator, score, term, *, fixed):
     records = []
-    for index in range(1, 4):
+    for index, value in enumerate(("52.822754", "1.1", "33.3"), start=1):
         record = make_feature_record(sequence=f"PEP{index}K", peptidoform=f"PEP{index}K", run_file_name=run, scan=[index])
-        record["additional_scores"] = [_score(name, index * step) for name in scores]
-        value = cv_values[index - 1] if cv_values else f"{run}_{index}"
-        record["cv_params"] = [{"cv_name": name, "cv_value": value} for name in cv]
+        record["additional_scores"] = [{"score_name": score, "score_value": index / 10, "higher_better": True}]
+        record["cv_params"] = [{"cv_name": term, "cv_value": value}] if term else None
         record["additional_intensities"] = [
-            {
-                "label": label,
-                "intensities": [
-                    {"intensity_name": name, "intensity_value": 10.0 * index + position}
-                    for position, name in enumerate(names[: 1 if ragged and index == 1 else None])
-                ],
-            }
-            for label, names in intensities.items()
+            {"label": "LFQ", "intensities": [{"intensity_name": "spectral_count", "intensity_value": float(index)}]}
         ]
         records.append(record)
-    with FeatureWriter(folder / "ds.feature.parquet") as writer:
+    with FeatureWriter(path, creator=creator, fixed_struct_lists=fixed) as writer:
         writer.write_batch(records)
-    return folder
 
 
-@pytest.fixture(scope="module")
-def shards(tmp_path_factory):
-    """Each shard's feature file as converted (list) and after relayout (struct), by shard name."""
+@pytest.fixture(scope="module", name="shards")
+def _shards(tmp_path_factory):
+    """Each shard's feature file in list and fixed struct form, by shard name."""
     root = tmp_path_factory.mktemp("shards")
     files = {}
     for name, shard in _SHARDS.items():
-        source = _features(root / name, f"run_{name}", **shard)
-        _invoke("transform", "relayout", "--dataset", source, "--output-folder", root / f"{name}_sorted")
-        files[name] = source / "ds.feature.parquet", root / f"{name}_sorted" / "ds.feature.parquet"
+        folder = root / name
+        folder.mkdir()
+        source, fixed = folder / "list.feature.parquet", folder / "fixed.feature.parquet"
+        _features(source, f"run_{name}", *shard, fixed=False)
+        _features(fixed, f"run_{name}", *shard, fixed=True)
+        files[name] = source, fixed
+    return files
+
+
+@pytest.fixture(scope="module", name="legacy_shards")
+def _legacy_shards(shards, tmp_path_factory):
+    """One footer layout stored with two numeric leaf types by earlier development builds."""
+    root = tmp_path_factory.mktemp("legacy-shards")
+    files = {}
+    for name, kind in (("beta", pa.float32()), ("beta_too", pa.float64())):
+        table = pq.read_table(shards[name][1])
+        for column in ("additional_scores", "cv_params"):
+            values = table[column]
+            storage = pa.struct([field.with_type(kind) for field in values.type])
+            table = table.set_column(table.schema.get_field_index(column), column, values.cast(storage))
+        path = root / f"{name}.feature.parquet"
+        pq.write_table(table, path)
+        files[name] = path
     return files
 
 
@@ -246,24 +279,12 @@ def _view_sql(folder):
         return dataset._engine.execute("SELECT sql FROM duckdb_views() WHERE view_name = 'feature'").fetchall()[0][0]
 
 
-def test_shards_store_their_lists_as_the_tests_need(shards):
-    stored = {name: pq.read_schema(sorted_file) for name, (_, sorted_file) in shards.items()}
-    columns = ("additional_scores", "cv_params", "additional_intensities")
-
-    assert all(pa.types.is_struct(stored[name].field(column).type) for name in ("alpha", "beta") for column in columns)
-    assert pa.types.is_list(stored["gamma"].field("additional_intensities").type)
-    assert pa.types.is_struct(stored["gamma"].field("additional_scores").type)
-    for name, kind in (("beta", pa.float32()), ("beta_double", pa.float64())):
-        assert stored[name].field("additional_scores").type.field("beta_score").type == kind
-        assert stored[name].field("cv_params").type.field("beta_term").type == kind
-
-
-@pytest.mark.parametrize("sorted_first", [True, False], ids=["relayout first", "converted first"])
-def test_a_view_of_converted_and_relayouted_files_reads_each_row_as_its_file(shards, tmp_path, sorted_first):
+@pytest.mark.parametrize("struct_first", [True, False], ids=["struct first", "list first"])
+def test_a_view_of_list_and_struct_files_reads_each_row_as_its_file(shards, tmp_path, struct_first):
     """DuckDB cannot read a list and a struct of one column in one read_parquet, so each layout is read on its own."""
-    source, relayouted = shards["beta"]
-    names = ("a", "b") if sorted_first else ("b", "a")
-    folder = _shard_folder(tmp_path / "mixed", **dict(zip(names, (relayouted, source))))
+    source, fixed = shards["beta"]
+    names = ("a", "b") if struct_first else ("b", "a")
+    folder = _shard_folder(tmp_path / "mixed", **dict(zip(names, (fixed, source))))
 
     assert _feature_rows(folder) == _each_file_alone(folder)
 
@@ -275,22 +296,23 @@ def _names_by_run(folder):
     names = {}
     for row in rows.to_pylist():
         names.setdefault(row["run_file_name"], set()).update(
-            [entry["score_name"] for entry in row["additional_scores"] if entry["score_value"] is not None]
-            + [entry["cv_name"] for entry in row["cv_params"] if entry["cv_value"] is not None]
+            [entry["score_name"] for entry in row["additional_scores"]]
+            + [entry["cv_name"] for entry in row["cv_params"] or []]
             + [inner["intensity_name"] for entry in row["additional_intensities"] for inner in entry["intensities"]]
         )
     return names
 
 
 @pytest.mark.parametrize("shard_names", [("alpha", "beta"), ("beta", "alpha"), ("alpha", "gamma", "beta")], ids="+".join)
-def test_relayouted_files_of_different_layouts_keep_their_own_lists(shards, tmp_path, shard_names):
+def test_struct_files_of_different_layouts_keep_their_own_lists(shards, tmp_path, shard_names):
     """Each file's rows read back under its own names, not those of the first file's footer."""
     folder = _shard_folder(tmp_path / "mixed", **{name: shards[name][1] for name in shard_names})
 
     assert _feature_rows(folder) == _each_file_alone(folder)
     assert _names_by_run(folder) == {
-        f"run_{name}": {*_SHARDS[name]["scores"], *_SHARDS[name]["cv"], *chain(*_SHARDS[name]["intensities"].values())}
-        for name in shard_names
+        f"run_{name}": {score, "spectral_count"} | ({term} if term else set())
+        for name, (_, score, term) in _SHARDS.items()
+        if name in shard_names
     }
     assert "UNION ALL BY NAME" in _view_sql(folder)
 
@@ -314,9 +336,9 @@ def test_files_of_one_layout_and_one_storage_are_read_by_one_read_parquet(shards
     assert _feature_rows(folder) == _each_file_alone(folder)
 
 
-def test_files_of_one_layout_stored_as_other_types_are_read_apart(shards, tmp_path):
+def test_files_of_one_layout_stored_as_other_types_are_read_apart(legacy_shards, tmp_path):
     """One union_by_name read widened beta's FLOAT cv term to beta_double's DOUBLE: "52.822754" read "52.82275390625"."""
-    folder = _shard_folder(tmp_path / "same", a=shards["beta"][1], b=shards["beta_double"][1])
+    folder = _shard_folder(tmp_path / "same", a=legacy_shards["beta"], b=legacy_shards["beta_too"])
 
     assert _view_sql(folder).count("read_parquet(") == 2
     assert _feature_rows(folder) == _each_file_alone(folder)
@@ -334,7 +356,7 @@ def test_a_file_without_structs_is_registered_without_reading_its_footer(shards,
         assert engine.execute("SELECT count(*) FROM feature").fetchone()[0] == 3
 
 
-def test_a_relayouted_file_is_registered_reading_only_its_layout(shards, monkeypatch):
+def test_a_struct_file_is_registered_reading_only_its_layout(shards, monkeypatch):
     """A single file is one group: its view reads only its declared layout, as each footer read of a remote file is a request."""
 
     def unexpected(*arguments):
@@ -348,14 +370,14 @@ def test_a_relayouted_file_is_registered_reading_only_its_layout(shards, monkeyp
     assert types["additional_scores"].endswith("[]")
 
 
-def test_hive_partitions_of_one_layout_keep_their_stored_types(shards, tmp_path):
-    """beta stores its scores as FLOAT and beta_double as DOUBLE; read with beta's types, 0.1 became 0.10000000149011612."""
+def test_hive_partitions_of_one_layout_keep_their_stored_types(legacy_shards, tmp_path):
+    """If the DOUBLE scores were read as FLOAT, 0.1 would become 0.10000000149011612."""
     folder = tmp_path / "partitioned"
-    for name in ("beta", "beta_double"):
+    for name, source in legacy_shards.items():
         partition = folder / "feature" / f"run_file_name=run_{name}"
         partition.mkdir(parents=True)
-        pq.write_table(pq.read_table(shards[name][1]).drop_columns(["run_file_name"]), partition / "part-0.parquet")
-    alone = _shard_folder(tmp_path / "alone", **{name: shards[name][1] for name in ("beta", "beta_double")})
+        pq.write_table(pq.read_table(source).drop_columns(["run_file_name"]), partition / "part-0.parquet")
+    alone = _shard_folder(tmp_path / "alone", **legacy_shards)
 
     assert _feature_rows(folder) == _each_file_alone(alone)
 
@@ -377,7 +399,7 @@ def test_hive_partitions_are_unioned_by_name(shards, tmp_path):
 
 
 def test_hive_partitions_of_different_layouts_keep_the_partition_column(shards, tmp_path):
-    """Each partition is the relayouted file of its run without the run column, which the directory names."""
+    """Each partition is the struct file of its run without the run column, which the directory names."""
     folder = tmp_path / "partitioned"
     for name in ("alpha", "gamma", "beta"):
         table = pq.read_table(shards[name][1])
@@ -395,12 +417,10 @@ def test_hive_partitions_of_different_layouts_keep_the_partition_column(shards, 
 @pytest.mark.parametrize(
     "files",
     [{"a": ("gamma", 1), "b": ("beta", 1)}, {"a": ("beta", 1), "b": ("alpha", 0)}],
-    ids=["a list next to a struct", "a converted file"],
+    ids=["mixed cv layouts", "a list next to a struct"],
 )
 def test_validate_reads_a_view_of_files_with_different_layouts(shards, tmp_path, files):
-    """Applying gamma's footer to every file made DuckDB fail on beta's struct additional_intensities, and validate crash;
-    a converted file made the view unreadable.
-    """
+    """Validation reads mixed layouts through the same restoration as queries."""
     folder = _shard_folder(tmp_path / "mixed", **{name: shards[shard][index] for name, (shard, index) in files.items()})
 
     result = CliRunner().invoke(qpx_main, ["validate", "--dataset-path", str(folder)])
@@ -414,23 +434,21 @@ def test_validate_reads_a_view_of_files_with_different_layouts(shards, tmp_path,
     "others",
     [{"b": ("beta", 1)}, {"b": ("beta", 0)}, {"b": ("beta", 0), "c": ("gamma", 1)}, {"0": ("beta", 0), "c": ("gamma", 1)}],
     ids=[
-        "next to a relayouted file",
-        "next to a converted file",
-        "next to a converted and a relayouted file",
-        "after a converted file",
+        "next to a struct file",
+        "next to a list file",
+        "next to a list and a struct file",
+        "after a list file",
     ],
 )
 def test_a_struct_without_its_layout_next_to_other_files_is_refused(shards, tmp_path, others):
-    """Its rows cannot be read as lists, so the view is refused instead of failing on its first read. A converted
-    file has no footer key either, and DuckDB reads a list next to a struct as the list, so each file's schema tells.
-    """
+    """A struct with a missing footer layout prevents mixed-file registration."""
     table = pq.read_table(shards["alpha"][1])
     folder = _shard_folder(tmp_path / "mixed", **{name: shards[shard][index] for name, (shard, index) in others.items()})
     footer = {key: value for key, value in table.schema.metadata.items() if key != b"qpx.struct_lists"}
     pq.write_table(table.replace_schema_metadata(footer), folder / "a.feature.parquet")
 
     with DuckDBEngine() as engine:
-        with pytest.raises(ValueError, match="a.feature.parquet holds additional_scores, cv_params, additional_intensities"):
+        with pytest.raises(ValueError, match="a.feature.parquet holds additional_scores, cv_params as a struct without"):
             engine.register_parquet_files("feature", sorted(folder.glob("*.feature.parquet")))
         assert engine.execute("SELECT count(*) FROM duckdb_views() WHERE view_name = 'feature'").fetchone()[0] == 0
     result = CliRunner().invoke(qpx_main, ["validate", "--dataset-path", str(folder)])

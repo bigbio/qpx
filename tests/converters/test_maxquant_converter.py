@@ -11,6 +11,8 @@ import pandas as pd
 import pyarrow.parquet as pq
 import pytest
 
+from tests.conftest import read_view_table
+
 EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "examples" / "maxquant" / "maxquant_simple"
 
 _MSMS = EXAMPLES_DIR / "msms.txt"
@@ -643,7 +645,7 @@ def psm_table(converted_output):
     """Read the psm.parquet produced by the converter."""
     path = converted_output / f"{_PREFIX}.psm.parquet"
     assert path.exists(), "psm.parquet was not produced"
-    return pq.read_table(str(path))
+    return read_view_table(str(path))
 
 
 @pytest.fixture(scope="module")
@@ -651,7 +653,7 @@ def feature_table(converted_output):
     """Read the feature.parquet produced by the converter."""
     path = converted_output / f"{_PREFIX}.feature.parquet"
     assert path.exists(), "feature.parquet was not produced"
-    return pq.read_table(str(path))
+    return read_view_table(str(path))
 
 
 # ---------------------------------------------------------------------------

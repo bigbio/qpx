@@ -260,7 +260,7 @@ class FragPipePgAdapter(BaseConverter):
         # Step 4: Stream and transform
         self.logger.info("Transforming FragPipe protein groups ...")
 
-        with PgWriter(output_path, creator=creator) as writer:
+        with PgWriter(output_path, creator=creator, fixed_struct_lists=True) as writer:
             for batch in self._query_batched("SELECT * FROM fragpipe_proteins", max(1, chunksize // len(experiment_cols))):
                 df = batch.to_pandas()
                 records = self._transform_batch(df, experiment_cols)

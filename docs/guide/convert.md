@@ -600,6 +600,8 @@ The labels come from the channel of each annotation line (`127N` is `TMT127N`), 
 
 Convert the text exports of a Proteome Discoverer consensus result to QPX format. Export `PSMs`, `Proteins` and `Input Files` from the result; the `.pdResult` file itself is not read.
 
+When `Delta Score` and `DeltaScore` both hold a value in a row, the converter writes their common value once or stops if they differ. It applies the same rule to `SVM Score` and `Percolator SVMScore`. A conflict reports both column names and values.
+
 ### Parameters {#proteome-discoverer-parameters}
 
 ```python exec="1" session="doc_utils" html="1"

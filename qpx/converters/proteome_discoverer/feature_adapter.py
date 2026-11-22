@@ -40,7 +40,7 @@ class ProteomeDiscovererFeatureAdapter(PdPsmTable):
         if not self._channels and ms1 is None:
             self.logger.warning("This PSM export has no abundance columns, so no feature view is written")
             return False
-        with FeatureWriter(output_path, creator="proteome_discoverer") as writer:
+        with FeatureWriter(output_path, creator="proteome_discoverer", fixed_struct_lists=True) as writer:
             for batch in self._query_batched(self._query(ms1), chunksize):
                 records = self._transform_rows_with_skip(batch.to_pylist(), self._record, "Proteome Discoverer feature")
                 if records:
@@ -111,9 +111,8 @@ class ProteomeDiscovererFeatureAdapter(PdPsmTable):
             spectrum["rt"] = apex_minutes * 60
         members = self._protein_groups.get(anchor) or masters
         gene = self._genes.get(anchor)
-        interference = next(
-            (s["score_value"] for s in self.search_scores(row) or [] if s["score_name"] == "parent_ion_fraction"), None
-        )
+        scores = self.search_scores(row)
+        interference = next((s["score_value"] for s in scores or [] if s["score_name"] == "parent_ion_fraction"), None)
         return {
             **spectrum,
             "sequence": sequence,
@@ -123,7 +122,7 @@ class ProteomeDiscovererFeatureAdapter(PdPsmTable):
             "is_decoy": False,
             "calculated_mz": compute_precursor_mz(peptidoform, charge),
             "precursor_qvalue": row["_qvalue"],
-            "additional_scores": self.search_scores(row),
+            "additional_scores": scores,
             "predicted_rt": None,
             "cv_params": None,
             "intensities": intensities,

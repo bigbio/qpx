@@ -302,7 +302,7 @@ def _build_core_select_parts(
         else "NULL::DOUBLE AS posterior_error_probability"
     )
 
-    # DIA-NN Q.Value is precursor-level and remains in additional_scores;
+    # DIA-NN Q.Value is precursor-level and gets its own column at write time;
     # DIA-NN does not report a peptide-level q-value.
     parts.append("NULL::DOUBLE AS peptide_qvalue")
 

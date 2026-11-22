@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import duckdb
 import pyarrow.parquet as pq
 
+from qpx.core.engine import DuckDBEngine
 from qpx.core.ontology_fields import emitted_field_names
 from qpx.core.scores import (
     _FIELD_CV_MAP,
@@ -81,12 +81,12 @@ def reconcile_ontology_entries(entries: list[dict], output_folder: Path, prefix:
     the view stays true however the converter assembled its mappings.
     """
     emitted: dict[str, set[str]] = {}
-    with duckdb.connect() as con:
+    with DuckDBEngine() as engine:
         for path in sorted(Path(output_folder).glob(f"{prefix}.*.parquet")):
             view = path.name[len(prefix) + 1 : -len(".parquet")]
             if view not in _NON_DATA_VIEWS:
-                relation = "read_parquet('" + str(path).replace("'", "''") + "')"
-                emitted[view] = emitted_field_names(con, relation)
+                engine.register_parquet(view, path)
+                emitted[view] = emitted_field_names(engine, view)
 
     kept = [entry for entry in entries if entry["field_name"] in emitted.get(entry["view"], ())]
     described = {(entry["field_name"], entry["view"]) for entry in kept}

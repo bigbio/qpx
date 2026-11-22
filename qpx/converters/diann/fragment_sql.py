@@ -43,8 +43,9 @@ _SLOT_SQL = """
     SELECT run_file_name, peptidoform, charge, is_decoy, is_library_decoy, label, fr.fr_index + 1 AS fragment_index,
            $annotation,
            fr.height AS peak_height,
-           [STRUCT_PACK(score_name := 'diann_fragment_score', score_value := fr.score, higher_better := true)]
-               AS additional_scores
+           CASE WHEN fr.score IS NOT NULL
+               THEN [STRUCT_PACK(score_name := 'diann_fragment_score', score_value := fr.score, higher_better := true)]
+           END AS additional_scores
     FROM (
         SELECT $run AS run_file_name, lk.peptidoform, CAST(r.$charge AS SMALLINT) AS charge,
                $decoy AS is_decoy, $library_decoy AS is_library_decoy, $label AS label,

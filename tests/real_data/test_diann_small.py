@@ -23,7 +23,7 @@ import pyarrow.parquet as pq
 import pytest
 
 from qpx.dataset import Dataset
-from tests.conftest import assert_pg_table_wellformed
+from tests.conftest import assert_pg_table_wellformed, read_view_table
 
 EXAMPLES_DIR = Path(__file__).parent.parent / "examples" / "diann" / "small"
 
@@ -108,7 +108,7 @@ def feature_table(dataset):
     """Raw PyArrow table for feature.parquet."""
     path = Path(dataset.path) / f"{_PREFIX}.feature.parquet"
     assert path.exists(), "feature.parquet was not produced"
-    return pq.read_table(str(path))
+    return read_view_table(path)
 
 
 @pytest.fixture(scope="module")
@@ -116,7 +116,7 @@ def pg_table(dataset):
     """Raw PyArrow table for pg.parquet."""
     path = Path(dataset.path) / f"{_PREFIX}.pg.parquet"
     assert path.exists(), "pg.parquet was not produced"
-    return pq.read_table(str(path))
+    return read_view_table(path)
 
 
 # ---------------------------------------------------------------------------

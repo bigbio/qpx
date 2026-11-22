@@ -11,7 +11,7 @@ import pandas as pd
 import pyarrow.parquet as pq
 import pytest
 
-from tests.conftest import assert_pg_table_wellformed
+from tests.conftest import assert_pg_table_wellformed, read_view_table
 
 EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "examples" / "spectronaut" / "small"
 
@@ -55,7 +55,7 @@ def feature_table(converted_output):
     """Read the feature.parquet produced by the converter."""
     path = converted_output / "sn_test.feature.parquet"
     assert path.exists(), "feature.parquet was not produced"
-    return pq.read_table(str(path))
+    return read_view_table(str(path))
 
 
 @pytest.fixture(scope="module")
@@ -63,7 +63,7 @@ def pg_table(converted_output):
     """Read the pg.parquet produced by the converter."""
     path = converted_output / "sn_test.pg.parquet"
     assert path.exists(), "pg.parquet was not produced"
-    return pq.read_table(str(path))
+    return read_view_table(str(path))
 
 
 # ---------------------------------------------------------------------------
@@ -272,7 +272,7 @@ def test_ptm_localization_probabilities_become_scores_and_candidates(tmp_path):
 
     converter = SpectronautConverter(report_path=str(path))
     converter.convert_features(qvalue_threshold=1.0, output_folder=str(tmp_path), output_prefix="sn")
-    feature = pq.read_table(next(tmp_path.glob("sn*feature*.parquet"))).to_pylist()[0]
+    feature = read_view_table(next(tmp_path.glob("sn*feature*.parquet"))).to_pylist()[0]
 
     assert [(c["position"], c["amino_acid"], c["probability"], c["assigned"], c["alternative_group"])
             for c in feature["modification_candidates"]] == [

@@ -13,7 +13,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from tests.conftest import assert_pg_table_wellformed
+from tests.conftest import assert_pg_table_wellformed, read_view_table
 from tests.converters.pg_ids_roundtrip import assert_softlink_valid, open_converted, pg_ids_by_sequence
 
 EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "examples" / "diann" / "small"
@@ -179,7 +179,7 @@ def _feature_table(converted_output):
     """Read the feature.parquet produced by the converter."""
     path = converted_output / "diann_test.feature.parquet"
     assert path.exists(), "feature.parquet was not produced"
-    return pq.read_table(str(path))
+    return read_view_table(str(path))
 
 
 @pytest.fixture(scope="module")
@@ -187,7 +187,7 @@ def pg_table(converted_output):
     """Read the pg.parquet produced by the converter."""
     path = converted_output / "diann_test.pg.parquet"
     assert path.exists(), "pg.parquet was not produced"
-    return pq.read_table(str(path))
+    return read_view_table(str(path))
 
 
 # ---------------------------------------------------------------------------
@@ -315,7 +315,7 @@ def test_plexdia_feature_collapses_channels_into_one_row(tmp_path):
             qvalue_threshold=0.01,
         )
 
-    rows = pq.read_table(output_path).to_pylist()
+    rows = read_view_table(output_path).to_pylist()
     assert len(rows) == 1
     assert rows[0]["run_file_name"] == "run_A"
     assert {entry["label"]: entry["intensity"] for entry in rows[0]["intensities"]} == {"L": 100.0, "H": 200.0}
@@ -399,7 +399,7 @@ def test_plexdia_pg_quantification_method_matches_each_channel(tmp_path, fallbac
             sdrf_path=str(sdrf_path),
         )
 
-    rows = pq.read_table(output_path).to_pylist()
+    rows = read_view_table(output_path).to_pylist()
     expected_intensities = {"L": 1000.0, "H": 2000.0}
     expected_intensities[fallback_channel] = {"L": 900.0, "H": 1800.0}[fallback_channel]
     assert len(rows) == 2
@@ -663,7 +663,7 @@ def _pg_rows_single_run(
             output_path=str(output_path),
             qvalue_threshold=qvalue_threshold,
         )
-    return pq.read_table(output_path).to_pylist()
+    return read_view_table(output_path).to_pylist()
 
 
 def test_diann_pg_threshold_keeps_groups_above_pg_qvalue(tmp_path):
@@ -761,7 +761,7 @@ def _feature_rows_single_run(
             output_path=str(output_path),
             qvalue_threshold=qvalue_threshold,
         )
-    return pq.read_table(output_path).to_pylist()
+    return read_view_table(output_path).to_pylist()
 
 
 def _two_precursor_report_rows() -> list[dict]:

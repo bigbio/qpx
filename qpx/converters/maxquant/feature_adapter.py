@@ -182,6 +182,7 @@ class MaxQuantFeatureAdapter(MaxQuantBaseAdapter):  # pylint: disable=too-many-i
             output_path,
             creator=creator,
             identity_composite=_FEATURE_IDENTITY_COMPOSITE,
+            fixed_struct_lists=True,
         ) as writer:
             for batch in self._query_batched(evidence_query, chunksize):
                 df = batch.to_pandas()

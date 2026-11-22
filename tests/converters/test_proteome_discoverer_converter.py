@@ -7,6 +7,7 @@ import pytest
 from qpx.converters.proteome_discoverer import ProteomeDiscovererConverter
 from qpx.converters.proteome_discoverer.pg_adapter import _abundance_columns
 from qpx.converters.proteome_discoverer.reports import peptide_identity
+from tests.conftest import read_view_table
 
 _RUN = "plex1_F1"
 
@@ -106,7 +107,7 @@ def test_unreadable_modification_is_an_error():
 
 
 def test_psm_takes_run_from_input_files_and_scores_from_either_spelling(tmp_path):
-    psm = pq.read_table(_convert(tmp_path, [_psm_row()]) / "pd.psm.parquet").to_pylist()[0]
+    psm = read_view_table(_convert(tmp_path, [_psm_row()]) / "pd.psm.parquet").to_pylist()[0]
 
     assert (psm["run_file_name"], psm["scan"], psm["charge"]) == (_RUN, [100], 2)
     assert psm["sequence"] == "MPEPTIDEK"
@@ -116,6 +117,33 @@ def test_psm_takes_run_from_input_files_and_scores_from_either_spelling(tmp_path
     scores = {score["score_name"]: score["score_value"] for score in psm["additional_scores"]}
     assert scores["rank"] == 1
     assert scores["parent_ion_fraction"] == pytest.approx(0.9)
+
+
+@pytest.mark.parametrize(
+    ("left", "right", "score_name"),
+    [
+        ("Delta Score", "DeltaScore", "delta_score"),
+        ("SVM Score", "Percolator SVMScore", "percolator_svm_score"),
+    ],
+)
+def test_equal_score_aliases_are_stored_once_in_psm_and_feature(tmp_path, left, right, score_name):
+    """The two spellings of the same numeric score produce one entry in each view."""
+    out = _convert(tmp_path, [_psm_row(**{left: "0.25", right: "0.250"})])
+
+    for view in ("psm", "feature"):
+        scores = read_view_table(out / f"pd.{view}.parquet")["additional_scores"][0].as_py()
+        assert [score for score in scores if score["score_name"] == score_name] == [
+            {"score_name": score_name, "score_value": 0.25, "higher_better": True}
+        ]
+
+
+@pytest.mark.parametrize(("left", "right"), [("Delta Score", "DeltaScore"), ("SVM Score", "Percolator SVMScore")])
+def test_conflicting_score_aliases_stop_the_conversion(tmp_path, left, right):
+    """The error names both cells, even when rank filtering would drop their row."""
+    row = _psm_row(**{left: "0.25", right: "0.5", "Rank": "2"})
+    with pytest.raises(ValueError, match=rf"'{left}'='0.25', '{right}'='0.5'"):
+        _convert(tmp_path, [_psm_row(), row], rank1_only=True)
+    assert not list((tmp_path / "out").glob("*.parquet"))
 
 
 def test_ptmrs_probabilities_localize_the_modification(tmp_path):

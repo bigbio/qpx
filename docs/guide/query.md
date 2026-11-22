@@ -201,4 +201,4 @@ print(generate_example(query_head_cmd, "Quick preview of data structure contents
 - Use `query head` to preview data before running complex SQL queries
 - Use `query filter` for simple conditions; use `query sql` for joins and aggregations
 - Export large results to Parquet format with `--output-format parquet` to preserve types
-- Query relayouted files through `qpxc query`, which reads `additional_scores`, `cv_params` and `additional_intensities` as lists where DuckDB opening a file sees a struct ([Struct lists](../spec/serialization.md#struct-lists))
+- Query files with fixed struct columns through `qpxc query` to use `additional_scores` and `cv_params` as logical lists ([Struct lists](../spec/serialization.md#struct-lists)).
