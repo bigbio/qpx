@@ -454,6 +454,35 @@ def test_psm_handles_empty_modified_sequence(tmp_path):
     assert rows[0]["peptidoform"]
 
 
+def test_psm_keeps_the_lowest_pep_row_of_a_repeated_identity(tmp_path):
+    """Rows of one run, scan, modified sequence and charge are one PSM: the row of lowest PEP, then of lowest id.
+
+    MaxQuant reports some spectra twice for one peptide, as MULTI-MSMS and as MULTI-SECPEP.
+    """
+    from qpx.converters.maxquant.psm_adapter import MaxQuantPsmAdapter
+
+    msms = tmp_path / "msms.txt"
+    msms.write_text(
+        "Sequence\tModified sequence\tCharge\tRaw file\tScan number\tm/z\tMass\tPEP\tScore\tid\n"
+        "PEPTIDEK\t_PEPTIDEK_\t2\trun1\t100\t450.25\t898.5\t0.07\t80\t0\n"
+        "PEPTIDEK\t_PEPTIDEK_\t2\trun1\t100\t450.25\t898.5\t0.003\t90\t1\n"
+        "PEPTIDEK\t_PEPTIDEK_\t2\trun1\t101\t450.25\t898.5\t\t70\t2\n"
+        "PEPTIDEK\t_PEPTIDEK_\t2\trun1\t101\t450.25\t898.5\t0.5\t60\t3\n"
+        # The ids, not the line order, decide a tie.
+        "PEPTIDEK\t_PEPTIDEK_\t2\trun1\t102\t450.25\t898.5\t0.01\t50\t5\n"
+        "PEPTIDEK\t_PEPTIDEK_\t2\trun1\t102\t450.25\t898.5\t0.01\t40\t4\n"
+        "PEPTIDEK\t_PEPTIDEK_\t3\trun1\t102\t300.5\t898.5\t0.2\t30\t6\n"
+    )
+    output = tmp_path / "psm.parquet"
+    with MaxQuantPsmAdapter() as adapter:
+        adapter.convert(str(msms), str(output))
+
+    kept = sorted(
+        (row["scan"][0], row["charge"], row["additional_scores"]["andromeda_score"]) for row in pq.read_table(output).to_pylist()
+    )
+    assert kept == [(100, 2, 90.0), (101, 2, 60.0), (102, 2, 40.0), (102, 3, 30.0)]
+
+
 def test_feature_pg_qvalue_and_genes_keyed_on_full_membership(tmp_path):
     """Bug #248 (M): a shared razor accession must not bind to another group's metadata.
 

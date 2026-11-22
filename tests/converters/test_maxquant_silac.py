@@ -121,6 +121,27 @@ def test_silac_pg_has_one_row_per_label(silac_output):
     assert pg["SILAC heavy"]["additional_intensities"] == _SILAC_RATIOS
 
 
+def test_silac_psm_of_unknown_state_repeats_only_an_unmodified_label(tmp_path):
+    """A MULTI-SECPEP of unknown state is the light PSM of its spectrum, not the heavy one, whose label is in the peptidoform."""
+    from qpx.converters.maxquant.psm_adapter import MaxQuantPsmAdapter
+
+    _write_silac_inputs(tmp_path)
+    msms = tmp_path / "msms.txt"
+    msms.write_text(
+        "Sequence\tModified sequence\tCharge\tRaw file\tScan number\tm/z\tMass\tPEP\tLabeling state\tid\n"
+        "PEPTIDEK\t_PEPTIDEK_\t2\trun1\t100\t464.734729\t927.454904\t0.07\t-1\t0\n"
+        "PEPTIDEK\t_PEPTIDEK_\t2\trun1\t100\t464.734729\t927.454904\t0.003\t0\t1\n"
+        "PEPTIDEK\t_PEPTIDEK_\t2\trun1\t101\t468.741828\t935.469103\t0.05\t-1\t2\n"
+        "PEPTIDEK\t_PEPTIDEK_\t2\trun1\t101\t468.741828\t935.469103\t0.01\t1\t3\n"
+    )
+    output = tmp_path / "psm.parquet"
+    with MaxQuantPsmAdapter() as adapter:
+        adapter.convert(str(msms), str(output))
+
+    kept = sorted((row["scan"][0], row["peptidoform"], row["label"] or "") for row in pq.read_table(output).to_pylist())
+    assert kept == [(100, "PEPTIDEK", "SILAC light"), (101, "PEPTIDEK", ""), (101, "PEPTIDEK[UNIMOD:259]", "SILAC heavy")]
+
+
 def test_silac_psms_need_the_label_definitions(tmp_path):
     """Without summary.txt the heavy label modifications are unknown, so conversion stops."""
     from qpx.converters.maxquant.psm_adapter import MaxQuantPsmAdapter
