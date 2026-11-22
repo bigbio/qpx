@@ -154,6 +154,39 @@ def test_fixed_writer_round_trips_null_empty_and_partial_lists(tmp_path):
     ]
 
 
+_SCORES = [{"score_name": "andromeda_score", "score_value": 8.25, "higher_better": True}]
+_CV = [{"cv_name": "mass analyzer", "cv_value": "FTMS"}]
+
+
+def _psm_lists(folder, prefix=None):
+    """The scores and cv parameters of each scan in the psm files of *folder* (only the file of *prefix*, if given)."""
+    with Dataset(str(folder), file_prefix=prefix) as dataset:
+        table = dataset.psm.to_arrow()
+    assert all(pa.types.is_struct(table.schema.field(column).type.value_type) for column in ("additional_scores", "cv_params"))
+    return {row["scan"][0]: (row["additional_scores"], row["cv_params"]) for row in table.to_pylist()}
+
+
+@pytest.mark.parametrize("statistics", [True, False], ids=["statistics", "no statistics"])
+def test_files_read_together_check_a_field_null_in_some_of_their_rows(tmp_path, statistics):
+    """A field null in no row of one file and in every row of another is checked row by row when both are read.
+
+    So is a field of a file without statistics, whatever the statistics of the other file show.
+    """
+    folder = tmp_path / "psm"
+    folder.mkdir()
+    for name, rows in (("a", [(1, _SCORES, _CV)]), ("b", [(2, [], []), (3, None, None)])):
+        with PsmWriter(folder / f"{name}.psm.parquet", creator="maxquant", fixed_struct_lists=True) as writer:
+            writer.write_batch(
+                [{**make_psm_record(scan=[scan]), "additional_scores": scores, "cv_params": cv} for scan, scores, cv in rows]
+            )
+    if not statistics:
+        path = folder / "b.psm.parquet"
+        pq.write_table(pq.read_table(path), path, write_statistics=False)
+
+    assert _psm_lists(folder) == {1: (_SCORES, _CV), 2: ([], []), 3: (None, None)}
+    assert _psm_lists(folder, "b") == {2: ([], []), 3: (None, None)}
+
+
 @pytest.mark.parametrize(
     ("creator", "names", "problem"),
     [

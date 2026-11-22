@@ -22,38 +22,86 @@ def _field(expression: str, name: str) -> str:
     return f"struct_extract({expression}, {_literal(name)})"
 
 
-def restore_sql(column: str, layout: list[dict]) -> str:
-    """The select item that reads the struct *column* back as its list, entries in *layout* order.
+# The empty list of a score or cv struct none of whose fields holds a value.
+_EMPTY_LISTS = {
+    "additional_scores": "CAST([] AS STRUCT(score_name VARCHAR, score_value DOUBLE, higher_better BOOLEAN)[])",
+    "cv_params": "CAST([] AS STRUCT(cv_name VARCHAR, cv_value VARCHAR)[])",
+}
 
-    A null score or cv field is a name the row does not hold, so it has no entry.
-    """
-    name = validate_identifier(column)
+
+def _score_or_cv_list(column: str, name: str, layout: list[dict], nulls: dict[str, str]) -> str:
+    """The list of the score or cv struct *name*, without the fields *nulls* shows null in every row."""
+    kept = [entry for entry in layout if nulls.get(entry["name"]) != "all"]
     if column == "additional_scores":
         entries = [
             f"struct_pack(score_name := {_literal(entry['name'])}, "
             f"score_value := CAST({_field(name, entry['name'])} AS DOUBLE), "
             f"higher_better := CAST({json.dumps(entry['higher_better'])} AS BOOLEAN))"
-            for entry in layout
-        ]
-    elif column == "cv_params":
-        entries = [
-            f"struct_pack(cv_name := {_literal(entry['name'])}, cv_value := CAST({_field(name, entry['name'])} AS VARCHAR))"
-            for entry in layout
+            for entry in kept
         ]
     else:
-        entries = []
-        for entry in layout:
-            label = _field(name, entry["name"])
-            values = ", ".join(
-                f"struct_pack(intensity_name := {_literal(inner)}, intensity_value := CAST({_field(label, inner)} AS FLOAT))"
-                for inner in entry["names"]
-            )
-            entries.append(f"struct_pack(label := {_literal(entry['name'])}, intensities := [{values}])")
+        entries = [
+            f"struct_pack(cv_name := {_literal(entry['name'])}, cv_value := CAST({_field(name, entry['name'])} AS VARCHAR))"
+            for entry in kept
+        ]
+    if not entries:
+        return _EMPTY_LISTS[column]
+    checks = ["true" if nulls.get(entry["name"]) == "none" else f"{_field(name, entry['name'])} IS NOT NULL" for entry in kept]
     restored = f"[{', '.join(entries)}]"
-    if column in ("additional_scores", "cv_params"):
-        present = ", ".join(f"{_field(name, entry['name'])} IS NOT NULL" for entry in layout)
-        restored = f"list_where({restored}, [{present}])"
+    if all(check == "true" for check in checks):
+        return restored
+    return f"list_where({restored}, [{', '.join(checks)}])"
+
+
+def _intensity_list(name: str, layout: list[dict]) -> str:
+    """The list of the additional-intensities struct *name*."""
+    entries = []
+    for entry in layout:
+        label = _field(name, entry["name"])
+        values = ", ".join(
+            f"struct_pack(intensity_name := {_literal(inner)}, intensity_value := CAST({_field(label, inner)} AS FLOAT))"
+            for inner in entry["names"]
+        )
+        entries.append(f"struct_pack(label := {_literal(entry['name'])}, intensities := [{values}])")
+    return f"[{', '.join(entries)}]"
+
+
+def restore_sql(column: str, layout: list[dict], nulls: dict[str, str] | None = None) -> str:
+    """The select item that reads the struct *column* back as its list, entries in *layout* order.
+
+    A null score or cv field is a name the row does not hold, so it has no entry. *nulls* (see
+    :func:`field_nulls`) names the fields null in no row, which need no check, and in every row,
+    which have no entry; any other field is checked row by row.
+    """
+    name = validate_identifier(column)
+    if column in _EMPTY_LISTS:
+        restored = _score_or_cv_list(column, name, layout, nulls or {})
+    else:
+        restored = _intensity_list(name, layout)
     return f"CASE WHEN {name} IS NULL THEN NULL ELSE {restored} END AS {name}"
+
+
+def field_nulls(con, files: str) -> dict[str, dict[str, str]]:
+    """The score and cv fields that the statistics of the Parquet *files* (SQL) show null in no row or in every row.
+
+    By column, each such field maps to ``"none"`` or ``"all"``. A field without statistics in some
+    row group of some file is left out, as is one null in only some rows.
+    """
+    rows = con.execute(
+        sql_build(
+            "SELECT path_in_schema, bool_and(coalesce(stats_null_count = 0, false)), "
+            "bool_and(coalesce(stats_null_count = row_group_num_rows, false)) FROM parquet_metadata($files) "
+            "WHERE split_part(path_in_schema, ', ', 1) IN ($columns) GROUP BY path_in_schema",
+            files=files,
+            columns=", ".join(_literal(column) for column in _EMPTY_LISTS),
+        )
+    ).fetchall()
+    nulls: dict[str, dict[str, str]] = {}
+    for path, in_no_row, in_every_row in rows:
+        column, field = path.split(", ", 1)
+        if in_no_row or in_every_row:
+            nulls.setdefault(column, {})[field] = "none" if in_no_row else "all"
+    return nulls
 
 
 def file_layouts(metadata: dict[bytes, bytes] | None) -> dict[str, list[dict]]:
@@ -141,10 +189,13 @@ def layout_groups(con, files: str) -> list[tuple[list[str], dict[str, list[dict]
     return list(groups.values())
 
 
-def restore_items(layouts: dict[str, list[dict]], column_types: dict[str, str]) -> list[str]:
-    """Select items reading the struct lists of *layouts* that *column_types* (DuckDB) holds as structs back as lists."""
+def restore_items(layouts: dict[str, list[dict]], column_types: dict[str, str], nulls: dict[str, dict[str, str]]) -> list[str]:
+    """Select items reading the struct lists of *layouts* that *column_types* (DuckDB) holds as structs back as lists.
+
+    *nulls* is :func:`field_nulls` of the files read.
+    """
     return [
-        restore_sql(column, layouts[column])
+        restore_sql(column, layouts[column], nulls.get(column))
         for column in STRUCT_LIST_COLUMNS
         if column in layouts and is_struct(column_types.get(column, ""))
     ]

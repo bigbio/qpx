@@ -11,7 +11,7 @@ from pathlib import Path
 import duckdb
 
 from qpx.core.sql import escape_path, sql_build, validate_identifier, validate_table
-from qpx.core.struct_lists import STRUCT_LIST_COLUMNS, footer_layouts, is_struct, layout_groups, restore_items
+from qpx.core.struct_lists import STRUCT_LIST_COLUMNS, field_nulls, footer_layouts, is_struct, layout_groups, restore_items
 
 logger = logging.getLogger(__name__)
 
@@ -159,15 +159,18 @@ class DuckDBEngine:
         return dict(self._conn.execute(describe).fetchall())
 
     @staticmethod
-    def _select(view: str, source: str, types: dict[str, str], layouts: dict[str, list[dict]]) -> str:
-        """The rows of *source*, with legacy scalar columns and the struct lists of *layouts* read as lists."""
+    def _select(view: str, source: str, types: dict[str, str], layouts: dict[str, list[dict]], nulls: dict) -> str:
+        """The rows of *source*, with legacy scalar columns and the struct lists of *layouts* read as lists.
+
+        *nulls* is :func:`field_nulls` of the files of *source*.
+        """
         legacy = [
             column for column in _SCALAR_TO_LIST_COLUMNS.get(view, ()) if column in types and not types[column].endswith("]")
         ]
         replace = [
             sql_build("CASE WHEN $column IS NULL THEN NULL ELSE [CAST($column AS INTEGER)] END AS $column", column=column)
             for column in map(validate_identifier, legacy)
-        ] + restore_items(layouts, types)
+        ] + restore_items(layouts, types, nulls)
         if not replace:
             return sql_build("SELECT * FROM $source", source=source)
         return sql_build("SELECT * REPLACE ($replace) FROM $source", replace=", ".join(replace), source=source)
@@ -193,6 +196,10 @@ class DuckDBEngine:
             self._conn.execute(sql_build("DROP VIEW IF EXISTS $view", view=view))
             raise
 
+    def _nulls(self, files: str, layouts: dict[str, list[dict]]) -> dict[str, dict[str, str]]:
+        """:func:`field_nulls` of the Parquet *files* (SQL), read only if they declare struct-list *layouts*."""
+        return field_nulls(self._conn, files) if layouts else {}
+
     def _restored(self, view: str, files: str, source: str, options: str, one_file: bool) -> str:
         """The query of *view*, registered over *source*, that reads its legacy scalar columns and struct lists as lists."""
         types = self._column_types(view)
@@ -205,7 +212,7 @@ class DuckDBEngine:
         else:
             groups = [([], {})]
         if len(groups) == 1:
-            return self._select(view, source, types, groups[0][1])
+            return self._select(view, source, types, groups[0][1], self._nulls(files, groups[0][1]))
         selects = []
         for paths, layouts in groups:
             group = ", ".join(sql_build("'$path'", path=escape_path(path)) for path in paths)
@@ -217,7 +224,7 @@ class DuckDBEngine:
                     f"{paths[0]} holds {', '.join(bare)} as a struct without a qpx.struct_lists layout, "
                     f"so it cannot be read with the other files of {view}"
                 )
-            selects.append(self._select(view, group_source, group_types, layouts))
+            selects.append(self._select(view, group_source, group_types, layouts, self._nulls(f"[{group}]", layouts)))
         return " UNION ALL BY NAME ".join(selects)
 
     def register_parquet(self, name: str, file_path: str | Path) -> None:
