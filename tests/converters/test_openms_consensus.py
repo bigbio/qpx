@@ -102,7 +102,7 @@ def _accumulated_protein_maps(cm):
     return protein_maps
 
 
-def _invoke_consensus_convert(tmp_path, folder, *extra, prefix="t"):
+def _invoke_consensus_convert(tmp_path, folder, *extra, prefix="t", structures="feature,pg,psm"):
     """Run ``convert openms-consensus`` on the TMT fixture and return the CliRunner result without asserting."""
     from click.testing import CliRunner
 
@@ -121,8 +121,7 @@ def _invoke_consensus_convert(tmp_path, folder, *extra, prefix="t"):
             str(folder),
             "--output-prefix",
             prefix,
-            "--structures",
-            "feature,pg,psm",
+            *(("--structures", structures) if structures else ()),
             *extra,
         ],
     )
@@ -148,6 +147,15 @@ def test_converter_requires_sdrf_for_requested_metadata(tmp_path):
             structures=("run",),
         )
     assert not out.exists()
+
+
+def test_cli_without_sdrf_writes_the_core_views(tmp_path):
+    out = tmp_path / "out"
+    result = _invoke_consensus_convert(tmp_path, out, "--no-mudata", structures=None)
+
+    assert result.exit_code == 0, result.output
+    assert {path.name for path in out.glob("t.*.parquet")} >= {"t.feature.parquet", "t.psm.parquet", "t.pg.parquet"}
+    assert not (out / "t.run.parquet").exists()
 
 
 def test_converter_writes_only_requested_sdrf_structure(tmp_path):
