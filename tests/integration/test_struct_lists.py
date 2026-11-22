@@ -260,9 +260,9 @@ def test_fixed_writer_rejects_a_null_value(tmp_path):
     assert not path.exists()
 
 
-_BETA = ("spectronaut", "spectronaut_cscore", "empirical_irt")
+_BETA = ("spectronaut", "spectronaut_cscore", "predicted_irt")
 _SHARDS = {
-    "alpha": ("diann", "diann_cscore", "irt"),
+    "alpha": ("diann", "diann_cscore", "predicted_irt"),
     "beta": _BETA,
     "beta_too": _BETA,
     "gamma": ("proteome_discoverer", "sequest_xcorr", None),

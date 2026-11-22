@@ -52,6 +52,8 @@ _PRODUCER_PSM_IDS = {"mzidentml"}
 _LABEL_ERRATA = {"raw": "LFQ", "precursor_area": "LFQ"}
 _FILE_LEVEL_DATASET_COLUMNS = ("file_checksums", "file_row_counts", "file_sizes_bytes", "total_structures", "packaged_at")
 _NOT_MIGRATED_SUFFIXES = (".h5mu", ".h5ad")
+# The cv_params entries in which DIA-NN and Spectronaut files kept the indexed retention time before its column.
+_IRT_PARAMS = ("irt", "empirical_irt")
 # The accession lists of normalize-accessions, and feature.pg_positions, which names proteins too.
 _ACCESSION_LISTS = {**_LIST_ACCESSION_COLUMNS, "pg_positions": "protein_accession"}
 # What the semantic validator removes from a peptidoform to compare it with its sequence.
@@ -75,6 +77,9 @@ _DIANN_INTENSITY_NAMES = {"maxlfq": "pg_maxlfq", "precursor_normalised": "normal
 _PSM_SCORE_NAMES = {"q-value": "qvalue"}
 # The first specification whose DIA-NN observed_mz is the measured MS1 apex rather than Precursor.Mz.
 _MEASURED_DIANN_MZ = (1, 3)
+# DIA-NN reports 0 for these without ion mobility data; a conversion writes null, or leaves the cv entry out.
+_DIANN_ION_MOBILITY_COLUMNS = ("ion_mobility", "ion_mobility_start", "ion_mobility_stop")
+_DIANN_ION_MOBILITY_PARAMS = ("iim", "predicted_im", "predicted_iim")
 # The rows that repeat an id, except the first, or for a feature the first copy holding its group's
 # q-value: QPX 1.0.2 repeated a quantms feature once per q-value of its first protein.
 _REPEATED_ROWS_SQL = (
@@ -299,7 +304,54 @@ def _diann_feature_row(record: dict, measured_mz: bool) -> dict:
         row["observed_mz"] = row["mass_error_ppm"] = None
     if row.get("additional_intensities"):
         row["additional_intensities"] = _diann_intensity_names(row["additional_intensities"])
+    for column in _DIANN_ION_MOBILITY_COLUMNS:
+        if row.get(column) == 0:
+            row[column] = None
+    if row.get("cv_params"):
+        row["cv_params"] = _diann_cv_params(row["cv_params"], row.get("additional_scores"))
     return _identity_row(row)
+
+
+def _diann_cv_params(params: list[dict], scores: list[dict] | None) -> list[dict] | None:
+    """The cv entries a conversion writes: none for a zero ion mobility, and Quantity.Quality only as its score.
+
+    Writer 1.1 also kept Quantity.Quality as precursor_quantification_score, a float32 string of the score
+    diann_quantity_quality; an entry with another value is kept.
+    """
+    quality = next((score["score_value"] for score in scores or [] if score["score_name"] == "diann_quantity_quality"), None)
+
+    def repeated(entry: dict) -> bool:
+        name, value = entry["cv_name"], entry["cv_value"]
+        if value is None:
+            return False
+        if name in _DIANN_ION_MOBILITY_PARAMS:
+            return float(value) == 0
+        return name == "precursor_quantification_score" and quality is not None and np.float32(value) == np.float32(quality)
+
+    return [entry for entry in params if not repeated(entry)] or None
+
+
+def _diann_pg_row(row: dict) -> dict:
+    """A DIA-NN pg row without the score pg_qvalue that writer 1.1 repeated from the pg_qvalue column."""
+    scores = row.get("additional_scores")
+    if not scores:
+        return row
+    kept = [
+        score for score in scores if not (score["score_name"] == "pg_qvalue" and score["score_value"] == row.get("pg_qvalue"))
+    ]
+    return {**row, "additional_scores": kept or None}
+
+
+def _irt_row(row: dict) -> dict:
+    """The irt of a feature row in its column, as a conversion writes it, and no longer among its cv_params."""
+    params = row.get("cv_params") or []
+    values = [entry["cv_value"] for entry in params if entry["cv_name"] in _IRT_PARAMS]
+    if not values:
+        return row
+    irt = row.get("irt")
+    if irt is None and values[0] is not None:
+        irt = float(values[0])
+    return {**row, "irt": irt, "cv_params": [entry for entry in params if entry["cv_name"] not in _IRT_PARAMS] or None}
 
 
 def _flat_pg_rows(record: dict) -> list[dict]:
@@ -370,10 +422,12 @@ def _migrated_pairs(view: str, footer: dict[bytes, bytes], records: list[dict]) 
     else:
         migrate_row = _ROW_MIGRATIONS.get(view, lambda record: [record])
         pairs = [(record, row) for record in records for row in migrate_row(record)]
+    if view == "pg" and footer.get(b"creator") == b"diann":
+        pairs = [(record, _diann_pg_row(row)) for record, row in pairs]
     if view in ACCESSION_VIEWS:
         pairs = [(record, _canonical_accessions(row)) for record, row in pairs]
     if view == "feature":
-        pairs = [(record, row) for record, row in pairs if _holds_each_label_once(row)]
+        pairs = [(record, _irt_row(row)) for record, row in pairs if _holds_each_label_once(row)]
     return pairs
 
 

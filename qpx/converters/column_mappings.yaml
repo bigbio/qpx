@@ -93,6 +93,7 @@ diann:
       rt_start: ["RT.Start"]
       rt_stop: ["RT.Stop"]
       predicted_rt: ["Predicted.RT"]
+      irt: ["iRT"]
       pg_accessions: ["Protein.Group"]
       precursor_mz: ["Precursor.Mz"]
       ms1_apex_mz_delta: ["Ms1.Apex.Mz.Delta"]

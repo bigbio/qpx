@@ -49,7 +49,6 @@ _SCORE_MAPPINGS = [
 # CV param mappings: (Spectronaut column, output cv_name)
 _CV_MAPPINGS = [
     ("EG.iRTPredicted", "predicted_irt"),
-    ("EG.iRTEmpirical", "empirical_irt"),
 ]
 
 _RT_SECONDS_FACTOR = 60.0
@@ -258,6 +257,8 @@ class SpectronautFeatureAdapter(SpectronautBaseAdapter):
             parts.append(f"CAST({_safe_float_sql(prt_col)} * {_RT_SECONDS_FACTOR} AS FLOAT) AS predicted_rt")
         else:
             parts.append("NULL::FLOAT AS predicted_rt")
+        irt_col = r.get("irt_empirical")
+        parts.append(f"{_safe_float_sql(irt_col)} AS irt" if irt_col and _has(irt_col) else "NULL::FLOAT AS irt")
 
         run_col = r["run_file_name"]
         # Match the pg adapter's case-insensitive, extended extension strip so

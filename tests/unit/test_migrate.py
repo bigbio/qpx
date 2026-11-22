@@ -1,5 +1,6 @@
 """qpxc migrate brings a pre-1.1 dataset to the current specification."""
 
+import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
@@ -423,6 +424,78 @@ def test_a_diann_feature_takes_the_current_intensity_names_and_measured_mz(tmp_p
     assert [entry["intensity_name"] for entry in entries] == ["pg_maxlfq", "normalize_intensity", "ms1_area"]
     expected = (pytest.approx(450.26), pytest.approx(0.01)) if measured else (None, None)
     assert (row["observed_mz"], row["mass_error_ppm"]) == expected
+
+
+@pytest.mark.parametrize(("creator", "name"), [(b"diann", "irt"), (b"spectronaut", "empirical_irt")])
+def test_an_irt_kept_in_cv_params_moves_to_its_column(tmp_path, creator, name):
+    """Files written before feature.irt kept DIA-NN iRT and Spectronaut EG.iRTEmpirical among cv_params."""
+    source = tmp_path / "old"
+    source.mkdir()
+    params = [{"cv_name": name, "cv_value": "41.25"}, {"cv_name": "proteotypic", "cv_value": "1"}]
+    rows = [_lfq_feature(cv_params=params), _lfq_feature(sequence="PEPTIDER", peptidoform="PEPTIDER", cv_params=params[1:])]
+    _write(source / "old.feature.parquet", rows, creator=creator, extra_metadata={b"qpx_version": b"1.1"})
+    out = tmp_path / "new"
+    migrate_dataset(source, out)
+
+    migrated = pq.read_table(out / "old.feature.parquet", columns=["sequence", "irt", "cv_params"]).to_pylist()
+    by_sequence = {row["sequence"]: row for row in migrated}
+    assert by_sequence["PEPTIDEK"]["irt"] == pytest.approx(41.25)
+    assert by_sequence["PEPTIDER"]["irt"] is None
+    assert all([entry["cv_name"] for entry in row["cv_params"]] == ["proteotypic"] for row in migrated)
+
+
+def test_a_diann_feature_drops_zero_ion_mobility_and_the_repeated_quantity_quality(tmp_path):
+    """Writer 1.1 kept DIA-NN's 0 for data without ion mobility, and Quantity.Quality also as a cv string."""
+    source = tmp_path / "old"
+    source.mkdir()
+    quality = float(np.float32(0.82203466))
+    scores = [{"score_name": "diann_quantity_quality", "score_value": quality, "higher_better": True}]
+
+    def params(quantification):
+        return [
+            {"cv_name": "precursor_quantification_score", "cv_value": quantification},
+            {"cv_name": "predicted_im", "cv_value": "0.0"},
+            {"cv_name": "predicted_iim", "cv_value": "0.0"},
+            {"cv_name": "iim", "cv_value": "1.1461371"},
+        ]
+
+    rows = [
+        _lfq_feature(ion_mobility=0.0, additional_scores=scores, cv_params=params("0.82203466")),
+        _lfq_feature(
+            sequence="PEPTIDER", peptidoform="PEPTIDER", ion_mobility=0.95, additional_scores=scores, cv_params=params("0.5")
+        ),
+    ]
+    _write(source / "old.feature.parquet", rows, extra_metadata={b"qpx_version": b"1.1"})
+    out = tmp_path / "new"
+    migrate_dataset(source, out)
+
+    migrated = pq.read_table(out / "old.feature.parquet", columns=["sequence", "ion_mobility", "cv_params"]).to_pylist()
+    by_sequence = {row["sequence"]: row for row in migrated}
+    assert by_sequence["PEPTIDEK"]["ion_mobility"] is None
+    assert by_sequence["PEPTIDER"]["ion_mobility"] == pytest.approx(0.95)
+    assert [entry["cv_name"] for entry in by_sequence["PEPTIDEK"]["cv_params"]] == ["iim"]
+    assert [entry["cv_name"] for entry in by_sequence["PEPTIDER"]["cv_params"]] == ["precursor_quantification_score", "iim"]
+
+
+def test_a_diann_pg_drops_the_score_repeating_its_pg_qvalue(tmp_path):
+    """Writer 1.1 repeated a DIA-NN pg_qvalue as a score; a score with another value is kept."""
+    source = tmp_path / "old"
+    source.mkdir()
+
+    def pg(anchor, score):
+        scores = [
+            {"score_name": "pg_qvalue", "score_value": score, "higher_better": False},
+            {"score_name": "pg_pep", "score_value": 0.2, "higher_better": False},
+        ]
+        return {**make_pg_record(anchor_protein=anchor), "pg_qvalue": 0.01, "additional_scores": scores}
+
+    _write(source / "old.pg.parquet", [pg(PROTEIN, 0.01), pg("Q1", 0.02)], extra_metadata={b"qpx_version": b"1.1"})
+    out = tmp_path / "new"
+    migrate_dataset(source, out)
+
+    migrated = pq.read_table(out / "old.pg.parquet", columns=["anchor_protein", "additional_scores"]).to_pylist()
+    names = {row["anchor_protein"]: [score["score_name"] for score in row["additional_scores"]] for row in migrated}
+    assert names == {PROTEIN: ["pg_pep"], "Q1": ["pg_qvalue", "pg_pep"]}
 
 
 @pytest.mark.parametrize(("group", "second", "kept"), [(PROTEIN, 0.02, 0.02), ("Q00402", None, 0.01)], ids=["group", "no-group"])

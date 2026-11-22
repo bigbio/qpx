@@ -38,7 +38,6 @@ _SCORE_MAPPINGS = [
 # CV param mappings: (DIA-NN column, output cv_name)
 _CV_MAPPINGS = [
     ("Proteotypic", "proteotypic"),
-    ("iRT", "irt"),
     ("Predicted.iRT", "predicted_irt"),
     ("Predicted.IM", "predicted_im"),
     ("Predicted.iIM", "predicted_iim"),
@@ -195,6 +194,9 @@ def _build_acquisition_select_parts(resolved: dict, report_cols: set[str]) -> li
         if rt_col and has_column(rt_col)
         else "NULL::FLOAT AS rt"
     )
+
+    irt_col = resolved.get("irt")
+    parts.append(f"{_safe_float_sql(irt_col)} AS irt" if irt_col and has_column(irt_col) else "NULL::FLOAT AS irt")
 
     parts.extend(_build_ion_mobility_select_parts(resolved, report_cols))
     return parts
@@ -518,7 +520,6 @@ def _aggregate_channel_rows_sql(row_sql: str, target_schema: pa.Schema) -> str:
         "precursor_qvalue",
         "global_qvalue",
         "pg_group_id",
-        "irt",
         # Producer-specific optional fields not emitted by DIA-NN.
         "identified_labels",
         "identification_type",

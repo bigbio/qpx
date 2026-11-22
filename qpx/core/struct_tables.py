@@ -27,7 +27,6 @@ FIXED_STRUCT_TABLES = {
             ],
             "cv_params": [
                 {"name": "proteotypic"},
-                {"name": "irt"},
                 {"name": "predicted_irt"},
                 {"name": "predicted_im"},
                 {"name": "predicted_iim"},
@@ -131,7 +130,7 @@ FIXED_STRUCT_TABLES = {
                 {"name": "spectronaut_pg_cscore_runwise", "higher_better": True},
                 {"name": "spectronaut_ptm_assay_probability", "higher_better": True},
             ],
-            "cv_params": [{"name": "predicted_irt"}, {"name": "empirical_irt"}],
+            "cv_params": [{"name": "predicted_irt"}],
         },
         "pg": {
             "additional_scores": [],

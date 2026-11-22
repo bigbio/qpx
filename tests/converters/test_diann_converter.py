@@ -1017,6 +1017,18 @@ def test_diann_feature_ion_mobility_is_null_without_ion_mobility_data(tmp_path):
     assert cv == {"iim": "0.9", "predicted_im": "0.96", "predicted_iim": "0.91"}
 
 
+def test_diann_irt_is_only_the_irt_column(tmp_path):
+    """iRT fills feature.irt and is not repeated in cv_params (#377)."""
+    rows = _two_precursor_report_rows()
+    rows[0].update({"iRT": 41.25, "Predicted.iRT": 40.5})
+
+    features = {row["sequence"]: row for row in _feature_rows_single_run(tmp_path, rows)}
+
+    assert features["PEPTIDEK"]["irt"] == pytest.approx(41.25)
+    assert {entry["cv_name"] for entry in features["PEPTIDEK"]["cv_params"]} == {"proteotypic", "predicted_irt"}
+    assert features["PEPTIDER"]["irt"] is None
+
+
 def test_diann_library_decoys_drop_the_caret_and_keep_distinct_ids(tmp_path):
     """DIA-NN 2.x writes a library decoy with ^ and the decoy sequence generated from its parent.
 
