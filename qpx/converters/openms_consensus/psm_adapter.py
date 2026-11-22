@@ -39,6 +39,7 @@ from qpx.converters.utils import canonical_accession, safe_float
 from qpx.converters.utils import mass_error_ppm as _mass_error_ppm
 from qpx.core.cleavage import count_missed_cleavages
 from qpx.core.scan import scan_format_from_native_id, scan_from_native_id
+from qpx.core.scores import normalize_score_name
 
 _log = logging.getLogger(__name__)
 
@@ -213,15 +214,15 @@ def _psm_additional_scores(primary, hits, score, score_type, score_is_qvalue, hi
     """
     additional_scores = []
     if score is not None:
-        # Route the identification score into additional_scores: the psm schema
-        # has no dedicated q-value column.
-        name = "q-value" if score_is_qvalue else (score_type or "search_score")
+        # Route the identification score into additional_scores; a q-value named
+        # qvalue fills psm.qvalue when written (scores.md).
+        name = "qvalue" if score_is_qvalue else (normalize_score_name(score_type) or "search_score")
         additional_scores.append({"score_name": name, "score_value": score, "higher_better": higher_better})
     if not score_is_qvalue and not peptide_level:
         # A search-score primary (e.g. COMET:xcorr) leaves the Percolator q-value in the hit meta values.
         qvalue = _qvalue_meta_of(primary)
         if qvalue is not None:
-            additional_scores.append({"score_name": "q-value", "score_value": qvalue, "higher_better": False})
+            additional_scores.append({"score_name": "qvalue", "score_value": qvalue, "higher_better": False})
     # Preserve the other colliding hits' (i.e. the other engines') search scores
     # so a comet+msgf merged spectrum does not lose either engine's score.
     for other in hits:
@@ -229,7 +230,7 @@ def _psm_additional_scores(primary, hits, score, score_type, score_is_qvalue, hi
             continue
         other_score = safe_float(other.getScore())
         if other_score is not None:
-            base = "q-value" if score_is_qvalue else (score_type or "search_score")
+            base = "qvalue" if score_is_qvalue else (normalize_score_name(score_type) or "search_score")
             _append_unique_score(additional_scores, base, other_score, higher_better)
     if primary.metaValueExists("consensus_support"):
         additional_scores.append(

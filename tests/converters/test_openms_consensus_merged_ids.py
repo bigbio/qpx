@@ -512,7 +512,7 @@ def test_peptide_level_percolator_confidence(tmp_path, streaming):
     assert _score(psms[("PEPTIDEK", 1)], "peptide_qvalue") == pytest.approx(0.001)
     assert _score(psms[("PEPTIDEK", 2)], "peptide_qvalue") == pytest.approx(0.001)
     assert _score(psms[("ELVISLIVEK", 3)], "peptide_qvalue") is None
-    assert all(_score(row, "q-value") is None for row in psms.values())
+    assert all(row["qvalue"] is None for row in psms.values())
     _assert_valid(out, ("feature", "psm"))
 
 
@@ -529,8 +529,9 @@ def test_psm_level_percolator_confidence(tmp_path, streaming):
     assert features["PEPTIDEK"]["posterior_error_probability"] == pytest.approx(0.004)
     psms = {(row["peptidoform"], row["scan"][0]): row for row in _rows(written, "psm")}
     assert psms[("PEPTIDEK", 1)]["posterior_error_probability"] == pytest.approx(0.01)
-    assert _score(psms[("PEPTIDEK", 1)], "q-value") == pytest.approx(0.001)
-    assert _score(psms[("PEPTIDEK", 2)], "q-value") == pytest.approx(0.004)
+    assert psms[("PEPTIDEK", 1)]["qvalue"] == pytest.approx(0.001)
+    assert psms[("PEPTIDEK", 2)]["qvalue"] == pytest.approx(0.004)
+    assert all(_score(row, "qvalue") is None for row in psms.values())
 
 
 def _shared_peak_xml():

@@ -71,6 +71,8 @@ _SPLIT_RUN_SUFFIXES = ("_CID", "_HCD")
 _RUN_NAMES_SQL = "SELECT DISTINCT $column FROM read_parquet($source)"
 # DIA-NN feature intensity names before specification 1.3.
 _DIANN_INTENSITY_NAMES = {"maxlfq": "pg_maxlfq", "precursor_normalised": "normalize_intensity"}
+# openms-consensus spelled the PSM q-value score `q-value`; score names are snake_case (ontology.md).
+_PSM_SCORE_NAMES = {"q-value": "qvalue"}
 # The first specification whose DIA-NN observed_mz is the measured MS1 apex rather than Precursor.Mz.
 _MEASURED_DIANN_MZ = (1, 3)
 # The rows that repeat an id, except the first, or for a feature the first copy holding its group's
@@ -258,6 +260,17 @@ def _identity_row(record: dict) -> dict:
     return row
 
 
+def _psm_row(record: dict) -> dict:
+    """A psm row rewritten like a feature row, with its scores under their snake_case names."""
+    row = _identity_row(_raw_msnet_row(record) if "reference_file_name" in record else record)
+    if row.get("additional_scores"):
+        row["additional_scores"] = [
+            {**score, "score_name": _PSM_SCORE_NAMES.get(score["score_name"], score["score_name"])}
+            for score in row["additional_scores"]
+        ]
+    return row
+
+
 def _diann_intensity_names(entries: list[dict]) -> list[dict]:
     return [
         {
@@ -333,7 +346,7 @@ def _mz_row(record: dict) -> dict:
 
 _ROW_MIGRATIONS = {
     "feature": lambda record: [_identity_row(record)],
-    "psm": lambda record: [_identity_row(_raw_msnet_row(record) if "reference_file_name" in record else record)],
+    "psm": lambda record: [_psm_row(record)],
     "pg": _flat_pg_rows,
     "run": lambda record: [_run_row(record)],
     "dataset": lambda record: [_dataset_row(record)],
