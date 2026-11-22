@@ -95,8 +95,8 @@ _CHANNEL_SCORES = {
     "genes_maxlfq_quality": True,
 }
 
-# Protein-group scores carried in additional_scores (pg.md).
-_ADDITIONAL_SCORES = ("pg_qvalue", "pg_pep", "lib_pg_qvalue", "protein_qvalue", "pg_maxlfq_quality", "genes_maxlfq_quality")
+# Protein-group scores carried in additional_scores (pg.md); pg_qvalue is the flat column only.
+_ADDITIONAL_SCORES = ("pg_pep", "lib_pg_qvalue", "protein_qvalue", "pg_maxlfq_quality", "genes_maxlfq_quality")
 
 # Additional protein-group quantities and their intensity names (pg.md). PG.MaxLFQ
 # ("lfq") is the primary intensity instead when the report has no PG.Quantity.
@@ -612,6 +612,9 @@ class DiannPgAdapter(DiaNNBaseAdapter):
 
     def _additional_scores(self, channel) -> list[dict] | None:
         """Return the PG scores without a dedicated pg column, tracking their names."""
+        if _optional(channel.pg_qvalue) is not None:
+            # The pg_qvalue column takes the CV term of the score of that name in the ontology.
+            self._discovered_scores.add("pg_qvalue")
         scores = []
         for name in _ADDITIONAL_SCORES:
             value = _optional(getattr(channel, name))

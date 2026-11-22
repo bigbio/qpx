@@ -113,6 +113,15 @@ class TestSpectronautFeatureConversion:
         for scan in scans:
             assert scan == [], f"Expected empty scan list, got {scan}"
 
+    def test_qvalues_with_a_column_are_not_also_scores(self, feature_table):
+        """EG.Qvalue and PG.Qvalue are only precursor_qvalue and pg_global_qvalue (#377)."""
+        names = {
+            score["score_name"] for scores in feature_table.column("additional_scores").to_pylist() for score in scores or []
+        }
+        assert names.isdisjoint({"qvalue", "precursor_qvalue", "pg_qvalue"})
+        assert feature_table.column("precursor_qvalue").null_count == 0
+        assert feature_table.column("pg_global_qvalue").null_count == 0
+
     def test_schema_validation(self, feature_table):
         from qpx.core.data import FeatureSchema
 
@@ -139,6 +148,12 @@ class TestSpectronautPgConversion:
     def test_pg_table_wellformed(self, pg_table):
         """grouped_runs, pg_accessions, anchor_protein, intensities are all well-formed."""
         assert_pg_table_wellformed(pg_table)
+
+    def test_qvalues_are_only_columns(self, pg_table):
+        """PG.Qvalue and PG.QValue (Run-Wise) are only global_qvalue and pg_qvalue (#377)."""
+        assert pg_table.column("additional_scores").null_count == pg_table.num_rows
+        assert pg_table.column("global_qvalue").null_count == 0
+        assert pg_table.column("pg_qvalue").null_count == 0
 
     def test_schema_validation(self, pg_table):
         from qpx.core.data import PgSchema
@@ -170,6 +185,20 @@ class TestSpectronautOntologyConversion:
         expected = {"field_name", "view"}
         missing = expected - column_names
         assert not missing, f"Missing ontology columns: {missing}"
+
+    def test_qvalue_columns_name_their_source(self, converted_output):
+        """Each q-value column has a row naming its Spectronaut column, and the old score names have none (#377)."""
+        table = pq.read_table(str(converted_output / "sn_test.ontology.parquet"))
+        rows = {(row["view"], row["field_name"]): (row["source_column_name"], row["source_tool"]) for row in table.to_pylist()}
+        expected = {
+            ("feature", "precursor_qvalue"): ("EG.Qvalue", "Spectronaut"),
+            ("feature", "pg_global_qvalue"): ("PG.Qvalue", "Spectronaut"),
+            ("pg", "global_qvalue"): ("PG.Qvalue", "Spectronaut"),
+            ("pg", "pg_qvalue"): ("PG.QValue (Run-Wise)", "Spectronaut"),
+        }
+        assert {key: rows.get(key) for key in expected} == expected
+        assert ("feature", "qvalue") not in rows
+        assert ("feature", "pg_qvalue") not in rows
 
     def test_schema_validation(self, converted_output):
         from qpx.core.data import OntologySchema

@@ -63,7 +63,7 @@ The following score names are commonly used across QPX views. All names are `sna
 | `msgf_spec_evalue` | PSM | lower is better | Spectral E-value from MS-GF+ |
 | `sage_hyperscore` | PSM | higher is better | Hyperscore from Sage search engine |
 | `parent_ion_fraction` | PSM | higher is better | Fraction of the isolation window's signal from the target precursor, 0-1 (MaxQuant `PIF`, FragPipe `Purity`, CDAP `PrecursorPurity`); on a feature it is the column of that name |
-| `precursor_qvalue` | Feature | lower is better | Run-level precursor q-value (`Q.Value`), written to the `precursor_qvalue` column by the DIA-NN converter; an exact duplicate is not kept in `additional_scores` |
+| `precursor_qvalue` | Feature | lower is better | Run-level precursor q-value (DIA-NN `Q.Value`, Spectronaut `EG.Qvalue`), written to the `precursor_qvalue` column; an exact duplicate is not kept in `additional_scores` |
 | `pg_qvalue` | Feature | lower is better | Run-level protein-group q-value, as emitted by the DIA-NN converter |
 | `pg_pep` | PG | lower is better | Protein-group posterior error probability (`PG.PEP`), as emitted by the DIA-NN converter |
 | `diann_lib_qvalue` | Feature | lower is better | Library q-value from DIA-NN |
@@ -78,7 +78,7 @@ The following score names are commonly used across QPX views. All names are `sna
     When adding tool-specific scores, use `snake_case` with the tool name as prefix: `{tool}_{score}`. For example, `comet_xcorr`, `diann_cscore`, `sage_hyperscore`. Register the mapping to the proper ontology term in `ontology.parquet` (see [Ontology Mapping](ontology.md)).
 
 !!! warning "Names in this table are the ones producers actually write"
-    Earlier revisions listed `diann_qvalue` and `diann_global_qvalue`, which no converter emits — the DIA-NN converter writes the `precursor_qvalue` and `global_qvalue` columns and keeps `pg_qvalue` in `additional_scores`. The table records the emitted names so a consumer can match on them.
+    Earlier revisions listed `diann_qvalue` and `diann_global_qvalue`, which no converter emits — the DIA-NN converter writes the `precursor_qvalue` and `global_qvalue` columns and keeps `pg_qvalue` in the feature's `additional_scores`. The table records the emitted names so a consumer can match on them.
 
     `feature.peptide_qvalue` is reserved for peptide-level confidence. DIA-NN `Q.Value` is precursor-level, so it is written to `feature.precursor_qvalue` and must not be copied into `feature.peptide_qvalue`.
 

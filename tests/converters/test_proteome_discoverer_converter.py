@@ -119,6 +119,14 @@ def test_psm_takes_run_from_input_files_and_scores_from_either_spelling(tmp_path
     assert scores["parent_ion_fraction"] == pytest.approx(0.9)
 
 
+def test_feature_holds_the_parent_ion_fraction_only_as_its_column(tmp_path):
+    """The PSM keeps it as a score; the feature view has a column of that name (#377)."""
+    feature = read_view_table(_convert(tmp_path, [_psm_row()]) / "pd.feature.parquet").to_pylist()[0]
+
+    assert feature["parent_ion_fraction"] == pytest.approx(0.9)
+    assert "parent_ion_fraction" not in {score["score_name"] for score in feature["additional_scores"]}
+
+
 @pytest.mark.parametrize(
     ("left", "right", "score_name"),
     [

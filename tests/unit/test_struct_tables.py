@@ -12,18 +12,18 @@ from qpx.converters.spectronaut.feature_adapter import _SCORE_MAPPINGS as SN_SCO
 from qpx.converters.spectronaut.fragments import _SCORES as SN_FRAGMENT_SCORES
 from qpx.core.struct_tables import FIXED_STRUCT_TABLES
 
-_DIANN_TYPED = {"precursor_qvalue", "global_qvalue"}
-_PD_ORDERED = [(name, higher) for _, name, higher in PD_SCORES] + [("parent_ion_fraction", True)]
+_TYPED = {"precursor_qvalue", "global_qvalue"}
+_PD_SCORES = [(name, higher) for _, name, higher in PD_SCORES]
 
 
 @pytest.mark.parametrize(
     ("creator", "view", "scores", "cv"),
     [
-        ("diann", "feature", [(n, h) for _, n, h in DIANN_SCORES if n not in _DIANN_TYPED], [n for _, n in DIANN_CV]),
+        ("diann", "feature", [(n, h) for _, n, h in DIANN_SCORES if n not in _TYPED], [n for _, n in DIANN_CV]),
         ("diann", "pg", [(n, DIANN_CHANNEL_SCORES[n]) for n in DIANN_PG_SCORES], ["quantification_method"]),
-        ("proteome_discoverer", "psm", _PD_ORDERED, ["identifying_node", "psm_ambiguity"]),
-        ("proteome_discoverer", "feature", _PD_ORDERED, []),
-        ("spectronaut", "feature", [(n, h) for _, n, h in SN_SCORES], [n for _, n in SN_CV]),
+        ("proteome_discoverer", "psm", [*_PD_SCORES, ("parent_ion_fraction", True)], ["identifying_node", "psm_ambiguity"]),
+        ("proteome_discoverer", "feature", _PD_SCORES, []),
+        ("spectronaut", "feature", [(n, h) for _, n, h in SN_SCORES if n not in _TYPED], [n for _, n in SN_CV]),
         ("spectronaut", "fragment", [(n, h) for _, n, h in SN_FRAGMENT_SCORES], []),
     ],
 )

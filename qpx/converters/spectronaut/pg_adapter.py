@@ -101,10 +101,10 @@ class SpectronautPgAdapter(SpectronautBaseAdapter):
         ]
 
         # Optional columns
-        qv_col = r.get("qvalue")
+        qv_col = r.get("global_qvalue")
         if qv_col and qv_col in report_cols:
             parts.append(f'FIRST(CAST(r."{qv_col}" AS DOUBLE)) AS qvalue')
-        pqv_col = r.get("pg_qvalue_runwise")
+        pqv_col = r.get("pg_qvalue")
         if pqv_col and pqv_col in report_cols:
             parts.append(f'FIRST(CAST(r."{pqv_col}" AS DOUBLE)) AS qvalue_runwise')
         pa_col = r.get("pg_protein_accessions")
@@ -177,27 +177,12 @@ class SpectronautPgAdapter(SpectronautBaseAdapter):
             gg_accessions = str(row["gg_accessions"]).split(";")
         return pg_names, gg_accessions
 
-    def _build_pg_scores(
-        self,
-        row: dict,
-    ) -> tuple[float | None, float | None, list[dict] | None]:
-        """Build additional_scores and extract q-values from a PG row."""
-        global_qvalue = None
-        if "qvalue" in row:
-            global_qvalue = safe_float(row["qvalue"])
-        pg_qvalue = None
-        if "qvalue_runwise" in row:
-            pg_qvalue = safe_float(row["qvalue_runwise"])
-
-        additional_scores: list[dict] = []
-        if global_qvalue is not None:
-            additional_scores.append({"score_name": "pg_qvalue", "score_value": global_qvalue, "higher_better": False})
-            self._discovered_scores.add("pg_qvalue")
-        if pg_qvalue is not None:
-            additional_scores.append({"score_name": "pg_qvalue_runwise", "score_value": pg_qvalue, "higher_better": False})
-            self._discovered_scores.add("pg_qvalue_runwise")
-
-        return global_qvalue, pg_qvalue, additional_scores or None
+    @staticmethod
+    def _pg_qvalues(row: dict) -> tuple[float | None, float | None]:
+        """The experiment-wide and run-wise q-values of a PG row, written only as global_qvalue and pg_qvalue."""
+        global_qvalue = safe_float(row["qvalue"]) if "qvalue" in row else None
+        pg_qvalue = safe_float(row["qvalue_runwise"]) if "qvalue_runwise" in row else None
+        return global_qvalue, pg_qvalue
 
     def _build_pg_record(
         self,
@@ -215,8 +200,7 @@ class SpectronautPgAdapter(SpectronautBaseAdapter):
         pg_quantity = safe_float(row["pg_quantity"])
         intensities = [{"label": "LFQ", "intensity": pg_quantity}]
 
-        # Q-values and scores
-        global_qvalue, pg_qvalue, additional_scores = self._build_pg_scores(row)
+        global_qvalue, pg_qvalue = self._pg_qvalues(row)
 
         # Peptide counts
         # A protein-level report has no peptide columns.
@@ -253,6 +237,6 @@ class SpectronautPgAdapter(SpectronautBaseAdapter):
             "feature_counts": None,
             "sequence_coverage": None,
             "molecular_weight": None,
-            "additional_scores": additional_scores,
+            "additional_scores": None,
             "cv_params": None,
         }

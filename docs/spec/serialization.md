@@ -91,7 +91,7 @@ The table gives each column's fields in storage and list restoration order. `↓
 | Footer `creator` | View | `additional_scores` | `cv_params` |
 |---|---|---|---|
 | `diann` | `feature` | `pg_qvalue` ↓, `diann_cscore`, `diann_evidence`, `diann_spectrum_similarity`, `diann_ms1_profile_corr`, `diann_mass_evidence`, `diann_averagine`, `diann_quantity_quality`, `diann_lib_qvalue` ↓, `diann_lib_pg_qvalue` ↓, `diann_protein_qvalue` ↓, `diann_decoy_cscore`, `diann_decoy_evidence`, `diann_translated_quality`, `diann_translated_qvalue` ↓, `diann_ptm_site_confidence`, `diann_lib_ptm_site_confidence`, `diann_peptidoform_qvalue` ↓, `diann_global_peptidoform_qvalue` ↓, `diann_lib_peptidoform_qvalue` ↓ | `proteotypic`, `irt`, `predicted_irt`, `predicted_im`, `predicted_iim`, `iim`, `diann_precursor_lib_index` |
-| `diann` | `pg` | `pg_qvalue` ↓, `pg_pep` ↓, `lib_pg_qvalue` ↓, `protein_qvalue` ↓, `pg_maxlfq_quality`, `genes_maxlfq_quality` | `quantification_method` |
+| `diann` | `pg` | `pg_pep` ↓, `lib_pg_qvalue` ↓, `protein_qvalue` ↓, `pg_maxlfq_quality`, `genes_maxlfq_quality` | `quantification_method` |
 | `diann` | `fragment` | `diann_fragment_score` | — |
 | `maxquant` | `psm` | `andromeda_score`, `andromeda_delta_score`, `parent_ion_fraction` | `fragmentation`, `mass analyzer`, `type` |
 | `maxquant` | `feature` | `andromeda_score`, `andromeda_delta_score` | — |
@@ -100,10 +100,10 @@ The table gives each column's fields in storage and list restoration order. `↓
 | `fragpipe` | `feature` | — | — |
 | `fragpipe` | `pg` | `protein_probability`, `top_peptide_probability` | `sequence_length`, `protein_existence` |
 | `proteome_discoverer` | `psm` | `rank` ↓, `sequest_xcorr`, `comet_xcorr`, `mascot_ions_score`, `delta_score`, `percolator_svm_score`, `parent_ion_fraction` | `identifying_node`, `psm_ambiguity` |
-| `proteome_discoverer` | `feature` | `rank` ↓, `sequest_xcorr`, `comet_xcorr`, `mascot_ions_score`, `delta_score`, `percolator_svm_score`, `parent_ion_fraction` | — |
+| `proteome_discoverer` | `feature` | `rank` ↓, `sequest_xcorr`, `comet_xcorr`, `mascot_ions_score`, `delta_score`, `percolator_svm_score` | — |
 | `proteome_discoverer` | `pg` | `sum_pep_score` | `sequence_length` |
-| `spectronaut` | `feature` | `qvalue` ↓, `pg_qvalue` ↓, `pg_qvalue_runwise` ↓, `spectronaut_cscore`, `spectronaut_pg_cscore`, `spectronaut_pg_cscore_runwise`, `spectronaut_ptm_assay_probability` | `predicted_irt`, `empirical_irt` |
-| `spectronaut` | `pg` | `pg_qvalue` ↓, `pg_qvalue_runwise` ↓ | — |
+| `spectronaut` | `feature` | `pg_qvalue_runwise` ↓, `spectronaut_cscore`, `spectronaut_pg_cscore`, `spectronaut_pg_cscore_runwise`, `spectronaut_ptm_assay_probability` | `predicted_irt`, `empirical_irt` |
+| `spectronaut` | `pg` | — | — |
 | `spectronaut` | `fragment` | `spectronaut_interference_score` ↓, `spectronaut_log10_signal_to_noise`, `spectronaut_measured_relative_intensity`, `spectronaut_predicted_relative_intensity`, `spectronaut_calibrated_mass_accuracy_ppm` ↓ | — |
 
 Each file records its layout as JSON under the footer key `qpx.struct_lists`, in field order and with each score's `higher_better`. A MaxQuant pg file declares the following layout.

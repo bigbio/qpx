@@ -387,7 +387,7 @@ The converter auto-detects column names from the Spectronaut report, supporting 
 | `EG.ModifiedSequence` | `peptidoform` | Converted to ProForma notation |
 | `FG.Charge` | `charge` | Precursor charge state |
 | `FG.Quantity` | `intensities[0].intensity` | Raw precursor intensity |
-| `EG.Qvalue` | `additional_scores` | Mapped to PSI-MS CV terms |
+| `EG.Qvalue` | `precursor_qvalue` | Run-level precursor q-value, filtered by `--qvalue-threshold` |
 | `PG.ProteinGroups` | `pg_accessions` | Semicolon-delimited protein groups |
 | `PG.Quantity` | PG `intensities` | Protein group quantity |
 

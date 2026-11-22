@@ -34,10 +34,11 @@ from qpx.writers.feature import FeatureWriter
 
 logger = logging.getLogger(__name__)
 
-# Score mappings: (Spectronaut column, output score name, higher_better)
+# Score mappings: (Spectronaut column, output score name, higher_better). EG.Qvalue
+# fills precursor_qvalue and leaves the list, as DIA-NN's Q.Value does; PG.Qvalue is
+# the pg_global_qvalue column only.
 _SCORE_MAPPINGS = [
-    ("EG.Qvalue", "qvalue", False),
-    ("PG.Qvalue", "pg_qvalue", False),
+    ("EG.Qvalue", "precursor_qvalue", False),
     ("PG.QValue (Run-Wise)", "pg_qvalue_runwise", False),
     ("EG.Cscore", "spectronaut_cscore", True),
     ("PG.Cscore", "spectronaut_pg_cscore", True),
@@ -308,7 +309,7 @@ class SpectronautFeatureAdapter(SpectronautBaseAdapter):
             parts.append(f'NOT contains(FIRST(r."{pg_col}"), \';\') AS "unique"')
 
         # pg_global_qvalue
-        pgqv_col = r.get("pg_qvalue")
+        pgqv_col = r.get("pg_global_qvalue")
         if pgqv_col and _has(pgqv_col):
             parts.append(f"{_safe_double_sql(pgqv_col)} AS pg_global_qvalue")
         else:
@@ -384,7 +385,7 @@ class SpectronautFeatureAdapter(SpectronautBaseAdapter):
         mod_id = validate_identifier(mod_col)
         pg_id = validate_identifier(pg_col)
 
-        qv_col = r.get("qvalue")
+        qv_col = r.get("precursor_qvalue")
         having_clause = "1=1"
         if qvalue_threshold is not None and qv_col and qv_col in report_cols:
             qv_id = validate_identifier(qv_col)

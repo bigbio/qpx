@@ -37,7 +37,6 @@ FIXED_STRUCT_TABLES = {
         },
         "pg": {
             "additional_scores": [
-                {"name": "pg_qvalue", "higher_better": False},
                 {"name": "pg_pep", "higher_better": False},
                 {"name": "lib_pg_qvalue", "higher_better": False},
                 {"name": "protein_qvalue", "higher_better": False},
@@ -115,7 +114,6 @@ FIXED_STRUCT_TABLES = {
                 {"name": "mascot_ions_score", "higher_better": True},
                 {"name": "delta_score", "higher_better": True},
                 {"name": "percolator_svm_score", "higher_better": True},
-                {"name": "parent_ion_fraction", "higher_better": True},
             ],
             "cv_params": [],
         },
@@ -127,8 +125,6 @@ FIXED_STRUCT_TABLES = {
     "spectronaut": {
         "feature": {
             "additional_scores": [
-                {"name": "qvalue", "higher_better": False},
-                {"name": "pg_qvalue", "higher_better": False},
                 {"name": "pg_qvalue_runwise", "higher_better": False},
                 {"name": "spectronaut_cscore", "higher_better": True},
                 {"name": "spectronaut_pg_cscore", "higher_better": True},
@@ -138,10 +134,7 @@ FIXED_STRUCT_TABLES = {
             "cv_params": [{"name": "predicted_irt"}, {"name": "empirical_irt"}],
         },
         "pg": {
-            "additional_scores": [
-                {"name": "pg_qvalue", "higher_better": False},
-                {"name": "pg_qvalue_runwise", "higher_better": False},
-            ],
+            "additional_scores": [],
             "cv_params": [],
         },
         "fragment": {

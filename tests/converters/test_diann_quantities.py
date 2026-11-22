@@ -261,6 +261,9 @@ def test_pg_carries_the_spec_mapped_quantities_and_scores(tmp_path):
     assert scores["genes_maxlfq_quality"] == (pytest.approx(0.7), True)
     assert scores["lib_pg_qvalue"] == (pytest.approx(0.005), False)
     assert scores["protein_qvalue"] == (pytest.approx(0.006), False)
+    # PG.Q.Value is the pg_qvalue column only (#377).
+    assert pg["pg_qvalue"] == pytest.approx(0.002)
+    assert "pg_qvalue" not in scores
 
 
 def test_quantify_reads_numeric_plexdia_labels(tmp_path):

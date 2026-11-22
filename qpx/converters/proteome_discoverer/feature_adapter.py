@@ -22,6 +22,16 @@ _FEATURE_SQL = """SELECT * EXCLUDE (_best) FROM (
 ) WHERE _best = 1"""
 
 
+def _feature_scores(scores: list[dict] | None) -> tuple[list[dict] | None, float | None]:
+    """A PSM's scores without parent_ion_fraction, and that value.
+
+    On a feature the precursor's share of the isolation window is a column, not a score (scores.md).
+    """
+    kept = [score for score in scores or [] if score["score_name"] != "parent_ion_fraction"]
+    fraction = next((score["score_value"] for score in scores or [] if score["score_name"] == "parent_ion_fraction"), None)
+    return kept or None, fraction
+
+
 class ProteomeDiscovererFeatureAdapter(PdPsmTable):
     """Sum the reporter abundances of a precursor's spectra, or take their largest MS1 abundance."""
 
@@ -117,8 +127,7 @@ class ProteomeDiscovererFeatureAdapter(PdPsmTable):
             spectrum["rt"] = apex_minutes * 60
         members = self._protein_groups.get(anchor) or masters
         gene = self._genes.get(anchor)
-        scores = self.search_scores(row)
-        interference = next((s["score_value"] for s in scores or [] if s["score_name"] == "parent_ion_fraction"), None)
+        scores, interference = _feature_scores(self.search_scores(row))
         return {
             **spectrum,
             "sequence": sequence,

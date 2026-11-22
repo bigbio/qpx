@@ -1163,6 +1163,14 @@ class TestDiaNNOntologyConversion:
         assert entries[0]["source_column_name"] == "Q.Value"
         assert entries[0]["source_tool"] == "DIA-NN"
 
+    def test_pg_qvalue_column_keeps_its_cv_term(self, converted_output):
+        """PG.Q.Value is only the pg_qvalue column, and its row still names the PSI-MS term (#377)."""
+        table = pq.read_table(str(converted_output / "diann_test.ontology.parquet"))
+        entries = [row for row in table.to_pylist() if (row["field_name"], row["view"]) == ("pg_qvalue", "pg")]
+        assert [(row["ontology_accession"], row["source_column_name"], row["source_tool"]) for row in entries] == [
+            ("MS:1002373", "PG.Q.Value", "DIA-NN")
+        ]
+
     def test_schema_validation(self, converted_output):
         from qpx.core.data import OntologySchema
 
