@@ -37,7 +37,7 @@ class ProteomeDiscovererPsmAdapter(PdPsmTable):
         rank_filter = "WHERE _rank = 1" if rank1_only else ""
         query = f"""SELECT * FROM pd_psms {rank_filter}
             QUALIFY row_number() OVER (
-                PARTITION BY _run, _scan, _sequence, _modifications, _charge ORDER BY _rank, _qvalue NULLS LAST) = 1"""
+                PARTITION BY _run, _scan, _sequence, _modifications, _charge ORDER BY {self._candidate_order()}) = 1"""
         with PsmWriter(output_path, creator="proteome_discoverer", fixed_struct_lists=True) as writer:
             for batch in self._query_batched(query, chunksize):
                 records = self._transform_rows_with_skip(batch.to_pylist(), self._record, "Proteome Discoverer PSM")

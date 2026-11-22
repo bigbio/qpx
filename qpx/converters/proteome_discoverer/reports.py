@@ -97,6 +97,13 @@ class PdPsmTable(BaseConverter):
         column = self._resolved.get(field)
         return f'TRY_CAST("{column}" AS DOUBLE)' if column else "CAST(NULL AS DOUBLE)"
 
+    def _candidate_order(self) -> str:
+        """Order of the hits on one spectrum: rank, q-value, absolute mass error, PEP, export row; missing last."""
+        return (
+            f"_rank, _qvalue NULLS LAST, abs({self._optional_double('mass_error_ppm')}) NULLS LAST, "
+            f"{self._optional_double('posterior_error_probability')} NULLS LAST, _row"
+        )
+
     def _derived(self, runs: dict[str, str] | None) -> str:
         return ", ".join(
             (

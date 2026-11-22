@@ -184,6 +184,30 @@ def test_two_engines_on_one_spectrum_keep_one_psm_and_rank1_only_drops_the_other
     assert pq.read_table(out / "pd.psm.parquet").num_rows == 1
 
 
+def test_tied_hits_on_one_spectrum_keep_the_smallest_mass_error(tmp_path):
+    """Equal rank and q-value: the absolute mass error, then PEP and export row decide, as for the feature."""
+    rows = [
+        _psm_row(**{"mz in Da": "800.958", "Delta M in ppm": "572"}),
+        _psm_row(**{"Identifying Node": "Comet", "Delta M in ppm": "0.01"}),
+    ]
+    psms = pq.read_table(_convert(tmp_path, rows) / "pd.psm.parquet").to_pylist()
+
+    assert len(psms) == 1
+    assert psms[0]["observed_mz"] == pytest.approx(800.5)
+
+
+def test_pepmap_lists_the_proteins_of_every_converted_precursor(tmp_path):
+    rows = [
+        _psm_row(**{"Protein Accessions": "P99999"}),
+        _psm_row(**{"First Scan": "101", "Charge": "3", "Protein Accessions": "P12345"}),
+    ]
+    pepmap = pq.read_table(_convert(tmp_path, rows) / "pd.pepmap.parquet").to_pylist()
+
+    assert len(pepmap) == 1
+    assert [protein["accession"] for protein in pepmap[0]["pg_accessions"]] == ["P12345", "P99999"]
+    assert pepmap[0]["is_unique"] is False
+
+
 def test_feature_sums_the_reporters_of_the_used_psms(tmp_path):
     rows = [
         _psm_row(),

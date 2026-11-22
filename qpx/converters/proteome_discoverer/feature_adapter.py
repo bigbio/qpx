@@ -35,7 +35,7 @@ def _feature_scores(scores: list[dict] | None) -> tuple[list[dict] | None, float
 class ProteomeDiscovererFeatureAdapter(PdPsmTable):
     """Sum the reporter abundances of a precursor's spectra, or take their largest MS1 abundance."""
 
-    _pepmap: dict[str, tuple[str, list[str]]] = {}
+    _pepmap: dict[str, tuple[str, set[str]]] = {}
     _protein_groups: dict[str, list[str]] = {}
     _genes: dict[str, str] = {}
     _channels: dict[str, str] = {}
@@ -61,8 +61,9 @@ class ProteomeDiscovererFeatureAdapter(PdPsmTable):
         return True
 
     def write_pepmap(self, output_path: str) -> bool:
-        """Write the proteins of each converted peptidoform."""
-        return self._write_pepmap(output_path, self._pepmap, "proteome_discoverer")
+        """Write the proteins of each converted peptidoform, over all its precursors."""
+        pepmap = {peptidoform: (sequence, sorted(proteins)) for peptidoform, (sequence, proteins) in self._pepmap.items()}
+        return self._write_pepmap(output_path, pepmap, "proteome_discoverer")
 
     def _reporter_columns(self) -> dict[str, str]:
         """Reporter column -> canonical label; other abundance columns (SILAC) stop the conversion."""
@@ -86,11 +87,9 @@ class ProteomeDiscovererFeatureAdapter(PdPsmTable):
         if quan_info:
             # The PSMs PD left out of its own quantification: "Excluded by Method"
             used.append(f"lower(replace(COALESCE(\"{quan_info}\", ''), ' ', '')) NOT LIKE 'excludedby%'")
-        candidate = (
-            f"_rank, _qvalue NULLS LAST, abs({self._optional_double('mass_error_ppm')}) NULLS LAST, "
-            f"{self._optional_double('posterior_error_probability')} NULLS LAST, _row"
+        return sql_build(
+            _FEATURE_SQL, aggregates=", ".join(aggregates), used=" AND ".join(used) or "true", candidate=self._candidate_order()
         )
-        return sql_build(_FEATURE_SQL, aggregates=", ".join(aggregates), used=" AND ".join(used) or "true", candidate=candidate)
 
     def _quantities(self, row: dict) -> tuple[list[dict] | None, list[dict] | None]:
         ms1 = row["_ms1"] if row["_ms1"] and row["_ms1"] > 0 else None
@@ -120,7 +119,7 @@ class ProteomeDiscovererFeatureAdapter(PdPsmTable):
         mapped = split_accessions(row.get(self._resolved.get("protein_accessions")))
         anchor = masters[0] if masters else None
         if mapped:
-            self._pepmap.setdefault(peptidoform, (sequence, mapped))
+            self._pepmap.setdefault(peptidoform, (sequence, set()))[1].update(mapped)
         spectrum = self.spectrum_fields(row)
         apex_minutes = safe_float(row.get(self._resolved.get("apex_rt")))
         if apex_minutes is not None:
