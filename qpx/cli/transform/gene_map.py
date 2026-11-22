@@ -113,18 +113,45 @@ def transform_gene_map_cmd(
 
     if dataset is not None:
         _gene_map_dataset(mapping, dataset, in_place, output_folder)
-        return
+    else:
+        _gene_map_parquet(mapping, parquet_path, Path(output_folder))
+
+
+def _gene_map_parquet(mapping, parquet_path: Path, output_folder: Path) -> None:
+    """Annotate one file while keeping its physical types and Parquet metadata."""
+    import datetime
+    import uuid
 
     import pandas as pd
+    import pyarrow as pa
+    import pyarrow.parquet as pq
 
-    output_folder = Path(output_folder)
+    from qpx.writers.encoding import SampledParquetWriter, row_group_rows
+
     output_folder.mkdir(parents=True, exist_ok=True)
 
-    df = pd.read_parquet(str(parquet_path))
+    with pq.ParquetFile(parquet_path) as source:
+        table = source.read()
+        # The table is rebuilt from a new DataFrame, so the source's pandas metadata no longer applies.
+        footer = {
+            key: value for key, value in (source.metadata.metadata or {}).items() if key not in (b"ARROW:schema", b"pandas")
+        }
+    if b"uuid" in footer:
+        # Like the other QPX rewrites, the annotated file gets its own uuid and date.
+        footer |= {b"uuid": str(uuid.uuid4()).encode(), b"creation_date": datetime.datetime.now().isoformat().encode()}
+    schema = table.schema
+    df = table.to_pandas(ignore_metadata=True, types_mapper=pd.ArrowDtype)
     protein_col = "pg_accessions" if "pg_accessions" in df.columns else "protein_accessions"
     annotated = mapping.annotate_dataframe(df, protein_col=protein_col)
+    table = pa.Table.from_pandas(annotated, schema=schema, preserve_index=False)
+    for column in annotated.columns.difference(schema.names, sort=False):
+        table = table.append_column(column, pa.array(annotated[column]))
+
+    compression = footer.get(b"compression_format", b"snappy").decode()
     output_path = output_folder / parquet_path.name
-    annotated.to_parquet(str(output_path), index=False)
+    table = table.replace_schema_metadata(footer)
+    with SampledParquetWriter(output_path, table.schema, compression) as writer:
+        writer.write_table(table, row_group_size=row_group_rows(table))
 
     click.echo(f"Gene mapping complete. Output: {output_path}")
 

@@ -15,6 +15,7 @@ from qpx.core import engine as engine_module
 from qpx.core.engine import DuckDBEngine
 from qpx.core.struct_lists import STRUCT_LISTS_FOOTER_KEY, file_layouts
 from qpx.dataset import Dataset
+from qpx.transforms.gene_mapping import GeneMappingTransform
 from qpx.transforms.mantissa import round_table
 from qpx.writers.feature import FeatureWriter
 from qpx.writers.psm import PsmWriter
@@ -87,18 +88,9 @@ def test_a_dataset_with_struct_lists_validates(diann):
     assert "Overall: VALID" in _invoke("validate", "--dataset-path", diann / "sorted")
 
 
-@pytest.mark.parametrize(
-    "command",
-    [
-        ["transform", "gene-map", "--fasta", EXAMPLES / "fasta" / "Homo-sapiens.fasta", "--dataset"],
-        ["migrate", "--dataset-path"],
-    ],
-    ids=["gene-map", "migrate"],
-)
-def test_rewriting_a_view_reads_its_struct_lists_back(diann, tmp_path, command):
-    """Transforms that read the files themselves write lists and keep the rounding footer."""
+def test_migrate_reads_structs_and_writes_lists(diann, tmp_path):
     for name in ("source", "sorted"):
-        _invoke(*command, diann / name, "--output-folder", tmp_path / name)
+        _invoke("migrate", "--dataset-path", diann / name, "--output-folder", tmp_path / name)
         for view in ("feature", "pg"):
             file = pq.ParquetFile(tmp_path / name / f"d.{view}.parquet")
             footer = file.metadata.metadata
@@ -108,6 +100,43 @@ def test_rewriting_a_view_reads_its_struct_lists_back(diann, tmp_path, command):
             assert _rows(tmp_path / name, view) == _rows(diann / name, view)
             original = pq.read_metadata(diann / name / f"d.{view}.parquet").metadata
             assert footer.get(b"qpx.mantissa_bits") == original.get(b"qpx.mantissa_bits")
+
+
+def test_gene_map_dataset_preserves_structs_and_rounding(diann, tmp_path):
+    for name in ("source", "sorted"):
+        source, target = diann / name, tmp_path / name
+        _invoke("transform", "gene-map", "--fasta", EXAMPLES / "fasta" / "Homo-sapiens.fasta",
+                "--dataset", source, "--output-folder", target)  # fmt: skip
+        for view in ("feature", "pg"):
+            before, after = (pq.ParquetFile(folder / f"d.{view}.parquet") for folder in (source, target))
+            original, footer = before.metadata.metadata, after.metadata.metadata
+            assert file_layouts(footer) == file_layouts(original)
+            for column in ("additional_scores", "cv_params"):
+                assert after.schema_arrow.field(column) == before.schema_arrow.field(column)
+            assert _rows(target, view) == _rows(source, view)
+            assert footer.get(b"qpx.mantissa_bits") == original.get(b"qpx.mantissa_bits")
+
+
+def test_gene_map_parquet_preserves_structs_and_file_footer(diann, tmp_path):
+    source = diann / "sorted" / "d.pg.parquet"
+    before = pq.read_table(source)
+    fasta = tmp_path / "genes.fasta"
+    accession = before["pg_accessions"][0][0].as_py()
+    fasta.write_text(f">sp|{accession}|PROTEIN GN=MappedGene\nPEPTIDE\n")
+    _invoke("transform", "gene-map", "--parquet-path", source, "--fasta", fasta, "--output-folder", tmp_path)
+
+    target = tmp_path / source.name
+    after = pq.read_table(target)
+    columns = ["additional_scores", "cv_params"]
+    assert after.select(columns).equals(before.select(columns))
+    original, footer = (pq.read_metadata(path).metadata for path in (source, target))
+    assert footer[STRUCT_LISTS_FOOTER_KEY] == original[STRUCT_LISTS_FOOTER_KEY]
+    stamped = (b"ARROW:schema", b"uuid", b"creation_date")
+    assert {key: value for key, value in footer.items() if key not in stamped} == {
+        key: value for key, value in original.items() if key not in stamped
+    }
+    assert footer[b"uuid"] != original[b"uuid"]
+    assert after["gg_names"][0].as_py() == ["MappedGene"]
 
 
 def test_merge_of_fixed_structs_writes_lists(diann, tmp_path):
@@ -304,6 +333,44 @@ def _feature_rows(folder, prefix=None):
 def _each_file_alone(folder):
     """The rows of every feature file of *folder*, each file read on its own."""
     return sorted(row for path in folder.glob("*.feature.parquet") for row in _feature_rows(folder, path.name.split(".")[0]))
+
+
+def _intensity_struct_file(source, path):
+    """*source* with additional_intensities stored as a struct, as earlier development builds wrote it."""
+    table = pq.read_table(source)
+    values = [
+        {"LFQ": {"spectral_count": row[0]["intensities"][0]["intensity_value"]}}
+        for row in table["additional_intensities"].to_pylist()
+    ]
+    intensities = pa.array(values, pa.struct([("LFQ", pa.struct([("spectral_count", pa.float32())]))]))
+    layouts = {**file_layouts(table.schema.metadata), "additional_intensities": [{"name": "LFQ", "names": ["spectral_count"]}]}
+    metadata = {**table.schema.metadata, STRUCT_LISTS_FOOTER_KEY: json.dumps(layouts).encode()}
+    table = table.set_column(table.schema.get_field_index("additional_intensities"), "additional_intensities", intensities)
+    pq.write_table(table.replace_schema_metadata(metadata), path)
+    return path
+
+
+@pytest.mark.parametrize("case", ["mixed-layouts", "float-fields", "intensity-struct"])
+def test_gene_map_writes_lists_for_layouts_it_cannot_keep(shards, legacy_shards, tmp_path, case):
+    """Files of two layouts, or with an earlier build's FLOAT fields or intensity struct, are written as lists."""
+    if case == "mixed-layouts":
+        files = {"a": shards["alpha"][1], "b": shards["beta"][1]}
+    elif case == "float-fields":
+        files = {"a": legacy_shards["beta"]}
+    else:
+        files = {"a": _intensity_struct_file(shards["beta"][1], tmp_path / "intensities.parquet")}
+    source = _shard_folder(tmp_path / "shards", **files)
+    output = tmp_path / "annotated" / "d.feature.parquet"
+    fasta = tmp_path / "genes.fasta"
+    fasta.write_text(">sp|P00000|OTHER GN=OtherGene\nPEPTIDE\n")
+    with Dataset(str(source)) as dataset:
+        GeneMappingTransform(fasta).write_annotated_features(dataset, output)
+
+    schema = pq.read_schema(output)
+    assert STRUCT_LISTS_FOOTER_KEY not in schema.metadata
+    for column in ("additional_scores", "cv_params", "additional_intensities"):
+        assert pa.types.is_list(schema.field(column).type)
+    assert _feature_rows(output.parent) == _feature_rows(source)
 
 
 def _view_sql(folder):

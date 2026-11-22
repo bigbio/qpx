@@ -37,6 +37,9 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
+from qpx.core.struct_lists import file_layouts
+from qpx.writers.struct_lists import struct_schema
+
 logger = logging.getLogger(__name__)
 
 _GENE_NAME_RE = re.compile(r"\bGN=(\S+)")
@@ -126,11 +129,11 @@ def _parse_gene_names_from_fasta(
 def _normalize_protein_list(accessions) -> Optional[list]:
     """Normalize a protein accessions value into a list suitable for _resolve_gene_names.
 
-    - None / float NaN  → None
+    - None / pandas NA / float NaN → None
     - str               → [str]
     - list / array      → list(item)
     """
-    if accessions is None or (isinstance(accessions, float) and accessions != accessions):
+    if accessions is None or accessions is pd.NA or (isinstance(accessions, float) and accessions != accessions):
         return None
     if isinstance(accessions, str):
         return [accessions]
@@ -180,10 +183,26 @@ def _resolve_gene_names(
     return gene_names if gene_names else None
 
 
+def _shared_struct_layouts(file_paths) -> dict[str, list[dict]]:
+    """Use a common layout only when the fixed-layout writer can reproduce its types."""
+    common = None
+    for path in file_paths:
+        with pq.ParquetFile(path) as parquet:
+            layouts = file_layouts(parquet.metadata.metadata)
+            if not layouts or (common is not None and common != layouts):
+                return {}
+            # Earlier relayout output could store intensities as structs or narrow score and CV fields.
+            schema = parquet.schema_arrow
+            if "additional_intensities" in layouts or schema != struct_schema(schema.with_metadata({}), layouts):
+                return {}
+        common = layouts
+    return common or {}
+
+
 def _view_batches(file_paths):
     """Tables of bounded size read from a view's Parquet files, in order, with struct lists read back as lists."""
     from qpx.core.engine import create_connection
-    from qpx.core.struct_lists import file_layouts, restore_table
+    from qpx.core.struct_lists import restore_table
     from qpx.transforms.protein_properties import _rewrite_batch_rows
 
     with create_connection() as con:
@@ -359,7 +378,7 @@ class GeneMappingTransform:
         self._last_mapped_share = mapped_share
 
     def _write_annotated_view(self, structure, writer_class, output_path: Path) -> None:
-        """Write *structure* with gene names to *output_path*, keeping its identity recipe.
+        """Write *structure* with gene names, keeping its identity recipe and any shared layout.
 
         The view's Parquet files are read in bounded batches, so only one batch is
         in memory. As in :meth:`annotate_dataframe`, existing names stay where the
@@ -370,10 +389,14 @@ class GeneMappingTransform:
         gene_map = self.gene_map
         source_composite = structure.file_metadata.get("identity_composite")
         identity_composite = tuple(source_composite.split(",")) if source_composite else None
+        file_paths = structure.file_paths
+        struct_layouts = _shared_struct_layouts(file_paths)
         n_mapped = n_rows = 0
-        with writer_class(output_path, override_provided_ids=False, identity_composite=identity_composite) as writer:
+        with writer_class(
+            output_path, override_provided_ids=False, identity_composite=identity_composite, struct_layouts=struct_layouts
+        ) as writer:
             names_type = writer.arrow_schema.field("gg_names").type
-            for table in _view_batches(structure.file_paths):
+            for table in _view_batches(file_paths):
                 table, mapped = _annotate_table(table, gene_map, names_type)
                 writer.write_table(writer.align_table_to_schema(table))
                 n_mapped += mapped

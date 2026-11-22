@@ -83,6 +83,7 @@ class BaseWriter:
         identity_composite: Optional[Sequence[str]] = None,
         *,
         fixed_struct_lists: bool = False,
+        struct_layouts: dict[str, list[dict]] | None = None,
     ):
         self._path = Path(path)
         # A per-instance nonce, not just the pid: two writers in the SAME process
@@ -104,8 +105,9 @@ class BaseWriter:
         # the truncated output the staging was added to prevent (bigbio/qpx#288).
         self._write_failed = False
         self._warned_checks: set[str] = set()
-        layouts = FIXED_STRUCT_TABLES[creator][self._schema_class.view_name] if fixed_struct_lists else {}
-        self._columns = _WriterColumns(extra_columns or [], layouts)
+        if struct_layouts is None:
+            struct_layouts = FIXED_STRUCT_TABLES[creator][self._schema_class.view_name] if fixed_struct_lists else {}
+        self._columns = _WriterColumns(extra_columns or [], struct_layouts)
         # Override mode (e.g. consensusXML): re-derive the id even when the
         # producer supplied one, stashing the original as a cv_param so it is
         # preserved/traceable.
