@@ -162,7 +162,7 @@ DuckDB read 101 files without an error in every version listed: 98 written by Op
 
 ### Comparing two conversions
 
-Converters write rows in a fixed order, but two conversions of the same input do not produce identical bytes: the footer holds a uuid and a date, and `dataset.parquet` a packaging time. Compare rows and ids, not checksums.
+DIA-NN, MaxQuant and Spectronaut write their feature rows, and Spectronaut its pg rows, in a fixed order. Other views can come out in another order: two conversions of MaxQuant PXD014145 put every psm row in another place, and two of FragPipe PXD041421 1,569,430 of 2,231,022 feature rows. Nor do two conversions produce identical bytes, as the footer holds a uuid and a date, and `dataset.parquet` a packaging time. Check that the ids are unique, then compare rows paired by id, not by position or checksum.
 
 ## Hive Partitioning
 
