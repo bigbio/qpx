@@ -409,14 +409,23 @@ def test_tables_sharing_a_row_group_keep_to_its_byte_cap(tmp_path, monkeypatch):
     assert all(15 < rows < 30 for rows in groups[:-1])
 
 
-def test_tables_and_flushed_batches_reach_the_file_in_call_order(tmp_path):
-    """A batch that is flushed is written after the tables written before it."""
+def test_tables_and_flushed_batches_share_row_groups_in_call_order(tmp_path):
+    """A flushed batch fills the row group of the tables written before it, and the next table continues it."""
     path = tmp_path / "ds.psm.parquet"
     with PsmWriter(path, batch_size=1) as writer:
         writer.write_table(_psm_table(writer, 1, 2))
         writer.write_batch([make_psm_record(scan=[3])])
         writer.write_table(_psm_table(writer, 4, 2))
-    assert _row_groups_and_scans(path) == ([2, 1, 2], [1, 2, 3, 4, 5])
+    assert _row_groups_and_scans(path) == ([5], [1, 2, 3, 4, 5])
+
+
+def test_flushed_batches_fill_row_groups(tmp_path, monkeypatch):
+    """Batches smaller than a row group are not each a group of their own (#377)."""
+    monkeypatch.setattr(encoding, "ROW_GROUP_ROWS", 4)
+    path = tmp_path / "ds.psm.parquet"
+    with PsmWriter(path, batch_size=3) as writer:
+        writer.write_batch([make_psm_record(scan=[scan]) for scan in range(1, 11)])
+    assert _row_groups_and_scans(path) == ([4, 4, 2], list(range(1, 11)))
 
 
 def test_footer_keys_set_after_a_table_reach_the_file(tmp_path):

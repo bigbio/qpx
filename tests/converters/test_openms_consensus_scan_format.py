@@ -7,6 +7,7 @@ import pytest
 from defusedxml.ElementTree import fromstring, tostring
 
 from qpx.converters.openms_consensus import conversion, converter
+from qpx.writers import encoding
 from qpx.writers.psm import PsmWriter
 from tests.converters.test_openms_consensus import _TMT_CONSENSUSXML
 from tests.converters.test_openms_consensus_native_id import _convert_references
@@ -49,6 +50,8 @@ def test_streaming_declares_format_after_flushing_batches(tmp_path, monkeypatch)
         yield from original(stream)
 
     monkeypatch.setattr(conversion, "PsmWriter", SmallBatchPsmWriter)
+    # One-row groups, so each batch reaches the file before the format is confirmed.
+    monkeypatch.setattr(encoding, "ROW_GROUP_ROWS", 1)
     monkeypatch.setattr(StreamingConsensusMap, "iter_all", tracked_pass)
     written = _convert_references(tmp_path, ["index=0", "index=1"], streaming=True)
     parquet = pq.ParquetFile(written["psm"])

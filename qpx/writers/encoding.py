@@ -99,7 +99,12 @@ def _smallest_encodings(schema: pa.Schema, sample: pa.Table, options: dict) -> d
 
 def row_group_rows(data: pa.Table | pa.RecordBatch, rows: int | None = None) -> int:
     """Rows per row group for *data*: *rows*, by default ``ROW_GROUP_ROWS``, fewer when rows are large."""
-    bytes_per_row = max(1, data.nbytes // max(1, data.num_rows))
+    return _group_rows(data.num_rows, data.nbytes, rows)
+
+
+def _group_rows(num_rows: int, nbytes: int, rows: int | None = None) -> int:
+    """Rows per row group for *num_rows* rows taking *nbytes*, as :func:`row_group_rows` counts them."""
+    bytes_per_row = max(1, nbytes // max(1, num_rows))
     return max(1, min(rows or ROW_GROUP_ROWS, ROW_GROUP_BYTES // bytes_per_row))
 
 
@@ -131,29 +136,36 @@ class RowGroupQueue:
     def __init__(self, write: Callable[[pa.Table, int | None], None]):
         self._write = write
         self._tables: list[pa.Table] = []
+        # Counted as tables arrive, so that many small tables are not concatenated again on each one.
+        self._rows = self._bytes = 0
 
     def add(self, table: pa.Table) -> None:
         """Queue *table* behind the queued tables and write the full row groups they make."""
         self._tables.append(table)
+        self._rows += table.num_rows
+        self._bytes += table.nbytes
+        group = _group_rows(self._rows, self._bytes)
+        if self._rows < group:
+            return
         pending = pa.concat_tables(self._tables)
-        group = row_group_rows(pending)
         full = pending.num_rows - pending.num_rows % group
-        if full:
-            rest = pending.slice(full)
-            # Copied: a slice would hold the caller's whole table until the next write.
-            self._tables = [rest.take(pa.array(range(rest.num_rows)))] if rest.num_rows else []
-            self._write(pending.slice(0, full), group)
+        rest = pending.slice(full)
+        # Copied: a slice would hold the caller's whole table until the next write.
+        self._tables = [rest.take(pa.array(range(rest.num_rows)))] if rest.num_rows else []
+        self._rows, self._bytes = rest.num_rows, sum(queued.nbytes for queued in self._tables)
+        self._write(pending.slice(0, full), group)
 
     def flush(self) -> None:
         """Write the queued tables; their last row group may be short."""
         if self._tables:
             pending = pa.concat_tables(self._tables)
-            self._tables = []
+            self.clear()
             self._write(pending, None)
 
     def clear(self) -> None:
         """Drop the queued tables without writing them."""
         self._tables = []
+        self._rows = self._bytes = 0
 
 
 class SampledParquetWriter:

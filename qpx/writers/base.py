@@ -108,8 +108,8 @@ class BaseWriter:
         if struct_layouts is None:
             struct_layouts = FIXED_STRUCT_TABLES[creator][self._schema_class.view_name] if fixed_struct_lists else {}
         self._columns = _WriterColumns(extra_columns or [], struct_layouts)
-        # Tables from write_table that do not fill a row group yet: the next table
-        # or close() completes the group, so consecutive tables share row groups.
+        # Tables and flushed batches that do not fill a row group yet: the next one
+        # or close() completes the group, so consecutive writes share row groups.
         self._pending = RowGroupQueue(self._write_groups)
         # Override mode (e.g. consensusXML): re-derive the id even when the
         # producer supplied one, stashing the original as a cv_param so it is
@@ -439,7 +439,7 @@ class BaseWriter:
         if result.errors:
             raise ValueError("Schema validation failed:\n" + "\n".join(issue.message for issue in result.errors))
         self._log_validation_warnings(result.warnings)
-        self._pending.add(self._packed(table))
+        self._write_parquet(table)
 
     def write_dataframe(self, df: "pd.DataFrame"):
         """Write a pandas DataFrame. Converts to Arrow and validates.
@@ -639,9 +639,8 @@ class BaseWriter:
         self._write_parquet(table)
 
     def _write_parquet(self, table: pa.Table) -> None:
-        """Write *table* in row groups of its own, after the queued tables."""
-        self._pending.flush()
-        self._write_groups(self._packed(table))
+        """Queue *table* behind the earlier tables and batches; full row groups reach the file."""
+        self._pending.add(self._packed(table))
 
     def _packed(self, table: pa.Table) -> pa.Table:
         if self._columns.struct_layouts:
