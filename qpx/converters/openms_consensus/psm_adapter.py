@@ -279,6 +279,10 @@ def _psm_confidence_scores(pid, primary, hits, context, confidence, seq_obj):
     peptide_level = confidence is not None and confidence.applies(pid)
     pep = None if peptide_level else _pep_of(primary)
     score = safe_float(primary.getScore())
+    if peptide_level and context.score_is_qvalue:
+        # Under peptide-level FDR a q-value score is the peptide's, 1.0 on all but its best PSM:
+        # the PSM gets it as peptide_qvalue below, not as a score of its own or of its colliding hits.
+        score, hits = None, [primary]
     additional_scores, site_scores = _psm_additional_scores(
         primary, hits, score, context.score_type, context.score_is_qvalue, context.higher_better, peptide_level=peptide_level
     )
@@ -358,8 +362,8 @@ def psm_records_for_pid(
         _log.debug("Skipping consensusXML PSM with empty spectrum_reference: %r", spectrum_ref)
         return []
     obs_mz = float(pid.getMZ()) if pid.getMZ() else 0.0
-    # When the identification score IS the q-value, the hit score is the peptide
-    # q-value (OpenMS FDR output); otherwise it is a search score.
+    # When the identification score is a q-value, the hit score is that q-value
+    # (OpenMS FDR output), the peptide's under peptide-level FDR; otherwise it is a search score.
     score_type = str(pid.getScoreType() or "")
     score_is_qvalue = score_type.lower() in ("q-value", "qvalue", "fdr")
     # Group hits by identity key. A PeptideIdentification usually holds one hit

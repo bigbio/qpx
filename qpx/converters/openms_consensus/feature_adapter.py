@@ -185,10 +185,15 @@ class PeptideLevelConfidence:
         for pid in pids:
             if not self.applies(pid):
                 continue
+            score_type = str(pid.getScoreType() or "")
             for hit in pid.getHits():
                 key = (identification_identifier(pid) or "", to_proforma(hit.getSequence()))
+                hit_qvalue = qvalue_meta_of(hit)
+                if hit_qvalue is None:
+                    # Without a q-value meta value, a q-value score type makes the hit score the q-value.
+                    hit_qvalue = qvalue_of(hit, score_type)
                 pep, qvalue = self._best.get(key, (None, None))
-                self._best[key] = (_min_or(pep, _scored(pep_of(hit))), _min_or(qvalue, _scored(qvalue_meta_of(hit))))
+                self._best[key] = (_min_or(pep, _scored(pep_of(hit))), _min_or(qvalue, _scored(hit_qvalue)))
 
     def of(self, pid, peptidoform: str) -> tuple[float | None, float | None]:
         """``(PEP, q-value)`` of the peptide's best PSM in ``pid``'s source."""
