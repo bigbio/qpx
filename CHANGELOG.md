@@ -90,6 +90,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - `qpxc convert openms-consensus` with peptide-level Percolator FDR and a q-value identification score kept that score, the peptide's q-value on its best PSM and 1.0 on the others, as each PSM's own q-value. A PSM now has only the peptide's best q-value, as `peptide_qvalue`, and that score also fills `feature.peptide_qvalue` when the hit carries no q-value meta value.
+- `DatasetCollection.merge` joined the `source_column_name` and `source_tool` of an ontology row and wrote the pepmap rows in an order that changed from run to run. Both are now sorted, so merging the same datasets twice gives the same files.
 - Writers checked the primary key of the closed file only for views with an identity composite. `mz`, `xic`, `sample`, `run` and the other views now get the same check, multi-column keys included: a duplicate key warns and a null key raises.
 - `qpxc convert mz` read a run twice when its directory held `run.mzML` together with `run.mzML.gz` or `run.mzml`, writing every spectrum of it twice. It now stops before reading and names the conflicting files.
 - A DIA-NN library decoy (`^` in `Modified.Sequence`) gets a valid ProForma `peptidoform`: the `^` was read as a residue, so the peptidoform was not ProForma and every modification sat one position off. In a PXD019777 report with `--report-decoys`, 4,738 of 7,499 decoy rows are library decoys.
