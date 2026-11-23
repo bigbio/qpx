@@ -13,7 +13,7 @@ from qpx.converters.openms.converter import _run_key_candidates
 from qpx.converters.ptm import from_proforma
 from qpx.core.files import run_file_stem
 from qpx.pdc.metadata import _strip_raw_extension
-from qpx.transforms.accession_normalizer import normalize_parquet, to_bare, to_full
+from qpx.transforms.accession_normalizer import normalize_parquet, to_bare
 
 
 @pytest.mark.parametrize(
@@ -48,13 +48,6 @@ def test_normalizer_strips_prefixed_decoys_and_contaminants(full, bare):
     assert to_bare(full) == bare
 
 
-def test_normalizer_reverse_restores_a_decoy_marker():
-    lookup = {"P04114": "sp|P04114|APOB_HUMAN"}
-    assert to_full("REV__P04114", lookup) == "REV__sp|P04114|APOB_HUMAN"
-    assert to_full("REV__sp|P04114|APOB_HUMAN", lookup) == "REV__sp|P04114|APOB_HUMAN"
-    assert to_full("Q99999", lookup) == "Q99999"
-
-
 def test_normalizer_moves_entry_names_to_pg_names(tmp_path):
     source = tmp_path / "in.pg.parquet"
     pq.write_table(
@@ -72,7 +65,7 @@ def test_normalizer_moves_entry_names_to_pg_names(tmp_path):
         source,
     )
     output = tmp_path / "out.pg.parquet"
-    normalize_parquet(source, output, direction="forward")
+    normalize_parquet(source, output)
     table = pq.read_table(output)
     assert table.column("pg_accessions").to_pylist() == [["P04114", "P02768"], ["P68871", "P69905"], ["P01308"]]
     # Names align with accessions, so a group with an unnamed member has none.

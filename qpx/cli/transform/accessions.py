@@ -51,18 +51,6 @@ def _refresh_derived_files(out_dir: Path) -> None:
     type=click.Path(exists=True, file_okay=False, path_type=Path),
 )
 @click.option(
-    "--direction",
-    help="'forward' (sp|ACC|NAME → ACC) or 'reverse' (ACC → sp|ACC|NAME)",
-    type=click.Choice(["forward", "reverse"]),
-    default="forward",
-)
-@click.option(
-    "--fasta",
-    help="FASTA database file (required for --direction reverse)",
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    default=None,
-)
-@click.option(
     "--in-place",
     help="Overwrite original files instead of writing to --output-folder",
     is_flag=True,
@@ -77,64 +65,38 @@ def _refresh_derived_files(out_dir: Path) -> None:
 @click.option("--verbose", help="Enable verbose logging", is_flag=True)
 def transform_normalize_accessions_cmd(
     dataset: Path,
-    direction: str,
-    fasta: Optional[Path],
     in_place: bool,
     output: Optional[Path],
     verbose: bool,
 ):
-    """Normalize protein accessions in a QPX dataset.
+    """Strip the protein accessions of a QPX dataset to bare accessions.
 
-    Forward (default): converts full UniProt identifiers to bare accessions.
         sp|P04114|APOB_HUMAN  →  P04114
         CONTAM_sp|CONTAM_P02768|...  →  CONTAM_P02768
 
-    Reverse: converts bare accessions back to full UniProt format.
-    Requires a FASTA database to look up the full identifiers.
-
     Normalizes protein accessions in the feature, pg, psm, pepmap, site and
-    proteoform views. Every convert command already writes bare accessions;
-    use this for datasets converted by an earlier qpx, or to restore full
-    identifiers. Ids stay as they are, so links survive: a file whose identity
-    composite holds an accession (pg_id) is then marked identity_source=provided.
+    proteoform views, and moves the entry names into a null pg_names. Every
+    convert command already writes bare accessions; use this for datasets
+    converted by an earlier qpx. Ids stay as they are, so links survive: a file
+    whose identity composite holds an accession (pg_id) is then marked
+    identity_source=provided.
 
     \b
     Examples:
-        # Forward: strip sp|...|... to bare accessions
-        qpxc transform normalize-accessions \\
-            --dataset ./my_dataset --direction forward --in-place
+        qpxc transform normalize-accessions --dataset ./my_dataset --in-place
 
     \b
-        # Reverse: restore full UniProt identifiers from FASTA
+        # To a new directory (non-destructive)
         qpxc transform normalize-accessions \\
-            --dataset ./my_dataset --direction reverse \\
-            --fasta proteins.fasta --in-place
-
-    \b
-        # Forward to a new directory (non-destructive)
-        qpxc transform normalize-accessions \\
-            --dataset ./my_dataset --direction forward \\
-            --output-folder ./my_dataset_normalized
+            --dataset ./my_dataset --output-folder ./my_dataset_normalized
     """
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
-    if direction == "reverse" and fasta is None:
-        raise click.UsageError("--fasta is required for --direction reverse")
-
     if not in_place and output is None:
         raise click.UsageError("Specify --in-place or --output-folder")
 
-    from qpx.transforms.accession_normalizer import (
-        normalize_parquet,
-        parse_fasta_headers,
-    )
-
-    # Build FASTA lookup for reverse
-    fasta_lookup = None
-    if direction == "reverse":
-        fasta_lookup = parse_fasta_headers(fasta)
-        click.echo(f"Loaded {len(fasta_lookup)} protein headers from FASTA")
+    from qpx.transforms.accession_normalizer import normalize_parquet
 
     # Determine output directory
     out_dir = dataset if in_place else output
@@ -153,12 +115,7 @@ def transform_normalize_accessions_cmd(
         src = dataset / fname
         dst = out_dir / fname
         dst.parent.mkdir(parents=True, exist_ok=True)
-        result = normalize_parquet(
-            parquet_path=src,
-            output_path=dst,
-            direction=direction,
-            fasta_lookup=fasta_lookup,
-        )
+        result = normalize_parquet(parquet_path=src, output_path=dst)
         total_changed += result["accessions_changed"]
         files_changed += bool(result["distinct_changed"])
         click.echo(f"  {fname}: {result['rows']:,} rows, {result['accessions_changed']:,} accessions normalized")
@@ -166,5 +123,4 @@ def transform_normalize_accessions_cmd(
     if files_changed:
         _refresh_derived_files(out_dir)
 
-    label = "stripped to bare" if direction == "forward" else "restored to full"
-    click.echo(f"\nDone — {total_changed:,} accessions {label} in {out_dir}")
+    click.echo(f"\nDone — {total_changed:,} accessions stripped to bare in {out_dir}")

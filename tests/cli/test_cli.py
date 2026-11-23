@@ -276,7 +276,7 @@ class TestTransformNormalizeAccessionsCLI:
     def test_normalize_accessions_help_renders(self):
         runner = CliRunner()
         result = runner.invoke(qpx_main, ["transform", "normalize-accessions", "--help"])
-        _assert_help(result, "--dataset", "--direction", "--fasta")
+        _assert_help(result, "--dataset", "--in-place", "--output-folder")
 
     def test_normalize_accessions_discovers_openms_prefix(self, tmp_path, monkeypatch):
         (tmp_path / "openms.feature.parquet").touch()

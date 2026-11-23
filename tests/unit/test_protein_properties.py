@@ -209,44 +209,34 @@ def test_coverage_counts_shared_peptides_named_by_psm_evidence(dataset_dir, tmp_
     assert features["THIRDPEP"]["pg_positions"] is None
 
 
-@pytest.mark.parametrize("direction", ["forward", "reverse"])
-def test_coverage_keeps_psm_evidence_after_accession_normalization(dataset_dir, tmp_path, direction):
+def test_coverage_keeps_psm_evidence_after_accession_normalization(dataset_dir, tmp_path):
     """Normalizing identifiers, the PSM view's included, must retain shared-peptide PSM evidence."""
+    from qpx.transforms.accession_normalizer import _normalization_footer, _normalize_table
+    from qpx.transforms.protein_properties import _rewrite_view
     from qpx.writers import PsmWriter
     from tests.conftest import make_psm_record
 
     fasta = _dataset_fasta(tmp_path)
     full = "sp|P67890|PROT2_HUMAN"
-    if direction == "forward":
-        preparation = CliRunner().invoke(
-            transform,
-            [
-                "normalize-accessions",
-                "--dataset",
-                str(dataset_dir),
-                "--direction",
-                "reverse",
-                "--fasta",
-                str(fasta),
-                "--in-place",
-            ],
-        )
-        assert preparation.exit_code == 0, preparation.output
+    # Give the fixture the full identifiers of an earlier qpx.
+    full_ids = {"P12345": "sp|P12345|PROT1_HUMAN", "P67890": full}
+    for view in ("feature", "pg"):
+        path = dataset_dir / f"exp.{view}.parquet"
+        staging = path.with_name(f"full.{view}.parquet")
+        _rewrite_view(path, staging, lambda table: _normalize_table(table, full_ids), _normalization_footer(pq.ParquetFile(path)))
+        staging.replace(path)
     psm = make_psm_record(sequence="THIRDPEP", run_file_name="run_02")
-    psm["protein_accessions"] = [full if direction == "forward" else "P67890"]
+    psm["protein_accessions"] = [full]
     with PsmWriter(dataset_dir / "exp.psm.parquet") as writer:
         writer.write_batch([psm])
 
-    result = CliRunner().invoke(
-        transform,
-        ["normalize-accessions", "--dataset", str(dataset_dir), "--direction", direction, "--fasta", str(fasta), "--in-place"],
-    )
+    result = CliRunner().invoke(transform, ["normalize-accessions", "--dataset", str(dataset_dir), "--in-place"])
     assert result.exit_code == 0, result.output
     anchors_before = [row["anchor_protein"] for row in _rows(dataset_dir, "pg")]
     _run(dataset_dir, fasta, "--in-place")
 
     pg = {row["anchor_protein"]: row for row in _rows(dataset_dir, "pg")}
-    anchor = "P67890" if direction == "forward" else full
+    anchor = "P67890"
     assert pg[anchor]["sequence_coverage"] == pytest.approx(100 * 8 / 13, rel=1e-5)
     assert list(pg) == anchors_before
     assert [row["protein_accessions"] for row in _rows(dataset_dir, "psm")] == [[anchor]]

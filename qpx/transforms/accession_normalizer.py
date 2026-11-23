@@ -1,18 +1,16 @@
-"""Normalize protein accessions between UniProt full format and bare accession.
+"""Normalize protein accessions from UniProt full format to the bare accession.
 
-Forward:  sp|P04114|APOB_HUMAN  →  P04114
-Reverse:  P04114  →  sp|P04114|APOB_HUMAN  (requires FASTA database)
+sp|P04114|APOB_HUMAN  →  P04114
 
 Handles prefixes: sp|, tr|, CONTAM_sp|, ENTRAP_sp|, DECOY_sp|, REV__sp|, rev_sp|
-Decoy, contaminant and entrapment markers are preserved. The forward direction
-moves entry names into a null ``pg_names`` so they are not lost.
+Decoy, contaminant and entrapment markers are preserved, and entry names move
+into a null ``pg_names`` so they are not lost.
 """
 
 from __future__ import annotations
 
 import logging
 import os
-import re
 import shutil
 from pathlib import Path
 
@@ -24,16 +22,6 @@ from qpx.converters.utils import canonical_accession, uniprot_entry_name
 from qpx.transforms.relayout import SORT_ORDER_FOOTER_KEY
 
 logger = logging.getLogger(__name__)
-
-# Matches:  sp|ACCESSION|NAME  or  tr|ACCESSION|NAME
-# Also:     CONTAM_sp|CONTAM_ACCESSION|...  or  ENTRAP_sp|ENTRAP_ACCESSION|...
-_FULL_RE = re.compile(
-    r"^(?P<prefix>(?:CONTAM_|ENTRAP_|DECOY_|REV__|rev_)?(?:sp|tr))\|"
-    r"(?P<accession>[^|]+)\|"
-    r"(?P<name>.+)$"
-)
-
-_DECOY_MARKER = re.compile(r"^(?:DECOY_|REV__|rev_)")
 
 _SCALAR_ACCESSION_COLUMNS = ("anchor_protein", "protein_accession", "accession", "family")
 # List column -> the struct field holding the protein (a list<string> column uses its values).
@@ -58,61 +46,8 @@ def to_bare(accession: str) -> str:
     return canonical_accession(accession)
 
 
-def to_full(accession: str, lookup: dict[str, str]) -> str:
-    """Convert bare accession to full UniProt format using a FASTA-derived lookup.
-
-    P04114 → sp|P04114|APOB_HUMAN  (if in lookup)
-    REV__P04114 → REV__sp|P04114|APOB_HUMAN
-    P04114 → P04114                (if not in lookup, returned as-is)
-    """
-    if accession is None:
-        return accession
-    # Already in full format?
-    if _FULL_RE.match(accession):
-        return accession
-    if accession in lookup:
-        return lookup[accession]
-    marker = _DECOY_MARKER.match(accession)
-    if marker and accession[marker.end() :] in lookup:
-        return marker.group() + lookup[accession[marker.end() :]]
-    return accession
-
-
-def parse_fasta_headers(fasta_path: str | Path) -> dict[str, str]:
-    """Parse FASTA file and return {bare_accession: full_header} mapping.
-
-    Reads headers like:
-        >sp|P04114|APOB_HUMAN Apolipoprotein B-100 ...
-        >tr|A0A123|A0A123_HUMAN ...
-        >CONTAM_sp|CONTAM_P02768|CONTAM_ALBU_HUMAN ...
-
-    Returns:
-        {"P04114": "sp|P04114|APOB_HUMAN",
-         "A0A123": "tr|A0A123|A0A123_HUMAN",
-         "CONTAM_P02768": "CONTAM_sp|CONTAM_P02768|CONTAM_ALBU_HUMAN"}
-    """
-    lookup: dict[str, str] = {}
-    fasta_path = Path(fasta_path)
-    with open(fasta_path, encoding="utf-8", errors="replace") as fh:
-        for line in fh:
-            if not line.startswith(">"):
-                continue
-            # Extract the identifier (first whitespace-delimited token after >)
-            header = line[1:].split()[0]
-            m = _FULL_RE.match(header)
-            if m:
-                lookup[m.group("accession")] = header
-    logger.info("Parsed %d protein headers from %s", len(lookup), fasta_path.name)
-    return lookup
-
-
-def normalize_parquet(
-    parquet_path: Path,
-    output_path: Path,
-    direction: str = "forward",
-    fasta_lookup: dict[str, str] | None = None,
-) -> dict:
-    """Normalize accessions in a QPX parquet file.
+def normalize_parquet(parquet_path: Path, output_path: Path) -> dict:
+    """Strip the accessions of a QPX parquet file to bare accessions.
 
     The accession columns are scanned first and each distinct accession is
     transformed once. A file with nothing to change is copied (or, in place,
@@ -122,24 +57,17 @@ def normalize_parquet(
     Args:
         parquet_path: Input feature, pg, psm, pepmap, site or proteoform Parquet file.
         output_path: Where to write the normalized file.
-        direction: "forward" (full → bare) or "reverse" (bare → full).
-        fasta_lookup: Required for reverse. {bare_accession: full_header}.
 
     Returns:
         Dict with stats: {"rows", "accessions_changed", "distinct_changed", "file"}.
     """
     from qpx.transforms.protein_properties import _rewrite_view
 
-    if direction == "reverse" and not fasta_lookup:
-        raise ValueError("FASTA lookup required for reverse normalization")
-
-    transform_fn = to_bare if direction == "forward" else lambda a: to_full(a, fasta_lookup)
-
     parquet_path, output_path = Path(parquet_path), Path(output_path)
     parquet = pq.ParquetFile(str(parquet_path))
     total_rows = parquet.metadata.num_rows
     accession_counts, accessions = _scan_accessions(parquet)
-    changes = {accession: new for accession in accessions if accession and (new := transform_fn(accession)) != accession}
+    changes = {accession: new for accession in accessions if accession and (new := to_bare(accession)) != accession}
     n_changed = sum(count for accession, count in accession_counts.items() if accession in changes)
 
     if not changes:
@@ -148,11 +76,10 @@ def normalize_parquet(
     else:
         staging = output_path.with_name(f".{output_path.name}.normalizing")
         try:
-            keep_names = direction == "forward"
             _rewrite_view(
                 parquet_path,
                 staging,
-                lambda table: _normalize_table(table, changes, keep_names),
+                lambda table: _normalize_table(table, changes),
                 _normalization_footer(parquet),
             )
             os.replace(staging, output_path)
@@ -260,9 +187,9 @@ def _entry_names(members: list[str] | None) -> list[str] | None:
     return names if names and all(names) else None
 
 
-def _normalize_table(table: pa.Table, changes: dict[str, str], keep_names: bool = False) -> pa.Table:
-    """Apply *changes* to scalar accession columns and accession list members of one batch."""
-    if keep_names and {"pg_names", "pg_accessions"} <= set(table.schema.names):
+def _normalize_table(table: pa.Table, changes: dict[str, str]) -> pa.Table:
+    """Move entry names into a null ``pg_names``, then apply *changes* to scalar accession columns and accession list members of one batch."""
+    if {"pg_names", "pg_accessions"} <= set(table.schema.names):
         if _is_list_of_strings(table.schema.field("pg_accessions").type):
             table = _names_from_members(table)
     for name in _SCALAR_ACCESSION_COLUMNS:

@@ -105,7 +105,7 @@ The `transform` command group provides tools for processing and transforming QPX
 - [gene-map](#gene-map) - Map genes from FASTA
 - [site](#site) - Quantify modification sites from the feature view
 - [protein-properties](#protein-properties) - Fill protein coverage, molecular weight and peptide positions from an optional FASTA
-- [normalize-accessions](#normalize-accessions) - Normalize protein accession formats (full ↔ bare)
+- [normalize-accessions](#normalize-accessions) - Strip full UniProt identifiers to bare accessions
 - [update-metadata](#update-metadata) - Update sample/run metadata from a revised SDRF
 - [relayout](#relayout) - Sort a dataset's views for selective reads
 - [quantify](#quantify) - Protein quantification via mokume (DirectLFQ, MaxLFQ, iBAQ, TopN, etc.)
@@ -243,7 +243,7 @@ qpxc transform site --dataset ./qpx_output --modification Phospho --in-place
 
 ## normalize-accessions
 
-Normalize protein accession formats between full UniProt form (`sp|ACC|NAME`) and bare form (`ACC`).
+Strip full UniProt identifiers (`sp|ACC|NAME`) to the bare accessions (`ACC`) that every convert command writes.
 
 ### Description {#normalize-accessions-description}
 
