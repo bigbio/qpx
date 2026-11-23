@@ -83,8 +83,9 @@ def _maxquant_structures(structures, msms_file, evidence_file, protein_groups_fi
 @_max_memory_option
 @convert_resource_options
 @click.option(
-    "--spectral-data",
-    help="Include spectral data fields in PSM output",
+    "--include-spectra",
+    "spectral_data",
+    help="Attach mz_array and intensity_array from msms.txt to PSM records, with ion types and charges from Matches",
     is_flag=True,
 )
 @_project_accession_option

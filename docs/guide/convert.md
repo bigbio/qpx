@@ -450,7 +450,7 @@ qpxc convert maxquant \
     --msms-file tests/examples/maxquant/maxquant_simple/msms.txt \
     --output-folder ./output \
     --view psm \
-    --spectral-data \
+    --include-spectra \
     --output-prefix maxquant_psm
 ```
 
@@ -527,7 +527,7 @@ Depending on `--view`:
 - Ensure SDRF sample names match MaxQuant experiment names
 - Provide `--sdrf-file` with the PSM and feature conversions: MaxQuant leaves fixed modifications out of `Modified sequence`, so the SDRF's `MT=fixed` modifications, else those of the `parameters.txt` or `summary.txt` next to the input, are added to the peptidoforms to match `calculated_mz`. TMT, iTRAQ and SILAC labels among the SDRF's are skipped: the isobaric label comes from the SDRF channel labels, a SILAC label from `Labeling state`. A warning is logged for each fixed modification that cannot be placed, and when no source declares one
 - Use compressed files (.gz) to save disk space
-- Use `--spectral-data` flag if downstream analysis requires spectral information
+- Use `--include-spectra` flag if downstream analysis requires spectral information
 
 ---
 

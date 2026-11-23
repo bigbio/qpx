@@ -145,13 +145,13 @@ Each converter uses memory differently, and for most of them a larger `--max-mem
 
 1. Check if the input file contains the required source columns
 
-2. For spectral data, ensure `--spectral-data` flag is used:
+2. For spectral data, ensure `--include-spectra` flag is used:
 
    ```bash
    qpxc convert maxquant \
        --msms-file msms.txt \
        --output-folder ./ \
-       --spectral-data
+       --include-spectra
    ```
 
 3. Review the [Format Specification](spec/index.md) for required vs optional fields
