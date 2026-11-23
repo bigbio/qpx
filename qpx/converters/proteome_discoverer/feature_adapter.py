@@ -75,6 +75,11 @@ class ProteomeDiscovererFeatureAdapter(PdPsmTable):
         return channels
 
     def _query(self, ms1: str | None) -> str:
+        """One row per run, sequence, modifications and charge, over the spectra PD used to quantify.
+
+        Each spectrum counts once: reporter abundances are summed and the MS1 abundance is the largest.
+        Rejected PSMs and those PD excluded from its quantification are left out.
+        """
         sums = [
             f'SUM(TRY_CAST("{column}" AS DOUBLE)) OVER g AS "_channel_{position}"'
             for position, column in enumerate(self._channels)
