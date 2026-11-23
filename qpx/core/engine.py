@@ -37,6 +37,9 @@ def _validate_set_value(value: str, name: str) -> str:
 # connection that does not set its own.
 _command_resources: dict[str, str | int | Path | None] = {}
 
+# DuckDB's spill folder of an in-memory database, in the working directory.
+SPILL_FOLDER = ".tmp"
+
 
 @contextlib.contextmanager
 def duckdb_defaults(
@@ -48,7 +51,13 @@ def duckdb_defaults(
 
     The settings are process-wide for the duration of the block, so they also reach
     connections that a command opens in helpers and post-processing steps.
+
+    DuckDB creates the spill folder on the first spill; DuckDB 2.0 removes it only when
+    the connection that created it closes last, so connections sharing it can leave it
+    empty behind. A folder the block created is removed at its end once it is empty.
     """
+    spill = Path(temp_directory or SPILL_FOLDER)
+    spill_existed = spill.exists()
     previous = dict(_command_resources)
     _command_resources.update(memory_limit=memory_limit, threads=threads, temp_directory=temp_directory)
     try:
@@ -56,6 +65,10 @@ def duckdb_defaults(
     finally:
         _command_resources.clear()
         _command_resources.update(previous)
+        if not spill_existed:
+            # Spill files of a connection still open keep the folder.
+            with contextlib.suppress(OSError):
+                spill.rmdir()
 
 
 def _set_resources(

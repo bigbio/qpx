@@ -111,6 +111,29 @@ def test_command_resources_reach_connections_opened_in_the_block(tmp_path):
         after.close()
 
 
+def test_command_removes_the_spill_folder_it_left_empty(tmp_path):
+    """A spill folder the block created is gone after it, whatever its connections left; one that existed stays."""
+    spill, kept = tmp_path / "spill", tmp_path / "kept"
+    kept.mkdir()
+
+    def spill_from_two_connections(folder):
+        connections = [create_connection(memory_limit="300MB", threads=2) for _ in range(2)]
+        for conn in connections:
+            conn.execute("SET preserve_insertion_order=false")
+            conn.execute("CREATE TABLE t AS SELECT md5(range::VARCHAR) AS b FROM range(3000000)")
+            conn.execute("SELECT b, count(*) FROM t GROUP BY b ORDER BY b LIMIT 1").fetchall()
+        assert folder.is_dir()
+        for conn in connections:
+            conn.close()
+
+    with duckdb_defaults(temp_directory=spill):
+        spill_from_two_connections(spill)
+    assert not spill.exists()
+    with duckdb_defaults(temp_directory=kept):
+        spill_from_two_connections(kept)
+    assert kept.is_dir()
+
+
 def test_lazy_query(feature_parquet):
     """LazyQuery: count, filter, execute, distinct_values."""
     engine = DuckDBEngine()

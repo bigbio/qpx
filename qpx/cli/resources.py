@@ -7,10 +7,7 @@ from pathlib import Path
 
 import click
 
-from qpx.core.engine import duckdb_defaults
-
-# DuckDB's own name for its spill folder, created on the first spill and removed when the connection closes.
-_SPILL_FOLDER = ".tmp"
+from qpx.core.engine import SPILL_FOLDER, duckdb_defaults
 
 _temp_dir_option = click.option(
     "--temp-dir",
@@ -21,7 +18,7 @@ _temp_dir_option = click.option(
 
 def _spill_directory(temp_dir: Path | None, output_folder: Path | None) -> Path | None:
     if temp_dir is None and output_folder is not None:
-        return Path(output_folder) / _SPILL_FOLDER
+        return Path(output_folder) / SPILL_FOLDER
     return temp_dir
 
 
