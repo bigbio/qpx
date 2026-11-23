@@ -82,33 +82,6 @@ def assert_pg_table_wellformed(table):
             assert isinstance(lbl, str) and lbl
 
 
-def write_lfq_consensusxml(path, maps, trailing=""):
-    """Write a minimal LFQ consensusXML whose maps carry design UserParams.
-
-    ``maps`` is a list of ``(id, name, fraction_group, fraction, sample_name)``.
-    A ``None`` value for any of fraction_group/fraction/sample_name omits that
-    UserParam. ``trailing`` appends raw text after </mapList> (to exercise the
-    parser's early stop).
-    """
-    entries = []
-    for map_id, name, fgroup, fraction, sample in maps:
-        params = "".join(
-            f'<UserParam type="{typ}" name="{pname}" value="{val}"/>'
-            for pname, val, typ in (
-                ("fraction_group", fgroup, "int"),
-                ("fraction", fraction, "int"),
-                ("sample_name", sample, "string"),
-            )
-            if val is not None
-        )
-        entries.append(f'<map id="{map_id}" name="{name}" label="label-free">{params}</map>')
-    body = "".join(entries)
-    path.write_text(
-        f'<consensusXML><mapList count="{len(maps)}">{body}</mapList>{trailing}',
-        encoding="utf-8",
-    )
-
-
 # ---------------------------------------------------------------------------
 # Test record factories -- produce minimal valid dicts for each schema
 # ---------------------------------------------------------------------------

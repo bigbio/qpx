@@ -63,7 +63,6 @@ def _extra_column(table):
     return table.append_column("mystery", pa.array(["x"] * table.num_rows))
 
 
-LFQ_ENTRY = [{"label": "LFQ", "intensity": 1000.0}]
 DEFECTS = {
     "feature_missing_required_column": ("feature", _drop("sequence")),
     "feature_missing_nullable_column": ("feature", _drop("modifications")),

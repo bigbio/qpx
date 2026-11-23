@@ -85,7 +85,6 @@ class _Merge:
     """One merge of a collection into *output_dir*."""
 
     def __init__(self, collection: "DatasetCollection", output_dir: Path, prefix: str, on_collision: str):
-        self._collection = collection
         self._conn = collection._engine.connection
         self._datasets = collection.datasets
         self._output_dir = output_dir
