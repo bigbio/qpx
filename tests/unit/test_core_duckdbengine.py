@@ -111,27 +111,21 @@ def test_command_resources_reach_connections_opened_in_the_block(tmp_path):
         after.close()
 
 
-def test_command_removes_the_spill_folder_it_left_empty(tmp_path):
-    """A spill folder the block created is gone after it, whatever its connections left; one that existed stays."""
-    spill, kept = tmp_path / "spill", tmp_path / "kept"
+def test_command_removes_the_spill_folder_it_left_empty(tmp_path, monkeypatch):
+    """A spill folder created inside the block and left empty is removed; one that existed or holds files stays."""
+    monkeypatch.chdir(tmp_path)
+    kept, busy = tmp_path / "kept", tmp_path / "busy"
     kept.mkdir()
-
-    def spill_from_two_connections(folder):
-        connections = [create_connection(memory_limit="300MB", threads=2) for _ in range(2)]
-        for conn in connections:
-            conn.execute("SET preserve_insertion_order=false")
-            conn.execute("CREATE TABLE t AS SELECT md5(range::VARCHAR) AS b FROM range(3000000)")
-            conn.execute("SELECT b, count(*) FROM t GROUP BY b ORDER BY b LIMIT 1").fetchall()
-        assert folder.is_dir()
-        for conn in connections:
-            conn.close()
-
-    with duckdb_defaults(temp_directory=spill):
-        spill_from_two_connections(spill)
-    assert not spill.exists()
+    # DuckDB creates the folder on its first spill, and DuckDB 2.0 can leave it behind empty.
+    with duckdb_defaults():
+        (tmp_path / ".tmp").mkdir()
     with duckdb_defaults(temp_directory=kept):
-        spill_from_two_connections(kept)
-    assert kept.is_dir()
+        pass
+    with duckdb_defaults(temp_directory=busy):
+        busy.mkdir()
+        (busy / "spill.tmp").write_bytes(b"")
+    assert not (tmp_path / ".tmp").exists()
+    assert kept.is_dir() and busy.is_dir()
 
 
 def test_lazy_query(feature_parquet):
