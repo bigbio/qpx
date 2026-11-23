@@ -159,7 +159,7 @@ class TestTransformQuantifyCLI:
     def test_quantify_help_shows_ibaq_options(self):
         runner = CliRunner()
         result = runner.invoke(qpx_main, ["transform", "quantify", "--help"])
-        _assert_help(result, "--organism", "--ploidy", "--min-aa", "--sdrf")
+        _assert_help(result, "--organism", "--ploidy", "--min-aa", "--sdrf-file")
 
     def test_ibaq_validation_does_not_require_directlfq_helper(self, monkeypatch, tmp_path):
         """iBAQ availability must not depend on a DirectLFQ-only helper."""
@@ -354,7 +354,7 @@ class TestTransformUpdateMetadataCLI:
     def test_update_metadata_help_renders(self):
         runner = CliRunner()
         result = runner.invoke(qpx_main, ["transform", "update-metadata", "--help"])
-        _assert_help(result, "--dataset", "--sdrf", "--old-sdrf", "--force")
+        _assert_help(result, "--dataset", "--sdrf-file", "--old-sdrf-file", "--force")
 
 
 # ---------------------------------------------------------------------------

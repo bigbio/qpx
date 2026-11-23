@@ -353,7 +353,8 @@ def _qpx_feature_to_peptide_df(feature_path: Path, sdrf_path: Optional[Path] = N
     default=None,
 )
 @click.option(
-    "--sdrf",
+    "--sdrf-file",
+    "sdrf",
     help="SDRF used to map QPX run/channel intensities to samples and conditions",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
     default=None,
@@ -422,7 +423,7 @@ def transform_quantify_cmd(**kwargs):
         # iBAQ (requires FASTA)
         qpxc transform quantify \\
             --feature-path ./qpx_output/diann.feature.parquet \\
-            --method ibaq --fasta proteome.fasta --sdrf experiment.sdrf.tsv \\
+            --method ibaq --fasta proteome.fasta --sdrf-file experiment.sdrf.tsv \\
             -o proteins_ibaq.tsv
 
     \b

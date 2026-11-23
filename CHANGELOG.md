@@ -85,6 +85,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BREAKING — one name per CLI option.** Options that meant the same thing were spelled differently from command to command; each now has one name, and the old names are gone:
   - `--duckdb-memory` and `--duckdb-threads` of `validate`, `query sql` and the `transform` commands, and `--threads` of `transform quantify`, are `--max-memory` and `--max-cpus`, as on the `convert` commands.
   - `--dataset-path` of `info`, `migrate`, `query` and `validate` is `--dataset`, as on the `transform` commands.
+  - `--sdrf` of `transform quantify` and `transform update-metadata` is `--sdrf-file`, and `--old-sdrf` of `update-metadata` is `--old-sdrf-file`, as on the `convert` commands.
 
 ### Removed
 
