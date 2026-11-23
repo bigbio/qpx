@@ -332,7 +332,7 @@ class TestTransformNormalizeAccessionsCLI:
         with Dataset(source) as dataset:
             assert all(result.is_valid for result in dataset.validate(strict=True).values())
         output = source if in_place else tmp_path / "output"
-        destination = ["--in-place"] if in_place else ["--output", str(output)]
+        destination = ["--in-place"] if in_place else ["--output-folder", str(output)]
         result = CliRunner().invoke(qpx_main, ["transform", "normalize-accessions", "--dataset", str(source), *destination])
         assert result.exit_code == 0, result.output
         with Dataset(output) as dataset:

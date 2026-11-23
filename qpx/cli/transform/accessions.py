@@ -64,11 +64,12 @@ def _refresh_derived_files(out_dir: Path) -> None:
 )
 @click.option(
     "--in-place",
-    help="Overwrite original files instead of writing to --output",
+    help="Overwrite original files instead of writing to --output-folder",
     is_flag=True,
 )
 @click.option(
-    "--output",
+    "--output-folder",
+    "output",
     help="Output directory for the normalized views (required unless --in-place)",
     type=click.Path(file_okay=False, path_type=Path),
     default=None,
@@ -113,7 +114,7 @@ def transform_normalize_accessions_cmd(
         # Forward to a new directory (non-destructive)
         qpxc transform normalize-accessions \\
             --dataset ./my_dataset --direction forward \\
-            --output ./my_dataset_normalized
+            --output-folder ./my_dataset_normalized
     """
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -122,7 +123,7 @@ def transform_normalize_accessions_cmd(
         raise click.UsageError("--fasta is required for --direction reverse")
 
     if not in_place and output is None:
-        raise click.UsageError("Specify --in-place or --output")
+        raise click.UsageError("Specify --in-place or --output-folder")
 
     from qpx.transforms.accession_normalizer import (
         normalize_parquet,
