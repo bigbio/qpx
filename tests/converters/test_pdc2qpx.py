@@ -60,6 +60,20 @@ def test_pdc2qpx_base(tmp_path):
     assert pq.read_table(str(feature)).num_rows > 0
 
 
+def test_pdc2qpx_stores_bare_accessions(tmp_path):
+    """The fixture lists sp|Q29443|TRFE_BOVIN, which qpxc convert cdap stores as Q29443."""
+    from qpx.pipeline.pdc2qpx import run_pdc2qpx
+
+    study = "PDC_TEST"
+    out = tmp_path / "qpx"
+    run_pdc2qpx(study, _stage_study(tmp_path, study), out, skip_download=True, include_metadata=False)
+
+    rows = pq.read_table(str(out / f"{study}.psm.parquet"), columns=["protein_accessions"]).column(0).to_pylist()
+    accessions = {accession for row in rows for accession in row or []}
+    assert "Q29443" in accessions
+    assert "sp|Q29443|TRFE_BOVIN" not in accessions
+
+
 def test_pdc2qpx_with_spectra(tmp_path):
     from qpx.pipeline.pdc2qpx import run_pdc2qpx
 

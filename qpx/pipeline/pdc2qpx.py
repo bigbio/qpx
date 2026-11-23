@@ -147,6 +147,7 @@ def run_pdc2qpx(
 
     from qpx.converters.cdap import CdapConverter
     from qpx.converters.cdap.pdc_sample_run import run_units_from_plexes
+    from qpx.transforms.accession_normalizer import normalize_dataset_accessions
 
     run_to_plex = _fetch_run_to_plex(study) if include_metadata else None
     logger.info("Converting CDAP .psm -> QPX base views (%s)", study)
@@ -158,6 +159,8 @@ def run_pdc2qpx(
         project_accession=study,
         run_units=run_units_from_plexes(run_to_plex) if run_to_plex else None,
     )
+    # As qpxc convert cdap does: CDAP lists some proteins by UniProt header, such as sp|Q29443|TRFE_BOVIN.
+    normalize_dataset_accessions(output_folder, study)
     outputs: dict[str, Path] = {"base": output_folder}
 
     # 2. Optional sample/run views from PDC metadata (channel -> sample mapping).
