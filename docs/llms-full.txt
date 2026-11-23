@@ -41,8 +41,8 @@ qpxc pdc2qpx -a PDC000109 --download-dir downloads --output-folder qpx_output
 qpxc info --dataset qpx_output
 qpxc validate --dataset qpx_output
 qpxc query sql --dataset qpx_output --sql "SELECT run_file_name, COUNT(*) AS n FROM feature GROUP BY 1" --output counts.csv
-qpxc query filter --dataset qpx_output --structure feature --condition "charge = 2" --limit 10
-qpxc query head --dataset qpx_output --structure pg
+qpxc query filter --dataset qpx_output --view feature --condition "charge = 2" --limit 10
+qpxc query head --dataset qpx_output --view pg
 
 ### Transform
 qpxc transform quantify --feature-path qpx_output --method directlfq -o proteins.parquet

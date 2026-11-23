@@ -87,6 +87,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `--dataset-path` of `info`, `migrate`, `query` and `validate` is `--dataset`, as on the `transform` commands.
   - `--sdrf` of `transform quantify` and `transform update-metadata` is `--sdrf-file`, and `--old-sdrf` of `update-metadata` is `--old-sdrf-file`, as on the `convert` commands.
   - `--output` of `transform normalize-accessions` is `--output-folder`, as on the other `transform` commands.
+  - `--structures` of `convert cdap`, `convert maxquant`, `convert openms-consensus` and `query sql`, and `--structure` of `info schema`, `query filter`, `query head` and `validate`, are `--view`, as on `transform relayout`. Where several views are allowed it is repeated (`--view psm --view feature`) instead of taking a comma-separated list; `query sql` now rejects a name that is not a view.
 
 ### Removed
 

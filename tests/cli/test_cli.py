@@ -373,7 +373,7 @@ class TestQueryFilterCLI:
     def test_filter_help_renders(self):
         runner = CliRunner()
         result = runner.invoke(qpx_main, ["query", "filter", "--help"])
-        _assert_help(result, "--dataset", "--structure", "--condition")
+        _assert_help(result, "--dataset", "--view", "--condition")
 
     def test_filter_reads_dataset_metadata(self, dataset_dir):
         """The canonical dataset name resolves to the dataset_meta accessor."""
@@ -385,7 +385,7 @@ class TestQueryFilterCLI:
                 "filter",
                 "--dataset",
                 str(dataset_dir),
-                "--structure",
+                "--view",
                 "dataset",
                 "--condition",
                 "project_accession IS NOT NULL",
@@ -402,7 +402,7 @@ class TestQueryHeadCLI:
     def test_head_help_renders(self):
         runner = CliRunner()
         result = runner.invoke(qpx_main, ["query", "head", "--help"])
-        _assert_help(result, "--dataset", "--structure")
+        _assert_help(result, "--dataset", "--view")
 
     def test_head_reads_dataset_metadata(self, dataset_dir):
         """Query head accepts the canonical dataset structure name."""
@@ -414,7 +414,7 @@ class TestQueryHeadCLI:
                 "head",
                 "--dataset",
                 str(dataset_dir),
-                "--structure",
+                "--view",
                 "dataset",
                 "--output-format",
                 "csv",
@@ -470,7 +470,7 @@ class TestValidateCLI:
     def test_validate_help_renders(self):
         runner = CliRunner()
         result = runner.invoke(qpx_main, ["validate", "--help"])
-        _assert_help(result, "--dataset", "--file", "--structure", "--semantic")
+        _assert_help(result, "--dataset", "--file", "--view", "--semantic")
 
     def test_validate_semantic_fails_a_wrong_calculated_mz(self, tmp_path):
         """--semantic checks calculated_mz against the peptidoform; the default run does not."""

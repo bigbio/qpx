@@ -52,7 +52,7 @@ def guide_cwd(tmp_path_factory):
             "maxquant",
             "--msms-file",
             str(EXAMPLES / "maxquant" / "maxquant_simple" / "msms.txt"),
-            "--structures",
+            "--view",
             "psm",
             "--output-folder",
             str(cwd / "maxquant"),

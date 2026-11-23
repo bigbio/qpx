@@ -3,7 +3,7 @@
 Runs a real DIA-NN conversion on the shipped small example, then checks the
 summary counts and the feature->pg link diagnostics built on the computed
 softlink. Also checks that the diagnostics degrade gracefully when the ``pg``
-view is absent (``--structures feature`` style).
+view is absent (``--view feature`` style).
 """
 
 from __future__ import annotations

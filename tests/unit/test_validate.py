@@ -300,7 +300,7 @@ def test_cli_validate(dataset_dir, feature_parquet):
 
     result = runner.invoke(
         qpx_main,
-        ["validate", "--dataset", str(dataset_dir), "--structure", "feature"],
+        ["validate", "--dataset", str(dataset_dir), "--view", "feature"],
     )
     assert result.exit_code == 0
     assert "feature" in result.output

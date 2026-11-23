@@ -102,7 +102,7 @@ def _accumulated_protein_maps(cm):
     return protein_maps
 
 
-def _invoke_consensus_convert(tmp_path, folder, *extra, prefix="t", structures="feature,pg,psm"):
+def _invoke_consensus_convert(tmp_path, folder, *extra, prefix="t", structures=("feature", "pg", "psm")):
     """Run ``convert openms-consensus`` on the TMT fixture and return the CliRunner result without asserting."""
     from click.testing import CliRunner
 
@@ -121,7 +121,7 @@ def _invoke_consensus_convert(tmp_path, folder, *extra, prefix="t", structures="
             str(folder),
             "--output-prefix",
             prefix,
-            *(("--structures", structures) if structures else ()),
+            *(arg for view in structures or () for arg in ("--view", view)),
             *extra,
         ],
     )
@@ -1059,8 +1059,12 @@ def test_openms_consensus_cli_fills_protein_properties_from_optional_fasta(tmp_p
                 str(folder),
                 "--output-prefix",
                 "t",
-                "--structures",
-                "feature,pg,psm",
+                "--view",
+                "feature",
+                "--view",
+                "pg",
+                "--view",
+                "psm",
                 *extra,
             ],
         )
@@ -1103,8 +1107,12 @@ def test_openms_consensus_fasta_uses_the_output_prefix_in_a_shared_folder(tmp_pa
                 str(folder),
                 "--output-prefix",
                 prefix,
-                "--structures",
-                "feature,pg,psm",
+                "--view",
+                "feature",
+                "--view",
+                "pg",
+                "--view",
+                "psm",
                 *extra,
             ],
         )

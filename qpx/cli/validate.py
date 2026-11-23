@@ -4,7 +4,7 @@ against their canonical schemas.
 
 Usage:
     qpxc validate --dataset ./PXD014414
-    qpxc validate --dataset ./PXD014414 --structure feature
+    qpxc validate --dataset ./PXD014414 --view feature
     qpxc validate --file ./data.feature.parquet
 """
 
@@ -43,9 +43,9 @@ _VALID_STRUCTURES = Dataset.structure_names()
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
 )
 @click.option(
-    "--structure",
+    "--view",
     "structures",
-    help="Structure(s) to validate (repeatable). Default: all.",
+    help="View to validate; repeatable (default: all)",
     type=click.Choice(_VALID_STRUCTURES, case_sensitive=False),
     multiple=True,
 )
@@ -88,8 +88,8 @@ def validate_cmd(
 
     \b
         # Validate specific structures
-        qpxc validate --dataset ./PXD014414 --structure feature
-        qpxc validate --dataset ./PXD014414 --structure feature --structure pg
+        qpxc validate --dataset ./PXD014414 --view feature
+        qpxc validate --dataset ./PXD014414 --view feature --view pg
 
     \b
         # Validate a single Parquet file

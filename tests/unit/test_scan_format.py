@@ -111,7 +111,7 @@ def test_declared_format_reaches_schema_dataset_and_cli(tmp_path, scan_format, s
     with qpx.Dataset(tmp_path, duckdb_threads=6) as dataset:
         assert not dataset.validate(structures=["psm"], strict=True)["psm"].is_valid
         assert dataset.psm.to_arrow().schema.metadata is None
-    for args in (["--file", str(path)], ["--dataset", str(tmp_path), "--structure", "psm"]):
+    for args in (["--file", str(path)], ["--dataset", str(tmp_path), "--view", "psm"]):
         result = CliRunner().invoke(qpx_main, ["validate", *args])
         assert result.exit_code == 1
         assert "scan_format" in result.output

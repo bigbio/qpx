@@ -167,7 +167,7 @@ Use the `validate` command to check a dataset against the canonical schemas:
 qpxc validate --dataset ./PXD014414
 
 # Validate a specific structure
-qpxc validate --dataset ./PXD014414 --structure feature
+qpxc validate --dataset ./PXD014414 --view feature
 
 # Validate a single Parquet file
 qpxc validate --file ./data.feature.parquet
@@ -258,7 +258,7 @@ qpxc convert sdrf \
 2. Check the schema for a specific structure:
 
    ```bash
-   qpxc info schema --dataset ./PXD014414 --structure feature
+   qpxc info schema --dataset ./PXD014414 --view feature
    ```
 
 3. Table names in SQL match the QPX structure names: `psm`, `feature`, `pg`, `mz`, `sample`, `run`, `dataset`, `ontology`, `provenance`.

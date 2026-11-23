@@ -259,10 +259,10 @@ qpxc migrate --help
 qpxc query sql --dataset ./PXD014414 --sql "SELECT anchor_protein, COUNT(*) FROM feature GROUP BY 1"
 
 # Filter rows
-qpxc query filter --dataset ./PXD014414 --structure feature --condition "charge >= 3"
+qpxc query filter --dataset ./PXD014414 --view feature --condition "charge >= 3"
 
 # Preview first N rows
-qpxc query head --dataset ./PXD014414 --structure feature -n 20
+qpxc query head --dataset ./PXD014414 --view feature -n 20
 ```
 
 ### Info & Validate

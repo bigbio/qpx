@@ -95,7 +95,7 @@ curl -L -o msms.txt \
 qpxc convert maxquant \
     --msms-file msms.txt \
     --output-folder ./output \
-    --structures psm \
+    --view psm \
     --verbose
 ```
 

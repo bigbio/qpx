@@ -34,9 +34,10 @@ from .postprocess import _finish_conversion
     show_default=True,
 )
 @click.option(
-    "--structures",
-    help="Comma-separated list of structures to produce (psm, feature, pg). Default: all.",
-    default=None,
+    "--view",
+    "structures",
+    multiple=True,
+    help="View to write: psm, feature or pg; repeatable (default: all)",
 )
 @click.option(
     "--project-accession",
@@ -71,7 +72,7 @@ def convert_cdap_cmd(**kwargs):
         qpxc convert cdap \\
             --psm-dir /data/CPTAC/PDC000440 \\
             --output-folder ./qpx_output \\
-            --structures psm,feature
+            --view psm --view feature
     """
     psm_dir = kwargs["psm_dir"]
     output_folder = kwargs["output_folder"]
@@ -88,10 +89,6 @@ def convert_cdap_cmd(**kwargs):
 
     output_folder.mkdir(parents=True, exist_ok=True)
 
-    requested = None
-    if structures:
-        requested = [s.strip() for s in structures.split(",")]
-
     from qpx.converters.cdap import CdapConverter
 
     converter = CdapConverter(
@@ -102,7 +99,7 @@ def convert_cdap_cmd(**kwargs):
         psm_dir=psm_dir,
         output_folder=output_folder,
         output_prefix=output_prefix,
-        structures=requested,
+        structures=list(structures) or None,
         project_accession=project_accession,
         sdrf_path=kwargs["sdrf_file"],
     )

@@ -354,7 +354,7 @@ def test_cli_accepts_consensusxml_list(tmp_path):
     first.write_text(_merged_copies_xml())
     second.write_text(_renamed(_merged_copies_xml(), {"run_A": "run_C", "run_B": "run_D"}))
     out = tmp_path / "out"
-    args = ["convert", "openms-consensus", "--structures", "psm", "--no-mudata", "--output-folder", str(out)]
+    args = ["convert", "openms-consensus", "--view", "psm", "--no-mudata", "--output-folder", str(out)]
 
     result = CliRunner().invoke(qpx_main, [*args, "--consensusxml", f"{first},{second}"])
     assert result.exit_code == 0, result.output

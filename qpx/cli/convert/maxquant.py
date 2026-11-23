@@ -25,7 +25,7 @@ def _maxquant_structures(structures, msms_file, evidence_file, protein_groups_fi
     """Resolve requested MaxQuant views from options or available inputs."""
     # Determine which structures to produce
     if structures:
-        requested = {s.strip() for s in structures.split(",")}
+        requested = set(structures)
     else:
         # Auto-detect from provided files
         requested = set()
@@ -74,9 +74,10 @@ def _maxquant_structures(structures, msms_file, evidence_file, protein_groups_fi
 @_output_folder_option
 @_output_prefix_option
 @click.option(
-    "--structures",
-    help="Comma-separated list of structures to produce (psm, feature, pg). Default: all available.",
-    default=None,
+    "--view",
+    "structures",
+    multiple=True,
+    help="View to write: psm, feature or pg; repeatable (default: those the input files allow)",
 )
 @_max_cpus_option
 @_max_memory_option
@@ -110,7 +111,7 @@ def convert_maxquant_cmd(**kwargs):
         qpxc convert maxquant \\
             --msms-file msms.txt \\
             --output-folder ./qpx_output \\
-            --structures psm
+            --view psm
     """
     msms_file = kwargs["msms_file"]
     evidence_file = kwargs["evidence_file"]

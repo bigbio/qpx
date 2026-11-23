@@ -449,7 +449,7 @@ print(generate_example(convert_maxquant_cmd, "Convert MaxQuant data with default
 qpxc convert maxquant \
     --msms-file tests/examples/maxquant/maxquant_simple/msms.txt \
     --output-folder ./output \
-    --structures psm \
+    --view psm \
     --spectral-data \
     --output-prefix maxquant_psm
 ```
@@ -462,7 +462,7 @@ qpxc convert maxquant \
     --protein-groups-file tests/examples/maxquant/maxquant_full/proteinGroups.txt \
     --sdrf-file tests/examples/maxquant/maxquant_full/PXD001819.sdrf.tsv \
     --output-folder ./output \
-    --structures feature \
+    --view feature \
     --verbose
 ```
 
@@ -475,7 +475,7 @@ qpxc convert maxquant \
     --protein-groups-file tests/examples/maxquant/maxquant_full/proteinGroups.txt \
     --sdrf-file tests/examples/maxquant/maxquant_full/PXD001819.sdrf.tsv \
     --output-folder ./output \
-    --structures psm,feature,pg \
+    --view psm --view feature --view pg \
     --verbose
 ```
 
@@ -493,7 +493,7 @@ qpxc convert maxquant \
 
 ### Output Files {#maxquant-output}
 
-Depending on `--structures` parameter:
+Depending on `--view`:
 
 - **PSM**: `{output-prefix}.psm.parquet`
 - **Feature**: `{output-prefix}.feature.parquet`
@@ -522,7 +522,7 @@ Depending on `--structures` parameter:
 
 ### Best Practices {#maxquant-best-practices}
 
-- Use `--structures` to control which output files are generated
+- Use `--view` to choose which views are written
 - Always provide `--protein-groups-file` when available: features then take the protein group their `Protein group IDs` name, the membership the pg view carries
 - Ensure SDRF sample names match MaxQuant experiment names
 - Provide `--sdrf-file` with the PSM and feature conversions: MaxQuant leaves fixed modifications out of `Modified sequence`, so the SDRF's `MT=fixed` modifications, else those of the `parameters.txt` or `summary.txt` next to the input, are added to the peptidoforms to match `calculated_mz`. TMT, iTRAQ and SILAC labels among the SDRF's are skipped: the isobaric label comes from the SDRF channel labels, a SILAC label from `Labeling state`. A warning is logged for each fixed modification that cannot be placed, and when no source declares one
@@ -747,12 +747,12 @@ qpxc convert cdap \
     --psm-dir /data/CPTAC/PDC000440 \
     --output-folder ./qpx_output/PDC000440 \
     --project-accession PDC000440 \
-    --structures psm,feature
+    --view psm --view feature
 ```
 
 ### Output Files {#cdap-output}
 
-Depending on `--structures`:
+Depending on `--view`:
 
 - **PSM**: `{output-prefix}.psm.parquet`
 - **Feature**: `{output-prefix}.feature.parquet`, one row per peptidoform, charge and fraction run, with one `intensities` entry per channel (null where CDAP reports no signal)
@@ -764,7 +764,7 @@ Depending on `--structures`:
 ### Best Practices {#cdap-best-practices}
 
 - Point `--psm-dir` to one CPTAC study directory containing `*.psm` files
-- Use `--structures` to skip views that are not needed
+- Use `--view` to write only the views you need
 - See [Memory](#memory) for full-scale CPTAC studies
 
 ---
@@ -1080,7 +1080,7 @@ Several consensusXML files into one dataset:
 qpxc convert openms-consensus \
   --consensusxml PBMC007_1_resolved.consensusXML,PBMC009_1_resolved.consensusXML \
   --sdrf-file PXD011628.sdrf.tsv \
-  --structures feature,psm,run,sample \
+  --view feature --view psm --view run --view sample \
   --output-folder ./qpx_output \
   --output-prefix PXD011628
 ```

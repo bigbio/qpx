@@ -153,7 +153,7 @@ qpxc validate \
 
 # 5. Inspect dataset information
 qpxc info --dataset ./output
-qpxc info schema --dataset ./output --structure feature
+qpxc info schema --dataset ./output --view feature
 ```
 
 For further analysis, use the Python API:

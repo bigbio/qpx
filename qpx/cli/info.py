@@ -53,7 +53,7 @@ def info(ctx, dataset_path: Optional[Path], verbose: bool):
 
     \b
         # Show schema for a specific structure
-        qpxc info schema --dataset ./PXD014414 --structure feature
+        qpxc info schema --dataset ./PXD014414 --view feature
 
     \b
         # Show Parquet footer metadata
@@ -148,8 +148,9 @@ def _show_dataset_summary(dataset_path: Path, verbose: bool):
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
 )
 @click.option(
-    "--structure",
-    help="QPX data structure name (when using --dataset)",
+    "--view",
+    "structure",
+    help="QPX view name (when using --dataset)",
     type=click.Choice(_VALID_STRUCTURES, case_sensitive=False),
 )
 @click.option(
@@ -175,7 +176,7 @@ def info_schema_cmd(
     \b
     Examples:
         # Schema from a dataset structure
-        qpxc info schema --dataset ./PXD014414 --structure feature
+        qpxc info schema --dataset ./PXD014414 --view feature
 
     \b
         # Schema from a standalone Parquet file
@@ -183,7 +184,7 @@ def info_schema_cmd(
 
     \b
         # Canonical QPX schema (from code)
-        qpxc info schema --structure feature --canonical
+        qpxc info schema --view feature --canonical
     """
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -224,7 +225,7 @@ def info_schema_cmd(
                 click.echo()
         return
 
-    raise click.ClickException("Provide --dataset (+ optional --structure), --file, or --structure --canonical.")
+    raise click.ClickException("Provide --dataset (+ optional --view), --file, or --view --canonical.")
 
 
 def _show_file_schema(file_path: Path):
