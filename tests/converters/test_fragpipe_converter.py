@@ -194,16 +194,18 @@ def test_pg_qvalue_prefers_real_fdr_over_probability(tmp_path):
     assert df["pg_qvalue"].iloc[0] == pytest.approx(0.001)
 
 
-def test_pg_qvalue_probability_only_is_inverted(tmp_path):
-    """#246: when only 'Protein Probability' is available it is converted to an
-    FDR-like value (1 - probability), never stored raw."""
+def test_pg_qvalue_is_null_with_only_protein_probability(tmp_path):
+    """A ProteinProphet probability is a score, not a q-value (pg.md); it is not turned into pg_qvalue."""
     tsv = (
         "Protein\tGene\tDescription\tProtein Probability\t"
         "expA Total Intensity\tCombined Total Peptides\tCombined Unique Peptides\n"
         "sp|P1|A_HUMAN\tG1\tprot1\t0.9999\t1000\t5\t3\n"
     )
     df = _read_pg(tmp_path, tsv)
-    assert df["pg_qvalue"].iloc[0] == pytest.approx(1.0 - 0.9999)
+    assert df["pg_qvalue"].isna().iloc[0]
+    assert {s["score_name"]: s["score_value"] for s in df["additional_scores"].iloc[0]}["protein_probability"] == pytest.approx(
+        0.9999
+    )
 
 
 def test_maxlfq_only_experiment_emits_pg(tmp_path):

@@ -405,21 +405,9 @@ class FragPipePgAdapter(BaseConverter):
         return records
 
     def _pg_qvalue(self, row: dict) -> float | None:
-        """Resolve FDR or convert the source protein probability."""
-        r = self._resolved
-        # Protein group q-value. Real FDR/Q-Value columns are preferred (see the
-        # ordered mapping in column_mappings.yaml). "Protein Probability" is a
-        # confidence score (~1.0 = best), so when it is the only column present it
-        # is converted to an FDR-like value as 1 - probability, never used raw.
-        pg_qvalue_col = r.get("pg_qvalue")
-        pg_qvalue_raw = safe_float(row.get(pg_qvalue_col)) if pg_qvalue_col else None
-        if pg_qvalue_raw is None:
-            pg_qvalue = None
-        elif pg_qvalue_col == "Protein Probability":
-            pg_qvalue = 1.0 - pg_qvalue_raw
-        else:
-            pg_qvalue = pg_qvalue_raw
-        return pg_qvalue
+        """The protein-group q-value column, when the report has one."""
+        column = self._resolved.get("pg_qvalue")
+        return safe_float(row.get(column)) if column else None
 
     def _pg_common_fields(self, row: dict) -> dict:
         """Build protein-group fields shared across experiments."""
