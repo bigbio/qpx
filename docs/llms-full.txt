@@ -4,108 +4,84 @@
 
 ## Overview
 
-qpx defines a standardized Parquet-based format (QPX) for quantitative proteomics data and provides tools to convert, query, transform, validate, and export datasets.
+qpx defines a standardized Parquet-based format (QPX) for quantitative proteomics data and provides the `qpxc` command-line tool and a Python API to convert, query, transform, validate and migrate datasets.
+
+A QPX dataset is a folder of files named `{prefix}.{view}.{format}`, for example `PXD014414.feature.parquet`. The data views are psm, feature, pg (protein groups), mz (spectra), xic, pepmap, site, proteoform, protein and fragment; the metadata views are dataset, sample, run, ontology and provenance. Expression matrices are AnnData files (`.ae.h5ad`, `.de.h5ad`), and a conversion can write a MuData view (`.h5mu`).
 
 ## Installation
 
 pip install qpx                    # Core (includes mudata, anndata, scipy)
-pip install qpx[all]               # All optional extras
+pip install qpx[all]               # All optional extras except pdc
 pip install qpx[mzidentml]         # mzIdentML (lxml)
-pip install qpx[plotting]          # Visualization
-pip install qpx[quantify]          # mokume[directlfq]>=0.1.0
+pip install qpx[plotting]          # Visualization (plotly, scikit-learn)
+pip install qpx[quantify]          # Protein quantification (mokume[directlfq])
 pip install qpx[pdc]               # PDC/CPTAC download (pridepy)
 
 ## CLI Usage
 
-### Enrich OpenMS native QPX output
-qpxc convert openms --qpx-dir openms_qpx --sdrf-file metadata.sdrf.tsv --output-folder qpx_output
+### Convert tool output
+Each converter writes a dataset into --output-folder; --output-prefix sets the file prefix.
 
-### Convert OpenMS consensusXML to QPX
+qpxc convert maxquant --evidence-file evidence.txt --protein-groups-file proteinGroups.txt --sdrf-file metadata.sdrf.tsv --output-folder qpx_output
+qpxc convert diann --report-path report.parquet --pg-matrix-path report.pg_matrix.tsv --sdrf-file metadata.sdrf.tsv --output-folder qpx_output
+qpxc convert fragpipe --psm-file psm.tsv --ion-file combined_ion.tsv --pg-file combined_protein.tsv --experiment-annotation-file experiment_annotation.tsv --output-folder qpx_output
+qpxc convert spectronaut --report-path report.tsv --sdrf-file metadata.sdrf.tsv --output-folder qpx_output
+qpxc convert proteome-discoverer --psm-file PSMs.txt --proteins-file Proteins.txt --output-folder qpx_output
 qpxc convert openms-consensus --consensusxml results.consensusXML --sdrf-file metadata.sdrf.tsv --output-folder qpx_output
+qpxc convert mzidentml --mzid-path results.mzid --output-folder qpx_output
+qpxc convert quantms-msstats --msstats-file msstats_in.csv --sdrf-file metadata.sdrf.tsv --output-folder qpx_output
+qpxc convert cdap --psm-dir cdap_psm/ --output-folder qpx_output
+qpxc convert mz --mzml-dir mzml/ --output qpx_output/PXD014414.mz.parquet
+qpxc convert sdrf --sdrf-file metadata.sdrf.tsv --output-folder qpx_output
 
-### Convert MaxQuant to QPX
-qpxc convert maxquant evidence.txt proteinGroups.txt -o output.parquet
+### Download and convert PDC/CPTAC studies
+qpxc pdc2qpx -a PDC000109 --download-dir downloads --output-folder qpx_output
 
-### Convert DIA-NN report to QPX
-qpxc convert diann report.tsv -o output.parquet
+### Inspect, validate and query
+qpxc info --dataset-path qpx_output
+qpxc validate --dataset-path qpx_output
+qpxc query sql --dataset-path qpx_output --sql "SELECT run_file_name, COUNT(*) AS n FROM feature GROUP BY 1" --output counts.csv
+qpxc query filter --dataset-path qpx_output --structure feature --condition "charge = 2" --limit 10
+qpxc query head --dataset-path qpx_output --structure pg
 
-### Validate a QPX file
-qpxc validate dataset.parquet
+### Transform
+qpxc transform quantify --feature-path qpx_output --method directlfq -o proteins.parquet
+qpxc transform gene-map --dataset qpx_output --fasta proteome.fasta --in-place
+qpxc transform protein-properties --dataset qpx_output --fasta proteome.fasta --in-place
+qpxc transform site --dataset qpx_output --modification Phospho --in-place
 
-### Query with SQL
-qpxc query dataset.parquet "SELECT ProteinName, AVG(Intensity) FROM psms GROUP BY ProteinName"
+### Migrate a dataset written under an older specification
+qpxc migrate --dataset-path old_dataset --output-folder migrated_dataset
 
 ## Python API
 
-### Reading QPX files
 import qpx
 
-# Read as pandas DataFrame
-df = qpx.read_parquet("dataset.parquet")
+# Open a dataset folder; every view found is available as an attribute
+ds = qpx.open_dataset("qpx_output/")
+print(ds.available_structures)      # ['psm', 'feature', 'pg', 'dataset', ...]
+print(ds.feature.count())
 
-# Read with DuckDB (lazy, memory-efficient)
-conn = qpx.connect("dataset.parquet")
-result = conn.sql("SELECT * FROM psms WHERE Intensity > 1000").df()
+# Filter with a SQL condition and read into pandas
+df = ds.feature.filter("charge = 2").to_df()
+pg = ds.pg.to_df()
 
-### Converting formats
-from qpx.converters import DiaNNConverter, MaxQuantConverter, OpenMSConverter
-
-# OpenMS native QPX → full QPX dataset
-converter = OpenMSConverter(qpx_dir="openms_qpx", sdrf_path="metadata.sdrf.tsv")
-converter.convert(output_folder="qpx_output")
-
-# MaxQuant → QPX
-converter = MaxQuantConverter("evidence.txt", "proteinGroups.txt")
-converter.convert("output.parquet")
-
-# DIA-NN → QPX
-converter = DiannConverter("report.tsv")
-converter.convert("output.parquet")
-
-### Transforms
-from qpx.transforms import gene_mapping, protein_grouping
-
-# Map UniProt accessions to gene names
-df = gene_mapping(df, organism="human")
-
-# Group protein accessions
-df = protein_grouping(df, method="razor")
-
-### Export
-import qpx
-
-# To AnnData (for scanpy)
-adata = qpx.to_anndata(df)
-adata.write("dataset.h5ad")
-
-# To CSV
-qpx.to_csv(df, "dataset.csv")
+# SQL across one or more datasets
+coll = qpx.DatasetCollection([ds])
+result = coll.sql("SELECT run_file_name, COUNT(*) AS n FROM feature GROUP BY 1")
+print(result.to_df())
 
 ## QPX Format Specification
 
-QPX files are Apache Parquet files with standardized column names:
+Column names are lower snake case. Required columns of the main views:
 
-### Required Columns
-- ProteinName (string): Protein accession(s)
-- PeptideSequence (string): Peptide sequence
-- Charge (int): Precursor charge state
-- Intensity (float): Quantification value
+- psm: psm_id, sequence, peptidoform (ProForma), charge, is_decoy, calculated_mz, observed_mz, run_file_name, scan
+- feature: feature_id, sequence, peptidoform, charge, is_decoy, calculated_mz, observed_mz, run_file_name, scan, anchor_protein; intensities holds a list of label and intensity pairs
+- pg: pg_id, pg_accessions, anchor_protein, grouped_runs, is_decoy, peptides
+- sample: sample_accession, organism, organism_part
+- run: run_accession, run_file_name, samples
 
-### Optional Columns
-- SampleID (string): Sample identifier
-- Condition (string): Experimental condition
-- Fraction (int): Fraction number
-- RetentionTime (float): Retention time in seconds
-- MassToCharge (float): Precursor m/z
-- ModifiedSequence (string): Modified peptide sequence
-- Score (float): Identification score
-- QValue (float): q-value (FDR)
-
-## Troubleshooting
-
-- "Column not found": QPX requires standardized column names — check that input format is supported
-- Large files slow: use DuckDB backend (qpx.connect()) instead of pandas
-- mzIdentML support: install with pip install qpx[mzidentml]
+Scores beyond the typed columns are kept in additional_scores, and the ontology view maps each column to its PSI-MS term. The full specification is at https://qpx.quantms.org/spec/.
 
 ## Related Tools
 
