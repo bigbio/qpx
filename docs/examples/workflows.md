@@ -71,7 +71,7 @@ qpxc transform quantify \
 qpxc transform quantify \
     --feature-path ./output/diann.feature.parquet \
     --method maxlfq \
-    --threads 8 \
+    --max-cpus 8 \
     -o ./output/proteins_maxlfq.parquet
 
 echo "Protein quantification complete!"

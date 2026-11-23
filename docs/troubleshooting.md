@@ -267,22 +267,12 @@ qpxc convert sdrf \
 
 **Solutions**:
 
-1. Use `--duckdb-memory` to increase DuckDB memory (`validate`, `query sql` and the `transform gene-map`/`protein-properties` commands):
+1. Use `--max-memory` to increase DuckDB memory; every command that opens DuckDB takes it, with `--max-cpus` for threads:
 
    ```bash
    qpxc query sql \
        --dataset-path ./PXD014414 \
        --sql "SELECT * FROM feature" \
-       --duckdb-memory 32GB
-   ```
-
-   For convert commands, use `--max-memory` instead:
-
-   ```bash
-   qpxc convert diann \
-       --report-path report.tsv \
-       --sdrf-file data.sdrf.tsv \
-       --output-folder ./output \
        --max-memory 32GB
    ```
 
@@ -291,7 +281,7 @@ qpxc convert sdrf \
    ```bash
    qpxc validate \
        --dataset-path ./PXD014414 \
-       --duckdb-memory 8GB \
+       --max-memory 8GB \
        --temp-dir /scratch/qpx_spill
    ```
 

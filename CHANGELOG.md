@@ -82,6 +82,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`.h5mu` files are gzip-compressed** — the MuData container was written without compression; its datasets now use gzip level 4. MSV000085836 takes 403.7 MB instead of 587.5 MB and reads back identical, in backed mode too.
 - **DIA-NN, MaxQuant and Spectronaut write feature rows in a fixed order**, and Spectronaut pg rows too. Their order depended on DuckDB's parallel group-by. Two conversions now have the same rows in the same order; the footer's uuid and date still differ. Other views, such as MaxQuant psm and FragPipe feature, have no fixed order.
 - **`convert maxquant` reads its SDRF before writing anything** — every conversion, PSM-only ones included, resolves the SDRF labels first, so labels that match no plex fail before `sample`, `run` and `psm` are written. 1.3.0 checked them only when a feature or pg view was to be written.
+- **BREAKING — one name per CLI option.** Options that meant the same thing were spelled differently from command to command; each now has one name, and the old names are gone:
+  - `--duckdb-memory` and `--duckdb-threads` of `validate`, `query sql` and the `transform` commands, and `--threads` of `transform quantify`, are `--max-memory` and `--max-cpus`, as on the `convert` commands.
 
 ### Removed
 

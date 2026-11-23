@@ -370,8 +370,9 @@ def _qpx_feature_to_peptide_df(feature_path: Path, sdrf_path: Optional[Path] = N
     type=int,
 )
 @click.option(
-    "--threads",
-    help="Parallel threads for MaxLFQ and DirectLFQ (-1 = all cores)",
+    "--max-cpus",
+    "threads",
+    help="Maximum number of threads for MaxLFQ and DirectLFQ (default: all cores)",
     default=-1,
     type=int,
 )
@@ -428,7 +429,7 @@ def transform_quantify_cmd(**kwargs):
         # MaxLFQ with 8 threads
         qpxc transform quantify \\
             --feature-path ./qpx_output/diann.feature.parquet \\
-            --method maxlfq --threads 8 \\
+            --method maxlfq --max-cpus 8 \\
             -o proteins_maxlfq.parquet
     """
     feature_path = kwargs["feature_path"]

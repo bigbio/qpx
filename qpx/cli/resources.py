@@ -42,16 +42,16 @@ def convert_resource_options(func):
 
 
 def duckdb_resource_options(func):
-    """Add --duckdb-memory, --duckdb-threads and --temp-dir, applied to every DuckDB connection the command opens."""
+    """Add --max-memory, --max-cpus and --temp-dir, applied to every DuckDB connection the command opens."""
 
-    @click.option("--duckdb-memory", help="DuckDB memory limit (e.g. '16GB'; default: 80% of RAM)")
-    @click.option("--duckdb-threads", type=int, help="DuckDB thread count (default: one per available CPU)")
+    @click.option("--max-memory", help="DuckDB memory limit (e.g. '16GB'; default: 80% of RAM)")
+    @click.option("--max-cpus", type=int, help="Maximum number of threads (default: one per available CPU)")
     @_temp_dir_option
     @functools.wraps(func)
-    def command(*args, duckdb_memory: str | None, duckdb_threads: int | None, temp_dir: Path | None, **kwargs):
+    def command(*args, max_memory: str | None, max_cpus: int | None, temp_dir: Path | None, **kwargs):
         with duckdb_defaults(
-            memory_limit=duckdb_memory,
-            threads=duckdb_threads,
+            memory_limit=max_memory,
+            threads=max_cpus,
             temp_directory=_spill_directory(temp_dir, kwargs.get("output_folder")),
         ):
             return func(*args, **kwargs)

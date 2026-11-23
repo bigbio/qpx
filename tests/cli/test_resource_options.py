@@ -58,7 +58,7 @@ def test_convert_spills_into_the_output_folder(tmp_path):
 
 
 def test_query_sql_applies_the_resource_options(dataset_dir, tmp_path):
-    """--duckdb-threads and --temp-dir reach the dataset's connection."""
+    """--max-cpus and --temp-dir reach the dataset's connection."""
     spill = tmp_path / "spill"
     result = CliRunner().invoke(
         qpx_main,
@@ -69,7 +69,7 @@ def test_query_sql_applies_the_resource_options(dataset_dir, tmp_path):
             str(dataset_dir),
             "--sql",
             _SETTINGS,
-            "--duckdb-threads",
+            "--max-cpus",
             "1",
             "--temp-dir",
             str(spill),
