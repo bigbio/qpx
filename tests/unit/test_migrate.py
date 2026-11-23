@@ -682,3 +682,45 @@ def test_run_names_take_the_run_views_spelling_when_each_matches_one_run(tmp_pat
     migrate_dataset(folder, tmp_path / "new")
 
     assert pq.read_table(tmp_path / "new" / "old.psm.parquet").column("run_file_name").to_pylist() == expected
+
+
+def _ontology_row(field, view, name=None, accession=None, source=None, tool=None):
+    return {
+        "field_name": field,
+        "ontology_name": name,
+        "ontology_accession": accession,
+        "ontology_source": "MS" if accession else None,
+        "ontology_version": "4.1.100" if accession else None,
+        "view": view,
+        "description": "old",
+        "source_column_name": source,
+        "source_tool": tool,
+    }
+
+
+def test_ontology_rows_take_the_current_terms_but_gain_no_accession(old_dataset, tmp_path):
+    """The terms QPX defines are those of a new conversion; each row keeps its source."""
+    old = [
+        _ontology_row("rt", "feature", "scan start time", "MS:1000016", "RT", "DIA-NN"),
+        _ontology_row("is_decoy", "pg", "decoy peptide", "MS:1002217", "Reverse", "MaxQuant"),
+        _ontology_row("intensity", "pg", "LC-MS feature intensity", "MS:1001840"),
+        _ontology_row("pg_qvalue", "pg", source="Protein Probability", tool="FragPipe"),
+        _ontology_row("lfq", "pg", "label-free quantity"),
+    ]
+    _write(old_dataset / "old.ontology.parquet", old)
+    migrate_dataset(old_dataset, tmp_path / "new")
+
+    table = pq.read_table(tmp_path / "new" / "old.ontology.parquet").to_pylist()
+    rows = {(row["field_name"], row["view"]): row for row in table}
+    rt = rows["rt", "feature"]
+    assert (rt["ontology_name"], rt["ontology_accession"], rt["source_column_name"], rt["source_tool"]) == (
+        "retention time",
+        "MS:1000894",
+        "RT",
+        "DIA-NN",
+    )
+    assert rows["is_decoy", "pg"]["ontology_accession"] is None
+    assert rows["is_decoy", "pg"]["description"] == "MaxQuant Reverse (no CV term)"
+    assert ("intensity", "pg") not in rows
+    assert rows["pg_qvalue", "pg"] == old[3]
+    assert rows["lfq", "pg"]["ontology_name"] == "MaxLFQ intensity"

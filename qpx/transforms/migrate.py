@@ -15,7 +15,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from qpx.converters.channel_labels import normalize_label
-from qpx.converters.ontology_util import dedupe_ontology_entries, reconcile_ontology_entries
+from qpx.converters.ontology_util import dedupe_ontology_entries, reconcile_ontology_entries, refresh_ontology_entries
 from qpx.converters.ptm import _add_nterm_dash, _unimod_title_of, name_to_unimod, normalize_peptidoform
 from qpx.converters.utils import canonical_accession
 from qpx.core.engine import create_connection
@@ -461,11 +461,11 @@ def _extra_column_options(writer_class, source: Path) -> dict:
 
 
 def _migrate_ontology(source: Path, target: Path) -> int:
-    """One row per field and view, naming only fields the migrated views emit."""
+    """One row per field and view, naming only fields the migrated views emit, with the current terms."""
     writer_class, suffix = Dataset.writer_for("ontology")
     prefix = target.name.removesuffix(suffix)
-    records = pq.read_table(source).to_pylist()
-    entries = reconcile_ontology_entries(dedupe_ontology_entries(records), target.parent, prefix)
+    records = refresh_ontology_entries(dedupe_ontology_entries(pq.read_table(source).to_pylist()), target.parent, prefix)
+    entries = reconcile_ontology_entries(records, target.parent, prefix)
     with writer_class(target, **_writer_options("ontology", _footer(source))) as writer:
         writer.write_batch(entries)
     return len(entries)

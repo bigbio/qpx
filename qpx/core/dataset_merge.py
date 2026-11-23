@@ -394,7 +394,9 @@ class _Merge:
         firsts = ", ".join(f"first({column}) AS {column}" for column in _ONTOLOGY_FIRST)
         conflicts = self._conn.execute(
             sql_build(
-                'SELECT field_name, "view" FROM ($union) GROUP BY field_name, "view" HAVING COUNT(DISTINCT ontology_accession) > 1',
+                # A row without the accession of another counts: its column may hold another quantity.
+                'SELECT field_name, "view" FROM ($union) GROUP BY field_name, "view" '
+                "HAVING COUNT(DISTINCT coalesce(ontology_accession, '')) > 1",
                 union=union,
             )
         ).fetchall()

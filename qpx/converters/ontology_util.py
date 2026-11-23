@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pyarrow.parquet as pq
 
+from qpx.core.builtin_scores import BUILTIN_SCORES
 from qpx.core.engine import DuckDBEngine
 from qpx.core.ontology_fields import emitted_field_names
 from qpx.core.scores import (
@@ -71,6 +72,43 @@ def _entry_for_emitted_name(name: str, view: str, columns: set[str]) -> dict | N
         return field_ontology_entries(view, {name: None}, None)[0]
     entries = score_ontology_entries({name}, view)
     return entries[0] if entries else unresolved_field_entry(name, view)
+
+
+def _current_entry(entry: dict, columns: set[str]) -> dict | None:
+    """The row a new conversion writes for the name and source of *entry*, None for no row.
+
+    *entry* itself when QPX defines no term for the name: a score or CV parameter
+    whose term came from the source file or the PSI-MS OBO.
+    """
+    name, view, source = entry["field_name"], entry["view"], entry["source_column_name"]
+    if name in columns:
+        if source is None:
+            return _entry_for_emitted_name(name, view, columns)
+        return field_ontology_entries(view, {name: source}, entry["source_tool"])[0]
+    if name not in BUILTIN_SCORES:
+        return entry
+    return {**score_ontology_entries({name}, view)[0], "source_column_name": source, "source_tool": entry["source_tool"]}
+
+
+def refresh_ontology_entries(entries: list[dict], output_folder: Path, prefix: str) -> list[dict]:
+    """Give the rows of an older file the terms QPX defines now, keeping their source column and tool.
+
+    A row gains no accession it lacked: its column may hold another quantity than
+    the term names (an old FragPipe pg_qvalue is 1 - Protein Probability).
+    """
+    columns: dict[str, set[str]] = {}
+    refreshed = []
+    for entry in entries:
+        view = entry["view"]
+        if view not in columns:
+            path = Path(output_folder) / f"{prefix}.{view}.parquet"
+            columns[view] = set(pq.read_schema(path).names) if path.is_file() else set()
+        current = _current_entry(entry, columns[view])
+        if current is not None and entry["ontology_accession"] is None and current["ontology_accession"] is not None:
+            current = entry
+        if current is not None:
+            refreshed.append(current)
+    return refreshed
 
 
 def reconcile_ontology_entries(entries: list[dict], output_folder: Path, prefix: str) -> list[dict]:

@@ -55,7 +55,7 @@ _MAPPED_TERMS = {
     str(key): info
     for table in (_FIELD_CV_MAP, _VIEW_FIELD_CV_MAP, BUILTIN_SCORES)
     for key, info in table.items()
-    if info["ontology_accession"] is not None
+    if info is not None and info["ontology_accession"] is not None
 }
 
 

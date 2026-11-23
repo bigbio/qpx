@@ -170,7 +170,7 @@ Sample metadata fields map to biological ontologies. These mappings are critical
 | `run_file_name` | --- | --- | Spectrum file name without path or extension |
 | `scan` | scan number | `MS:1003057` | Scan identifier as array of integer components |
 | `protein_accessions` | --- | --- | Protein accessions the peptide maps to (optional column) |
-| `ion_mobility` | inverse reduced ion mobility | `MS:1002815` | Inverse reduced ion mobility (1/K0, Vs/cm²) for the precursor |
+| `ion_mobility` | --- | --- | Ion mobility of the precursor as the producer reports it, 1/K0 (Vs/cm²) for TIMS data |
 | `ccs` | collisional cross sectional area | `MS:1002954` | Collisional cross section of the precursor (Å²) |
 | `mz_array` | m/z array | `MS:1000514` | Array of fragment m/z values |
 | `intensity_array` | intensity array | `MS:1000515` | Array of fragment intensity values |
@@ -199,7 +199,7 @@ Sample metadata fields map to biological ontologies. These mappings are critical
 | `rt_start` | --- | --- | Start of the retention time window |
 | `rt_stop` | --- | --- | End of the retention time window |
 | `predicted_rt` | predicted retention time | `MS:1000897` | Predicted retention time (seconds) |
-| `ion_mobility` | inverse reduced ion mobility | `MS:1002815` | Inverse reduced ion mobility (1/K0, Vs/cm²) for the precursor |
+| `ion_mobility` | --- | --- | Ion mobility of the precursor as the producer reports it, 1/K0 (Vs/cm²) for TIMS data |
 | `ccs` | collisional cross sectional area | `MS:1002954` | Collisional cross section of the precursor (Å²) |
 | `ion_mobility_start` | --- | --- | Start ion mobility value |
 | `ion_mobility_stop` | --- | --- | End ion mobility value |
@@ -237,11 +237,11 @@ Sample metadata fields map to biological ontologies. These mappings are critical
 | `feature_counts` | --- | --- | Feature counts (unique + total) |
 | `global_qvalue` | protein group-level q-value | `MS:1002373` | Experiment-wide q-value of the protein group |
 | `pg_qvalue` | protein group-level q-value | `MS:1002373` | Run-level protein group q-value |
-| `is_decoy` | decoy peptide | `MS:1002217` | Whether the protein group is a decoy |
+| `is_decoy` | --- | --- | Whether the protein group is a decoy |
 | `contaminant` | --- | --- | Contaminant indicator (1 = contaminant) |
 | `sequence_coverage` | sequence coverage | `MS:1001093` | Percentage of protein sequence covered by peptides |
 | `molecular_weight` | molecular mass | `MS:1000224` | Molecular weight of the protein (kDa) |
-| `intensities` | --- | --- | Primary intensity across labels |
+| `intensity` | --- | --- | Primary intensity of the group for its label |
 | `additional_intensities` | --- | --- | Tool-provided intensities |
 | `peptides` | --- | --- | Peptide counts per individual protein in the group |
 | `additional_scores` | --- | --- | Additional scores and metrics |
@@ -254,16 +254,34 @@ Sample metadata fields map to biological ontologies. These mappings are critical
 | Field | Ontology Name | Ontology Accession | Description |
 |---|---|---|---|
 | `id` | --- | --- | Unique identifier for the scan |
+| `scan` | scan number | `MS:1003057` | Scan identifier from the native ID, as integer components |
 | `ms_level` | ms level | `MS:1000511` | MS level (1 = MS1, 2 = MS2, etc.) |
 | `centroid` | centroid spectrum | `MS:1000127` | Whether data is centroided |
 | `scan_start_time` | scan start time | `MS:1000016` | Start time of the scan (minutes) |
 | `inverse_ion_mobility` | inverse reduced ion mobility | `MS:1002815` | Inverse ion mobility (1/K0) for TIMS data |
+| `drift_time` | ion mobility drift time | `MS:1002476` | Drift time (milliseconds) for drift-tube and travelling-wave instruments |
 | `ion_injection_time` | ion injection time | `MS:1000927` | Ion injection time (milliseconds) |
 | `total_ion_current` | total ion current | `MS:1000285` | Total ion current for the scan |
 | `precursors` | --- | --- | Precursor ions for this MS/MS scan |
 | `mz` | m/z array | `MS:1000514` | Array of m/z values |
 | `intensity` | intensity array | `MS:1000515` | Array of intensity values |
 | `cv_params` | --- | --- | Additional CV parameters |
+
+---
+
+## Other Views {#other-views}
+
+The trace (`xic`), `fragment`, `site`, `proteoform`, `protein` and `pepmap` views have no table of their own. Their `charge` and `peptidoform` and the pepmap `sequence` take the terms of the PSM view, and the fields below their own; their other fields, including `is_decoy`, `intensity` and the protein `sequence`, have none.
+
+| View | Field | Ontology Name | Ontology Accession |
+|---|---|---|---|
+| `xic` | `rt` | time array | `MS:1000595` |
+| `xic` | `mz` | m/z array | `MS:1000514` |
+| `xic` | `intensity` | intensity array | `MS:1000515` |
+| `xic` | `is_decoy` | decoy peptide | `MS:1002217` |
+| `fragment` | `observed_mz` | product ion m/z | `MS:1001225` |
+| `fragment` | `intensity` | product ion intensity | `MS:1001226` |
+| `fragment` | `intensity_array` | intensity array | `MS:1000515` |
 
 ---
 
@@ -312,7 +330,7 @@ Fields defined by QPX without standardized ontology terms.
 | `peptide_counts` / `feature_counts` | PG | Count structures for peptides and features |
 | `contaminant` | PG | Contaminant indicator |
 | `pg_positions` | Feature | Peptide positions within each protein |
-| `id_run_file_name` / `scan` | Feature | Reference to best PSM for the feature |
+| `id_run_file_name` | Feature | Run file of the best PSM for the feature |
 | `protein_accessions` | PSM | Protein accessions (optional column) |
 | `charge_array` / `ion_type_array` / `ion_mobility_array` | PSM | Fragment ion annotation arrays |
 | `parent_ion_fraction` | Score | Fraction of target peak intensity in the isolation window |

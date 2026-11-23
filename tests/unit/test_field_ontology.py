@@ -55,6 +55,31 @@ def test_field_ontology_entries():
         assert "source_tool" in e
 
 
+def test_field_terms_follow_the_view():
+    """A column takes the term of its view, never a PSI-MS name match: is_decoy
+    is a decoy peptide only for peptides, and the mz id is no PEFF "ID"."""
+    from qpx.core.scores import field_ontology_entries
+
+    entries = field_ontology_entries(
+        view="pg", resolved_mappings={"is_decoy": "Reverse", "intensity": "Intensity"}, tool_name="MaxQuant"
+    )
+    assert [entry["ontology_accession"] for entry in entries] == [None, None]
+    assert field_ontology_entries(view="mz", resolved_mappings={"id": "id"})[0]["ontology_accession"] is None
+    terms = {
+        ("xic", "rt"): "MS:1000595",
+        ("xic", "intensity"): "MS:1000515",
+        ("fragment", "observed_mz"): "MS:1001225",
+        ("psm", "observed_mz"): "MS:1000744",
+        ("protein", "sequence"): None,
+        ("mz", "ms_level"): "MS:1000511",
+        ("mz", "scan_start_time"): "MS:1000016",
+        ("psm", "sequence"): "MS:1000888",
+    }
+    for (view, field), accession in terms.items():
+        entry = field_ontology_entries(view=view, resolved_mappings={field: field})[0]
+        assert entry["ontology_accession"] == accession, (view, field)
+
+
 def test_dedupe_ontology_entries_merges_complementary_values():
     """Duplicate score and field entries retain CV metadata and provenance."""
     from qpx.converters.ontology_util import dedupe_ontology_entries

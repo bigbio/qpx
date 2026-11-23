@@ -285,6 +285,21 @@ class TestMergeOutput:
         pepmap = pq.read_table(tmp_path / "merged" / "merged.pepmap.parquet", columns=["peptidoform"]).column(0).to_pylist()
         assert pepmap == ["AAAK", "BBBK", "YYYK", "ZZZK"]
 
+    def test_a_missing_accession_is_a_different_term(self, dataset_dir, tmp_path, caplog):
+        """A migrated row that gained no accession does not silently take the term of a new file, or lose it."""
+        sources = []
+        for name, accession, term in (("one", "PXD000001", None), ("two", "PXD000002", "MS:1000888")):
+            target = _copy(dataset_dir, tmp_path, name, accession)
+            with OntologyWriter(target / "exp.ontology.parquet") as writer:
+                writer.write_batch([{**make_ontology_record(), "ontology_accession": term}])
+            sources.append(qpx.open_dataset(str(target)))
+        with qpx.DatasetCollection(sources) as collection, caplog.at_level(logging.WARNING):
+            collection.merge(tmp_path / "merged", on_collision="namespace")
+        for source in sources:
+            source.close()
+
+        assert "1 ontology field(s) have different terms" in caplog.text
+
     def test_different_composites_write_one_file_each(self, tmp_path, dataset_dir):
         one, two = tmp_path / "one", tmp_path / "two"
         one.mkdir()
