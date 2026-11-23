@@ -523,7 +523,7 @@ class TestOntologyCLI:
     def test_ontology_build_help_renders(self):
         runner = CliRunner()
         result = runner.invoke(qpx_main, ["ontology", "build", "--help"])
-        _assert_help(result, "--source", "--all-sources")
+        _assert_help(result, "--source", "default: all")
 
 
 class TestStructureChoicesMatchTheRegistry:
