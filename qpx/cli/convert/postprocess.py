@@ -243,8 +243,8 @@ def _preserve_sdrf(output_folder: Path, prefix: str) -> None:
 def _describe_in_dataset(path: Path, view: str) -> None:
     """Describe a view file written into a dataset, beside its ontology view, as a conversion would.
 
-    Gives the view its ontology rows and records an existing integrity record again. A
-    standalone file, with no ontology view beside it, is left as written.
+    Gives the view its ontology rows and a provenance step, and records an existing integrity
+    record again. A standalone file, with no ontology view beside it, is left as written.
     """
     from qpx.converters.ontology_util import write_view_ontology
 
@@ -253,7 +253,37 @@ def _describe_in_dataset(path: Path, view: str) -> None:
     if not ontology.is_file():
         return
     write_view_ontology(folder, prefix, {view: path}, ontology)
+    _record_view_step(folder, prefix, view)
     _refresh_recorded_integrity(folder, prefix)
+
+
+def _record_view_step(output_folder: Path, prefix: str, view: str) -> None:
+    """Add this command to the dataset's provenance as the conversion step that wrote ``view``, replacing an earlier run."""
+    from qpx._version import __version__
+    from qpx.converters.orchestrator import build_provenance_step
+    from qpx.dataset import Dataset
+
+    ctx = click.get_current_context()
+    step_name = f"{ctx.command.name.replace('-', '_')}_to_qpx"
+    with Dataset(str(output_folder), file_prefix=prefix) as ds:
+        if ds.provenance is None:
+            return
+        steps = [step for step in ds.provenance.to_arrow().to_pylist() if step["step_name"] != step_name]
+        parameters = _effective_parameters(ctx) + [
+            {"key": f"dependency_{name}", "value": version(name)} for name in _RECORDED_DEPENDENCIES
+        ]
+        steps.append(
+            build_provenance_step(
+                step_category="format_conversion",
+                step_name=step_name,
+                tool_name="qpx",
+                tool_version=__version__,
+                parameters=parameters,
+                output_views=[view],
+                step_order=max((step["step_order"] for step in steps), default=0) + 1,
+            )
+        )
+        ds.save_structure(steps, "provenance", prefix=prefix)
 
 
 def _refresh_recorded_integrity(output_folder: Path, prefix: str) -> None:

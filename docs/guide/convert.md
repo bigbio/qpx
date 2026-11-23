@@ -202,12 +202,14 @@ qpxc convert diann \
 
 #### XIC Traces from DIA-NN `--xic` Export {#diann-example-xic}
 
-Merge the per-run `*.xic.parquet` files written by DIA-NN's `--xic` option into the dataset's single `xic` view:
+Merge the per-run `*.xic.parquet` files written by DIA-NN's `--xic` option into the dataset's single `xic` view with [diann-xic](#diann-xic), after the report conversion and into the same folder:
 
 ```bash
 qpxc convert diann \
     --report-path tests/examples/diann/full/diann_report.tsv.gz \
     --sdrf-file tests/examples/diann/full/PXD036609.sdrf.tsv \
+    --output-folder ./output
+qpxc convert diann-xic \
     --xic-folder ./diann_xic \
     --output-folder ./output
 ```
@@ -220,7 +222,7 @@ Output files generated:
 - **Protein Group**: `{output-prefix}.pg.parquet` (produced with `--pg-matrix-path`)
 - **Peptide-protein map**: `{output-prefix}.pepmap.parquet` (every protein in `Protein.Ids` for each converted peptidoform)
 - **Mass spectra**: `{output-prefix}.mz.parquet` (produced when `--mzml-info-folder` contains `*_ms2_info.parquet`; feature-matched MS2 spectra only)
-- **XIC**: `{output-prefix}.xic.parquet` (produced when `--xic-folder` contains DIA-NN `*.xic.parquet` exports)
+- **XIC**: `{output-prefix}.xic.parquet`, written by [diann-xic](#diann-xic)
 - **MuData**: `{output-prefix}.h5mu` (written by default; `--no-mudata` skips it)
 
 ### Common Issues {#diann-issues}
@@ -284,9 +286,11 @@ qpxc convert diann-xic \
 `--xic` option. All runs are merged into `PXD014414.xic.parquet`; `run_file_name`
 distinguishes them. The file footer records `xic_selection`, `xic_window`,
 `xic_extraction_window_seconds`, `xic_qvalue_threshold`, `xic_smoothed`,
-`xic_zero_points`, `xic_rt_unit` and `transition_format`. Use
-`qpxc convert diann --xic-folder ...` instead when you are also converting the
-DIA-NN report and want the XIC view in the same output folder.
+`xic_zero_points`, `xic_rt_unit` and `transition_format`. Written into the
+folder of a `qpxc convert diann` conversion with the same prefix (`diann` when
+neither command is given `--output-prefix`), the view joins that dataset: its
+ontology rows and a provenance step are added and a recorded integrity is
+refreshed.
 
 ### Output Files {#diann-xic-output}
 

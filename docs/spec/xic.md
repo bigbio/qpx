@@ -262,14 +262,18 @@ qpxc convert diann-xic \
     --xic-window apex
 ```
 
-To add the XIC view to a full report conversion, pass the same folder to the DIA-NN converter:
+To add the XIC view to a report conversion, run it afterwards into the same folder with the same prefix:
 
 ```bash
 qpxc convert diann \
     --report-path report.tsv \
     --sdrf-file data.sdrf.tsv \
+    --output-folder ./qpx \
+    --output-prefix PXD014414
+qpxc convert diann-xic \
     --xic-folder ./diann_xic \
-    --output-folder ./qpx
+    --output-folder ./qpx \
+    --output-prefix PXD014414
 ```
 
 ## File naming
