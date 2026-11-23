@@ -498,6 +498,27 @@ def test_a_diann_pg_drops_the_score_repeating_its_pg_qvalue(tmp_path):
     assert names == {PROTEIN: ["pg_pep"], "Q1": ["pg_qvalue", "pg_pep"]}
 
 
+def test_a_quantms_pg_coverage_becomes_a_percentage_once(tmp_path):
+    """The quantms converter of QPX 1.0 wrote the mzTab fraction, 0 for none; a migrated file keeps its percentage."""
+    source = tmp_path / "old"
+    source.mkdir()
+    rows = [
+        {**make_pg_record(anchor_protein=anchor), "sequence_coverage": value}
+        for anchor, value in ((PROTEIN, 0.25), ("Q1", 0.0), ("Q2", None))
+    ]
+    _write(source / "old.pg.parquet", rows, creator=b"quantms")
+    migrate_dataset(source, tmp_path / "new")
+    migrate_dataset(tmp_path / "new", tmp_path / "again")
+
+    for folder in ("new", "again"):
+        migrated = pq.read_table(tmp_path / folder / "old.pg.parquet", columns=["anchor_protein", "sequence_coverage"])
+        assert {row["anchor_protein"]: row["sequence_coverage"] for row in migrated.to_pylist()} == {
+            PROTEIN: 25.0,
+            "Q1": None,
+            "Q2": None,
+        }
+
+
 @pytest.mark.parametrize(("group", "second", "kept"), [(PROTEIN, 0.02, 0.02), ("Q00402", None, 0.01)], ids=["group", "no-group"])
 def test_rows_that_repeat_an_id_keep_one_copy(tmp_path, group, second, kept):
     """1.0.2 repeated a quantms feature per q-value of its first protein; the copy holding its group's q-value stays.

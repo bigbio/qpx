@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import numpy as np
 
 from qpx.converters.ptm import _add_nterm_dash
+from qpx.version import parse_spec_version
 
 # The cv_params entries in which DIA-NN and Spectronaut files kept the indexed retention time before its column.
 _IRT_PARAMS = ("irt", "empirical_irt")
@@ -21,6 +24,8 @@ _DIANN_INTENSITY_NAMES = {"maxlfq": "pg_maxlfq", "precursor_normalised": "normal
 # DIA-NN reports 0 for these without ion mobility data; a conversion writes null, or leaves the cv entry out.
 _DIANN_ION_MOBILITY_COLUMNS = ("ion_mobility", "ion_mobility_start", "ion_mobility_stop")
 _DIANN_ION_MOBILITY_PARAMS = ("iim", "predicted_im", "predicted_iim")
+# The first specification whose migration rescales the coverage of the quantms converter (removed in 1.1).
+_PERCENT_QUANTMS_COVERAGE = (1, 3)
 
 
 def _msnet_row(row: dict) -> dict:
@@ -128,6 +133,23 @@ def _diann_pg_row(row: dict) -> dict:
         score for score in scores if not (score["score_name"] == "pg_qvalue" and score["score_value"] == row.get("pg_qvalue"))
     ]
     return {**row, "additional_scores": kept or None}
+
+
+def _quantms_pg_row(row: dict) -> dict:
+    """A quantms pg row with sequence_coverage in percent: QPX 1.0 wrote the mzTab fraction, and 0 for none."""
+    coverage = row.get("sequence_coverage")
+    return {**row, "sequence_coverage": coverage * 100 if coverage else None}
+
+
+def _pg_row_fix(footer: dict[bytes, bytes]) -> Callable[[dict], dict] | None:
+    """The producer fix of the pg rows of a file, or None."""
+    creator = footer.get(b"creator")
+    if creator == b"diann":
+        return _diann_pg_row
+    version = parse_spec_version(footer.get(b"qpx_version", b"").decode()) or (0, 0)
+    if creator == b"quantms" and version < _PERCENT_QUANTMS_COVERAGE:
+        return _quantms_pg_row
+    return None
 
 
 def _irt_row(row: dict) -> dict:

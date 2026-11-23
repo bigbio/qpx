@@ -25,7 +25,7 @@ from qpx.core.struct_lists import file_layouts, restore_table
 from qpx.dataset import Dataset
 from qpx.transforms.accession_normalizer import _LIST_ACCESSION_COLUMNS, _SCALAR_ACCESSION_COLUMNS, ACCESSION_VIEWS, _entry_names
 from qpx.transforms.mantissa import MANTISSA_BITS_FOOTER_KEY
-from qpx.transforms.producer_rows import _diann_feature_row, _diann_pg_row, _irt_row, _msnet_row, _raw_msnet_row
+from qpx.transforms.producer_rows import _diann_feature_row, _irt_row, _msnet_row, _pg_row_fix, _raw_msnet_row
 from qpx.transforms.protein_properties import _rewrite_view
 from qpx.transforms.relayout import ID_REFERENCES, ORDINAL_IDS, _quoted
 from qpx.version import QPX_SPEC_VERSION, parse_spec_version
@@ -289,8 +289,9 @@ def _migrated_pairs(view: str, footer: dict[bytes, bytes], records: list[dict]) 
     else:
         migrate_row = _ROW_MIGRATIONS.get(view, lambda record: [record])
         pairs = [(record, row) for record in records for row in migrate_row(record)]
-    if view == "pg" and footer.get(b"creator") == b"diann":
-        pairs = [(record, _diann_pg_row(row)) for record, row in pairs]
+    pg_fix = _pg_row_fix(footer) if view == "pg" else None
+    if pg_fix is not None:
+        pairs = [(record, pg_fix(row)) for record, row in pairs]
     if view in ACCESSION_VIEWS:
         pairs = [(record, _canonical_accessions(row)) for record, row in pairs]
     if view == "feature":
