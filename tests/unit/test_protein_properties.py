@@ -280,6 +280,35 @@ def test_new_provenance_updates_structure_count(dataset_dir, tmp_path, in_place)
     assert _rows(output, "dataset")[0]["total_structures"] == 7
 
 
+@pytest.mark.parametrize("in_place", [True, False])
+def test_the_protein_view_gets_its_ontology_rows(dataset_dir, tmp_path, in_place):
+    """The protein view written after the conversion is described in the ontology view, which the integrity record covers."""
+    from qpx import Dataset
+    from qpx.writers import DatasetWriter
+    from qpx.writers.ontology import OntologyWriter
+
+    kept = {"field_name": "anchor_protein", "view": "pg", "ontology_name": "anchor protein", "ontology_accession": "MS:1001591"}
+    with OntologyWriter(dataset_dir / "exp.ontology.parquet", creator="qpx") as writer:
+        writer.write_batch([kept])
+    with Dataset(dataset_dir) as dataset:
+        record = dataset.dataset_meta.to_df().iloc[0].to_dict()
+        record.update(dataset.compute_integrity())
+    with DatasetWriter(dataset_dir / "exp.dataset.parquet") as writer:
+        writer.write_batch([record])
+    source_ontology = (dataset_dir / "exp.ontology.parquet").read_bytes()
+    output = dataset_dir if in_place else tmp_path / "annotated"
+    _run(dataset_dir, _dataset_fasta(tmp_path), *(["--in-place"] if in_place else ["--output-folder", str(output)]))
+
+    terms = {(row["view"], row["field_name"]): row["ontology_accession"] for row in _rows(output, "ontology")}
+    assert terms[("pg", "anchor_protein")] == "MS:1001591"
+    assert terms[("protein", "gene_name")] == "MS:1000934"
+    assert {view for view, _ in terms} == {"pg", "protein"}
+    with Dataset(output) as dataset:
+        assert dataset.verify_integrity() == {"errors": [], "warnings": []}
+    if not in_place:
+        assert (dataset_dir / "exp.ontology.parquet").read_bytes() == source_ontology
+
+
 def test_coverage_does_not_merge_conflicting_fasta_accessions(dataset_dir, tmp_path):
     """Different sequences sharing a bare accession keep their own protein evidence."""
     from qpx.writers import PgWriter, PsmWriter

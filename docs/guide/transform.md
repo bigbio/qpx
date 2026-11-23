@@ -229,7 +229,7 @@ qpxc convert diann --report-path report.parquet ... --fasta search.fasta
 
 ## site
 
-Writes `site.parquet` from the feature view: per run and label, the intensity of the peptides that place a modification on a residue of their anchor protein, and its share of all peptides covering that residue ([Modification Sites](../spec/site.md#quantified-sites)). It needs `feature.pg_positions`, so run `protein-properties --fasta` first where the converter did not fill them.
+Writes `site.parquet` from the feature view: per run and label, the intensity of the peptides that place a modification on a residue of their anchor protein, and its share of all peptides covering that residue ([Modification Sites](../spec/site.md#quantified-sites)). It needs `feature.pg_positions`, so run `protein-properties --fasta` first where the converter did not fill them. The ontology view of the dataset gets the rows of the site view.
 
 ```bash
 qpxc transform site --dataset ./qpx_output --modification Phospho --in-place

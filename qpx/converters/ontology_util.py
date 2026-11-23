@@ -105,6 +105,42 @@ def refresh_ontology_entries(entries: list[dict], output_folder: Path, prefix: s
     return refreshed
 
 
+def write_view_ontology(dataset: Path, prefix: str, views: dict[str, Path], target: Path) -> None:
+    """Write to ``target`` the ontology view of ``dataset`` with rows describing ``views``.
+
+    For views written after the ontology view, such as an mz view or the protein view
+    of a FASTA; ``views`` maps each view name to its Parquet file.
+    """
+    from qpx.writers.ontology import OntologyWriter
+
+    entries = describe_views(pq.read_table(Path(dataset) / f"{prefix}.ontology.parquet").to_pylist(), views)
+    with OntologyWriter(target, creator="qpx") as writer:
+        writer.write_batch(entries)
+
+
+def describe_views(entries: list[dict], views: dict[str, Path]) -> list[dict]:
+    """Make the rows of ``views`` (view name to Parquet file) describe the names those files emit.
+
+    A row of one of these views whose name its file does not emit is dropped, and an
+    emitted score, CV parameter, intensity name or CV-mapped column without a row gets
+    one. The rows of other views are kept as they are.
+    """
+    emitted: dict[str, set[str]] = {}
+    with DuckDBEngine() as engine:
+        for view, path in views.items():
+            engine.register_parquet(view, path)
+            emitted[view] = emitted_field_names(engine, view)
+
+    kept = [entry for entry in entries if entry["view"] not in emitted or entry["field_name"] in emitted[entry["view"]]]
+    described = {(entry["field_name"], entry["view"]) for entry in kept}
+    for view, names in sorted(emitted.items()):
+        columns = set(pq.read_schema(views[view]).names)
+        for name in sorted(names):
+            if (name, view) not in described and (entry := _entry_for_emitted_name(name, view, columns)):
+                kept.append(entry)
+    return kept
+
+
 def reconcile_ontology_entries(entries: list[dict], output_folder: Path, prefix: str) -> list[dict]:
     """Make the ontology rows describe the names the views actually emit.
 
@@ -112,19 +148,9 @@ def reconcile_ontology_entries(entries: list[dict], output_folder: Path, prefix:
     CV parameter, intensity name or CV-mapped column without a row gets one, so
     the view stays true however the converter assembled its mappings.
     """
-    emitted: dict[str, set[str]] = {}
-    with DuckDBEngine() as engine:
-        for path in sorted(Path(output_folder).glob(f"{prefix}.*.parquet")):
-            view = path.name[len(prefix) + 1 : -len(".parquet")]
-            if view not in _NON_DATA_VIEWS:
-                engine.register_parquet(view, path)
-                emitted[view] = emitted_field_names(engine, view)
-
-    kept = [entry for entry in entries if entry["field_name"] in emitted.get(entry["view"], ())]
-    described = {(entry["field_name"], entry["view"]) for entry in kept}
-    for view, names in sorted(emitted.items()):
-        columns = set(pq.read_schema(Path(output_folder) / f"{prefix}.{view}.parquet").names)
-        for name in sorted(names):
-            if (name, view) not in described and (entry := _entry_for_emitted_name(name, view, columns)):
-                kept.append(entry)
-    return kept
+    views = {}
+    for path in sorted(Path(output_folder).glob(f"{prefix}.*.parquet")):
+        view = path.name[len(prefix) + 1 : -len(".parquet")]
+        if view not in _NON_DATA_VIEWS:
+            views[view] = path
+    return describe_views([entry for entry in entries if entry["view"] in views], views)

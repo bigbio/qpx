@@ -21,7 +21,7 @@ from .options import (
     _sdrf_file_option,
     _verbose_option,
 )
-from .postprocess import _finish_conversion
+from .postprocess import _describe_in_dataset, _finish_conversion
 
 
 def _xic_extraction(options: dict):
@@ -281,6 +281,8 @@ def convert_diann_xic_cmd(**options):
     DIA-NN writes one ``*.xic.parquet`` per run when ``--xic`` is enabled.
     This command merges them into a single dataset-level
     ``{PREFIX}.xic.parquet``, with ``run_file_name`` distinguishing the runs.
+    Written into a dataset, beside its ontology view, it adds the xic rows to
+    that view and records an existing integrity record again.
 
     \b
     Example:
@@ -305,6 +307,7 @@ def convert_diann_xic_cmd(**options):
     traces = convert_diann_xic(
         xic_files, output_folder / f"{prefix}.xic.parquet", label=options["label"], extraction=_xic_extraction(options)
     )
+    _describe_in_dataset(output_folder / f"{prefix}.xic.parquet", "xic")
     click.echo(
         f"XIC conversion complete: {traces} traces from {len(xic_files)} run(s). "
         f"Output: {output_folder / f'{prefix}.xic.parquet'}"

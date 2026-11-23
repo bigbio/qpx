@@ -240,6 +240,33 @@ def _preserve_sdrf(output_folder: Path, prefix: str) -> None:
         shutil.copyfile(source, target)
 
 
+def _describe_in_dataset(path: Path, view: str) -> None:
+    """Describe a view file written into a dataset, beside its ontology view, as a conversion would.
+
+    Gives the view its ontology rows and records an existing integrity record again. A
+    standalone file, with no ontology view beside it, is left as written.
+    """
+    from qpx.converters.ontology_util import write_view_ontology
+
+    folder, prefix = path.parent, path.name.removesuffix(f".{view}.parquet")
+    ontology = folder / f"{prefix}.ontology.parquet"
+    if not ontology.is_file():
+        return
+    write_view_ontology(folder, prefix, {view: path}, ontology)
+    _refresh_recorded_integrity(folder, prefix)
+
+
+def _refresh_recorded_integrity(output_folder: Path, prefix: str) -> None:
+    """Record the integrity of the output folder again when its dataset parquet already holds a record."""
+    from qpx.dataset import Dataset
+
+    with Dataset(str(output_folder), file_prefix=prefix) as ds:
+        meta = ds.dataset_meta.to_df() if ds.dataset_meta is not None else None
+    record = meta.iloc[0].to_dict() if meta is not None and not meta.empty else {}
+    if any(isinstance(record.get(field), dict) for field in ("file_checksums", "file_row_counts", "file_sizes_bytes")):
+        _maybe_compute_integrity(output_folder, prefix, True)
+
+
 def _maybe_compute_integrity(output_folder, prefix: str, enabled: bool) -> None:
     """Record checksums, row counts and sizes of the output folder in dataset parquet.
 

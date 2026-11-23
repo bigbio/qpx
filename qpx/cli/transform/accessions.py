@@ -33,19 +33,14 @@ def _copy_unchanged_accession_files(dataset: Path, out_dir: Path, target_files: 
 
 def _refresh_derived_files(out_dir: Path) -> None:
     """Rebuild the MuData view and the integrity record, when the dataset has them, from the rewritten views."""
-    from qpx.cli.convert.postprocess import _maybe_compute_integrity
-    from qpx.dataset import Dataset
+    from qpx.cli.convert.postprocess import _refresh_recorded_integrity
     from qpx.transforms.utils import discover_qpx_file_prefix
 
     from .dataset import _refresh_dataset_mudata
 
     prefix = discover_qpx_file_prefix(out_dir)
     _refresh_dataset_mudata(out_dir, prefix)
-    with Dataset(str(out_dir), file_prefix=prefix) as ds:
-        meta = ds.dataset_meta.to_df() if ds.dataset_meta is not None else None
-    record = meta.iloc[0].to_dict() if meta is not None and not meta.empty else {}
-    if any(isinstance(record.get(field), dict) for field in ("file_checksums", "file_row_counts", "file_sizes_bytes")):
-        _maybe_compute_integrity(out_dir, prefix, True)
+    _refresh_recorded_integrity(out_dir, prefix)
 
 
 @click.command("normalize-accessions")

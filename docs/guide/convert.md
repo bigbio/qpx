@@ -817,6 +817,8 @@ A single `mz.parquet` with one row per spectrum:
 - `precursors` — precursor m/z, charge, isolation window (MS2+)
 - `mz`, `intensity` — full peak arrays
 
+Written as `<prefix>.mz.parquet` beside the `<prefix>.ontology.parquet` of a dataset, the command adds the rows of the mz view to that ontology view and, when the dataset view holds an integrity record, records the integrity of the dataset again. A standalone mz file gets no ontology view.
+
 ### Best Practices {#mz-best-practices}
 
 - Reads `.mzML` and `.mzML.gz` directly (no manual decompression needed)

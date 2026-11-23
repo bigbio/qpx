@@ -167,3 +167,29 @@ def test_derivation_says_what_it_needs_and_what_it_cannot_name(tmp_path):
     assert "protein-properties" in _derive(tmp_path, "Phospho").output
     _feature_dataset(tmp_path, [_feature("ASK", _PHOSPHO, 30.0, 10, 12)])
     assert "Unknown modification" in _derive(tmp_path, "NoSuchModification").output
+
+
+@pytest.mark.parametrize("in_place", [True, False])
+def test_the_site_view_gets_its_ontology_rows(tmp_path, in_place):
+    """Derived after the conversion, the site view is described in the ontology view; other rows stay as they are."""
+    from qpx.writers.ontology import OntologyWriter
+
+    dataset = tmp_path / "dataset"
+    dataset.mkdir()
+    _feature_dataset(dataset, [_feature("ASK", _PHOSPHO, 30.0, 10, 12)])
+    kept = {"field_name": "qvalue", "view": "psm", "ontology_name": "qvalue", "ontology_accession": None}
+    with OntologyWriter(dataset / "x.ontology.parquet", creator="qpx") as writer:
+        writer.write_batch([kept])
+    source_ontology = (dataset / "x.ontology.parquet").read_bytes()
+    output = dataset if in_place else tmp_path / "copy"
+
+    arguments = ["transform", "site", "--dataset", str(dataset), "--modification", "Phospho"]
+    result = CliRunner().invoke(qpx_main, arguments + (["--in-place"] if in_place else ["--output-folder", str(output)]))
+    assert result.exit_code == 0, result.output
+    rows = pq.read_table(output / "x.ontology.parquet").to_pylist()
+    terms = {(row["view"], row["field_name"]): row["ontology_accession"] for row in rows}
+    assert terms[("site", "protein_accession")] == "MS:1000885"
+    assert terms[("psm", "qvalue")] is None
+    assert {view for view, _ in terms} == {"psm", "site"}
+    if not in_place:
+        assert (dataset / "x.ontology.parquet").read_bytes() == source_ontology

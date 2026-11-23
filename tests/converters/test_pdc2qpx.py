@@ -87,6 +87,33 @@ def test_pdc2qpx_with_spectra(tmp_path):
     mz = pq.read_table(str(result["mz"]))
     assert mz.num_rows == 2  # 1 MS1 + 1 MS2
     assert {"run_file_name", "scan"} <= set(mz.column_names)
+    # The ontology view, written with the CDAP views, also describes the mz view.
+    ontology = pq.read_table(out / f"{study}.ontology.parquet").to_pylist()
+    terms = {row["field_name"]: row["ontology_accession"] for row in ontology if row["view"] == "mz"}
+    assert terms["ms_level"] == "MS:1000511"
+    assert {row["view"] for row in ontology} >= {"psm", "mz"}
+
+
+def test_pdc2qpx_describes_the_metadata_views(tmp_path, monkeypatch):
+    """The sample and run views built from PDC metadata come after the CDAP ontology view and get its rows."""
+    from qpx.pipeline.pdc2qpx import run_pdc2qpx
+    from qpx.writers import RunWriter
+    from tests.conftest import make_run_record
+
+    def build(_study, output_folder, prefix, **_options):
+        path = output_folder / f"{prefix}.run.parquet"
+        with RunWriter(path) as writer:
+            writer.write_batch([make_run_record()])
+        return {"run": path}
+
+    monkeypatch.setattr("qpx.pipeline.pdc2qpx._fetch_run_to_plex", lambda study: None)
+    monkeypatch.setattr("qpx.converters.cdap.pdc_sample_run.build_sample_run_from_pdc", build)
+    study = "PDC_TEST"
+    out = tmp_path / "qpx"
+    run_pdc2qpx(study, _stage_study(tmp_path, study), out, skip_download=True)
+
+    views = {row["view"] for row in pq.read_table(out / f"{study}.ontology.parquet").to_pylist()}
+    assert {"psm", "run"} <= views
 
 
 def test_pdc2qpx_missing_psm_raises(tmp_path):

@@ -80,6 +80,15 @@ def _fetch_run_to_plex(study: str) -> Optional[dict[str, dict]]:
         return None
 
 
+def _describe_late_views(output_folder: Path, study: str, outputs: dict[str, Path]) -> None:
+    """Add the rows of the sample, run and mz views, written after the CDAP conversion, to its ontology view."""
+    late_views = {view: path for view, path in outputs.items() if view != "base"}
+    if late_views:
+        from qpx.converters.ontology_util import write_view_ontology
+
+        write_view_ontology(output_folder, study, late_views, output_folder / f"{study}.ontology.parquet")
+
+
 def _add_pdc_metadata(study: str, output_folder: Path, outputs: dict[str, Path], run_to_plex: Optional[dict[str, dict]]) -> None:
     """Build the sample/run views from PDC metadata into ``outputs``; a failure only logs a warning."""
     try:
@@ -181,6 +190,7 @@ def run_pdc2qpx(
         SpectraMappingTransform(mzml_directory=study_dir).write_mz_parquet_from_dir(mz_out, ms_levels=ms_levels)
         outputs["mz"] = mz_out
 
+    _describe_late_views(output_folder, study, outputs)
     logger.info("pdc2qpx complete for %s -> %s", study, output_folder)
     return outputs
 

@@ -111,6 +111,30 @@ def test_diann_xic_cli(tmp_path):
     assert (output / "PXD000001.xic.parquet").exists()
 
 
+def test_diann_xic_cli_adds_the_xic_rows_to_the_ontology_of_a_dataset(tmp_path):
+    """Written beside the ontology view of a dataset, the xic view gets its rows; the other rows stay."""
+    from qpx.writers.ontology import OntologyWriter
+
+    xic_folder = tmp_path / "xic"
+    xic_folder.mkdir()
+    _write_xic(xic_folder / "run1.xic.parquet")
+    output = tmp_path / "out"
+    output.mkdir()
+    row = {"field_name": "charge", "view": "feature", "ontology_name": "charge state", "ontology_accession": "MS:1000041"}
+    with OntologyWriter(output / "PXD000001.ontology.parquet", creator="qpx") as writer:
+        writer.write_batch([row])
+
+    result = CliRunner().invoke(
+        convert_diann_xic_cmd,
+        ["--xic-folder", str(xic_folder), "--output-folder", str(output), "--output-prefix", "PXD000001"],
+    )
+    assert result.exit_code == 0, result.output
+    rows = pq.read_table(output / "PXD000001.ontology.parquet").to_pylist()
+    terms = {(entry["view"], entry["field_name"]): entry["ontology_accession"] for entry in rows}
+    assert terms[("feature", "charge")] == "MS:1000041"
+    assert terms[("xic", "rt")] == "MS:1000595"
+
+
 @pytest.mark.parametrize("has_xic", [False, True])
 def test_diann_cli_provenance_records_only_written_xic(tmp_path, has_xic):
     """The conversion step lists xic only when the CLI writes that view."""
