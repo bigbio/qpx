@@ -86,7 +86,7 @@ def _annotate_protein_properties(output_folder: Path, fasta: Optional[Path], pre
     """
     if fasta is None:
         return
-    from qpx.cli.transform import annotate_dataset_protein_properties
+    from qpx.cli.transform.protein_properties import annotate_dataset_protein_properties
 
     click.echo(f"Filling protein properties from {fasta.name}")
     try:

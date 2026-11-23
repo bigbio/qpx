@@ -161,9 +161,9 @@ class _RecordContext:
     def from_map(cls, cm, structures, seen, dedup, sdrf_path):
         """Resolve one input's map columns, groups, runs and search enzyme."""
         from qpx.converters.openms_consensus.channels import Ms1Channels
-        from qpx.converters.openms_consensus.feature_adapter import column_runs, feature_map_info, resolve_enzyme
+        from qpx.converters.openms_consensus.feature_adapter import feature_map_info, resolve_enzyme
         from qpx.converters.openms_consensus.pg_adapter import protein_group_maps
-        from qpx.converters.openms_consensus.psm_adapter import _run_resolver
+        from qpx.converters.openms_consensus.runs import _run_resolver, column_runs
 
         map_info = feature_map_info(cm)
         protein_groups = protein_group_maps(cm) if "feature" in structures or "pg" in structures else (None, None)

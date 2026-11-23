@@ -22,9 +22,9 @@ from qpx.converters.openms_consensus.channels import Ms1Channels, column_labels,
 from qpx.converters.openms_consensus.modifications import localization_scores, to_modifications
 from qpx.converters.openms_consensus.protein_groups import ProteinGroupIndex, identification_identifier
 from qpx.converters.openms_consensus.quant_scan import quant_scan_fields
+from qpx.converters.openms_consensus.runs import _run_resolver, _scan_of, column_runs
 from qpx.converters.utils import canonical_accession, mass_error_ppm, safe_float
 from qpx.core.cleavage import count_missed_cleavages
-from qpx.core.files import run_file_stem as _run_stem
 
 _log = logging.getLogger(__name__)
 
@@ -277,16 +277,13 @@ def load_consensus_map(consensusxml_path: str):
 def _pid_scans(pid) -> list[int]:
     """Scan numbers parsed from one identification's spectrum reference.
 
-    Uses the shared parser in :mod:`psm_adapter` (imported lazily to avoid a
-    circular import — psm_adapter imports this module) so feature.scan and
+    Uses the parser of :mod:`runs` that the psm view uses, so feature.scan and
     psm.scan are produced by the same logic, including all native ID components
     and the deterministic surrogate fallback.
     """
     ref = pid.getSpectrumReference() if hasattr(pid, "getSpectrumReference") else ""
     if not ref and pid.metaValueExists("spectrum_reference"):
         ref = pid.getMetaValue("spectrum_reference")
-    from qpx.converters.openms_consensus.psm_adapter import _scan_of
-
     return _scan_of(ref)
 
 
@@ -398,8 +395,6 @@ def consensus_features_to_records(
     # reports missed_cleavages too. Without it a caller of the library API got a
     # null column while the same data through the CLI got a value.
     enzyme = resolve_enzyme(cm, sdrf_path)
-    from qpx.converters.openms_consensus.psm_adapter import _run_resolver
-
     resolve_run = _run_resolver(cm)
     removed, confidence = identification_context(cm)
     ms1 = Ms1Channels(cm, column_runs(cm))
@@ -419,33 +414,6 @@ def consensus_features_to_records(
             )
         )
     return records
-
-
-def primary_run_stems(protein_identification) -> list[str]:
-    """Run stems of one ProteinIdentification's primary MS run paths (``spectra_data``), in order."""
-    get_paths = protein_identification.getPrimaryMSRunPath
-    paths: list = []
-    try:
-        get_paths(paths)  # pyopenms < 3.6 fills an output list
-    except TypeError:
-        paths = get_paths()  # pyopenms >= 3.6 returns the paths
-    return [_run_stem(p.decode() if isinstance(p, (bytes, bytearray)) else str(p)) for p in paths]
-
-
-def column_runs(cm) -> dict[int, str]:
-    """Map index -> run_file_name from the consensusXML column headers.
-
-    The single source of the column -> run mapping for every adapter. A lone column
-    without a filename (a single-run map promoted by FileConverter) takes the one
-    primary MS run all ProteinIdentifications record, when there is exactly one.
-    """
-    headers = cm.getColumnHeaders()
-    runs = {idx: _run_stem(headers[idx].filename) for idx in headers}
-    if len(runs) == 1 and not next(iter(runs.values())):
-        id_runs = {run for prot in cm.getProteinIdentifications() for run in primary_run_stems(prot)}
-        if len(id_runs) == 1:
-            runs = dict.fromkeys(runs, id_runs.pop())
-    return runs
 
 
 def feature_map_info(cm) -> dict[int, tuple[str, str]]:

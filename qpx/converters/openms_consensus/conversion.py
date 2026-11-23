@@ -14,7 +14,6 @@ import pyarrow.parquet as pq
 
 from qpx.converters.openms_consensus.feature_adapter import (
     check_channels_vs_sdrf,
-    column_runs,
     identification_context,
     load_consensus_map,
 )
@@ -33,6 +32,7 @@ from qpx.converters.openms_consensus.psm_adapter import (
     uniform_scan_format,
 )
 from qpx.converters.openms_consensus.record_linking import _cf_feature_psm_records, _PsmKeys, _RecordContext
+from qpx.converters.openms_consensus.runs import column_runs
 from qpx.writers.encoding import SampledParquetWriter
 from qpx.writers.feature import FeatureWriter
 from qpx.writers.pg import PgWriter

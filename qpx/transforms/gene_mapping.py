@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import gzip
 import logging
+import math
 import re
 from collections import defaultdict
 from pathlib import Path
@@ -133,7 +134,7 @@ def _normalize_protein_list(accessions) -> Optional[list]:
     - str               → [str]
     - list / array      → list(item)
     """
-    if accessions is None or accessions is pd.NA or (isinstance(accessions, float) and accessions != accessions):
+    if accessions is None or accessions is pd.NA or (isinstance(accessions, float) and math.isnan(accessions)):
         return None
     if isinstance(accessions, str):
         return [accessions]

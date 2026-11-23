@@ -237,6 +237,7 @@ qpxc convert COMMAND [OPTIONS]
 ```
 
 Use `qpxc convert <command> --help` for the required input files and available output views.
+
 ### Transform
 
 ```bash

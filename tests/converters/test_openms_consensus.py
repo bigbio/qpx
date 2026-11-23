@@ -95,7 +95,7 @@ def _accumulated_protein_maps(cm):
     """Fold ``cm`` into fresh pg accession maps, as the converter does."""
     from qpx.converters.openms_consensus.feature_adapter import feature_map_info
     from qpx.converters.openms_consensus.pg_adapter import _ProteinMaps, accumulate_consensus_map
-    from qpx.converters.openms_consensus.psm_adapter import _run_resolver
+    from qpx.converters.openms_consensus.runs import _run_resolver
 
     protein_maps = _ProteinMaps()
     accumulate_consensus_map(cm, feature_map_info(cm), _run_resolver(cm), protein_maps)
@@ -527,7 +527,7 @@ def test_consensus_psm_unknown_nativeid_uses_surrogate_scan(tmp_path):
 def test_streaming_retains_all_protein_identification_run_paths(tmp_path):
     """Every ProteinIdentification block keeps its own id_merge_index run list,
     keyed by identifier; the streaming reader must not retain only the last block."""
-    from qpx.converters.openms_consensus.psm_adapter import _merge_index_runs
+    from qpx.converters.openms_consensus.runs import _merge_index_runs
     from qpx.converters.openms_consensus.streaming import StreamingConsensusMap
 
     xml = """<?xml version="1.0" encoding="UTF-8"?>
