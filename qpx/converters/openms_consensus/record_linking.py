@@ -23,13 +23,15 @@ def _link_rank(peptidoform, charge, rt, mz, feature: Optional[dict], feature_id:
 
     A feature in the PSM's own run beats no feature; then a feature quantifying the
     PSM's own peptidoform/charge; then the feature whose RT and m/z lie closest to
-    the precursor; then consensus quality; the feature_id breaks any remaining tie.
+    the precursor (its theoretical m/z where none was measured); then consensus
+    quality; the feature_id breaks any remaining tie.
     """
     if feature is None or feature_id is None:
         return _NO_LINK
     same = feature.get("peptidoform") == peptidoform and feature.get("charge") == charge
     drt = abs(feature["rt"] - rt) if rt is not None and feature.get("rt") is not None else math.inf
-    dmz = abs((feature.get("observed_mz") or 0.0) - (mz or 0.0))
+    feature_mz = feature.get("observed_mz") or feature.get("calculated_mz")
+    dmz = abs((feature_mz or 0.0) - (mz or 0.0))
     return (1, same, -drt, -dmz, quality, -feature_id)
 
 

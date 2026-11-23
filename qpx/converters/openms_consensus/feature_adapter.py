@@ -11,6 +11,7 @@ the QPX feature schema. Protein-level quantity is not produced here.
 from __future__ import annotations
 
 import logging
+import math
 import re
 from collections import defaultdict
 from itertools import chain
@@ -647,11 +648,9 @@ def _feature_peptide_fields(cf, hit, enzyme, seq_obj=None) -> dict:
     modifications = to_modifications(seq_obj, site_scores)
     charge = int(cf.getCharge() or hit.getCharge() or 0)
     is_decoy = is_decoy_hit(hit)
-    observed_mz = float(cf.getMZ()) if cf.getMZ() else 0.0
     streamed_consensus_rt = getattr(cf, "consensus_rt", None)
     consensus_rt = float(cf.getRT() if streamed_consensus_rt is None else streamed_consensus_rt)
-    calculated_mz = float(seq_obj.getMZ(charge)) if charge else observed_mz
-    error_ppm = mass_error_ppm(calculated_mz, observed_mz) if charge > 0 else None
+    calculated_mz = float(seq_obj.getMZ(charge)) if charge else None
     # Missed cleavages are a property of the peptide and the search enzyme, both
     # of which are in hand; the DIA-NN path already reports them (bigbio/qpx#300).
     missed = count_missed_cleavages(sequence, enzyme) if enzyme else None
@@ -663,8 +662,6 @@ def _feature_peptide_fields(cf, hit, enzyme, seq_obj=None) -> dict:
         "charge": charge,
         "is_decoy": is_decoy,
         "calculated_mz": calculated_mz,
-        "observed_mz": observed_mz,
-        "mass_error_ppm": error_ppm,
         "missed_cleavages": missed,
         "consensus_rt": consensus_rt,
         "additional_scores": additional_scores,
@@ -681,6 +678,18 @@ def _identified_labels_by_run(pids, map_info, cf_runs, resolve_run, ms1) -> dict
             if label:
                 identified[run].add(label)
     return {run: [label for label in ms1.run_labels(run) if label in labels] for run, labels in identified.items()}
+
+
+def _run_mz_fields(calculated_mz: float | None, mz: float) -> dict:
+    """The m/z of a run's sub-feature as ``observed_mz``, unless it is the theoretical m/z.
+
+    A sub-feature that OpenMS placed at the peptide's theoretical m/z holds no
+    measurement. The comparison is made in double precision, before ``observed_mz``
+    is stored as float32.
+    """
+    if calculated_mz is not None and math.isclose(mz, calculated_mz, rel_tol=1e-12):
+        return {"observed_mz": None, "mass_error_ppm": None}
+    return {"observed_mz": mz, "mass_error_ppm": mass_error_ppm(calculated_mz, mz)}
 
 
 def _multiplet_fields(record: dict, entry: dict, lightest: str | None) -> dict:
@@ -745,6 +754,7 @@ def feature_records_for_cf(
             "run_file_name": run,
             "scan": scan_by_run.get(run, []),
             "rt": entry["rt"],
+            **_run_mz_fields(peptide_fields["calculated_mz"], entry["mz"]),
             "intensities": intensities,
             "posterior_error_probability": posterior_error_probability,
             "peptide_qvalue": peptide_qvalue,
