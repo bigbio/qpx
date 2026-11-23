@@ -9,7 +9,7 @@ import pyarrow.parquet as pq
 from qpx.core.engine import DuckDBEngine
 from qpx.core.ontology_fields import emitted_field_names
 from qpx.core.scores import (
-    _FIELD_CV_MAP,
+    field_cv_term,
     field_ontology_entries,
     score_ontology_entries,
     unresolved_field_entry,
@@ -66,7 +66,7 @@ def dedupe_ontology_entries(entries: list[dict]) -> list[dict]:
 def _entry_for_emitted_name(name: str, view: str, columns: set[str]) -> dict | None:
     """Return the row of an emitted name without one; schema columns need one only when a CV term names them."""
     if name in columns:
-        if name not in _FIELD_CV_MAP:
+        if field_cv_term(view, name) is None:
             return None
         return field_ontology_entries(view, {name: None}, None)[0]
     entries = score_ontology_entries({name}, view)

@@ -16,8 +16,12 @@ def test_field_ontology_entries():
     assert len(rt_entries) == 1
     assert rt_entries[0]["source_column_name"] == "RT"
     assert rt_entries[0]["source_tool"] == "DIA-NN"
-    assert rt_entries[0]["ontology_accession"] == "MS:1000016"
+    assert rt_entries[0]["ontology_accession"] == "MS:1000894"
     assert rt_entries[0]["view"] == "feature"
+
+    # The rt of a PSM is the start time of its MS2 scan.
+    entries = field_ontology_entries(view="psm", resolved_mappings={"rt": "Retention time"}, tool_name="MaxQuant")
+    assert entries[0]["ontology_accession"] == "MS:1000016"
 
     # A shared field name is resolved according to its view: PG global q-value
     # must not inherit precursor-level Global.Q.Value semantics.
@@ -26,7 +30,7 @@ def test_field_ontology_entries():
         resolved_mappings={"global_qvalue": "Global.PG.Q.Value"},
         tool_name="DIA-NN",
     )
-    assert entries[0]["ontology_accession"] == "MS:1001214"
+    assert entries[0]["ontology_accession"] == "MS:1002373"
     assert entries[0]["source_column_name"] == "Global.PG.Q.Value"
 
     # Missing CV still written

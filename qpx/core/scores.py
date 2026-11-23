@@ -170,11 +170,12 @@ def is_higher_better(normalized_name: str) -> Optional[bool]:
 
 # Standard QPX fields with known PSI-MS CV accessions
 _FIELD_CV_MAP: dict[str, dict] = {
+    # PSI-MS has PEP terms only per tool (percolator:PEP, MaxQuant:PEP, ...).
     "posterior_error_probability": {
-        "ontology_name": "percolator:PEP",
-        "ontology_accession": "MS:1001493",
-        "ontology_source": "MS",
-        "description": "Posterior error probability (PEP) for PSM correctness",
+        "ontology_name": "posterior error probability",
+        "ontology_accession": None,
+        "ontology_source": None,
+        "description": "Posterior error probability (PEP) that the identification is incorrect",
     },
     "observed_mz": {
         "ontology_name": "selected ion m/z",
@@ -189,10 +190,16 @@ _FIELD_CV_MAP: dict[str, dict] = {
         "description": "Theoretically calculated m/z of the peptide",
     },
     "rt": {
-        "ontology_name": "scan start time",
-        "ontology_accession": "MS:1000016",
+        "ontology_name": "retention time",
+        "ontology_accession": "MS:1000894",
         "ontology_source": "MS",
-        "description": "Retention time at peak apex",
+        "description": "Retention time of the precursor",
+    },
+    "scan": {
+        "ontology_name": "scan number",
+        "ontology_accession": "MS:1003057",
+        "ontology_source": "MS",
+        "description": "Scan identifier of the spectrum in its run",
     },
     "charge": {
         "ontology_name": "charge state",
@@ -263,6 +270,28 @@ _VIEW_FIELD_SCORE_ALIASES: dict[tuple[str, str], str] = {
     ("pg", "global_qvalue"): "pg_global_qvalue",
 }
 
+# Fields whose term depends on the view: the rt of a PSM is the time of its MS2 scan.
+_VIEW_FIELD_CV_MAP: dict[tuple[str, str], dict] = {
+    ("psm", "rt"): {
+        "ontology_name": "scan start time",
+        "ontology_accession": "MS:1000016",
+        "ontology_source": "MS",
+        "description": "Start time of the MS2 scan of the PSM",
+    },
+}
+
+
+def field_cv_term(view: str, field_name: str) -> Optional[dict]:
+    """Return the term QPX defines for column *field_name* of *view*, or None.
+
+    Typed score columns (psm.qvalue, pg.pg_qvalue, ...) take the term of the
+    built-in score of that name; the PSI-MS OBO is not searched by name.
+    """
+    info = _VIEW_FIELD_CV_MAP.get((view, field_name)) or _FIELD_CV_MAP.get(field_name)
+    if info is None:
+        info = BUILTIN_SCORES.get(_VIEW_FIELD_SCORE_ALIASES.get((view, field_name), field_name))
+    return info
+
 
 # ---------------------------------------------------------------------------
 # Ontology entry generation
@@ -302,10 +331,7 @@ def field_ontology_entries(
     if resolved_mappings is not None:
         # New path: produce entries for each resolved field
         for field_name, source_column in sorted(resolved_mappings.items()):
-            cv_info = _FIELD_CV_MAP.get(field_name)
-            if cv_info is None:
-                score_name = _VIEW_FIELD_SCORE_ALIASES.get((view, field_name))
-                cv_info = lookup_score(score_name) if score_name else _lookup_from_obo(field_name)
+            cv_info = field_cv_term(view, field_name) or _lookup_from_obo(field_name)
             entries.append(
                 {
                     "field_name": field_name,
@@ -323,14 +349,15 @@ def field_ontology_entries(
             )
     else:
         # Backward-compatible path: emit _FIELD_CV_MAP entries
-        for field_name, info in sorted(_FIELD_CV_MAP.items()):
+        for field_name in sorted(_FIELD_CV_MAP):
+            info = field_cv_term(view, field_name)
             entries.append(
                 {
                     "field_name": field_name,
                     "ontology_name": info["ontology_name"],
                     "ontology_accession": info["ontology_accession"],
                     "ontology_source": info["ontology_source"],
-                    "ontology_version": ontology_version,
+                    "ontology_version": ontology_version if info["ontology_source"] == "MS" else None,
                     "view": view,
                     "description": info["description"],
                     "source_column_name": None,

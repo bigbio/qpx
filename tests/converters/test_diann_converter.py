@@ -1170,7 +1170,7 @@ class TestDiaNNOntologyConversion:
 
         entries = [row for row in table.to_pylist() if row["field_name"] == "precursor_qvalue" and row["view"] == "feature"]
         assert len(entries) == 1
-        assert entries[0]["ontology_name"] == "DIA-NN:Q.Value"
+        assert entries[0]["ontology_name"] == "precursor q-value"
         assert entries[0]["ontology_accession"] is None
         assert entries[0]["source_column_name"] == "Q.Value"
         assert entries[0]["source_tool"] == "DIA-NN"
