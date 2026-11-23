@@ -106,7 +106,6 @@ The `convert` command group provides converters for multiple proteomics software
 
 ## Available Commands
 
-- [openms](#openms) - Enrich native OpenMS `-out_qpx` output into a full QPX dataset
 - [openms-consensus](#openms-consensus) - Convert an OpenMS consensusXML (+ SDRF) to QPX (interim; pg intensity = OpenMS abundance or unnormalized unique-peptide sum)
 - [diann](#diann) - Convert DIA-NN report to QPX format
 - [diann-xic](#diann-xic) - Merge DIA-NN XIC exports into one QPX xic view
@@ -921,48 +920,6 @@ qpxc convert quantms-msstats \
 - Collapses TMT/iTRAQ channel rows into one Feature while retaining RT and scan location when present.
 - Rejects conflicting intensity values for the same Feature and channel instead of selecting or summing them.
 - Ignores MSstats `IsotopeLabelType`. A labelled table needs a `Channel` column holding the SDRF labels: `H` in MSstats means a reference standard, not a heavy channel of the experiment, so it cannot be aliased to a label.
-
----
-
-## openms
-
-Enrich native OpenMS `-out_qpx` Parquet output into a full QPX dataset.
-
-!!! warning "Deprecated"
-
-    Use [`openms-consensus`](#openms-consensus), which reads the consensusXML and is the supported OpenMS route. What OpenMS calls a "QPX collection" is the files of one dataset, not a [collection](../spec/collection.md). OpenMS quantification tools write no run, sample or provenance view, so without this enrichment `pg` rows cannot be mapped to samples and `design_matrix` raises.
-
-### Description {#openms-description}
-
-```python exec="1" html="1" session="doc_utils"
-from qpx.cli.convert import convert_openms_cmd
-
-print(generate_description(convert_openms_cmd))
-```
-
-### Parameters {#openms-parameters}
-
-```python exec="1" html="1" session="doc_utils"
-from qpx.cli.convert import convert_openms_cmd
-
-print(generate_params_table(convert_openms_cmd))
-```
-
-### Usage Examples {#openms-examples}
-
-```python exec="1" html="1" session="doc_utils"
-from qpx.cli.convert import convert_openms_cmd
-
-print(generate_example(convert_openms_cmd))
-```
-
-### Output Files {#openms-output}
-
-- Upgrades and validates the OpenMS `psm`, `feature`, and `pg` Parquet files found in `--qpx-dir`, normalizing run references while preserving supplied IDs.
-- Recovers PSM runs from exact spectrum evidence when the companion `--consensusxml` contains peptide identifications. Missing or ambiguous spectrum matches stop conversion before existing core outputs are replaced.
-- Preserves records with duplicate IDs and reports warnings without deduplicating rows or inventing replacement IDs. `qpxc validate` reports these duplicates as errors.
-- Generates `run`, `sample`, `ontology`, `provenance`, and `dataset` views.
-- Generates a MuData file when the converted quantification views are sufficient for export.
 
 ---
 

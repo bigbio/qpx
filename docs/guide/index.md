@@ -10,7 +10,7 @@ The qpx CLI is organized into five main command groups:
 
 Convert various mass spectrometry data formats to the QPX standard format:
 
-- **OpenMS Conversion**: Enrich native `-out_qpx` output or convert consensusXML to QPX data files
+- **OpenMS Conversion**: Convert OpenMS consensusXML to QPX data files
 - **DIA-NN Conversion**: Convert DIA-NN reports to feature and protein group formats
 - **MaxQuant Conversion**: Convert MaxQuant PSM, feature, and protein group data
 - **FragPipe Conversion**: Convert FragPipe PSM data to QPX format

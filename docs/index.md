@@ -43,7 +43,6 @@ The figure uses the LFQ and TMT outputs of [PXD007683](https://www.ebi.ac.uk/pri
 | **Spectronaut** | - | report.tsv | report.tsv (PG.Quantity) |
 | **FragPipe** | psm.tsv | combined_ion.tsv | combined_protein.tsv |
 | **Proteome Discoverer** | PSMs.txt | PSMs.txt | Proteins.txt |
-| **OpenMS native QPX** | psm.parquet | feature.parquet | pg.parquet |
 | **OpenMS consensusXML** | consensusXML | consensusXML | consensusXML |
 | **CPTAC CDAP** | .psm | .psm reporter ions | feature-derived |
 | **mzIdentML** | .mzid / .mzid.gz | - | - |

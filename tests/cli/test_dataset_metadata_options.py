@@ -170,46 +170,6 @@ def test_enrich_pride_targets_the_converted_dataset_in_a_shared_folder(tmp_path,
     assert pq.read_table(folder / "a.dataset.parquet").to_pylist()[0]["project_title"] != "T"
 
 
-def test_deprecated_openms_enrich_pride_targets_the_output_prefix(tmp_path, monkeypatch):
-    """The deprecated convert openms command enriches the dataset of its own prefix in a shared folder."""
-    from tests.converters.test_openms_psm_runs import _write_native_psms, _write_xml
-
-    monkeypatch.setattr(
-        "qpx.core.pride.fetch_pride_metadata",
-        lambda acc: {"project_title": "T", "project_description": "D", "pubmed_id": "1"},
-    )
-    source, _ = _write_native_psms(tmp_path, [{}], provided_ids=True)
-    companion = _write_xml(tmp_path, [(0, "scan=42", 10.123456789, 500.123456789)])
-    sdrf = tmp_path / "input.sdrf.tsv"
-    sdrf.write_text(
-        "source name\tcharacteristics[organism]\tcharacteristics[organism part]\tcomment[data file]\tcomment[label]\n"
-        "sample_1\tHomo sapiens\tliver\trun_a.mzML\tlabel free sample\n"
-    )
-    folder = tmp_path / "out"
-    base = [
-        "openms",
-        "--qpx-dir",
-        str(source),
-        "--sdrf-file",
-        str(sdrf),
-        "--consensusxml",
-        str(companion),
-        "--output-folder",
-        str(folder),
-    ]
-    first = CliRunner().invoke(convert, [*base, "--output-prefix", "a"])
-    assert first.exit_code == 0, first.output
-
-    result = CliRunner().invoke(
-        convert,
-        [*base, "--output-prefix", "t", "--project-accession", "PXD000002", "--enrich-pride"],
-    )
-
-    assert result.exit_code == 0, result.output
-    assert pq.read_table(folder / "t.dataset.parquet").to_pylist()[0]["project_title"] == "T"
-    assert pq.read_table(folder / "a.dataset.parquet").to_pylist()[0]["project_title"] != "T"
-
-
 def test_apply_software_without_metadata_files_warns(tmp_path, capsys):
     """_apply_software warns and skips when the dataset or provenance file is missing."""
     _apply_software(tmp_path, "t", "nf-core/mhcquant", "3.1.0", None)

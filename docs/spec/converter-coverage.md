@@ -11,7 +11,6 @@ This page lists which QPX data views each converter produces and explains the so
 | **Proteome Discoverer** | Yes | If abundances | If Proteins.txt | If abundances | If SDRF | If SDRF | Yes | If terms | Yes | No |
 | **DIA-NN** | No | Yes | Yes | Yes | Yes | Yes | Yes | If terms | Yes | If MS2 info |
 | **Spectronaut** | No | Yes | Yes | No | If SDRF | If SDRF | Yes | Yes | Yes | No |
-| **OpenMS native QPX** | Yes | Yes | Yes | No | Yes | Yes | Yes | Yes | Yes | No |
 | **OpenMS consensusXML** | Yes | Yes | Yes | No | If SDRF | If SDRF | Yes | If terms | Yes | No |
 | **CDAP** | Yes | Yes | Yes | No | No (direct CLI) | No (direct CLI) | Yes | Yes | Yes | No |
 | **mzIdentML** | Yes | No | If in file | Yes | No | No | Yes | Yes | Yes | No |
@@ -350,7 +349,6 @@ Reporter labels come from the column (`127N` is `TMT127N`), and must match the S
 | Proteome Discoverer | `qpxc convert proteome-discoverer` |
 | DIA-NN | `qpxc convert diann` |
 | Spectronaut | `qpxc convert spectronaut` |
-| OpenMS native QPX | `qpxc convert openms` |
 | OpenMS consensusXML | `qpxc convert openms-consensus` |
 | CDAP | `qpxc convert cdap` |
 | mzIdentML | `qpxc convert mzidentml` |
@@ -366,7 +364,6 @@ Reporter labels come from the column (`127N` is `TMT127N`), and must match the S
 | FragPipe | psm.tsv, combined_ion, combined_protein; for one TMT/iTRAQ plex, psm.tsv, ion.tsv, protein.tsv, annotation.txt and optionally a TMT-Integrator abundance_protein report |
 | DIA-NN | report (TSV or Parquet), pg_matrix (optional); required SDRF; optional mzML statistics folder (`--mzml-info-folder`) for feature scans and the `mz` view |
 | Spectronaut | report.tsv; optional SDRF |
-| OpenMS native QPX | `-out_qpx` Parquet directory; SDRF; optional companion consensusXML |
 | OpenMS consensusXML | consensusXML; optional SDRF |
 | CDAP | CPTAC CDAP `.psm` files in one study directory |
 | mzIdentML | .mzid / .mzid.gz; optional MGF file (`--mgf-path`); `--include-spectra` embeds peaks in PSM rows |

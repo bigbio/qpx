@@ -12,7 +12,7 @@ A Python package for converting, querying and validating quantitative proteomics
 
 ## Features
 
-- **Convert** data from OpenMS/quantms (native QPX, consensusXML and MSstats input), DIA-NN, MaxQuant, Spectronaut, FragPipe, Proteome Discoverer, CPTAC CDAP (`.psm`), mzIdentML, mzML and SDRF to QPX
+- **Convert** data from OpenMS/quantms (consensusXML and MSstats input), DIA-NN, MaxQuant, Spectronaut, FragPipe, Proteome Discoverer, CPTAC CDAP (`.psm`), mzIdentML, mzML and SDRF to QPX
 - **Transform** QPX data: gene mapping, protein quantification (DirectLFQ, MaxLFQ, iBAQ, TopN, Top3 and sum), accession normalization, protein properties, site quantification and metadata updates
 - **Query** datasets with SQL or the Python API, filter rows, or preview with `head`; export results to pandas, Arrow or Polars
 - **Inspect** dataset summaries, Arrow schemas, and Parquet metadata
@@ -232,12 +232,11 @@ qpxc pdc2qpx -a cptac_lfq.csv --download-dir ./downloads --output-folder ./qpx
 
 ```bash
 qpxc convert COMMAND [OPTIONS]
-# openms, openms-consensus, quantms-msstats, diann, diann-xic, maxquant, spectronaut,
+# openms-consensus, quantms-msstats, diann, diann-xic, maxquant, spectronaut,
 # fragpipe, proteome-discoverer, mzidentml, cdap, mz, sdrf
 ```
 
-Use `qpxc convert <command> --help` for the required input files and available output views. The `openms` command enriches native OpenMS QPX output and is deprecated in favor of `openms-consensus` for consensusXML input.
-
+Use `qpxc convert <command> --help` for the required input files and available output views.
 ### Transform
 
 ```bash
@@ -294,7 +293,6 @@ qpx/
 │   └── migrate.py          # Dataset migration command
 ├── pipeline/               # High-level orchestration (pdc2qpx: download + CDAP + mz)
 ├── converters/             # Tool-specific converters
-│   ├── openms/             # OpenMS native QPX enrichment
 │   ├── openms_consensus/   # OpenMS consensusXML converter
 │   ├── cdap/               # CPTAC CDAP (.psm) converter
 │   ├── diann/              # DIA-NN converter

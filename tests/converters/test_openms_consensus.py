@@ -1138,7 +1138,7 @@ def _consensus_convert(tmp_path, folder, *extra):
 def test_convert_writes_the_mudata_view_by_default(tmp_path):
     """convert diann / openms-consensus wrote the parquet views and stopped, so the
     MuData view had to be built by the caller (an embedded script in the nf-module).
-    It is now written by the converter itself, as convert openms already does."""
+    It is now written by the converter itself."""
     folder = tmp_path / "with_mudata"
     result = _consensus_convert(tmp_path, folder)
 
