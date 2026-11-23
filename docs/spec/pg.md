@@ -44,8 +44,9 @@ retained even when its intensity is null. Fields marked with
 Every converter writes a UniProt id as its bare accession: `P04114`, not
 `sp|P04114|APOB_HUMAN`. The entry name goes to `pg_names` when the source has one.
 A decoy or contaminant marker from the search database stays on the accession
-(`DECOY_P04114`, `REV__P04114`, `CONTAM_P02768`), so that a decoy never shares an
-accession with its target, but `is_decoy` and `contaminant` state the status; do
+(`DECOY_P04114`, `REV__P04114`, `CONTAM_P02768`), and an id whose decoy marker is a
+suffix, such as `tr|A9ET61|A9ET61_SORC5_rev`, is written whole, so that a decoy never
+shares an accession with its target, but `is_decoy` and `contaminant` state the status; do
 not parse it from the prefix. Non-UniProt accessions, such as RefSeq, are written
 as the source reports them.
 

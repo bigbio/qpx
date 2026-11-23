@@ -30,7 +30,7 @@ How to write QPX files from your own tool. The [views](data-model.md) define the
 | Case | `is_decoy` | Accession |
 |---|---|---|
 | Target | `false` | As in the search database |
-| Decoy | `true` | Keep the marker (`DECOY_P04114`, `REV__P04114`): a decoy never shares an accession with its target |
+| Decoy | `true` | Keep the marker (`DECOY_P04114`, `REV__P04114`), or the whole id when the marker is a suffix: a decoy never shares an accession with its target |
 | Contaminant | `false`, and `contaminant` `true` on `pg` | Keep the marker (`CONTAM_P02768`) |
 | No database (de novo) | `false` | Null `anchor_protein` |
 

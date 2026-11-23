@@ -63,6 +63,10 @@ def is_contaminant_accession(accession) -> bool:
     return "CONTAM" in accession or accession.startswith(("CONT_", "SP|CONT_", "TR|CONT_"))
 
 
+# The decoy affixes OpenMS recognises (DecoyHelper): a prefix with any underscores after it, or a suffix after one.
+DECOY_AFFIXES = "decoy|dec|reversed|reverse|rev|__id_decoy|xxx|shuffled|shuffle|pseudo|random"
+DECOY_SUFFIX = re.compile(rf"_(?:{DECOY_AFFIXES})$", re.IGNORECASE)
+
 _UNIPROT_ID = re.compile(r"^(?P<marker>[A-Za-z]+_{1,2})?(?:sp|tr)\|(?P<accession>[^|]+)(?:\|.*)?$")
 # A UniProtKB accession, optionally an isoform, behind the decoy, contaminant or entrapment marker of its
 # database; quantms writes ``Cont_`` in any case, as is_contaminant_accession reads it.
@@ -78,12 +82,13 @@ def canonical_accession(accession: str) -> str:
     ``sp|P55011|S12A2_HUMAN`` -> ``P55011``; ``REV__sp|Q00402|NUM1_YEAST`` ->
     ``REV__Q00402``; ``CONTAM_sp|CONTAM_P02768|ALBU_HUMAN`` -> ``CONTAM_P02768``.
     Any other id, including a ``sp|``/``tr|`` header whose accession is not a
-    UniProtKB accession, is returned unchanged. The marker stays so that a decoy
+    UniProtKB accession and a decoy marked by a suffix, as ``tr|A9ET61|A9ET61_SORC5_rev``,
+    is returned unchanged. The marker stays so that a decoy
     never shares an accession with its target; ``is_decoy`` and ``contaminant``
     state the status.
     """
     match = _UNIPROT_ID.match(accession) if accession else None
-    if match is None:
+    if match is None or DECOY_SUFFIX.search(accession):
         return accession
     marker, bare = match.group("marker") or "", match.group("accession")
     canonical = bare if bare.startswith(marker) else marker + bare

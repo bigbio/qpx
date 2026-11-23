@@ -44,6 +44,33 @@ class TestFastaSequences:
         assert fasta.get("P12345") == "MPEPTIDE"
         assert fasta.decoy_entries == 1
 
+    @pytest.mark.parametrize(
+        ("target", "decoy"),
+        [
+            ("tr|A9ET61|A9ET61_SORC5", "tr|A9ET61|A9ET61_SORC5_rev"),  # quantms decoy_string_position suffix
+            ("sp|A9F596|ACCA_SORC5", "revsp|A9F596|ACCA_SORC5"),  # decoy_string "rev" without a separator
+        ],
+    )
+    def test_the_decoy_affix_of_the_database_is_found(self, tmp_path, target, decoy):
+        """A suffix or an unseparated prefix that half the entries carry marks the decoys, as OpenMS reads them."""
+        fasta = FastaSequences.from_path(_fasta(tmp_path, f">{target}\nMPEPTIDE\n>{decoy}\nEDITPEPM\n"))
+        assert fasta.get(target.split("|")[1]) == "MPEPTIDE"
+        assert fasta.decoy_entries == 1
+        assert fasta.get(decoy) is None
+
+    def test_an_affix_few_entries_carry_marks_no_decoy(self, tmp_path):
+        fasta = FastaSequences.from_path(
+            _fasta(tmp_path, ">DECR1_HUMAN\nMKK\n>sp|P12345|A_HUMAN\nMPEP\n>sp|P67890|B_HUMAN\nMTTT\n")
+        )
+        assert fasta.get("DECR1_HUMAN") == "MKK"
+        assert fasta.decoy_entries == 0
+
+    def test_a_decoy_identifier_does_not_resolve_to_its_target(self, tmp_path):
+        """The accession field of DECOY_sp|ALDOA_RABIT| names the target, whose sequence is not the decoy's."""
+        fasta = FastaSequences.from_path(_fasta(tmp_path, ">sp|ALDOA_RABIT|\nMPHS\n>DECOY_sp|ALDOA_RABIT|\nMHLP\n"))
+        assert fasta.get("sp|ALDOA_RABIT|") == "MPHS"
+        assert fasta.get("DECOY_sp|ALDOA_RABIT|") is None
+
     def test_conflicting_sequences_resolve_to_nothing(self, tmp_path):
         fasta = FastaSequences.from_path(_fasta(tmp_path, ">sp|P12345|A\nMPEP\n>tr|P12345|B\nMKKK\n"))
         assert fasta.get("P12345") is None
