@@ -182,6 +182,8 @@ Sample metadata fields map to biological ontologies. These mappings are critical
 | `additional_scores` | --- | --- | Score array with name, value, and direction (see [Scores](scores.md)) |
 | `cv_params` | --- | --- | Controlled vocabulary parameters |
 
+CDAP gives a PSM the retention time at half of its precursor's elution (`RTAtPrecursorHalfElution`), not the start of its MS2 scan: its `rt` row is a `retention time` (`MS:1000894`).
+
 ---
 
 ## Feature View (`feature.parquet`) {#feature}

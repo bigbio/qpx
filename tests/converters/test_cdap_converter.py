@@ -224,6 +224,12 @@ class TestCdapMetadata:
         table = pq.read_table(str(path))
         assert table.num_rows > 0
 
+    def test_rt_is_a_retention_time_not_a_scan_start_time(self, converted_output):
+        """CDAP gives a PSM the retention time at half of its precursor's elution."""
+        rows = pq.read_table(str(converted_output / f"{_PREFIX}.ontology.parquet")).to_pylist()
+        terms = {row["view"]: (row["source_column_name"], row["ontology_accession"]) for row in rows if row["field_name"] == "rt"}
+        assert terms == {view: ("RTAtPrecursorHalfElution", "MS:1000894") for view in ("psm", "feature")}
+
     def test_provenance_exists(self, converted_output):
         path = converted_output / f"{_PREFIX}.provenance.parquet"
         assert path.exists()

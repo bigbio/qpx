@@ -383,13 +383,22 @@ _VIEW_FIELD_CV_MAP: dict[tuple[str, str], Optional[dict]] = {
     ("proteoform", "is_decoy"): None,
 }
 
+# Source columns holding another quantity than the term of their view names: CDAP gives
+# a PSM the retention time at half of its precursor's elution, not the start of the MS2 scan.
+_SOURCE_FIELD_CV_MAP: dict[tuple[str, str, str], Optional[dict]] = {
+    ("psm", "rt", "RTAtPrecursorHalfElution"): _FIELD_CV_MAP["rt"],
+}
 
-def field_cv_term(view: str, field_name: str) -> Optional[dict]:
+
+def field_cv_term(view: str, field_name: str, source_column: Optional[str] = None) -> Optional[dict]:
     """Return the term QPX defines for column *field_name* of *view*, or None.
 
     Typed score columns (psm.qvalue, pg.pg_qvalue, ...) take the term of the
-    built-in score of that name; the PSI-MS OBO is not searched by name.
+    built-in score of that name; the PSI-MS OBO is not searched by name. A
+    *source_column* listed in ``_SOURCE_FIELD_CV_MAP`` takes its own term.
     """
+    if (view, field_name, source_column) in _SOURCE_FIELD_CV_MAP:
+        return _SOURCE_FIELD_CV_MAP[(view, field_name, source_column)]
     key = (view, field_name)
     if key in _VIEW_FIELD_CV_MAP:
         return _VIEW_FIELD_CV_MAP[key]
@@ -434,7 +443,7 @@ def field_ontology_entries(
     if resolved_mappings is not None:
         # New path: produce entries for each resolved field
         for field_name, source_column in sorted(resolved_mappings.items()):
-            cv_info = field_cv_term(view, field_name)
+            cv_info = field_cv_term(view, field_name, source_column)
             entries.append(
                 {
                     "field_name": field_name,
