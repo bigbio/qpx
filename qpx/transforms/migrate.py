@@ -19,6 +19,7 @@ from qpx.converters.ontology_util import dedupe_ontology_entries, reconcile_onto
 from qpx.converters.ptm import _add_nterm_dash, _unimod_title_of, name_to_unimod, normalize_peptidoform
 from qpx.converters.utils import canonical_accession
 from qpx.core.engine import create_connection
+from qpx.core.scores import field_ontology_entries
 from qpx.core.semantic_validation import _CANONICAL, _TAGS
 from qpx.core.sql import sql_build, validate_identifier
 from qpx.core.struct_lists import file_layouts, restore_table
@@ -64,6 +65,8 @@ _SPLIT_RUN_SUFFIXES = ("_CID", "_HCD")
 _RUN_NAMES_SQL = "SELECT DISTINCT $column FROM read_parquet($source)"
 # openms-consensus spelled the PSM q-value score `q-value`; score names are snake_case (ontology.md).
 _PSM_SCORE_NAMES = {"q-value": "qvalue"}
+# The DIA-NN scores of QPX 1.0.2 that a migration moves to the column they repeat (producer_rows.py).
+_MOVED_SCORES = {("feature", "qvalue"): "precursor_qvalue", ("pg", "qvalue"): "pg_qvalue"}
 # The first specification whose DIA-NN observed_mz is the measured MS1 apex rather than Precursor.Mz.
 _MEASURED_DIANN_MZ = (1, 3)
 # The rows that repeat an id, except the first, or for a feature the first copy holding its group's
@@ -333,10 +336,29 @@ def _migrate_ontology(source: Path, target: Path) -> int:
     writer_class, suffix = Dataset.writer_for("ontology")
     prefix = target.name.removesuffix(suffix)
     records = refresh_ontology_entries(dedupe_ontology_entries(pq.read_table(source).to_pylist()), target.parent, prefix)
-    entries = reconcile_ontology_entries(records, target.parent, prefix)
+    entries = _follow_moved_scores(records, reconcile_ontology_entries(records, target.parent, prefix))
     with writer_class(target, **_writer_options("ontology", _footer(source))) as writer:
         writer.write_batch(entries)
     return len(entries)
+
+
+def _follow_moved_scores(records: list[dict], entries: list[dict]) -> list[dict]:
+    """Give the row of a column that took the values of a moved score the source of the score's dropped row."""
+    kept = {(entry["view"], entry["field_name"]) for entry in entries}
+    moved = {
+        (record["view"], _MOVED_SCORES[key]): record
+        for record in records
+        if (key := (record["view"], record["field_name"])) in _MOVED_SCORES and key not in kept and record["source_column_name"]
+    }
+    followed = []
+    for entry in entries:
+        score = moved.get((entry["view"], entry["field_name"]))
+        if score is not None and entry["source_column_name"] is None:
+            entry = field_ontology_entries(
+                entry["view"], {entry["field_name"]: score["source_column_name"]}, score["source_tool"]
+            )[0]
+        followed.append(entry)
+    return followed
 
 
 def _followed(value, new_ids: dict[int, int], field: str):

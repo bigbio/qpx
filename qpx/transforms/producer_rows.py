@@ -24,6 +24,8 @@ _DIANN_INTENSITY_NAMES = {"maxlfq": "pg_maxlfq", "precursor_normalised": "normal
 # DIA-NN reports 0 for these without ion mobility data; a conversion writes null, or leaves the cv entry out.
 _DIANN_ION_MOBILITY_COLUMNS = ("ion_mobility", "ion_mobility_start", "ion_mobility_stop")
 _DIANN_ION_MOBILITY_PARAMS = ("iim", "predicted_im", "predicted_iim")
+# The names under which older writers repeated the DIA-NN pg_qvalue column as a pg score.
+_DIANN_PG_QVALUE_SCORES = ("pg_qvalue", "qvalue")
 # The first specification whose migration rescales the coverage of the quantms converter (removed in 1.1).
 _PERCENT_QUANTMS_COVERAGE = (1, 3)
 
@@ -102,7 +104,19 @@ def _diann_feature_row(record: dict, measured_mz: bool) -> dict:
             row[column] = None
     if row.get("cv_params"):
         row["cv_params"] = _diann_cv_params(row["cv_params"], row.get("additional_scores"))
+    if row.get("additional_scores") and row.get("precursor_qvalue") is None:
+        row = _diann_precursor_qvalue(row)
     return row
+
+
+def _diann_precursor_qvalue(row: dict) -> dict:
+    """Writer 1.0.2 kept DIA-NN's Q.Value as the score qvalue; a conversion writes it to precursor_qvalue only."""
+    scores = row["additional_scores"]
+    qvalue = next((score for score in scores if score["score_name"] == "qvalue"), None)
+    if qvalue is None:
+        return row
+    kept = [score for score in scores if score is not qvalue]
+    return {**row, "precursor_qvalue": qvalue["score_value"], "additional_scores": kept or None}
 
 
 def _diann_cv_params(params: list[dict], scores: list[dict] | None) -> list[dict] | None:
@@ -125,12 +139,14 @@ def _diann_cv_params(params: list[dict], scores: list[dict] | None) -> list[dict
 
 
 def _diann_pg_row(row: dict) -> dict:
-    """A DIA-NN pg row without the score pg_qvalue that writer 1.1 repeated from the pg_qvalue column."""
+    """A DIA-NN pg row without the score that repeated its pg_qvalue column: pg_qvalue in writer 1.1, qvalue in 1.0.2."""
     scores = row.get("additional_scores")
     if not scores:
         return row
     kept = [
-        score for score in scores if not (score["score_name"] == "pg_qvalue" and score["score_value"] == row.get("pg_qvalue"))
+        score
+        for score in scores
+        if not (score["score_name"] in _DIANN_PG_QVALUE_SCORES and score["score_value"] == row.get("pg_qvalue"))
     ]
     return {**row, "additional_scores": kept or None}
 
