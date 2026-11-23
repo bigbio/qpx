@@ -74,10 +74,27 @@ def test_field_terms_follow_the_view():
         ("mz", "ms_level"): "MS:1000511",
         ("mz", "scan_start_time"): "MS:1000016",
         ("psm", "sequence"): "MS:1000888",
+        ("psm", "qvalue"): "MS:1002354",
+        ("feature", "qvalue"): None,
+        ("site", "protein_accession"): "MS:1000885",
+        ("protein", "gene_name"): "MS:1000934",
+        ("xic", "transition"): None,
+        ("xic", "neutral_loss"): None,
     }
     for (view, field), accession in terms.items():
         entry = field_ontology_entries(view=view, resolved_mappings={field: field})[0]
         assert entry["ontology_accession"] == accession, (view, field)
+
+
+def test_ion_mobility_takes_a_term_only_from_a_1_k0_column():
+    """The schema leaves the kind of ion mobility open; a MaxQuant or Proteome Discoverer 1/K0 column fixes it."""
+    from qpx.core.scores import field_ontology_entries
+
+    for view in ("psm", "feature"):
+        (entry,) = field_ontology_entries(view=view, resolved_mappings={"ion_mobility": "1/K0"}, tool_name="MaxQuant")
+        assert (entry["ontology_accession"], entry["source_column_name"]) == ("MS:1002815", "1/K0")
+        (entry,) = field_ontology_entries(view=view, resolved_mappings={"ion_mobility": "IM"}, tool_name="DIA-NN")
+        assert entry["ontology_accession"] is None
 
 
 def test_dedupe_ontology_entries_merges_complementary_values():

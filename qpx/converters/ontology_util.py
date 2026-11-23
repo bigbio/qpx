@@ -91,11 +91,7 @@ def _current_entry(entry: dict, columns: set[str]) -> dict | None:
 
 
 def refresh_ontology_entries(entries: list[dict], output_folder: Path, prefix: str) -> list[dict]:
-    """Give the rows of an older file the terms QPX defines now, keeping their source column and tool.
-
-    A row gains no accession it lacked: its column may hold another quantity than
-    the term names (an old FragPipe pg_qvalue is 1 - Protein Probability).
-    """
+    """Give the rows of an older file the terms QPX defines now, keeping their source column and tool."""
     columns: dict[str, set[str]] = {}
     refreshed = []
     for entry in entries:
@@ -104,8 +100,6 @@ def refresh_ontology_entries(entries: list[dict], output_folder: Path, prefix: s
             path = Path(output_folder) / f"{prefix}.{view}.parquet"
             columns[view] = set(pq.read_schema(path).names) if path.is_file() else set()
         current = _current_entry(entry, columns[view])
-        if current is not None and entry["ontology_accession"] is None and current["ontology_accession"] is not None:
-            current = entry
         if current is not None:
             refreshed.append(current)
     return refreshed

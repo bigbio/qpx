@@ -170,7 +170,7 @@ Sample metadata fields map to biological ontologies. These mappings are critical
 | `run_file_name` | --- | --- | Spectrum file name without path or extension |
 | `scan` | scan number | `MS:1003057` | Scan identifier as array of integer components |
 | `protein_accessions` | --- | --- | Protein accessions the peptide maps to (optional column) |
-| `ion_mobility` | --- | --- | Ion mobility of the precursor as the producer reports it, 1/K0 (Vs/cm²) for TIMS data |
+| `ion_mobility` | --- | --- | Ion mobility of the precursor as the producer reports it, 1/K0 (Vs/cm²) for TIMS data; from a `1/K0` source column, the inverse reduced ion mobility (`MS:1002815`) |
 | `ccs` | collisional cross sectional area | `MS:1002954` | Collisional cross section of the precursor (Å²) |
 | `mz_array` | m/z array | `MS:1000514` | Array of fragment m/z values |
 | `intensity_array` | intensity array | `MS:1000515` | Array of fragment intensity values |
@@ -201,7 +201,7 @@ CDAP gives a PSM the retention time at half of its precursor's elution (`RTAtPre
 | `rt_start` | --- | --- | Start of the retention time window |
 | `rt_stop` | --- | --- | End of the retention time window |
 | `predicted_rt` | predicted retention time | `MS:1000897` | Predicted retention time (seconds) |
-| `ion_mobility` | --- | --- | Ion mobility of the precursor as the producer reports it, 1/K0 (Vs/cm²) for TIMS data |
+| `ion_mobility` | --- | --- | Ion mobility of the precursor as the producer reports it, 1/K0 (Vs/cm²) for TIMS data; from a `1/K0` source column, the inverse reduced ion mobility (`MS:1002815`) |
 | `ccs` | collisional cross sectional area | `MS:1002954` | Collisional cross section of the precursor (Å²) |
 | `ion_mobility_start` | --- | --- | Start ion mobility value |
 | `ion_mobility_stop` | --- | --- | End ion mobility value |
@@ -284,12 +284,14 @@ The trace (`xic`), `fragment`, `site`, `proteoform`, `protein` and `pepmap` view
 | `fragment` | `observed_mz` | product ion m/z | `MS:1001225` |
 | `fragment` | `intensity` | product ion intensity | `MS:1001226` |
 | `fragment` | `intensity_array` | intensity array | `MS:1000515` |
+| `site` | `protein_accession` | protein accession | `MS:1000885` |
+| `protein` | `gene_name` | gene name | `MS:1000934` |
 
 ---
 
 ## Score Fields {#scores}
 
-Score names used in `additional_scores` or the [typed q-value columns](scores.md#typed-q-value-columns) that have PSI-MS ontology mappings. In specification 1.3, a q-value matching a typed column's name and value is not duplicated in `additional_scores`. All QPX score names use **snake_case** -- the ontology name column shows the proper CV term.
+Score names used in `additional_scores` or the [typed q-value columns](scores.md#typed-q-value-columns) that have PSI-MS ontology mappings. In specification 1.3, a q-value matching a typed column's name and value is not duplicated in `additional_scores`. All QPX score names use **snake_case** -- the ontology name column shows the proper CV term. On a feature, the score `qvalue` is the precursor q-value whose [typed column](scores.md#typed-q-value-columns) it fills, so it takes the row of `precursor_qvalue`.
 
 | QPX Name (snake_case) | Ontology Name | Ontology Accession | Direction |
 |---|---|---|---|

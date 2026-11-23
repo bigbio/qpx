@@ -338,11 +338,13 @@ _FIELD_CV_MAP: dict[str, dict] = {
     },
 }
 
-# A shared QPX field name can represent a different level in each view. Resolve
-# those cases through the corresponding score definition rather than attaching
-# precursor-level semantics to a protein-group field.
+# A shared QPX field or score name can represent a different level in each view.
+# Resolve those cases through the corresponding score definition rather than
+# attaching precursor-level semantics to a protein-group field, or PSM-level
+# semantics to the feature score qvalue, which fills precursor_qvalue (scores.md).
 _VIEW_FIELD_SCORE_ALIASES: dict[tuple[str, str], str] = {
     ("pg", "global_qvalue"): "pg_global_qvalue",
+    ("feature", "qvalue"): "precursor_qvalue",
 }
 
 # Fields whose term depends on the view. The rt of a PSM is the time of its MS2
@@ -377,16 +379,40 @@ _VIEW_FIELD_CV_MAP: dict[tuple[str, str], Optional[dict]] = {
         "ontology_source": "MS",
         "description": "Intensity of the fragment",
     },
+    ("site", "protein_accession"): {
+        "ontology_name": "protein accession",
+        "ontology_accession": "MS:1000885",
+        "ontology_source": "MS",
+        "description": "Accession of the protein the position refers to",
+    },
+    ("protein", "gene_name"): {
+        "ontology_name": "gene name",
+        "ontology_accession": "MS:1000934",
+        "ontology_source": "MS",
+        "description": "Gene symbol from the FASTA header (GN=)",
+    },
     ("protein", "sequence"): None,
     ("pg", "is_decoy"): None,
     ("site", "is_decoy"): None,
     ("proteoform", "is_decoy"): None,
 }
 
+_PRECURSOR_INVERSE_ION_MOBILITY = {
+    "ontology_name": "inverse reduced ion mobility",
+    "ontology_accession": "MS:1002815",
+    "ontology_source": "MS",
+    "description": "Inverse reduced ion mobility (1/K0) of the precursor",
+}
+
 # Source columns holding another quantity than the term of their view names: CDAP gives
-# a PSM the retention time at half of its precursor's elution, not the start of the MS2 scan.
+# a PSM the retention time at half of its precursor's elution, not the start of the MS2 scan,
+# and older FragPipe conversions wrote 1 - Protein Probability, a ProteinProphet score, as pg_qvalue.
+# A 1/K0 column (MaxQuant, Proteome Discoverer) fixes the kind of ion mobility, which the column leaves open.
 _SOURCE_FIELD_CV_MAP: dict[tuple[str, str, str], Optional[dict]] = {
     ("psm", "rt", "RTAtPrecursorHalfElution"): _FIELD_CV_MAP["rt"],
+    ("pg", "pg_qvalue", "Protein Probability"): None,
+    ("psm", "ion_mobility", "1/K0"): _PRECURSOR_INVERSE_ION_MOBILITY,
+    ("feature", "ion_mobility", "1/K0"): _PRECURSOR_INVERSE_ION_MOBILITY,
 }
 
 
@@ -505,7 +531,7 @@ def score_ontology_entries(
 
     entries: list[dict] = []
     for name in sorted(score_names):
-        info = lookup_score(name)
+        info = lookup_score(_VIEW_FIELD_SCORE_ALIASES.get((view, name), name))
         if info is None:
             continue
         entries.append(

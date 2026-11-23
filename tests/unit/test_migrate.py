@@ -780,14 +780,16 @@ def _ontology_row(field, view, name=None, accession=None, source=None, tool=None
     }
 
 
-def test_ontology_rows_take_the_current_terms_but_gain_no_accession(old_dataset, tmp_path):
-    """The terms QPX defines are those of a new conversion; each row keeps its source."""
+def test_ontology_rows_take_the_current_terms(old_dataset, tmp_path):
+    """The terms QPX defines are those of a new conversion, also where a row had no accession; each row keeps
+    its source. An old FragPipe pg_qvalue, 1 - Protein Probability, gains none."""
     old = [
         _ontology_row("rt", "feature", "scan start time", "MS:1000016", "RT", "DIA-NN"),
         _ontology_row("is_decoy", "pg", "decoy peptide", "MS:1002217", "Reverse", "MaxQuant"),
         _ontology_row("intensity", "pg", "LC-MS feature intensity", "MS:1001840"),
         _ontology_row("pg_qvalue", "pg", source="Protein Probability", tool="FragPipe"),
         _ontology_row("lfq", "pg", "label-free quantity"),
+        _ontology_row("pg_global_qvalue", "feature", source="Global.PG.Q.Value", tool="DIA-NN"),
     ]
     _write(old_dataset / "old.ontology.parquet", old)
     migrate_dataset(old_dataset, tmp_path / "new")
@@ -804,5 +806,12 @@ def test_ontology_rows_take_the_current_terms_but_gain_no_accession(old_dataset,
     assert rows["is_decoy", "pg"]["ontology_accession"] is None
     assert rows["is_decoy", "pg"]["description"] == "MaxQuant Reverse (no CV term)"
     assert ("intensity", "pg") not in rows
-    assert rows["pg_qvalue", "pg"] == old[3]
+    fragpipe = rows["pg_qvalue", "pg"]
+    assert (fragpipe["ontology_accession"], fragpipe["source_column_name"], fragpipe["source_tool"]) == (
+        None,
+        "Protein Probability",
+        "FragPipe",
+    )
     assert rows["lfq", "pg"]["ontology_name"] == "MaxLFQ intensity"
+    global_qvalue = rows["pg_global_qvalue", "feature"]
+    assert (global_qvalue["ontology_accession"], global_qvalue["source_column_name"]) == ("MS:1002373", "Global.PG.Q.Value")
