@@ -7,7 +7,8 @@ import click
 
 @click.command("migrate")
 @click.option(
-    "--dataset-path",
+    "--dataset",
+    "dataset_path",
     required=True,
     help="QPX dataset folder written under an older specification",
     type=click.Path(exists=True, file_okay=False, path_type=Path),
@@ -28,7 +29,7 @@ def migrate_cmd(dataset_path: Path, output_folder: Path):
 
     \b
     Example:
-        qpxc migrate --dataset-path ./PXD014414 --output-folder ./PXD014414_current
+        qpxc migrate --dataset ./PXD014414 --output-folder ./PXD014414_current
     """
     from qpx.transforms.migrate import migrate_dataset
 
@@ -36,4 +37,4 @@ def migrate_cmd(dataset_path: Path, output_folder: Path):
         raise click.ClickException(f"{output_folder} exists; give a new folder")
     for view, rows in migrate_dataset(dataset_path, output_folder).items():
         click.echo(f"{view}: {rows} rows")
-    click.echo(f"Migrated to {output_folder}. Check it with: qpxc validate --dataset-path {output_folder}")
+    click.echo(f"Migrated to {output_folder}. Check it with: qpxc validate --dataset {output_folder}")

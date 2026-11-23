@@ -84,6 +84,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`convert maxquant` reads its SDRF before writing anything** — every conversion, PSM-only ones included, resolves the SDRF labels first, so labels that match no plex fail before `sample`, `run` and `psm` are written. 1.3.0 checked them only when a feature or pg view was to be written.
 - **BREAKING — one name per CLI option.** Options that meant the same thing were spelled differently from command to command; each now has one name, and the old names are gone:
   - `--duckdb-memory` and `--duckdb-threads` of `validate`, `query sql` and the `transform` commands, and `--threads` of `transform quantify`, are `--max-memory` and `--max-cpus`, as on the `convert` commands.
+  - `--dataset-path` of `info`, `migrate`, `query` and `validate` is `--dataset`, as on the `transform` commands.
 
 ### Removed
 

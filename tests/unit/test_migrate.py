@@ -352,7 +352,7 @@ def test_relayouted_ids_are_derived_again_and_references_follow(dataset_dir, tmp
 def test_the_command_refuses_an_existing_folder(old_dataset, tmp_path):
     out = tmp_path / "exists"
     out.mkdir()
-    result = CliRunner().invoke(qpx_main, ["migrate", "--dataset-path", str(old_dataset), "--output-folder", str(out)])
+    result = CliRunner().invoke(qpx_main, ["migrate", "--dataset", str(old_dataset), "--output-folder", str(out)])
     assert result.exit_code != 0
     assert "exists" in result.output
 

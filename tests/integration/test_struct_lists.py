@@ -85,12 +85,12 @@ def test_relayout_keeps_homogeneous_name_value_lists(tmp_path):
 
 
 def test_a_dataset_with_struct_lists_validates(diann):
-    assert "Overall: VALID" in _invoke("validate", "--dataset-path", diann / "sorted")
+    assert "Overall: VALID" in _invoke("validate", "--dataset", diann / "sorted")
 
 
 def test_migrate_reads_structs_and_writes_lists(diann, tmp_path):
     for name in ("source", "sorted"):
-        _invoke("migrate", "--dataset-path", diann / name, "--output-folder", tmp_path / name)
+        _invoke("migrate", "--dataset", diann / name, "--output-folder", tmp_path / name)
         for view in ("feature", "pg"):
             file = pq.ParquetFile(tmp_path / name / f"d.{view}.parquet")
             footer = file.metadata.metadata
@@ -523,7 +523,7 @@ def test_validate_reads_a_view_of_files_with_different_layouts(shards, tmp_path,
     """Validation reads mixed layouts through the same restoration as queries."""
     folder = _shard_folder(tmp_path / "mixed", **{name: shards[shard][index] for name, (shard, index) in files.items()})
 
-    result = CliRunner().invoke(qpx_main, ["validate", "--dataset-path", str(folder)])
+    result = CliRunner().invoke(qpx_main, ["validate", "--dataset", str(folder)])
 
     assert not isinstance(result.exception, Exception), result.exc_info
     assert "could not be read" not in result.output
@@ -551,7 +551,7 @@ def test_a_struct_without_its_layout_next_to_other_files_is_refused(shards, tmp_
         with pytest.raises(ValueError, match="a.feature.parquet holds additional_scores, cv_params as a struct without"):
             engine.register_parquet_files("feature", sorted(folder.glob("*.feature.parquet")))
         assert engine.execute("SELECT count(*) FROM duckdb_views() WHERE view_name = 'feature'").fetchone()[0] == 0
-    result = CliRunner().invoke(qpx_main, ["validate", "--dataset-path", str(folder)])
+    result = CliRunner().invoke(qpx_main, ["validate", "--dataset", str(folder)])
     assert not isinstance(result.exception, Exception), result.exc_info
     assert "Structure 'feature' could not be read" in result.output
 

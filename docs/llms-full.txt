@@ -38,11 +38,11 @@ qpxc convert sdrf --sdrf-file metadata.sdrf.tsv --output-folder qpx_output
 qpxc pdc2qpx -a PDC000109 --download-dir downloads --output-folder qpx_output
 
 ### Inspect, validate and query
-qpxc info --dataset-path qpx_output
-qpxc validate --dataset-path qpx_output
-qpxc query sql --dataset-path qpx_output --sql "SELECT run_file_name, COUNT(*) AS n FROM feature GROUP BY 1" --output counts.csv
-qpxc query filter --dataset-path qpx_output --structure feature --condition "charge = 2" --limit 10
-qpxc query head --dataset-path qpx_output --structure pg
+qpxc info --dataset qpx_output
+qpxc validate --dataset qpx_output
+qpxc query sql --dataset qpx_output --sql "SELECT run_file_name, COUNT(*) AS n FROM feature GROUP BY 1" --output counts.csv
+qpxc query filter --dataset qpx_output --structure feature --condition "charge = 2" --limit 10
+qpxc query head --dataset qpx_output --structure pg
 
 ### Transform
 qpxc transform quantify --feature-path qpx_output --method directlfq -o proteins.parquet
@@ -51,7 +51,7 @@ qpxc transform protein-properties --dataset qpx_output --fasta proteome.fasta --
 qpxc transform site --dataset qpx_output --modification Phospho --in-place
 
 ### Migrate a dataset written under an older specification
-qpxc migrate --dataset-path old_dataset --output-folder migrated_dataset
+qpxc migrate --dataset old_dataset --output-folder migrated_dataset
 
 ## Python API
 

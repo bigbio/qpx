@@ -65,7 +65,7 @@ def test_query_sql_applies_the_resource_options(dataset_dir, tmp_path):
         [
             "query",
             "sql",
-            "--dataset-path",
+            "--dataset",
             str(dataset_dir),
             "--sql",
             _SETTINGS,

@@ -256,23 +256,23 @@ qpxc migrate --help
 
 ```bash
 # Run SQL against a dataset
-qpxc query sql --dataset-path ./PXD014414 --sql "SELECT anchor_protein, COUNT(*) FROM feature GROUP BY 1"
+qpxc query sql --dataset ./PXD014414 --sql "SELECT anchor_protein, COUNT(*) FROM feature GROUP BY 1"
 
 # Filter rows
-qpxc query filter --dataset-path ./PXD014414 --structure feature --condition "charge >= 3"
+qpxc query filter --dataset ./PXD014414 --structure feature --condition "charge >= 3"
 
 # Preview first N rows
-qpxc query head --dataset-path ./PXD014414 --structure feature -n 20
+qpxc query head --dataset ./PXD014414 --structure feature -n 20
 ```
 
 ### Info & Validate
 
 ```bash
 # Dataset summary
-qpxc info --dataset-path ./PXD014414
+qpxc info --dataset ./PXD014414
 
 # Validate against canonical schema
-qpxc validate --dataset-path ./PXD014414
+qpxc validate --dataset ./PXD014414
 ```
 
 ## Configuration

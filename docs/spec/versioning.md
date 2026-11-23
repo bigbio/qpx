@@ -170,7 +170,7 @@ This version defines all core serialized views (PSM, Feature, PG, MZ), the deriv
 
 ## Migrating Without Re-converting
 
-Re-converting from the source files is the better route: it also picks up converter fixes. Where only QPX files survive, `qpxc migrate --dataset-path OLD --output-folder NEW` rewrites the dataset under the current specification, by these rules:
+Re-converting from the source files is the better route: it also picks up converter fixes. Where only QPX files survive, `qpxc migrate --dataset OLD --output-folder NEW` rewrites the dataset under the current specification, by these rules:
 
 - **`pg` from 1.0.** Wrap `run_file_name` in a one-element `grouped_runs`, flatten `intensities` to one row per label with `label` and `intensity`, and derive `pg_id` from `pg_accessions, grouped_runs, label`. This reproduced all `pg_id` values of a re-converted file.
 - **`feature_id` and `psm_id`.** Hash the persisted values in canonical peptidoform spelling, using the producer's [identity composite](identity.md#composites). DIA-NN uses the current `peptidoform, charge, run_file_name, is_decoy, is_library_decoy` composite even when an old footer declares only the first three fields; the old `^` prefix is removed from the peptidoform and recovered as `is_library_decoy`, separately from `is_decoy`. Other producers keep their declared feature composite. PSM ids are derived again except for files whose `creator` is `mzidentml`, whose ids cannot be reproduced from the stored columns.

@@ -3,8 +3,8 @@ Validate subcommand -- validate QPX datasets and individual structures
 against their canonical schemas.
 
 Usage:
-    qpxc validate --dataset-path ./PXD014414
-    qpxc validate --dataset-path ./PXD014414 --structure feature
+    qpxc validate --dataset ./PXD014414
+    qpxc validate --dataset ./PXD014414 --structure feature
     qpxc validate --file ./data.feature.parquet
 """
 
@@ -31,7 +31,8 @@ _VALID_STRUCTURES = Dataset.structure_names()
 
 @click.command("validate")
 @click.option(
-    "--dataset-path",
+    "--dataset",
+    "dataset_path",
     help="Path to a QPX dataset directory",
     type=click.Path(exists=True, file_okay=False, path_type=Path),
 )
@@ -83,12 +84,12 @@ def validate_cmd(
     \b
     Examples:
         # Validate an entire dataset
-        qpxc validate --dataset-path ./PXD014414
+        qpxc validate --dataset ./PXD014414
 
     \b
         # Validate specific structures
-        qpxc validate --dataset-path ./PXD014414 --structure feature
-        qpxc validate --dataset-path ./PXD014414 --structure feature --structure pg
+        qpxc validate --dataset ./PXD014414 --structure feature
+        qpxc validate --dataset ./PXD014414 --structure feature --structure pg
 
     \b
         # Validate a single Parquet file
@@ -96,15 +97,15 @@ def validate_cmd(
 
     \b
         # Also check peptidoforms, modification positions and m/z
-        qpxc validate --dataset-path ./PXD014414 --semantic
+        qpxc validate --dataset ./PXD014414 --semantic
 
     \b
         # Also re-derive the ids from their composites
-        qpxc validate --dataset-path ./PXD014414 --check-identity
+        qpxc validate --dataset ./PXD014414 --check-identity
 
     \b
         # The gate for a producer's CI: every check, warnings fail too
-        qpxc validate --dataset-path ./PXD014414 --conformance
+        qpxc validate --dataset ./PXD014414 --conformance
     """
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -119,7 +120,7 @@ def validate_cmd(
         _validate_dataset(dataset_path, list(structures) if structures else None, semantic, check_identity, conformance)
         return
 
-    raise click.ClickException("Provide --dataset-path or --file.")
+    raise click.ClickException("Provide --dataset or --file.")
 
 
 def _passes(result, conformance: bool) -> bool:

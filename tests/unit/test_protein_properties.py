@@ -103,7 +103,7 @@ def test_the_result_still_validates(dataset_dir, tmp_path):
     from qpx.cli.validate import validate_cmd
 
     _run(dataset_dir, _dataset_fasta(tmp_path), "--in-place")
-    result = CliRunner().invoke(validate_cmd, ["--dataset-path", str(dataset_dir)])
+    result = CliRunner().invoke(validate_cmd, ["--dataset", str(dataset_dir)])
 
     assert "INVALID" not in result.output, result.output
     assert "Overall: VALID" in result.output, result.output

@@ -151,7 +151,7 @@ with DatasetWriter(out / "mytool.dataset.parquet") as writer:
 ## Checking the Result
 
 ```bash
-qpxc validate --dataset-path mytool_output --conformance
+qpxc validate --dataset mytool_output --conformance
 ```
 
 `--conformance` runs every check, `--semantic` and `--check-identity` included, and fails on warnings as well as errors; informational notices that provided ids were not re-derived do not count as failures. It is meant as the gate for a producer's CI.

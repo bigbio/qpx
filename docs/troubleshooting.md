@@ -164,10 +164,10 @@ Use the `validate` command to check a dataset against the canonical schemas:
 
 ```bash
 # Validate all structures in a dataset
-qpxc validate --dataset-path ./PXD014414
+qpxc validate --dataset ./PXD014414
 
 # Validate a specific structure
-qpxc validate --dataset-path ./PXD014414 --structure feature
+qpxc validate --dataset ./PXD014414 --structure feature
 
 # Validate a single Parquet file
 qpxc validate --file ./data.feature.parquet
@@ -252,13 +252,13 @@ qpxc convert sdrf \
 1. Check available structures in the dataset:
 
    ```bash
-   qpxc info --dataset-path ./PXD014414
+   qpxc info --dataset ./PXD014414
    ```
 
 2. Check the schema for a specific structure:
 
    ```bash
-   qpxc info schema --dataset-path ./PXD014414 --structure feature
+   qpxc info schema --dataset ./PXD014414 --structure feature
    ```
 
 3. Table names in SQL match the QPX structure names: `psm`, `feature`, `pg`, `mz`, `sample`, `run`, `dataset`, `ontology`, `provenance`.
@@ -271,7 +271,7 @@ qpxc convert sdrf \
 
    ```bash
    qpxc query sql \
-       --dataset-path ./PXD014414 \
+       --dataset ./PXD014414 \
        --sql "SELECT * FROM feature" \
        --max-memory 32GB
    ```
@@ -280,7 +280,7 @@ qpxc convert sdrf \
 
    ```bash
    qpxc validate \
-       --dataset-path ./PXD014414 \
+       --dataset ./PXD014414 \
        --max-memory 8GB \
        --temp-dir /scratch/qpx_spill
    ```

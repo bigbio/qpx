@@ -33,7 +33,8 @@ _VALID_STRUCTURES = Dataset.structure_names()
 
 @click.group(invoke_without_command=True)
 @click.option(
-    "--dataset-path",
+    "--dataset",
+    "dataset_path",
     help="Path to a QPX dataset directory",
     type=click.Path(exists=True, file_okay=False, path_type=Path),
 )
@@ -48,11 +49,11 @@ def info(ctx, dataset_path: Optional[Path], verbose: bool):
     \b
     Examples:
         # Show dataset summary
-        qpxc info --dataset-path ./PXD014414
+        qpxc info --dataset ./PXD014414
 
     \b
         # Show schema for a specific structure
-        qpxc info schema --dataset-path ./PXD014414 --structure feature
+        qpxc info schema --dataset ./PXD014414 --structure feature
 
     \b
         # Show Parquet footer metadata
@@ -69,7 +70,7 @@ def info(ctx, dataset_path: Optional[Path], verbose: bool):
     # If no subcommand given, show the dataset summary
     if ctx.invoked_subcommand is None:
         if dataset_path is None:
-            raise click.ClickException("Please provide --dataset-path or use a subcommand (schema, metadata).")
+            raise click.ClickException("Please provide --dataset or use a subcommand (schema, metadata).")
         _show_dataset_summary(dataset_path, verbose)
 
 
@@ -135,19 +136,20 @@ def _show_dataset_summary(dataset_path: Path, verbose: bool):
 
 @info.command("schema")
 @click.option(
-    "--dataset-path",
+    "--dataset",
+    "dataset_path",
     help="Path to a QPX dataset directory",
     type=click.Path(exists=True, file_okay=False, path_type=Path),
 )
 @click.option(
     "--file",
     "file_path",
-    help="Path to a single Parquet file (alternative to --dataset-path)",
+    help="Path to a single Parquet file (alternative to --dataset)",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
 )
 @click.option(
     "--structure",
-    help="QPX data structure name (when using --dataset-path)",
+    help="QPX data structure name (when using --dataset)",
     type=click.Choice(_VALID_STRUCTURES, case_sensitive=False),
 )
 @click.option(
@@ -173,7 +175,7 @@ def info_schema_cmd(
     \b
     Examples:
         # Schema from a dataset structure
-        qpxc info schema --dataset-path ./PXD014414 --structure feature
+        qpxc info schema --dataset ./PXD014414 --structure feature
 
     \b
         # Schema from a standalone Parquet file
@@ -222,7 +224,7 @@ def info_schema_cmd(
                 click.echo()
         return
 
-    raise click.ClickException("Provide --dataset-path (+ optional --structure), --file, or --structure --canonical.")
+    raise click.ClickException("Provide --dataset (+ optional --structure), --file, or --structure --canonical.")
 
 
 def _show_file_schema(file_path: Path):
@@ -276,7 +278,8 @@ def _show_canonical_schema(structure: str):
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
 )
 @click.option(
-    "--dataset-path",
+    "--dataset",
+    "dataset_path",
     help="Path to a QPX dataset directory (shows metadata for all files)",
     type=click.Path(exists=True, file_okay=False, path_type=Path),
 )
@@ -300,7 +303,7 @@ def info_metadata_cmd(
 
     \b
         # All files in a dataset
-        qpxc info metadata --dataset-path ./PXD014414
+        qpxc info metadata --dataset ./PXD014414
     """
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -324,7 +327,7 @@ def info_metadata_cmd(
                 click.echo()
         return
 
-    raise click.ClickException("Provide --file or --dataset-path.")
+    raise click.ClickException("Provide --file or --dataset.")
 
 
 def _show_parquet_metadata(file_path: Path):

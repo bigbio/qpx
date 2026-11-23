@@ -24,7 +24,8 @@ logger = logging.getLogger("qpx.cli.query")
 
 # Shared option for the dataset path
 _dataset_path_option = click.option(
-    "--dataset-path",
+    "--dataset",
+    "dataset_path",
     help="Path to a QPX dataset directory",
     required=True,
     type=click.Path(exists=True, file_okay=False, path_type=Path),
@@ -89,20 +90,20 @@ def query_sql_cmd(**kwargs):
     Examples:
         # Count features per run
         qpxc query sql \\
-            --dataset-path ./PXD014414 \\
+            --dataset ./PXD014414 \\
             --sql "SELECT run_file_name, COUNT(*) AS n FROM feature GROUP BY 1"
 
     \b
         # Join feature with run, export to CSV
         qpxc query sql \\
-            --dataset-path ./PXD014414 \\
+            --dataset ./PXD014414 \\
             --sql "SELECT f.sequence, r.run_file_name FROM feature f JOIN run r USING (run_file_name)" \\
             --output results.csv
 
     \b
         # Query specific structures only
         qpxc query sql \\
-            --dataset-path ./PXD014414 \\
+            --dataset ./PXD014414 \\
             --sql "SELECT COUNT(*) FROM psm" \\
             --structures psm
     """
@@ -184,14 +185,14 @@ def query_filter_cmd(**kwargs):
     Examples:
         # Filter features by charge and q-value
         qpxc query filter \\
-            --dataset-path ./PXD014414 \\
+            --dataset ./PXD014414 \\
             --structure feature \\
             --condition "charge > 2 AND global_qvalue < 0.01"
 
     \b
         # Filter PSMs, select specific columns
         qpxc query filter \\
-            --dataset-path ./PXD014414 \\
+            --dataset ./PXD014414 \\
             --structure psm \\
             --condition "is_decoy = false" \\
             --columns "sequence,charge,score" \\
@@ -200,7 +201,7 @@ def query_filter_cmd(**kwargs):
     \b
         # Export filtered protein groups to parquet
         qpxc query filter \\
-            --dataset-path ./PXD014414 \\
+            --dataset ./PXD014414 \\
             --structure pg \\
             --condition "global_qvalue < 0.01" \\
             --output filtered_pg.parquet \\
@@ -296,13 +297,13 @@ def query_head_cmd(
     Examples:
         # Show first 10 rows of features
         qpxc query head \\
-            --dataset-path ./PXD014414 \\
+            --dataset ./PXD014414 \\
             --structure feature
 
     \b
         # Show 5 PSM rows with specific columns
         qpxc query head \\
-            --dataset-path ./PXD014414 \\
+            --dataset ./PXD014414 \\
             --structure psm \\
             -n 5 \\
             --columns "sequence,charge,score"

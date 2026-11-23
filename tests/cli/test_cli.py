@@ -366,14 +366,14 @@ class TestQuerySqlCLI:
     def test_sql_help_renders(self):
         runner = CliRunner()
         result = runner.invoke(qpx_main, ["query", "sql", "--help"])
-        _assert_help(result, "--dataset-path", "--sql")
+        _assert_help(result, "--dataset", "--sql")
 
 
 class TestQueryFilterCLI:
     def test_filter_help_renders(self):
         runner = CliRunner()
         result = runner.invoke(qpx_main, ["query", "filter", "--help"])
-        _assert_help(result, "--dataset-path", "--structure", "--condition")
+        _assert_help(result, "--dataset", "--structure", "--condition")
 
     def test_filter_reads_dataset_metadata(self, dataset_dir):
         """The canonical dataset name resolves to the dataset_meta accessor."""
@@ -383,7 +383,7 @@ class TestQueryFilterCLI:
             [
                 "query",
                 "filter",
-                "--dataset-path",
+                "--dataset",
                 str(dataset_dir),
                 "--structure",
                 "dataset",
@@ -402,7 +402,7 @@ class TestQueryHeadCLI:
     def test_head_help_renders(self):
         runner = CliRunner()
         result = runner.invoke(qpx_main, ["query", "head", "--help"])
-        _assert_help(result, "--dataset-path", "--structure")
+        _assert_help(result, "--dataset", "--structure")
 
     def test_head_reads_dataset_metadata(self, dataset_dir):
         """Query head accepts the canonical dataset structure name."""
@@ -412,7 +412,7 @@ class TestQueryHeadCLI:
             [
                 "query",
                 "head",
-                "--dataset-path",
+                "--dataset",
                 str(dataset_dir),
                 "--structure",
                 "dataset",
@@ -434,7 +434,7 @@ class TestInfoCLI:
     def test_info_help_renders(self):
         runner = CliRunner()
         result = runner.invoke(qpx_main, ["info", "--help"])
-        _assert_help(result, "--dataset-path")
+        _assert_help(result, "--dataset")
 
     def test_info_counts_every_shard(self, tmp_path):
         """A view split over several files reports the rows of all of them."""
@@ -445,7 +445,7 @@ class TestInfoCLI:
             with PsmWriter(tmp_path / f"{shard}.psm.parquet") as writer:
                 writer.write_batch([make_psm_record(scan=[scan])])
 
-        result = CliRunner().invoke(qpx_main, ["info", "--dataset-path", str(tmp_path)])
+        result = CliRunner().invoke(qpx_main, ["info", "--dataset", str(tmp_path)])
 
         assert result.exit_code == 0, result.output
         assert re.search(r"^\s*psm\s+2\s", result.output, re.MULTILINE), result.output
@@ -453,7 +453,7 @@ class TestInfoCLI:
     def test_info_schema_help_renders(self):
         runner = CliRunner()
         result = runner.invoke(qpx_main, ["info", "schema", "--help"])
-        _assert_help(result, "--dataset-path")
+        _assert_help(result, "--dataset")
 
     def test_info_metadata_help_renders(self):
         runner = CliRunner()
@@ -470,7 +470,7 @@ class TestValidateCLI:
     def test_validate_help_renders(self):
         runner = CliRunner()
         result = runner.invoke(qpx_main, ["validate", "--help"])
-        _assert_help(result, "--dataset-path", "--file", "--structure", "--semantic")
+        _assert_help(result, "--dataset", "--file", "--structure", "--semantic")
 
     def test_validate_semantic_fails_a_wrong_calculated_mz(self, tmp_path):
         """--semantic checks calculated_mz against the peptidoform; the default run does not."""
