@@ -7,7 +7,7 @@ Usage::
 
     from qpx.core.obo import parse_obo, download_obo, write_terms_parquet
 
-    text = download_obo(PSI_MS_OBO_URL)
+    text = download_obo("https://raw.githubusercontent.com/HUPO-PSI/psi-ms-CV/master/psi-ms.obo")
     version = extract_obo_version(text)
     terms = parse_obo(text, source="MS")
     write_terms_parquet(terms, "psi_ms.parquet", source="psi_ms", version=version)
@@ -32,9 +32,6 @@ from qpx.core.cv_terms import (
 from qpx.core.http import safe_urlopen
 
 logger = logging.getLogger(__name__)
-
-# Default OBO source URL
-PSI_MS_OBO_URL = "https://raw.githubusercontent.com/HUPO-PSI/psi-ms-CV/master/psi-ms.obo"
 
 _SCORE_ORDERS = {CV_HIGHER_BETTER: True, CV_LOWER_BETTER: False}
 

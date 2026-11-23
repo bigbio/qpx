@@ -205,7 +205,6 @@ class ProteinPropertiesReport:  # pylint: disable=too-many-instance-attributes
     pg_coverage_filled: int = 0
     pg_molecular_weight_filled: int = 0
     pg_anchors_not_in_fasta: int = 0
-    feature_rows: int = 0
     feature_rows_eligible: int = 0
     feature_positions_filled: int = 0
     feature_rows_without_match: int = 0
@@ -456,7 +455,6 @@ def _fill_feature_table(table: pa.Table, fasta: FastaSequences, report: ProteinP
     import pyarrow.compute as pc
 
     names = table.schema.names
-    report.feature_rows += table.num_rows
     if "pg_positions" not in names or "pg_accessions" not in names:
         return table
     positions_column = table.column("pg_positions")
