@@ -7,6 +7,8 @@ from typing import Optional
 
 import click
 
+from qpx.cli.renamed import RenamedCommand
+
 logger = logging.getLogger("qpx.cli.transform")
 
 
@@ -333,7 +335,7 @@ def _qpx_feature_to_peptide_df(feature_path: Path, sdrf_path: Optional[Path] = N
     return result
 
 
-@click.command("quantify")
+@click.command("quantify", cls=RenamedCommand, renamed={"--sdrf": "--sdrf-file", "--threads": "--max-cpus"})
 @click.option(
     "--feature-path",
     help="QPX feature.parquet file, a dataset directory, or a directory partitioned by run_file_name",

@@ -17,6 +17,7 @@ from typing import Optional
 
 import click
 
+from qpx.cli.renamed import DATASET_PATH, RenamedCommand
 from qpx.cli.resources import duckdb_resource_options
 from qpx.dataset import Dataset
 
@@ -53,7 +54,11 @@ def query_cmd():
 # ---------------------------------------------------------------------------
 
 
-@query_cmd.command("sql")
+@query_cmd.command(
+    "sql",
+    cls=RenamedCommand,
+    renamed={**DATASET_PATH, "--structures": "--view", "--duckdb-memory": "--max-memory", "--duckdb-threads": "--max-cpus"},
+)
 @_dataset_path_option
 @click.option(
     "--sql",
@@ -141,7 +146,7 @@ def query_sql_cmd(**kwargs):
 # ---------------------------------------------------------------------------
 
 
-@query_cmd.command("filter")
+@query_cmd.command("filter", cls=RenamedCommand, renamed={**DATASET_PATH, "--structure": "--view"})
 @_dataset_path_option
 @click.option(
     "--view",
@@ -256,7 +261,7 @@ def query_filter_cmd(**kwargs):
 # ---------------------------------------------------------------------------
 
 
-@query_cmd.command("head")
+@query_cmd.command("head", cls=RenamedCommand, renamed={**DATASET_PATH, "--structure": "--view"})
 @_dataset_path_option
 @click.option(
     "--view",

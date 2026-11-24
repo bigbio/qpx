@@ -7,6 +7,7 @@ from pathlib import Path
 
 import click
 
+from qpx.cli.renamed import RenamedCommand
 from qpx.cli.resources import convert_resource_options
 
 from .options import (
@@ -43,7 +44,7 @@ def _maxquant_structures(structures, msms_file, evidence_file, protein_groups_fi
     return requested
 
 
-@click.command("maxquant")
+@click.command("maxquant", cls=RenamedCommand, renamed={"--structures": "--view", "--spectral-data": "--include-spectra"})
 @click.option(
     "--msms-file",
     help="MaxQuant msms.txt file (for PSM conversion)",

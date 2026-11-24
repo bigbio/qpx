@@ -594,3 +594,44 @@ def test_help_keeps_each_example_on_its_own_line(name, command):
     description = runner_result.output.split("Options:")[0]
     assert "\\b" not in description
     assert not re.search(r"\\ +--", description)
+
+
+class TestRenamedOptions:
+    """Old spellings of renamed options still parse until the next release, with a warning."""
+
+    @staticmethod
+    def _commands(command):
+        yield command
+        for sub in getattr(command, "commands", {}).values():
+            yield from TestRenamedOptions._commands(sub)
+
+    def test_every_old_spelling_names_an_option_of_its_command(self):
+        renamed = [
+            (command, old, new)
+            for command in self._commands(qpx_main)
+            for old, new in getattr(command, "renamed", {}).items()
+            if new is not None
+        ]
+        assert renamed
+        for command, old, new in renamed:
+            names = {name for param in command.params for name in param.opts}
+            assert new in names and old not in names, (command.name, old, new)
+
+    def test_old_spellings_become_the_new_options(self):
+        from qpx.cli.renamed import DATASET_PATH, _new_spellings
+
+        renamed = {**DATASET_PATH, "--structures": "--view", "--compression": None}
+        args = ["--structures", "psm, pg", "--dataset-path=d", "--compression", "zstd", "-n", "1", "--", "--structures"]
+        assert _new_spellings(args, renamed) == ["--view", "psm", "--view", "pg", "--dataset=d", "-n", "1", "--", "--structures"]
+
+    def test_an_old_spelling_runs_the_command_with_a_warning(self):
+        old = CliRunner().invoke(qpx_main, ["info", "schema", "--canonical", "--structure", "psm"])
+        new = CliRunner().invoke(qpx_main, ["info", "schema", "--canonical", "--view", "psm"])
+        assert old.exit_code == new.exit_code == 0, old.output
+        assert old.stdout == new.stdout
+        assert "WARNING: --structure is deprecated and will be removed in the next release; use --view" in old.stderr
+
+    def test_convert_ignores_the_removed_compression(self):
+        result = CliRunner().invoke(qpx_main, ["convert", "sdrf", "--compression", "zstd", "--help"])
+        _assert_help(result, "--sdrf-file")
+        assert "WARNING: --compression is deprecated and ignored" in result.stderr

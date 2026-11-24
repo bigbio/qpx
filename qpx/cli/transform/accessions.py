@@ -6,6 +6,8 @@ from typing import Optional
 
 import click
 
+from qpx.cli.renamed import RenamedCommand
+
 
 def _accession_target_files(dataset: Path) -> list[str]:
     """Return the accession-bearing view files of a QPX dataset, relative to it."""
@@ -43,7 +45,7 @@ def _refresh_derived_files(out_dir: Path) -> None:
     _refresh_recorded_integrity(out_dir, prefix)
 
 
-@click.command("normalize-accessions")
+@click.command("normalize-accessions", cls=RenamedCommand, renamed={"--output": "--output-folder"})
 @click.option(
     "--dataset",
     help="Path to a QPX dataset directory",

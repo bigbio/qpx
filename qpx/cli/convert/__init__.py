@@ -2,6 +2,8 @@
 
 import click
 
+from qpx.cli.renamed import RenamedGroup
+
 from .cdap import convert_cdap_cmd
 from .diann import convert_diann_cmd, convert_diann_xic_cmd
 from .fragpipe import convert_fragpipe_cmd
@@ -31,7 +33,8 @@ __all__ = [
 ]
 
 
-@click.group()
+# Converters always write zstd, the default of the removed --compression.
+@click.group(cls=RenamedGroup, renamed={"--compression": None})
 def convert():
     """Convert external tool outputs to QPX format."""
 
