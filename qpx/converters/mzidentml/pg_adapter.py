@@ -23,8 +23,6 @@ _CV_GROUP_REPRESENTATIVE = "MS:1002403"
 _CV_LEADING_PROTEIN = "MS:1002401"
 _CV_PROTEIN_GROUP_QVALUE = "MS:1002373"
 
-_DECOY_PREFIXES = ("rev_", "DECOY_", "decoy_")
-
 
 class MzIdentMLPgAdapter(BaseConverter):
     """Convert mzIdentML ProteinDetectionList to QPX pg.parquet."""
@@ -54,7 +52,7 @@ class MzIdentMLPgAdapter(BaseConverter):
         root, ns = document.root, document.ns
         grouped_runs_by_list, fallback_runs = self._build_grouped_runs(root, ns, fallback_run, document.spectra_refs)
 
-        records = list(self._iter_protein_groups(root, ns, document.db_accessions, grouped_runs_by_list, fallback_runs))
+        records = list(self._iter_protein_groups(root, ns, document, grouped_runs_by_list, fallback_runs))
 
         if not records:
             logger.warning("No protein group records produced from %s", mzid_path)
@@ -130,7 +128,7 @@ class MzIdentMLPgAdapter(BaseConverter):
         self,
         root,
         ns: str,
-        dbseq_map: dict[str, str],
+        document: MzidDocument,
         grouped_runs_by_list: dict[str, list[str]],
         fallback_runs: list[str],
     ):
@@ -138,7 +136,7 @@ class MzIdentMLPgAdapter(BaseConverter):
         for protein_list in root.iter(f"{{{ns}}}ProteinDetectionList"):
             grouped_runs = grouped_runs_by_list.get(protein_list.get("id", ""), fallback_runs)
             for pag in protein_list.findall(f"{{{ns}}}ProteinAmbiguityGroup"):
-                record = self._build_pag_record(pag, ns, dbseq_map, grouped_runs)
+                record = self._build_pag_record(pag, ns, document, grouped_runs)
                 if record is not None:
                     yield record
 
@@ -211,7 +209,7 @@ class MzIdentMLPgAdapter(BaseConverter):
 
         return pg_accessions, member_names if all(member_names) else None, anchor_protein, peptides
 
-    def _build_pag_record(self, pag, ns: str, dbseq_map: dict[str, str], grouped_runs: list[str]) -> dict | None:
+    def _build_pag_record(self, pag, ns: str, document: MzidDocument, grouped_runs: list[str]) -> dict | None:
         """Build a single pg record from a ProteinAmbiguityGroup element."""
         pdhs = pag.findall(f"{{{ns}}}ProteinDetectionHypothesis")
         if not pdhs:
@@ -219,7 +217,7 @@ class MzIdentMLPgAdapter(BaseConverter):
 
         global_qvalue, additional_scores = self._extract_pag_scores(pag, ns)
 
-        pg_accessions, pg_names, anchor_protein, peptides = self._pag_members(pdhs, ns, dbseq_map, additional_scores)
+        pg_accessions, pg_names, anchor_protein, peptides = self._pag_members(pdhs, ns, document.db_accessions, additional_scores)
 
         if not pg_accessions:
             return None
@@ -228,7 +226,7 @@ class MzIdentMLPgAdapter(BaseConverter):
         if anchor_protein is None:
             anchor_protein = pg_accessions[0]
 
-        is_decoy = any(acc.startswith(_DECOY_PREFIXES) for acc in pg_accessions)
+        is_decoy = any(pdh.get("dBSequence_ref") in document.decoy_sequences for pdh in pdhs)
 
         return {
             "pg_accessions": pg_accessions,

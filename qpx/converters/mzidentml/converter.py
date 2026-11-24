@@ -13,7 +13,7 @@ from itertools import chain
 from pathlib import Path
 
 from qpx._version import __version__
-from qpx.converters.mzidentml.document import MzidDocument, stream_results
+from qpx.converters.mzidentml.document import MzidDocument, is_true, stream_results
 from qpx.converters.mzidentml.mgf_parser import MgfSpectraIndex
 from qpx.converters.mzidentml.pg_adapter import MzIdentMLPgAdapter
 from qpx.converters.mzidentml.psm_adapter import MzIdentMLPsmAdapter, modification_identity_param
@@ -304,7 +304,7 @@ class MzIdentMLConverter(BaseOrchestrator):
 
         # Modifications (fixed and variable)
         for mod in sip.iter(f"{{{ns}}}SearchModification"):
-            fixed = mod.get("fixedMod", "false").lower() == "true"
+            fixed = is_true(mod.get("fixedMod", "false"))
             residues = mod.get("residues", "").strip()
             cv = modification_identity_param(mod, ns)
             mod_name = cv.get("name", "") if cv is not None else ""

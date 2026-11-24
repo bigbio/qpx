@@ -53,8 +53,8 @@ from .postprocess import _finish_conversion
 def convert_mzidentml_cmd(**kwargs):
     """Convert mzIdentML file to QPX dataset.
 
-    Supports both standard mzIdentML (1.1/1.2) and mzIdentML 1.3 with
-    cross-linking extensions (inter-peptide, looplinks, noncovalent).
+    Supports mzIdentML 1.1, 1.2 and 1.3, with the cross-links (inter-peptide,
+    looplinks, noncovalent) that 1.2 and 1.3 encode.
     Produces a full QPX dataset including PSM, pepmap, provenance,
     ontology, and dataset metadata.
 
@@ -66,7 +66,7 @@ def convert_mzidentml_cmd(**kwargs):
             --output-folder ./qpx_output
 
     \b
-        # Convert an XL-MS mzIdentML 1.3 file
+        # Convert a cross-linking mzIdentML file
         qpxc convert mzidentml \\
             --mzid-path crosslinks.mzid \\
             --output-folder ./qpx_output \\

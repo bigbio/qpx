@@ -13,7 +13,7 @@ from itertools import chain
 from typing import Iterator
 
 from qpx.converters.base import BaseConverter
-from qpx.converters.mzidentml.document import MzidDocument, stream_results
+from qpx.converters.mzidentml.document import MzidDocument, is_true, stream_results
 from qpx.converters.mzidentml.psm_records import _build_psm_records, declare_scan_format, scan_schemes
 from qpx.converters.ptm import build_proforma, canonical_mod_tag
 from qpx.converters.utils import canonical_accession
@@ -38,6 +38,15 @@ def modification_identity_param(element, ns: str):
     for cv in element.findall(f"{{{ns}}}cvParam"):
         if cv.get("accession") not in MODIFICATION_NON_IDENTITY_ACCESSIONS:
             return cv
+    return None
+
+
+def linker_identity(element, ns: str) -> dict | None:
+    """The cross-linker an XLMOD or Unimod ``Xlink:`` cvParam of a Modification or SearchModification names."""
+    for cv in element.findall(f"{{{ns}}}cvParam"):
+        name, accession = cv.get("name", ""), cv.get("accession", "")
+        if accession.startswith("XLMOD:") or name.startswith("Xlink:"):
+            return {"name": name.removeprefix("Xlink:"), "accession": accession}
     return None
 
 
@@ -83,7 +92,7 @@ class MzIdentMLPsmAdapter(BaseConverter):
         results: list[dict] = []
         for result in stream_results(path, document):
             if not self.parsed:
-                self.parsed = self._parse_sections(document.root, document.ns)
+                self.parsed = self._parse_sections(document)
                 document.release_sequences()
             results.append(self._parse_spectrum_result(result, document.ns))
             if len(results) == _RESULT_BATCH:
@@ -92,13 +101,14 @@ class MzIdentMLPsmAdapter(BaseConverter):
         if results:
             yield _build_psm_records({**self.parsed, "spectrum_results": results}, rank1_only)
 
-    def _parse_sections(self, root, ns: str) -> dict:
+    def _parse_sections(self, document: MzidDocument) -> dict:
         """Parse the sections that come before the first result into intermediate data structures."""
+        root, ns = document.root, document.ns
         return {
             "spectra_data": self._parse_spectra_data(root, ns),
-            "db_sequences": self._parse_db_sequences(root, ns),
+            "db_sequences": {ref: canonical_accession(accession) for ref, accession in document.db_accessions.items()},
             "peptides": self._parse_peptides(root, ns),
-            "peptide_evidence": self._parse_peptide_evidence(root, ns),
+            "peptide_evidence": self._parse_peptide_evidence(root, ns, document.decoy_sequences),
             "linker_info": self._parse_linker_info(root, ns),
             "modification_tags": self._parse_modification_tags(root, ns),
         }
@@ -111,13 +121,6 @@ class MzIdentMLPsmAdapter(BaseConverter):
             location = sd.get("location", "")
             stem = run_file_stem(location)
             result[sd_id] = stem
-        return result
-
-    def _parse_db_sequences(self, root, ns: str) -> dict[str, str]:
-        """Map DBSequence id → protein accession."""
-        result = {}
-        for db in root.iter(f"{{{ns}}}DBSequence"):
-            result[db.get("id")] = canonical_accession(db.get("accession", ""))
         return result
 
     def _parse_peptides(self, root, ns: str) -> dict[str, dict]:
@@ -191,6 +194,7 @@ class MzIdentMLPsmAdapter(BaseConverter):
                             "position": location,
                             "mass_delta": mass_delta,
                             "residues": residues,
+                            "linker": linker_identity(mod, ns),
                         }
                     )
                     break
@@ -202,7 +206,7 @@ class MzIdentMLPsmAdapter(BaseConverter):
 
         return mods, xl_mods, tags
 
-    def _parse_peptide_evidence(self, root, ns: str) -> dict[str, dict]:
+    def _parse_peptide_evidence(self, root, ns: str, decoy_sequences: set[str]) -> dict[str, dict]:
         """Map PeptideEvidence id → {peptide_ref, db_ref, is_decoy, start, end, pre, post}."""
         result = {}
         for pe in root.iter(f"{{{ns}}}PeptideEvidence"):
@@ -211,7 +215,7 @@ class MzIdentMLPsmAdapter(BaseConverter):
             result[pe.get("id")] = {
                 "peptide_ref": pe.get("peptide_ref"),
                 "db_ref": pe.get("dBSequence_ref"),
-                "is_decoy": pe.get("isDecoy", "false").lower() == "true",
+                "is_decoy": pe.get("dBSequence_ref") in decoy_sequences,
                 "start": int(start_val) if start_val is not None else None,
                 "end": int(end_val) if end_val is not None else None,
                 "pre": pe.get("pre", None),
@@ -249,9 +253,6 @@ class MzIdentMLPsmAdapter(BaseConverter):
             # Look for crosslink donor/acceptor cvParam
             xl_group = None
             xl_role = None
-            linker_name = None
-            linker_accession = None
-
             for cv in cvs:
                 acc = cv.get("accession", "")
                 if acc == CV_XL_DONOR:
@@ -264,21 +265,9 @@ class MzIdentMLPsmAdapter(BaseConverter):
             if xl_group is None:
                 continue
 
-            # Find the linker name from other cvParams in same SearchModification
-            for cv in cvs:
-                name = cv.get("name", "")
-                acc = cv.get("accession", "")
-                if name.startswith("Xlink:"):
-                    linker_name = name.replace("Xlink:", "")
-                    linker_accession = acc
-                    break
-
-            if xl_role == "donor" and linker_name:
-                linker_info[xl_group] = {
-                    "name": linker_name,
-                    "accession": linker_accession,
-                    "mass": mass,
-                }
+            linker = linker_identity(sm, ns)
+            if xl_role == "donor" and linker:
+                linker_info[xl_group] = {**linker, "mass": mass}
 
         # If only one linker found, use it as default
         if len(linker_info) == 1:
@@ -301,7 +290,7 @@ class MzIdentMLPsmAdapter(BaseConverter):
                 # Optional in mzIdentML; cross-link SIIs commonly leave it out.
                 "calc_mz": float(sii.get("calculatedMassToCharge")) if sii.get("calculatedMassToCharge") else None,
                 "rank": int(sii.get("rank", "1")),
-                "pass_threshold": sii.get("passThreshold", "false").lower() == "true",
+                "pass_threshold": is_true(sii.get("passThreshold", "false")),
                 "peptide_ref": sii.get("peptide_ref", ""),
                 "cv_params": [
                     {"accession": cv.get("accession", ""), "name": cv.get("name", ""), "value": cv.get("value", "")}

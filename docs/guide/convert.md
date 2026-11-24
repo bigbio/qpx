@@ -693,7 +693,8 @@ The converter supports multiple native ID formats for scan number extraction:
 - **Compressed files**: Supports both `.mzid` and `.mzid.gz` formats
 - **Modifications**: Full support for UNIMOD and custom modifications
 - **Scores**: Extracts all CV-term scores with `higher_better` flag annotation
-- **Decoy detection**: Automatic detection via `isDecoy` attribute
+- **Decoy detection**: Automatic detection via `isDecoy` attribute; a file that marks no decoy falls back to the accession prefixes `DECOY`, `decoy_` and `rev_` (Kojak). A decoy that shares its target's accession (xiFDR) gets `DECOY_` before it in every view
+- **Repeated identifications**: an identification that a spectrum result lists twice (xiFDR) is one PSM, the first
 - **Multi-file support**: Handles mzIdentML referencing multiple spectra files
 
 ### Best Practices {#mzidentml-best-practices}
