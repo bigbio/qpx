@@ -152,9 +152,14 @@ def _diann_pg_row(row: dict) -> dict:
 
 
 def _quantms_pg_row(row: dict) -> dict:
-    """A quantms pg row with sequence_coverage in percent: QPX 1.0 wrote the mzTab fraction, and 0 for none."""
+    """A quantms pg row with sequence_coverage in percent: QPX 1.0 wrote the mzTab fraction, and 0 for none.
+
+    A value above 1 is a percent already, as protein-properties fills in, and stays.
+    """
     coverage = row.get("sequence_coverage")
-    return {**row, "sequence_coverage": coverage * 100 if coverage else None}
+    if not coverage:
+        return {**row, "sequence_coverage": None}
+    return {**row, "sequence_coverage": coverage * 100 if coverage <= 1 else coverage}
 
 
 def _pg_row_fix(footer: dict[bytes, bytes]) -> Callable[[dict], dict] | None:

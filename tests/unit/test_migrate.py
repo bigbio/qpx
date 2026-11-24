@@ -560,12 +560,15 @@ def test_the_column_row_takes_the_source_of_a_moved_score(tmp_path, moved):
 
 
 def test_a_quantms_pg_coverage_becomes_a_percentage_once(tmp_path):
-    """The quantms converter of QPX 1.0 wrote the mzTab fraction, 0 for none; a migrated file keeps its percentage."""
+    """The quantms converter of QPX 1.0 wrote the mzTab fraction, 0 for none; a migrated file keeps its percentage.
+
+    A value above 1 is a percent protein-properties filled in.
+    """
     source = tmp_path / "old"
     source.mkdir()
     rows = [
         {**make_pg_record(anchor_protein=anchor), "sequence_coverage": value}
-        for anchor, value in ((PROTEIN, 0.25), ("Q1", 0.0), ("Q2", None))
+        for anchor, value in ((PROTEIN, 0.25), ("Q1", 0.0), ("Q2", None), ("Q3", 45.0))
     ]
     _write(source / "old.pg.parquet", rows, creator=b"quantms")
     migrate_dataset(source, tmp_path / "new")
@@ -577,6 +580,7 @@ def test_a_quantms_pg_coverage_becomes_a_percentage_once(tmp_path):
             PROTEIN: 25.0,
             "Q1": None,
             "Q2": None,
+            "Q3": 45.0,
         }
 
 
