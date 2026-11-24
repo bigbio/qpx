@@ -355,7 +355,8 @@ def _group_subfeatures_by_run(cf, map_info: dict[int, tuple[str, str]]) -> dict[
     label-free, one map == one run. One entry per label — if a channel is linked
     twice, keep the max rather than emit it twice (which would double-count
     downstream). ``rt`` and ``mz`` come from the run's first element in map order,
-    the lightest measured partner of an MS1-label multiplet.
+    the lightest measured partner of an MS1-label multiplet; an isobaric element's
+    m/z is its reporter ion's.
     """
     by_run: dict[str, dict] = {}
     for sub in cf.getFeatureList():
@@ -649,7 +650,7 @@ def _identified_labels_by_run(pids, map_info, cf_runs, resolve_run, ms1) -> dict
 
 
 def _run_mz_fields(calculated_mz: float | None, mz: float) -> dict:
-    """The m/z of a run's sub-feature as ``observed_mz``, unless it is the theoretical m/z.
+    """A run's precursor m/z as ``observed_mz``, unless it is the theoretical m/z.
 
     A sub-feature that OpenMS placed at the peptide's theoretical m/z holds no
     measurement. The comparison is made in double precision, before ``observed_mz``
@@ -671,6 +672,11 @@ def _multiplet_fields(record: dict, entry: dict, lightest: str | None) -> dict:
         "observed_mz": entry["mz"],
         "mass_error_ppm": mass_error_ppm(record["calculated_mz"], entry["mz"]) if measured_lightest else None,
     }
+
+
+def _precursor_mz(cf, entry: dict, ms1) -> float:
+    """The m/z of a run's precursor: isobaric elements sit at their reporter ions, the consensus feature at the precursor."""
+    return entry["mz"] if ms1 or "LFQ" in entry["labels"] else float(cf.getMZ())
 
 
 def feature_records_for_cf(
@@ -722,7 +728,7 @@ def feature_records_for_cf(
             "run_file_name": run,
             "scan": scan_by_run.get(run, []),
             "rt": entry["rt"],
-            **_run_mz_fields(peptide_fields["calculated_mz"], entry["mz"]),
+            **_run_mz_fields(peptide_fields["calculated_mz"], _precursor_mz(cf, entry, ms1)),
             "intensities": intensities,
             "posterior_error_probability": posterior_error_probability,
             "peptide_qvalue": peptide_qvalue,
