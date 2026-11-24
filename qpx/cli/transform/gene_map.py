@@ -126,6 +126,7 @@ def _gene_map_parquet(mapping, parquet_path: Path, output_folder: Path) -> None:
     import pyarrow as pa
     import pyarrow.parquet as pq
 
+    from qpx.transforms.relayout import SORT_ORDER_FOOTER_KEY
     from qpx.writers.encoding import SampledParquetWriter, row_group_rows
 
     output_folder.mkdir(parents=True, exist_ok=True)
@@ -136,6 +137,9 @@ def _gene_map_parquet(mapping, parquet_path: Path, output_folder: Path) -> None:
         footer = {
             key: value for key, value in (source.metadata.metadata or {}).items() if key not in (b"ARROW:schema", b"pandas")
         }
+    if "gg_names" in footer.get(SORT_ORDER_FOOTER_KEY, b"").decode().split(","):
+        # New gene names can break an order by them.
+        del footer[SORT_ORDER_FOOTER_KEY]
     if b"uuid" in footer:
         # Like the other QPX rewrites, the annotated file gets its own uuid and date.
         footer |= {b"uuid": str(uuid.uuid4()).encode(), b"creation_date": datetime.datetime.now().isoformat().encode()}

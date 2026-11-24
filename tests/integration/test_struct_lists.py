@@ -17,6 +17,7 @@ from qpx.core.struct_lists import STRUCT_LISTS_FOOTER_KEY, file_layouts
 from qpx.dataset import Dataset
 from qpx.transforms.gene_mapping import GeneMappingTransform
 from qpx.transforms.mantissa import round_table
+from qpx.transforms.relayout import SORT_ORDER_FOOTER_KEY
 from qpx.writers.feature import FeatureWriter
 from qpx.writers.psm import PsmWriter
 from tests.conftest import make_feature_record, make_psm_record
@@ -137,6 +138,21 @@ def test_gene_map_parquet_preserves_structs_and_file_footer(diann, tmp_path):
     }
     assert footer[b"uuid"] != original[b"uuid"]
     assert after["gg_names"][0].as_py() == ["MappedGene"]
+
+
+def test_gene_map_parquet_drops_an_order_by_gene_names(diann, tmp_path):
+    """New gene names void a sort order that uses them."""
+    _invoke(
+        "transform", "relayout", "--dataset", diann / "source", "--view", "pg", "--sort-by", "gg_names",
+        "--output-folder", tmp_path / "by_gene",
+    )  # fmt: skip
+    source = tmp_path / "by_gene" / "d.pg.parquet"
+    assert pq.read_metadata(source).metadata[SORT_ORDER_FOOTER_KEY] == b"gg_names"
+    fasta = tmp_path / "genes.fasta"
+    fasta.write_text(f">sp|{pq.read_table(source)['pg_accessions'][0][0].as_py()}|PROTEIN GN=MappedGene\nPEPTIDE\n")
+    _invoke("transform", "gene-map", "--parquet-path", source, "--fasta", fasta, "--output-folder", tmp_path / "mapped")
+
+    assert SORT_ORDER_FOOTER_KEY not in pq.read_metadata(tmp_path / "mapped" / source.name).metadata
 
 
 def test_merge_of_fixed_structs_writes_lists(diann, tmp_path):
