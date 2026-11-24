@@ -523,7 +523,13 @@ class TestOntologyCLI:
     def test_ontology_build_help_renders(self):
         runner = CliRunner()
         result = runner.invoke(qpx_main, ["ontology", "build", "--help"])
-        _assert_help(result, "--source", "default: all")
+        _assert_help(result, "--source", "--all-sources")
+
+    def test_ontology_build_asks_for_its_sources(self):
+        """Rebuilding every packaged ontology has to be asked for by name."""
+        result = CliRunner().invoke(qpx_main, ["ontology", "build"])
+        assert result.exit_code == 2
+        assert "Provide --source <name> or --all-sources." in result.output
 
 
 class TestStructureChoicesMatchTheRegistry:

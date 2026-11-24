@@ -100,19 +100,23 @@ def update(source):
 
 
 @ontology.command()
-@click.option("--source", default=None, help="Build a specific source, e.g. psi_ms (default: all).")
-def build(source):
+@click.option("--source", default=None, help="Ontology source to build (e.g. psi_ms).")
+@click.option("--all-sources", "build_all", is_flag=True, help="Build all configured sources.")
+def build(source, build_all):
     """Rebuild ontology Parquet files from OBO sources (maintainer).
 
     \b
     Examples:
-        # Build all configured sources
-        qpxc ontology build
-
-    \b
         # Build a specific ontology source
         qpxc ontology build --source psi_ms
+
+    \b
+        # Build all configured sources
+        qpxc ontology build --all-sources
     """
+    if not source and not build_all:
+        raise click.UsageError("Provide --source <name> or --all-sources.")
+
     from pathlib import Path
 
     import yaml
@@ -124,10 +128,10 @@ def build(source):
     with open(config_path, encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
-    if source:
-        build_ontology(source, config)
-    else:
+    if build_all:
         _build_all(config)
+    else:
+        build_ontology(source, config)
     click.echo("Build complete.")
 
 
