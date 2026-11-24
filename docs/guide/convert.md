@@ -115,7 +115,7 @@ The `convert` command group provides converters for multiple proteomics software
 - [proteome-discoverer](#proteome-discoverer) - Convert Proteome Discoverer text exports to QPX format
 - [mzidentml](#mzidentml) - Convert mzIdentML file to PSM format
 - [cdap](#cdap) - Convert CPTAC CDAP `.psm` files to QPX format
-- [mz](#mz) - Convert an mzML spectra directory to QPX `mz.parquet` (full spectra)
+- [mz](#mz) - Convert an mzML spectra directory to a QPX `<prefix>.mz.parquet` (full spectra)
 - [sdrf](#sdrf) - Convert SDRF to sample and run parquet files
 - [quantms-msstats](#quantms-msstats) - Convert QuantMS `*_msstats_in.csv` plus SDRF to QPX
 
@@ -774,7 +774,7 @@ Depending on `--view`:
 
 ## mz
 
-Convert a directory of mzML spectra to a QPX `mz.parquet` (full spectra).
+Convert a directory of mzML spectra to a QPX `<prefix>.mz.parquet` (full spectra).
 
 ### Description {#mz-description}
 
@@ -820,7 +820,7 @@ A single `mz.parquet` with one row per spectrum:
 - `precursors` — precursor m/z, charge, isolation window (MS2+)
 - `mz`, `intensity` — full peak arrays
 
-Written as `<prefix>.mz.parquet` beside the `<prefix>.ontology.parquet` of a dataset, the command adds the rows of the mz view to that ontology view and, when the dataset view holds an integrity record, records the integrity of the dataset again. A standalone mz file gets no ontology view.
+Written as `<prefix>.mz.parquet` beside the `<prefix>.ontology.parquet` of a dataset, the command adds the rows of the mz view to that ontology view and, when the dataset view holds an integrity record, records the integrity of the dataset again. A standalone mz file gets no ontology view, and a file beside an ontology view that is not named `<prefix>.mz.parquet` stays outside that dataset, with a warning.
 
 ### Best Practices {#mz-best-practices}
 

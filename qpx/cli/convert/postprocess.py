@@ -249,6 +249,10 @@ def _describe_in_dataset(path: Path, view: str) -> None:
     from qpx.converters.ontology_util import write_view_ontology
 
     folder, prefix = path.parent, path.name.removesuffix(f".{view}.parquet")
+    if prefix == path.name:
+        if any(folder.glob("*.ontology.parquet")):
+            _warn(f"{path.name} is not named <prefix>.{view}.parquet, so the dataset in {folder} does not describe it")
+        return
     ontology = folder / f"{prefix}.ontology.parquet"
     if not ontology.is_file():
         return
