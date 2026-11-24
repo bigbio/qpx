@@ -274,6 +274,20 @@ def test_label_free_feature_takes_the_largest_ms1_abundance(tmp_path):
     assert feature["additional_intensities"][0]["intensities"] == [{"intensity_name": "spectral_count", "intensity_value": 2.0}]
 
 
+def test_label_free_precursors_of_one_spectrum_count_apart(tmp_path):
+    """PD gives each precursor of a chimeric spectrum its own MS1 abundance."""
+    rows = [
+        {k: v for k, v in _psm_row(**overrides).items() if not k.startswith("Abundance")}
+        for overrides in (
+            {"Intensity": "100"},
+            {"Annotated Sequence": "OTHERK", "Modifications": "", "mz in Da": "650.3", "Intensity": "300"},
+        )
+    ]
+    features = pq.read_table(_convert(tmp_path, rows) / "pd.feature.parquet").to_pylist()
+
+    assert sorted(f["intensities"][0]["intensity"] for f in features) == [100.0, 300.0]
+
+
 def test_ms1_label_abundances_stop_the_conversion(tmp_path):
     row = {k: v for k, v in _psm_row().items() if not k.startswith("Abundance")}
     with pytest.raises(ValueError, match="MS1-label"):

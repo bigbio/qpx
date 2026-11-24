@@ -14,10 +14,11 @@ from qpx.writers.feature import FeatureWriter
 _REPORTER_COLUMN = re.compile(r"^Abundance:? (\d{3}[NCD]?)$")
 _ABUNDANCE_COLUMN = re.compile(r"^Abundance:? ")
 # The candidates of one spectrum carry its reporter values, so a spectrum counts once,
-# for the precursor of its first candidate.
+# for the precursor of its first candidate. A label-free abundance is the precursor's, so
+# there the precursors of a chimeric spectrum, at different m/z, count apart.
 _FEATURE_SQL = """SELECT * EXCLUDE (_best) FROM (
     SELECT *, $aggregates, row_number() OVER (g ORDER BY _qvalue NULLS LAST, _scan) AS _best
-    FROM (SELECT * FROM pd_psms WHERE $used QUALIFY row_number() OVER (PARTITION BY _run, _scan ORDER BY $candidate) = 1)
+    FROM (SELECT * FROM pd_psms WHERE $used QUALIFY row_number() OVER (PARTITION BY $spectrum ORDER BY $candidate) = 1)
     WINDOW g AS (PARTITION BY _run, _sequence, _modifications, _charge)
 ) WHERE _best = 1"""
 
@@ -77,7 +78,8 @@ class ProteomeDiscovererFeatureAdapter(PdPsmTable):
     def _query(self, ms1: str | None) -> str:
         """One row per run, sequence, modifications and charge, over the spectra PD used to quantify.
 
-        Each spectrum counts once: reporter abundances are summed and the MS1 abundance is the largest.
+        Each spectrum counts once, or each precursor m/z of a spectrum without reporters: reporter
+        abundances are summed and the MS1 abundance is the largest.
         Rejected PSMs and those PD excluded from its quantification are left out.
         """
         sums = [
@@ -92,8 +94,13 @@ class ProteomeDiscovererFeatureAdapter(PdPsmTable):
         if quan_info:
             # The PSMs PD left out of its own quantification: "Excluded by Method"
             used.append(f"lower(replace(COALESCE(\"{quan_info}\", ''), ' ', '')) NOT LIKE 'excludedby%'")
+        spectrum = "_run, _scan" if self._channels else f"_run, _scan, {self._optional_double('observed_mz')}"
         return sql_build(
-            _FEATURE_SQL, aggregates=", ".join(aggregates), used=" AND ".join(used) or "true", candidate=self._candidate_order()
+            _FEATURE_SQL,
+            aggregates=", ".join(aggregates),
+            used=" AND ".join(used) or "true",
+            spectrum=spectrum,
+            candidate=self._candidate_order(),
         )
 
     def _quantities(self, row: dict) -> tuple[list[dict] | None, list[dict] | None]:
