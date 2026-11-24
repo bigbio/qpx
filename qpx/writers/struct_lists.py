@@ -45,6 +45,12 @@ def _pack_column(column: pa.ListArray, layout: list[dict], field: pa.Field, sour
         raise ValueError(f"{source} {field.name}: name {names.filter(values.is_null())[0].as_py()!r} has a null value")
     if not layout:
         return column
+    if field.name == "additional_scores":
+        directions = pc.take(pa.array([entry["higher_better"] for entry in layout]), codes)
+        disagree = pc.fill_null(pc.call_function("not_equal", [entries.field("higher_better"), directions]), True)
+        if disagree.true_count:
+            name = names.filter(disagree)[0].as_py()
+            raise ValueError(f"{source} {field.name}: name {name!r} has another higher_better than the fixed layout")
 
     # Use the visible list lengths: flatten skips children hidden by a null list.
     lengths = pc.fill_null(pc.call_function("list_value_length", [column]), 0).to_numpy()

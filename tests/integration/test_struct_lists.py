@@ -276,6 +276,18 @@ def test_fixed_writer_rejects_a_null_value(tmp_path):
     assert not path.exists()
 
 
+def test_fixed_writer_rejects_a_score_direction_against_the_layout(tmp_path):
+    """The footer records the layout's higher_better, so a score of the other direction cannot be stored."""
+    path = tmp_path / "test.psm.parquet"
+    scores = [{"score_name": "andromeda_score", "score_value": 80.0, "higher_better": False}]
+    with (
+        pytest.raises(ValueError, match="name 'andromeda_score' has another higher_better than the fixed layout"),
+        PsmWriter(path, creator="maxquant", struct_tables="maxquant") as writer,
+    ):
+        writer.write_batch([{**make_psm_record(), "additional_scores": scores}])
+    assert not path.exists()
+
+
 _BETA = ("spectronaut", "spectronaut_cscore", "predicted_irt")
 _SHARDS = {
     "alpha": ("diann", "diann_cscore", "predicted_irt"),
