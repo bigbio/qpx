@@ -169,7 +169,7 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
             output_path,
             creator=creator,
             identity_composite=_FEATURE_IDENTITY_COMPOSITE,
-            fixed_struct_lists=True,
+            struct_tables="diann",
         ) as writer:
             for table in self._feature_batches(run_names, batch_rows, sql_template, mods_lookup, target_schema, mzml_info_folder):
                 writer.write_table(table)
@@ -186,7 +186,7 @@ class DiannFeatureAdapter(DiaNNBaseAdapter):
             self.logger.warning("The report has no Fragment.Quant.Raw or Fr.N.* (--export-quant) columns: no fragment view")
             return False
         rows = write_fragment_view(
-            self._conn, sql, output_path, _FEATURE_IDENTITY_COMPOSITE, creator="diann", fixed_struct_lists=True
+            self._conn, sql, output_path, _FEATURE_IDENTITY_COMPOSITE, creator="diann", struct_tables="diann"
         )
         self.logger.info("Wrote %d fragment rows to %s", rows, output_path)
         return True

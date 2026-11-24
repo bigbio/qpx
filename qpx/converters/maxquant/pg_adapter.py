@@ -145,7 +145,7 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
         # Step 5: Stream and transform
         self.logger.info("Transforming MaxQuant protein groups ...")
 
-        with PgWriter(output_path, creator=creator, fixed_struct_lists=True) as writer:
+        with PgWriter(output_path, creator=creator, struct_tables="maxquant") as writer:
             for batch in self._query_batched("SELECT * FROM protein_groups", chunksize):
                 df = batch.to_pandas()
                 records = self._transform_batch(df, intensity_cols, channels)

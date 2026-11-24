@@ -116,7 +116,7 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
         # Step 3: Stream and transform
         self.logger.info("Transforming MaxQuant PSMs ...")
 
-        with PsmWriter(output_path, creator=creator, fixed_struct_lists=True) as writer:
+        with PsmWriter(output_path, creator=creator, struct_tables="maxquant") as writer:
             for batch in self._query_batched("SELECT * FROM msms", chunksize):
                 df = batch.to_pandas()
                 records = self._transform_batch(df, spectral_data)

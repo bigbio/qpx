@@ -157,7 +157,7 @@ class SpectronautFeatureAdapter(SpectronautBaseAdapter):
             output_path,
             creator=creator,
             identity_composite=_FEATURE_IDENTITY_COMPOSITE,
-            fixed_struct_lists=True,
+            struct_tables="spectronaut",
         ) as writer:
             for i in range(0, len(run_names), file_num):
                 batch_runs = run_names[i : i + file_num]
@@ -183,7 +183,7 @@ class SpectronautFeatureAdapter(SpectronautBaseAdapter):
             self.logger.warning("The report has no F.FrgIon or F.PeakArea column: no fragment view")
             return False
         rows = write_fragment_view(
-            self._conn, sql, output_path, _FEATURE_IDENTITY_COMPOSITE, creator="spectronaut", fixed_struct_lists=True
+            self._conn, sql, output_path, _FEATURE_IDENTITY_COMPOSITE, creator="spectronaut", struct_tables="spectronaut"
         )
         self.logger.info("Wrote %d fragment rows to %s", rows, output_path)
         return True

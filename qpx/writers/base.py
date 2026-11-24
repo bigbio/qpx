@@ -82,7 +82,7 @@ class BaseWriter:
         override_provided_ids: bool = False,
         identity_composite: Optional[Sequence[str]] = None,
         *,
-        fixed_struct_lists: bool = False,
+        struct_tables: str | None = None,
         struct_layouts: dict[str, list[dict]] | None = None,
     ):
         self._path = Path(path)
@@ -106,7 +106,7 @@ class BaseWriter:
         self._write_failed = False
         self._warned_checks: set[str] = set()
         if struct_layouts is None:
-            struct_layouts = FIXED_STRUCT_TABLES[creator][self._schema_class.view_name] if fixed_struct_lists else {}
+            struct_layouts = FIXED_STRUCT_TABLES[struct_tables][self._schema_class.view_name] if struct_tables else {}
         self._columns = _WriterColumns(extra_columns or [], struct_layouts)
         # Tables and flushed batches that do not fill a row group yet: the next one
         # or close() completes the group, so consecutive writes share row groups.

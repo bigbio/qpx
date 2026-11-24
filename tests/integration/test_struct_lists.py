@@ -158,7 +158,7 @@ def test_fixed_writer_round_trips_null_empty_and_partial_lists(tmp_path):
     path = tmp_path / "test.psm.parquet"
     scores = [{"score_name": "andromeda_score", "score_value": 8.25, "higher_better": True}]
     cv = [{"cv_name": "mass analyzer", "cv_value": "FTMS"}]
-    with PsmWriter(path, creator="maxquant", fixed_struct_lists=True, batch_size=1) as writer:
+    with PsmWriter(path, creator="maxquant", struct_tables="maxquant", batch_size=1) as writer:
         assert pa.types.is_list(writer.arrow_schema.field("additional_scores").type)
         for scan, entries, params in ((1, scores, cv), (2, [], []), (3, None, None)):
             writer.write_batch([{**make_psm_record(scan=[scan]), "additional_scores": entries, "cv_params": params}])
@@ -204,7 +204,7 @@ def test_files_read_together_check_a_field_null_in_some_of_their_rows(tmp_path, 
     folder = tmp_path / "psm"
     folder.mkdir()
     for name, rows in (("a", [(1, _SCORES, _CV)]), ("b", [(2, [], []), (3, None, None)])):
-        with PsmWriter(folder / f"{name}.psm.parquet", creator="maxquant", fixed_struct_lists=True) as writer:
+        with PsmWriter(folder / f"{name}.psm.parquet", creator="maxquant", struct_tables="maxquant") as writer:
             writer.write_batch(
                 [{**make_psm_record(scan=[scan]), "additional_scores": scores, "cv_params": cv} for scan, scores, cv in rows]
             )
@@ -230,7 +230,7 @@ def test_fixed_writer_rejects_unrepresentable_scores(tmp_path, creator, names, p
     scores = [{"score_name": name, "score_value": 1.25, "higher_better": True} for name in names]
     with (
         pytest.raises(ValueError, match=f"{creator} psm additional_scores: .*(?:{problem})"),
-        PsmWriter(path, creator=creator, fixed_struct_lists=True) as writer,
+        PsmWriter(path, creator=creator, struct_tables=creator) as writer,
     ):
         writer.write_batch([{**make_psm_record(), "additional_scores": scores}])
     assert not path.exists()
@@ -242,7 +242,7 @@ def test_fixed_writer_rejects_an_entry_in_an_empty_layout(tmp_path):
     scores = [{"score_name": "new_score", "score_value": 1.25, "higher_better": True}]
     with (
         pytest.raises(ValueError, match="fragpipe feature additional_scores: name 'new_score' is outside the fixed layout"),
-        FeatureWriter(path, creator="fragpipe", fixed_struct_lists=True) as writer,
+        FeatureWriter(path, creator="fragpipe", struct_tables="fragpipe") as writer,
     ):
         writer.write_batch([{**make_feature_record(), "additional_scores": scores}])
     assert not path.exists()
@@ -254,7 +254,7 @@ def test_fixed_writer_rejects_a_null_value(tmp_path):
     scores = [{"score_name": "andromeda_score", "score_value": None, "higher_better": True}]
     with (
         pytest.raises(ValueError, match="maxquant psm additional_scores: name 'andromeda_score' has a null value"),
-        PsmWriter(path, creator="maxquant", fixed_struct_lists=True) as writer,
+        PsmWriter(path, creator="maxquant", struct_tables="maxquant") as writer,
     ):
         writer.write_batch([{**make_psm_record(), "additional_scores": scores}])
     assert not path.exists()
@@ -279,7 +279,7 @@ def _features(path, run, creator, score, term, *, fixed):
             {"label": "LFQ", "intensities": [{"intensity_name": "spectral_count", "intensity_value": float(index)}]}
         ]
         records.append(record)
-    with FeatureWriter(path, creator=creator, fixed_struct_lists=fixed) as writer:
+    with FeatureWriter(path, creator=creator, struct_tables=creator if fixed else None) as writer:
         writer.write_batch(records)
 
 

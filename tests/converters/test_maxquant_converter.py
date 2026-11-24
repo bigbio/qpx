@@ -483,6 +483,24 @@ def test_psm_keeps_the_lowest_pep_row_of_a_repeated_identity(tmp_path):
     assert kept == [(100, 2, 90.0), (101, 2, 60.0), (102, 2, 40.0), (102, 3, 30.0)]
 
 
+def test_psm_footer_takes_the_callers_creator(tmp_path):
+    """The creator tag is the caller's; the fixed score layout stays MaxQuant's."""
+    from qpx.converters.maxquant.psm_adapter import MaxQuantPsmAdapter
+
+    msms = tmp_path / "msms.txt"
+    msms.write_text(
+        "Sequence\tModified sequence\tCharge\tRaw file\tScan number\tm/z\tMass\tPEP\tScore\tid\n"
+        "PEPTIDEK\t_PEPTIDEK_\t2\trun1\t100\t450.25\t898.5\t0.01\t80\t0\n"
+    )
+    output = tmp_path / "psm.parquet"
+    with MaxQuantPsmAdapter() as adapter:
+        adapter.convert(str(msms), str(output), creator="local-mq")
+
+    parquet = pq.ParquetFile(output)
+    assert parquet.metadata.metadata[b"creator"] == b"local-mq"
+    assert parquet.read().to_pylist()[0]["additional_scores"]["andromeda_score"] == 80.0
+
+
 def test_feature_pg_qvalue_and_genes_keyed_on_full_membership(tmp_path):
     """Bug #248 (M): a shared razor accession must not bind to another group's metadata.
 
