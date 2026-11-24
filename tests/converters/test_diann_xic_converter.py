@@ -111,15 +111,38 @@ def test_diann_xic_cli(tmp_path):
     assert (output / "PXD000001.xic.parquet").exists()
 
 
-@pytest.mark.parametrize("has_xic", [False, True])
-def test_diann_cli_provenance_records_only_written_xic(tmp_path, has_xic):
-    """The conversion step lists xic only when the CLI writes that view."""
+def test_diann_xic_cli_adds_the_xic_rows_to_the_ontology_of_a_dataset(tmp_path):
+    """Written beside the ontology view of a dataset, the xic view gets its rows; the other rows stay."""
+    from qpx.writers.ontology import OntologyWriter
+
+    xic_folder = tmp_path / "xic"
+    xic_folder.mkdir()
+    _write_xic(xic_folder / "run1.xic.parquet")
+    output = tmp_path / "out"
+    output.mkdir()
+    row = {"field_name": "charge", "view": "feature", "ontology_name": "charge state", "ontology_accession": "MS:1000041"}
+    with OntologyWriter(output / "PXD000001.ontology.parquet", creator="qpx") as writer:
+        writer.write_batch([row])
+
+    result = CliRunner().invoke(
+        convert_diann_xic_cmd,
+        ["--xic-folder", str(xic_folder), "--output-folder", str(output), "--output-prefix", "PXD000001"],
+    )
+    assert result.exit_code == 0, result.output
+    rows = pq.read_table(output / "PXD000001.ontology.parquet").to_pylist()
+    terms = {(entry["view"], entry["field_name"]): entry["ontology_accession"] for entry in rows}
+    assert terms[("feature", "charge")] == "MS:1000041"
+    assert terms[("xic", "rt")] == "MS:1000595"
+
+
+def test_diann_xic_cli_joins_the_dataset_of_convert_diann(tmp_path):
+    """Without --output-prefix both commands write the diann dataset, and the xic step joins its provenance once."""
+    from qpx.dataset import Dataset
+
     examples = Path(__file__).resolve().parents[1] / "examples" / "diann" / "small"
     xic_folder = tmp_path / "xic"
     xic_folder.mkdir()
-    if has_xic:
-        _write_xic(xic_folder / "run1.xic.parquet")
-
+    _write_xic(xic_folder / "run1.xic.parquet")
     output = tmp_path / "out"
     result = CliRunner().invoke(
         convert_diann_cmd,
@@ -128,52 +151,55 @@ def test_diann_cli_provenance_records_only_written_xic(tmp_path, has_xic):
             str(examples / "diann_report.tsv"),
             "--sdrf-file",
             str(examples / "PXD019909-DIA.sdrf.tsv"),
-            "--xic-folder",
-            str(xic_folder),
             "--output-folder",
             str(output),
-            "--output-prefix",
-            "t",
+            "--compute-integrity",
             "--no-mudata",
         ],
     )
     assert result.exit_code == 0, result.output
-    assert (output / "t.xic.parquet").exists() is has_xic
-    steps = pq.read_table(output / "t.provenance.parquet").to_pylist()
-    conversion = next(step for step in steps if step["step_name"] == "diann_to_qpx")
-    assert ("xic" in conversion["output_views"]) is has_xic
+    for _ in range(2):
+        result = CliRunner().invoke(convert_diann_xic_cmd, ["--xic-folder", str(xic_folder), "--output-folder", str(output)])
+        assert result.exit_code == 0, result.output
+
+    assert (output / "diann.xic.parquet").exists()
+    steps = pq.read_table(output / "diann.provenance.parquet").to_pylist()
+    assert [step["step_name"] for step in steps] == ["precursor_quantification", "diann_to_qpx", "diann_xic_to_qpx"]
+    assert "xic" not in steps[1]["output_views"]
+    assert steps[2]["output_views"] == ["xic"]
+    assert steps[2]["step_order"] == 3
+    assert {"key": "xic_folder", "value": "xic"} in steps[2]["parameters"]
+    with Dataset(output, file_prefix="diann") as dataset:
+        assert all(result.is_valid for result in dataset.validate(strict=True).values())
+        counts = dict(dataset.dataset_meta.to_df().iloc[0]["file_row_counts"])
+    assert counts["diann.xic.parquet"] == 4
 
 
-def test_diann_cli_applies_resource_limits_to_xic(tmp_path, monkeypatch):
+def test_diann_xic_cli_applies_resource_limits(tmp_path, monkeypatch):
     """--max-cpus and --max-memory reach the DuckDB connection that reads the XIC exports."""
+    import duckdb
+
     from qpx.converters.diann import xic_adapter
 
-    calls = []
+    settings = []
     connect = xic_adapter.create_converter_connection
-    monkeypatch.setattr(xic_adapter, "create_converter_connection", lambda **kwargs: calls.append(kwargs) or connect(**kwargs))
-    examples = Path(__file__).resolve().parents[1] / "examples" / "diann" / "small"
+
+    def spy(**kwargs):
+        con = connect(**kwargs)
+        settings.append(con.execute("SELECT current_setting('threads'), current_setting('memory_limit')").fetchone())
+        return con
+
+    monkeypatch.setattr(xic_adapter, "create_converter_connection", spy)
     xic_folder = tmp_path / "xic"
     xic_folder.mkdir()
     _write_xic(xic_folder / "run1.xic.parquet")
 
     result = CliRunner().invoke(
-        convert_diann_cmd,
-        [
-            "--report-path",
-            str(examples / "diann_report.tsv"),
-            "--sdrf-file",
-            str(examples / "PXD019909-DIA.sdrf.tsv"),
-            "--xic-folder",
-            str(xic_folder),
-            "--output-folder",
-            str(tmp_path / "out"),
-            "--max-cpus",
-            "1",
-            "--max-memory",
-            "1GB",
-            "--no-mudata",
-        ],
+        convert_diann_xic_cmd,
+        ["--xic-folder", str(xic_folder), "--output-folder", str(tmp_path / "out"), "--max-cpus", "1", "--max-memory", "1GB"],
     )
 
     assert result.exit_code == 0, result.output
-    assert calls == [{"memory_limit": "1GB", "threads": 1}]
+    reference = duckdb.connect()
+    reference.execute("SET memory_limit='1GB'")
+    assert settings == [(1, reference.execute("SELECT current_setting('memory_limit')").fetchone()[0])]

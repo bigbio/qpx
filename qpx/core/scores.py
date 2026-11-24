@@ -169,12 +169,26 @@ def is_higher_better(normalized_name: str) -> Optional[bool]:
 # ---------------------------------------------------------------------------
 
 # Standard QPX fields with known PSI-MS CV accessions
+_MZ_ARRAY = {
+    "ontology_name": "m/z array",
+    "ontology_accession": "MS:1000514",
+    "ontology_source": "MS",
+    "description": "m/z values of the points",
+}
+_INTENSITY_ARRAY = {
+    "ontology_name": "intensity array",
+    "ontology_accession": "MS:1000515",
+    "ontology_source": "MS",
+    "description": "Intensity values of the points",
+}
+
 _FIELD_CV_MAP: dict[str, dict] = {
+    # PSI-MS has PEP terms only per tool (percolator:PEP, MaxQuant:PEP, ...).
     "posterior_error_probability": {
-        "ontology_name": "percolator:PEP",
-        "ontology_accession": "MS:1001493",
-        "ontology_source": "MS",
-        "description": "Posterior error probability (PEP) for PSM correctness",
+        "ontology_name": "posterior error probability",
+        "ontology_accession": None,
+        "ontology_source": None,
+        "description": "Posterior error probability (PEP) that the identification is incorrect",
     },
     "observed_mz": {
         "ontology_name": "selected ion m/z",
@@ -189,10 +203,16 @@ _FIELD_CV_MAP: dict[str, dict] = {
         "description": "Theoretically calculated m/z of the peptide",
     },
     "rt": {
-        "ontology_name": "scan start time",
-        "ontology_accession": "MS:1000016",
+        "ontology_name": "retention time",
+        "ontology_accession": "MS:1000894",
         "ontology_source": "MS",
-        "description": "Retention time at peak apex",
+        "description": "Retention time of the precursor",
+    },
+    "scan": {
+        "ontology_name": "scan number",
+        "ontology_accession": "MS:1003057",
+        "ontology_source": "MS",
+        "description": "Scan identifier of the spectrum in its run",
     },
     "charge": {
         "ontology_name": "charge state",
@@ -217,12 +237,6 @@ _FIELD_CV_MAP: dict[str, dict] = {
         "ontology_accession": "MS:1000044",
         "ontology_source": "MS",
         "description": "Fragmentation method of the run",
-    },
-    "intensity": {
-        "ontology_name": "LC-MS feature intensity",
-        "ontology_accession": "MS:1001840",
-        "ontology_source": "MS",
-        "description": "Primary precursor intensity",
     },
     "missed_cleavages": {
         "ontology_name": "number of missed cleavages",
@@ -254,14 +268,167 @@ _FIELD_CV_MAP: dict[str, dict] = {
         "ontology_source": "MS",
         "description": "Predicted retention time of the peptide (seconds)",
     },
+    "ccs": {
+        "ontology_name": "collisional cross sectional area",
+        "ontology_accession": "MS:1002954",
+        "ontology_source": "MS",
+        "description": "Collisional cross section of the precursor (square angstroms)",
+    },
+    "inverse_ion_mobility": {
+        "ontology_name": "inverse reduced ion mobility",
+        "ontology_accession": "MS:1002815",
+        "ontology_source": "MS",
+        "description": "Inverse reduced ion mobility (1/K0) of the spectrum",
+    },
+    "drift_time": {
+        "ontology_name": "ion mobility drift time",
+        "ontology_accession": "MS:1002476",
+        "ontology_source": "MS",
+        "description": "Ion mobility drift time of the spectrum (milliseconds)",
+    },
+    "centroid": {
+        "ontology_name": "centroid spectrum",
+        "ontology_accession": "MS:1000127",
+        "ontology_source": "MS",
+        "description": "Whether the spectrum is centroided",
+    },
+    "ms_level": {
+        "ontology_name": "ms level",
+        "ontology_accession": "MS:1000511",
+        "ontology_source": "MS",
+        "description": "MS level of the spectrum",
+    },
+    "scan_start_time": {
+        "ontology_name": "scan start time",
+        "ontology_accession": "MS:1000016",
+        "ontology_source": "MS",
+        "description": "Start time of the scan (minutes)",
+    },
+    "ion_injection_time": {
+        "ontology_name": "ion injection time",
+        "ontology_accession": "MS:1000927",
+        "ontology_source": "MS",
+        "description": "Ion injection time of the spectrum (milliseconds)",
+    },
+    "total_ion_current": {
+        "ontology_name": "total ion current",
+        "ontology_accession": "MS:1000285",
+        "ontology_source": "MS",
+        "description": "Total ion current of the spectrum",
+    },
+    "mz_array": _MZ_ARRAY,
+    "intensity_array": _INTENSITY_ARRAY,
+    "anchor_protein": {
+        "ontology_name": "anchor protein",
+        "ontology_accession": "MS:1001591",
+        "ontology_source": "MS",
+        "description": "Representative protein of the protein group",
+    },
+    "sequence_coverage": {
+        "ontology_name": "sequence coverage",
+        "ontology_accession": "MS:1001093",
+        "ontology_source": "MS",
+        "description": "Percent of the protein sequence covered by the identified peptides",
+    },
+    "molecular_weight": {
+        "ontology_name": "molecular mass",
+        "ontology_accession": "MS:1000224",
+        "ontology_source": "MS",
+        "description": "Molecular mass of the protein (kDa)",
+    },
 }
 
-# A shared QPX field name can represent a different level in each view. Resolve
-# those cases through the corresponding score definition rather than attaching
-# precursor-level semantics to a protein-group field.
+# A shared QPX field or score name can represent a different level in each view.
+# Resolve those cases through the corresponding score definition rather than
+# attaching precursor-level semantics to a protein-group field, or PSM-level
+# semantics to the feature score qvalue, which fills precursor_qvalue (scores.md).
 _VIEW_FIELD_SCORE_ALIASES: dict[tuple[str, str], str] = {
     ("pg", "global_qvalue"): "pg_global_qvalue",
+    ("feature", "qvalue"): "precursor_qvalue",
 }
+
+# Fields whose term depends on the view. The rt of a PSM is the time of its MS2
+# scan, that of a trace an array, and a fragment is a product ion; None: the
+# column has no term in that view.
+_VIEW_FIELD_CV_MAP: dict[tuple[str, str], Optional[dict]] = {
+    ("psm", "rt"): {
+        "ontology_name": "scan start time",
+        "ontology_accession": "MS:1000016",
+        "ontology_source": "MS",
+        "description": "Start time of the MS2 scan of the PSM",
+    },
+    ("xic", "rt"): {
+        "ontology_name": "time array",
+        "ontology_accession": "MS:1000595",
+        "ontology_source": "MS",
+        "description": "Retention times of the trace points",
+    },
+    ("xic", "mz"): _MZ_ARRAY,
+    ("mz", "mz"): _MZ_ARRAY,
+    ("xic", "intensity"): _INTENSITY_ARRAY,
+    ("mz", "intensity"): _INTENSITY_ARRAY,
+    ("fragment", "observed_mz"): {
+        "ontology_name": "product ion m/z",
+        "ontology_accession": "MS:1001225",
+        "ontology_source": "MS",
+        "description": "Measured m/z of the fragment",
+    },
+    ("fragment", "intensity"): {
+        "ontology_name": "product ion intensity",
+        "ontology_accession": "MS:1001226",
+        "ontology_source": "MS",
+        "description": "Intensity of the fragment",
+    },
+    ("site", "protein_accession"): {
+        "ontology_name": "protein accession",
+        "ontology_accession": "MS:1000885",
+        "ontology_source": "MS",
+        "description": "Accession of the protein the position refers to",
+    },
+    ("protein", "gene_name"): {
+        "ontology_name": "gene name",
+        "ontology_accession": "MS:1000934",
+        "ontology_source": "MS",
+        "description": "Gene symbol from the FASTA header (GN=)",
+    },
+    ("protein", "sequence"): None,
+    ("pg", "is_decoy"): None,
+    ("site", "is_decoy"): None,
+    ("proteoform", "is_decoy"): None,
+}
+
+_PRECURSOR_INVERSE_ION_MOBILITY = {
+    "ontology_name": "inverse reduced ion mobility",
+    "ontology_accession": "MS:1002815",
+    "ontology_source": "MS",
+    "description": "Inverse reduced ion mobility (1/K0) of the precursor",
+}
+
+# Source columns holding another quantity than the term of their view names: CDAP gives
+# a PSM the retention time at half of its precursor's elution, not the start of the MS2 scan,
+# and older FragPipe conversions wrote 1 - Protein Probability, a ProteinProphet score, as pg_qvalue.
+# A 1/K0 column (MaxQuant, Proteome Discoverer) fixes the kind of ion mobility, which the column leaves open.
+_SOURCE_FIELD_CV_MAP: dict[tuple[str, str, str], Optional[dict]] = {
+    ("psm", "rt", "RTAtPrecursorHalfElution"): _FIELD_CV_MAP["rt"],
+    ("pg", "pg_qvalue", "Protein Probability"): None,
+    ("psm", "ion_mobility", "1/K0"): _PRECURSOR_INVERSE_ION_MOBILITY,
+    ("feature", "ion_mobility", "1/K0"): _PRECURSOR_INVERSE_ION_MOBILITY,
+}
+
+
+def field_cv_term(view: str, field_name: str, source_column: Optional[str] = None) -> Optional[dict]:
+    """Return the term QPX defines for column *field_name* of *view*, or None.
+
+    Typed score columns (psm.qvalue, pg.pg_qvalue, ...) take the term of the
+    built-in score of that name; the PSI-MS OBO is not searched by name. A
+    *source_column* listed in ``_SOURCE_FIELD_CV_MAP`` takes its own term.
+    """
+    if (view, field_name, source_column) in _SOURCE_FIELD_CV_MAP:
+        return _SOURCE_FIELD_CV_MAP[(view, field_name, source_column)]
+    key = (view, field_name)
+    if key in _VIEW_FIELD_CV_MAP:
+        return _VIEW_FIELD_CV_MAP[key]
+    return _FIELD_CV_MAP.get(field_name) or BUILTIN_SCORES.get(_VIEW_FIELD_SCORE_ALIASES.get(key, field_name))
 
 
 # ---------------------------------------------------------------------------
@@ -279,7 +446,7 @@ def field_ontology_entries(
     When *resolved_mappings* is provided, produces entries with
     ``source_column_name`` and ``source_tool`` populated from the
     actual converter resolution. Fields in the resolved mapping that
-    have no CV term in ``_FIELD_CV_MAP`` still produce an entry
+    have no term in ``field_cv_term`` still produce an entry
     (with ``ontology_accession=None``).
 
     For backward compatibility, calling without *resolved_mappings*
@@ -302,10 +469,7 @@ def field_ontology_entries(
     if resolved_mappings is not None:
         # New path: produce entries for each resolved field
         for field_name, source_column in sorted(resolved_mappings.items()):
-            cv_info = _FIELD_CV_MAP.get(field_name)
-            if cv_info is None:
-                score_name = _VIEW_FIELD_SCORE_ALIASES.get((view, field_name))
-                cv_info = lookup_score(score_name) if score_name else _lookup_from_obo(field_name)
+            cv_info = field_cv_term(view, field_name, source_column)
             entries.append(
                 {
                     "field_name": field_name,
@@ -323,14 +487,17 @@ def field_ontology_entries(
             )
     else:
         # Backward-compatible path: emit _FIELD_CV_MAP entries
-        for field_name, info in sorted(_FIELD_CV_MAP.items()):
+        for field_name in sorted(_FIELD_CV_MAP):
+            info = field_cv_term(view, field_name)
+            if info is None:
+                continue
             entries.append(
                 {
                     "field_name": field_name,
                     "ontology_name": info["ontology_name"],
                     "ontology_accession": info["ontology_accession"],
                     "ontology_source": info["ontology_source"],
-                    "ontology_version": ontology_version,
+                    "ontology_version": ontology_version if info["ontology_source"] == "MS" else None,
                     "view": view,
                     "description": info["description"],
                     "source_column_name": None,
@@ -364,7 +531,7 @@ def score_ontology_entries(
 
     entries: list[dict] = []
     for name in sorted(score_names):
-        info = lookup_score(name)
+        info = lookup_score(_VIEW_FIELD_SCORE_ALIASES.get((view, name), name))
         if info is None:
             continue
         entries.append(

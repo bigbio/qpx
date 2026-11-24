@@ -12,7 +12,7 @@ from qpx.converters.base import BaseConverter, resolve_columns
 from qpx.converters.mappings import get_field_mappings
 from qpx.converters.ptm import build_proforma, from_proforma, modification_tag, position_site
 from qpx.core.files import run_file_stem
-from qpx.core.sql import escape_path, sql_build
+from qpx.core.sql import escape_path, sql_build, validate_identifier
 
 PSM_MAP = get_field_mappings("proteome_discoverer", "psm")
 
@@ -64,9 +64,28 @@ class PdPsmTable(BaseConverter):
             )
         )
         columns = self.get_table_columns("_pd_raw")
+        self._check_score_aliases(columns)
         self._resolved = resolve_columns(PSM_MAP, columns)
         self._conn.execute(sql_build("CREATE TABLE pd_psms AS SELECT *, $derived FROM _pd_raw", derived=self._derived(runs)))
         self._conn.execute("DROP TABLE _pd_raw")
+
+    def _check_score_aliases(self, columns: set[str]) -> None:
+        """Reject conflicting aliases in the export before either view filters its rows."""
+        for sources, _, _ in _SCORES:
+            if len(sources) == 1 or not columns.issuperset(sources):
+                continue
+            left, right = sources
+            conflict = self._conn.execute(
+                sql_build(
+                    "SELECT $left, $right FROM _pd_raw WHERE TRY_CAST($left AS DOUBLE) <> TRY_CAST($right AS DOUBLE) LIMIT 1",
+                    left=validate_identifier(left),
+                    right=validate_identifier(right),
+                )
+            ).fetchone()
+            if conflict is not None:
+                raise ValueError(
+                    f"Proteome Discoverer score aliases disagree: {left!r}={conflict[0]!r}, {right!r}={conflict[1]!r}"
+                )
 
     def _column(self, field: str) -> str:
         column = self._resolved.get(field)
@@ -77,6 +96,13 @@ class PdPsmTable(BaseConverter):
     def _optional_double(self, field: str) -> str:
         column = self._resolved.get(field)
         return f'TRY_CAST("{column}" AS DOUBLE)' if column else "CAST(NULL AS DOUBLE)"
+
+    def _candidate_order(self) -> str:
+        """Order of the hits on one spectrum: rank, q-value, absolute mass error, PEP, export row; missing last."""
+        return (
+            f"_rank, _qvalue NULLS LAST, abs({self._optional_double('mass_error_ppm')}) NULLS LAST, "
+            f"{self._optional_double('posterior_error_probability')} NULLS LAST, _row"
+        )
 
     def _derived(self, runs: dict[str, str] | None) -> str:
         return ", ".join(
@@ -90,6 +116,8 @@ class PdPsmTable(BaseConverter):
                 f"CAST({self._column('scan')} AS INTEGER) AS _scan",
                 f"COALESCE({self._optional_double('rank')}, 1) AS _rank",
                 f"{self._optional_double('qvalue')} AS _qvalue",
+                # _pd_raw is read on one thread, so its rowid is the line order of the export.
+                "rowid AS _row",
             )
         )
 
@@ -126,11 +154,13 @@ class PdPsmTable(BaseConverter):
 
     def search_scores(self, row: dict) -> list[dict] | None:
         """The search engine scores, the rank, and the precursor's share of the isolation window."""
-        scores = [
-            {"score_name": name, "score_value": value, "higher_better": higher_better}
-            for column, name, higher_better in _SCORES
-            if (value := _float(row.get(column))) is not None
-        ]
+        scores = []
+        for sources, name, higher_better in _SCORES:
+            for column in sources:
+                value = _float(row.get(column))
+                if value is not None:
+                    scores.append({"score_name": name, "score_value": value, "higher_better": higher_better})
+                    break
         interference = _number(row, self._resolved, "isolation_interference")
         if interference is not None:
             scores.append({"score_name": "parent_ion_fraction", "score_value": 1 - interference / 100, "higher_better": True})
@@ -138,14 +168,12 @@ class PdPsmTable(BaseConverter):
 
 
 _SCORES = (
-    ("Rank", "rank", False),
-    ("XCorr", "sequest_xcorr", True),
-    ("Comet XCorr", "comet_xcorr", True),
-    ("Ions Score", "mascot_ions_score", True),
-    ("Delta Score", "delta_score", True),
-    ("DeltaScore", "delta_score", True),
-    ("SVM Score", "percolator_svm_score", True),
-    ("Percolator SVMScore", "percolator_svm_score", True),
+    (("Rank",), "rank", False),
+    (("XCorr",), "sequest_xcorr", True),
+    (("Comet XCorr",), "comet_xcorr", True),
+    (("Ions Score",), "mascot_ions_score", True),
+    (("Delta Score", "DeltaScore"), "delta_score", True),
+    (("SVM Score", "Percolator SVMScore"), "percolator_svm_score", True),
 )
 
 

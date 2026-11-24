@@ -11,6 +11,7 @@ import pytest
 from qpx.converters.diann.feature_adapter import DiannFeatureAdapter
 from qpx.converters.spectronaut.feature_adapter import SpectronautFeatureAdapter
 from qpx.dataset import Dataset
+from tests.conftest import read_view_table
 
 _EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
 _DIANN = _EXAMPLES / "diann" / "full" / "diann_report.tsv.gz"
@@ -25,7 +26,7 @@ def _diann(report, tmp_path, **options):
 
 def _assert_links(tmp_path):
     features = set(pq.read_table(tmp_path / "x.feature.parquet", columns=["feature_id"]).column(0).to_pylist())
-    table = pq.read_table(tmp_path / "x.fragment.parquet")
+    table = read_view_table(tmp_path / "x.fragment.parquet")
     assert table.num_rows
     assert set(table.column("feature_id").to_pylist()) <= features
     assert table.column("fragment_id").combine_chunks().unique().to_pylist()
@@ -67,7 +68,13 @@ def test_diann_2_export_quant_columns_become_rows(tmp_path):
     frame = pd.read_csv(_DIANN, sep="\t", nrows=1).drop(
         columns=["Fragment.Quant.Raw", "Fragment.Quant.Corrected", "Fragment.Correlations"]
     )
-    slots = [(0, "y7^1/826.4", 10.0, 0.9), (2, "b2-H2O^2/100.1", 30.0, -0.2), (3, "y3^1/300.5", 0.0, 0.5), (-1, "", 0.0, 0.0)]
+    slots = [
+        (0, "y7^1/826.4", 10.0, 0.9),
+        (2, "b2-H2O^2/100.1", 30.0, -0.2),
+        (3, "y3^1/300.5", 0.0, 0.5),
+        (-1, "", 0.0, 0.0),
+        (4, "y4^1/400.2", 20.0, None),
+    ]
     for n, (index, name, quantity, score) in enumerate(slots):
         frame[f"Fr.{n}.Index"], frame[f"Fr.{n}.Id"] = index, name
         frame[f"Fr.{n}.Quantity"], frame[f"Fr.{n}.Score"] = quantity, score
@@ -76,13 +83,15 @@ def test_diann_2_export_quant_columns_become_rows(tmp_path):
 
     assert _diann(report, tmp_path)
 
-    rows = pq.read_table(tmp_path / "x.fragment.parquet").sort_by("fragment_index").to_pylist()
-    assert [row["fragment_index"] for row in rows] == [1, 3]
+    rows = read_view_table(tmp_path / "x.fragment.parquet").sort_by("fragment_index").to_pylist()
+    assert [row["fragment_index"] for row in rows] == [1, 3, 5]
     assert rows[0]["ion_type"] == "y7" and rows[0]["fragment_charge"] == 1
     assert rows[0]["mz"] == pytest.approx(826.4)
     assert rows[0]["peak_height"] == 10.0 and rows[0]["intensity"] is None
     assert rows[1]["neutral_loss"] == "H2O" and rows[1]["fragment_charge"] == 2
     assert rows[1]["additional_scores"] == [{"score_name": "diann_fragment_score", "score_value": -0.2, "higher_better": True}]
+    # A measured fragment without a profile score has no score entry.
+    assert rows[2]["peak_height"] == 20.0 and rows[2]["additional_scores"] is None
 
 
 @pytest.mark.parametrize("prefix", ["^", ""])

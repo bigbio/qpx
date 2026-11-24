@@ -117,7 +117,7 @@ fields:
     type: float32
     nullable: true
     optional: true
-    doc: "Indexed retention time, in the tool's iRT scale; filled at write time from the cv_params irt and empirical_irt"
+    doc: "Indexed retention time, in the tool's iRT scale: DIA-NN iRT, Spectronaut EG.iRTEmpirical"
   consensus_rt:
     type: float32
     nullable: true

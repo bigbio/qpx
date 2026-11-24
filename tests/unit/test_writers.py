@@ -16,6 +16,7 @@ from qpx.writers import (
     PsmWriter,
     RunWriter,
     SampleWriter,
+    encoding,
 )
 from tests.conftest import (
     make_dataset_record,
@@ -421,8 +422,9 @@ class TestAtomicWrites:
         assert path.read_bytes() == good_bytes
         assert [p.name for p in tmp_path.iterdir()] == [path.name]
 
-    def test_two_writers_in_one_process_do_not_share_a_staging_file(self, tmp_path):
+    def test_two_writers_in_one_process_do_not_share_a_staging_file(self, tmp_path, monkeypatch):
         """The staging name must be unique per writer, not per process."""
+        monkeypatch.setattr(encoding, "ROW_GROUP_ROWS", 1)
         path = tmp_path / "shared.feature.parquet"
         with FeatureWriter(str(path), batch_size=self.BATCH) as first, FeatureWriter(str(path), batch_size=self.BATCH) as second:
             first.write_batch([make_feature_record(sequence="FIRST", peptidoform="FIRST")])

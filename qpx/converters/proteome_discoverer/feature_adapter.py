@@ -1,4 +1,4 @@
-"""Proteome Discoverer ``PSMs.txt`` to the feature view: the PSMs of one precursor in one run."""
+"""Proteome Discoverer ``PSMs.txt`` to the feature view: the spectra of one precursor in one run."""
 
 from __future__ import annotations
 
@@ -13,17 +13,30 @@ from qpx.writers.feature import FeatureWriter
 
 _REPORTER_COLUMN = re.compile(r"^Abundance:? (\d{3}[NCD]?)$")
 _ABUNDANCE_COLUMN = re.compile(r"^Abundance:? ")
+# The candidates of one spectrum carry its reporter values, so a spectrum counts once,
+# for the precursor of its first candidate. A label-free abundance is the precursor's, so
+# there the precursors of a chimeric spectrum, at different m/z, count apart.
 _FEATURE_SQL = """SELECT * EXCLUDE (_best) FROM (
     SELECT *, $aggregates, row_number() OVER (g ORDER BY _qvalue NULLS LAST, _scan) AS _best
-    FROM pd_psms WHERE _rank = 1 AND $used
+    FROM (SELECT * FROM pd_psms WHERE $used QUALIFY row_number() OVER (PARTITION BY $spectrum ORDER BY $candidate) = 1)
     WINDOW g AS (PARTITION BY _run, _sequence, _modifications, _charge)
 ) WHERE _best = 1"""
 
 
-class ProteomeDiscovererFeatureAdapter(PdPsmTable):
-    """Sum the reporter abundances of a precursor's PSMs, or take its largest MS1 abundance."""
+def _feature_scores(scores: list[dict] | None) -> tuple[list[dict] | None, float | None]:
+    """A PSM's scores without parent_ion_fraction, and that value.
 
-    _pepmap: dict[str, tuple[str, list[str]]] = {}
+    On a feature the precursor's share of the isolation window is a column, not a score (scores.md).
+    """
+    kept = [score for score in scores or [] if score["score_name"] != "parent_ion_fraction"]
+    fraction = next((score["score_value"] for score in scores or [] if score["score_name"] == "parent_ion_fraction"), None)
+    return kept or None, fraction
+
+
+class ProteomeDiscovererFeatureAdapter(PdPsmTable):
+    """Sum the reporter abundances of a precursor's spectra, or take their largest MS1 abundance."""
+
+    _pepmap: dict[str, tuple[str, set[str]]] = {}
     _protein_groups: dict[str, list[str]] = {}
     _genes: dict[str, str] = {}
     _channels: dict[str, str] = {}
@@ -40,7 +53,7 @@ class ProteomeDiscovererFeatureAdapter(PdPsmTable):
         if not self._channels and ms1 is None:
             self.logger.warning("This PSM export has no abundance columns, so no feature view is written")
             return False
-        with FeatureWriter(output_path, creator="proteome_discoverer") as writer:
+        with FeatureWriter(output_path, creator="proteome_discoverer", struct_tables="proteome_discoverer") as writer:
             for batch in self._query_batched(self._query(ms1), chunksize):
                 records = self._transform_rows_with_skip(batch.to_pylist(), self._record, "Proteome Discoverer feature")
                 if records:
@@ -49,8 +62,9 @@ class ProteomeDiscovererFeatureAdapter(PdPsmTable):
         return True
 
     def write_pepmap(self, output_path: str) -> bool:
-        """Write the proteins of each converted peptidoform."""
-        return self._write_pepmap(output_path, self._pepmap, "proteome_discoverer")
+        """Write the proteins of each converted peptidoform, over all its precursors."""
+        pepmap = {peptidoform: (sequence, sorted(proteins)) for peptidoform, (sequence, proteins) in self._pepmap.items()}
+        return self._write_pepmap(output_path, pepmap, "proteome_discoverer")
 
     def _reporter_columns(self) -> dict[str, str]:
         """Reporter column -> canonical label; other abundance columns (SILAC) stop the conversion."""
@@ -62,6 +76,12 @@ class ProteomeDiscovererFeatureAdapter(PdPsmTable):
         return channels
 
     def _query(self, ms1: str | None) -> str:
+        """One row per run, sequence, modifications and charge, over the spectra PD used to quantify.
+
+        Each spectrum counts once, or each precursor m/z of a spectrum without reporters: reporter
+        abundances are summed and the MS1 abundance is the largest.
+        Rejected PSMs and those PD excluded from its quantification are left out.
+        """
         sums = [
             f'SUM(TRY_CAST("{column}" AS DOUBLE)) OVER g AS "_channel_{position}"'
             for position, column in enumerate(self._channels)
@@ -74,7 +94,14 @@ class ProteomeDiscovererFeatureAdapter(PdPsmTable):
         if quan_info:
             # The PSMs PD left out of its own quantification: "Excluded by Method"
             used.append(f"lower(replace(COALESCE(\"{quan_info}\", ''), ' ', '')) NOT LIKE 'excludedby%'")
-        return sql_build(_FEATURE_SQL, aggregates=", ".join(aggregates), used=" AND ".join(used) or "true")
+        spectrum = "_run, _scan" if self._channels else f"_run, _scan, {self._optional_double('observed_mz')}"
+        return sql_build(
+            _FEATURE_SQL,
+            aggregates=", ".join(aggregates),
+            used=" AND ".join(used) or "true",
+            spectrum=spectrum,
+            candidate=self._candidate_order(),
+        )
 
     def _quantities(self, row: dict) -> tuple[list[dict] | None, list[dict] | None]:
         ms1 = row["_ms1"] if row["_ms1"] and row["_ms1"] > 0 else None
@@ -104,16 +131,14 @@ class ProteomeDiscovererFeatureAdapter(PdPsmTable):
         mapped = split_accessions(row.get(self._resolved.get("protein_accessions")))
         anchor = masters[0] if masters else None
         if mapped:
-            self._pepmap.setdefault(peptidoform, (sequence, mapped))
+            self._pepmap.setdefault(peptidoform, (sequence, set()))[1].update(mapped)
         spectrum = self.spectrum_fields(row)
         apex_minutes = safe_float(row.get(self._resolved.get("apex_rt")))
         if apex_minutes is not None:
             spectrum["rt"] = apex_minutes * 60
         members = self._protein_groups.get(anchor) or masters
         gene = self._genes.get(anchor)
-        interference = next(
-            (s["score_value"] for s in self.search_scores(row) or [] if s["score_name"] == "parent_ion_fraction"), None
-        )
+        scores, interference = _feature_scores(self.search_scores(row))
         return {
             **spectrum,
             "sequence": sequence,
@@ -123,7 +148,7 @@ class ProteomeDiscovererFeatureAdapter(PdPsmTable):
             "is_decoy": False,
             "calculated_mz": compute_precursor_mz(peptidoform, charge),
             "precursor_qvalue": row["_qvalue"],
-            "additional_scores": self.search_scores(row),
+            "additional_scores": scores,
             "predicted_rt": None,
             "cv_params": None,
             "intensities": intensities,

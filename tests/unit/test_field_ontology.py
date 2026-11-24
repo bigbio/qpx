@@ -16,8 +16,12 @@ def test_field_ontology_entries():
     assert len(rt_entries) == 1
     assert rt_entries[0]["source_column_name"] == "RT"
     assert rt_entries[0]["source_tool"] == "DIA-NN"
-    assert rt_entries[0]["ontology_accession"] == "MS:1000016"
+    assert rt_entries[0]["ontology_accession"] == "MS:1000894"
     assert rt_entries[0]["view"] == "feature"
+
+    # The rt of a PSM is the start time of its MS2 scan.
+    entries = field_ontology_entries(view="psm", resolved_mappings={"rt": "Retention time"}, tool_name="MaxQuant")
+    assert entries[0]["ontology_accession"] == "MS:1000016"
 
     # A shared field name is resolved according to its view: PG global q-value
     # must not inherit precursor-level Global.Q.Value semantics.
@@ -26,7 +30,7 @@ def test_field_ontology_entries():
         resolved_mappings={"global_qvalue": "Global.PG.Q.Value"},
         tool_name="DIA-NN",
     )
-    assert entries[0]["ontology_accession"] == "MS:1001214"
+    assert entries[0]["ontology_accession"] == "MS:1002373"
     assert entries[0]["source_column_name"] == "Global.PG.Q.Value"
 
     # Missing CV still written
@@ -49,6 +53,48 @@ def test_field_ontology_entries():
     for e in entries:
         assert "source_column_name" in e
         assert "source_tool" in e
+
+
+def test_field_terms_follow_the_view():
+    """A column takes the term of its view, never a PSI-MS name match: is_decoy
+    is a decoy peptide only for peptides, and the mz id is no PEFF "ID"."""
+    from qpx.core.scores import field_ontology_entries
+
+    entries = field_ontology_entries(
+        view="pg", resolved_mappings={"is_decoy": "Reverse", "intensity": "Intensity"}, tool_name="MaxQuant"
+    )
+    assert [entry["ontology_accession"] for entry in entries] == [None, None]
+    assert field_ontology_entries(view="mz", resolved_mappings={"id": "id"})[0]["ontology_accession"] is None
+    terms = {
+        ("xic", "rt"): "MS:1000595",
+        ("xic", "intensity"): "MS:1000515",
+        ("fragment", "observed_mz"): "MS:1001225",
+        ("psm", "observed_mz"): "MS:1000744",
+        ("protein", "sequence"): None,
+        ("mz", "ms_level"): "MS:1000511",
+        ("mz", "scan_start_time"): "MS:1000016",
+        ("psm", "sequence"): "MS:1000888",
+        ("psm", "qvalue"): "MS:1002354",
+        ("feature", "qvalue"): None,
+        ("site", "protein_accession"): "MS:1000885",
+        ("protein", "gene_name"): "MS:1000934",
+        ("xic", "transition"): None,
+        ("xic", "neutral_loss"): None,
+    }
+    for (view, field), accession in terms.items():
+        entry = field_ontology_entries(view=view, resolved_mappings={field: field})[0]
+        assert entry["ontology_accession"] == accession, (view, field)
+
+
+def test_ion_mobility_takes_a_term_only_from_a_1_k0_column():
+    """The schema leaves the kind of ion mobility open; a MaxQuant or Proteome Discoverer 1/K0 column fixes it."""
+    from qpx.core.scores import field_ontology_entries
+
+    for view in ("psm", "feature"):
+        (entry,) = field_ontology_entries(view=view, resolved_mappings={"ion_mobility": "1/K0"}, tool_name="MaxQuant")
+        assert (entry["ontology_accession"], entry["source_column_name"]) == ("MS:1002815", "1/K0")
+        (entry,) = field_ontology_entries(view=view, resolved_mappings={"ion_mobility": "IM"}, tool_name="DIA-NN")
+        assert entry["ontology_accession"] is None
 
 
 def test_dedupe_ontology_entries_merges_complementary_values():

@@ -15,10 +15,7 @@ MANTISSA_BITS_FOOTER_KEY = b"qpx.mantissa_bits"
 # 0.22 (MAD), 3,000 times the error 12 bits add to it (RMS 7.1e-5). Scores,
 # q-values, PEP and m/z keep every bit, so the rows that pass a threshold stay the
 # same. A path names a column, then struct fields; list levels are left out, and a
-# path that ends above the floats covers all of them. The cv_params paths are the
-# iRT and ion mobility terms of DIA-NN and Spectronaut, which are floats once
-# relayout stores the column as a struct (qpx.core.struct_lists); in the list
-# their values are strings and stay as they are.
+# path that ends above the floats covers all of them. CV parameter values are text.
 MANTISSA_BITS = {
     "feature": {
         "intensities.intensity": 12,
@@ -36,12 +33,6 @@ MANTISSA_BITS = {
         "ion_mobility_start": 16,
         "ion_mobility_stop": 16,
         "ccs": 16,
-        "cv_params.irt": 16,
-        "cv_params.empirical_irt": 16,
-        "cv_params.predicted_irt": 16,
-        "cv_params.iim": 16,
-        "cv_params.predicted_im": 16,
-        "cv_params.predicted_iim": 16,
     },
     "psm": {
         "intensity_array": 12,

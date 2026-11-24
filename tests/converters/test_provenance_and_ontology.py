@@ -13,8 +13,9 @@ from qpx.cli.main import qpx_main
 from qpx.cli.transform.quantify import _condition_column
 from qpx.converters.ontology_util import reconcile_ontology_entries
 from qpx.converters.sdrf import SdrfConverter
+from qpx.core.builtin_scores import BUILTIN_SCORES
 from qpx.core.ontology import PublicOntology
-from qpx.core.scores import _FIELD_CV_MAP, field_ontology_entries
+from qpx.core.scores import _FIELD_CV_MAP, _VIEW_FIELD_CV_MAP, field_ontology_entries
 from qpx.dataset import Dataset
 from qpx.writers.ontology import OntologyWriter
 from tests.converters.test_spectronaut_report_layout import _pivot_report
@@ -50,10 +51,18 @@ def _names(entries):
     return {(entry["field_name"], entry["view"]) for entry in entries}
 
 
-@pytest.mark.parametrize("field_name", sorted(_FIELD_CV_MAP))
-def test_field_terms_match_the_vocabulary(field_name):
+_MAPPED_TERMS = {
+    str(key): info
+    for table in (_FIELD_CV_MAP, _VIEW_FIELD_CV_MAP, BUILTIN_SCORES)
+    for key, info in table.items()
+    if info is not None and info["ontology_accession"] is not None
+}
+
+
+@pytest.mark.parametrize("key", sorted(_MAPPED_TERMS))
+def test_field_terms_match_the_vocabulary(key):
     """Each mapped accession carries the name PSI-MS gives it."""
-    info = _FIELD_CV_MAP[field_name]
+    info = _MAPPED_TERMS[key]
     term = PublicOntology("psi_ms", auto_update=False).lookup(info["ontology_accession"])
 
     assert term is not None

@@ -8,7 +8,6 @@ from .fragpipe import convert_fragpipe_cmd
 from .maxquant import convert_maxquant_cmd
 from .mz import convert_mz_cmd
 from .mzidentml import convert_mzidentml_cmd
-from .openms import convert_openms_cmd
 from .openms_consensus import convert_openms_consensus_cmd
 from .proteome_discoverer import convert_proteome_discoverer_cmd
 from .quantms_msstats import convert_quantms_msstats_cmd
@@ -24,7 +23,6 @@ __all__ = [
     "convert_maxquant_cmd",
     "convert_mz_cmd",
     "convert_mzidentml_cmd",
-    "convert_openms_cmd",
     "convert_proteome_discoverer_cmd",
     "convert_openms_consensus_cmd",
     "convert_quantms_msstats_cmd",
@@ -45,7 +43,6 @@ for _command in (
     convert_fragpipe_cmd,
     convert_proteome_discoverer_cmd,
     convert_mzidentml_cmd,
-    convert_openms_cmd,
     convert_openms_consensus_cmd,
     convert_sdrf_cmd,
     convert_quantms_msstats_cmd,

@@ -26,9 +26,6 @@ from typing import NamedTuple, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
-# Site of a fixed modification on the peptide N-terminus.
-NTERM = "N-term"
-
 _MASS_TOL = 0.01
 
 # OpenMS adds its own entries to ModificationsDB from ``CHEMISTRY/custom_mods.xml``

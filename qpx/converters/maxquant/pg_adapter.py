@@ -56,11 +56,7 @@ def _intensity_columns(columns: list[str], unnamed: bool) -> list[str]:
 
 def _reporter_columns(columns: list[str], unnamed: bool) -> list[str]:
     """``Reporter intensity N <experiment>``, or the unsuffixed ones of MaxQuant's one unnamed experiment."""
-    return [
-        c
-        for c in columns
-        if (m := _REPORTER_EXPERIMENT.fullmatch(c)) and (m.group(2) is None) == unnamed and "corrected" not in c.lower()
-    ]
+    return [c for c in columns if (m := _REPORTER_EXPERIMENT.fullmatch(c)) and (m.group(2) is None) == unnamed]
 
 
 def _positive(value) -> Optional[float]:
@@ -149,7 +145,7 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
         # Step 5: Stream and transform
         self.logger.info("Transforming MaxQuant protein groups ...")
 
-        with PgWriter(output_path, creator=creator) as writer:
+        with PgWriter(output_path, creator=creator, struct_tables="maxquant") as writer:
             for batch in self._query_batched("SELECT * FROM protein_groups", chunksize):
                 df = batch.to_pandas()
                 records = self._transform_batch(df, intensity_cols, channels)

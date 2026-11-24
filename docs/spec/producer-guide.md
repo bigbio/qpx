@@ -30,7 +30,7 @@ How to write QPX files from your own tool. The [views](data-model.md) define the
 | Case | `is_decoy` | Accession |
 |---|---|---|
 | Target | `false` | As in the search database |
-| Decoy | `true` | Keep the marker (`DECOY_P04114`, `REV__P04114`): a decoy never shares an accession with its target |
+| Decoy | `true` | Keep the marker (`DECOY_P04114`, `REV__P04114`), or the whole id when the marker is a suffix: a decoy never shares an accession with its target |
 | Contaminant | `false`, and `contaminant` `true` on `pg` | Keep the marker (`CONTAM_P02768`) |
 | No database (de novo) | `false` | Null `anchor_protein` |
 
@@ -151,7 +151,7 @@ with DatasetWriter(out / "mytool.dataset.parquet") as writer:
 ## Checking the Result
 
 ```bash
-qpxc validate --dataset-path mytool_output --conformance
+qpxc validate --dataset mytool_output --conformance
 ```
 
 `--conformance` runs every check, `--semantic` and `--check-identity` included, and fails on warnings as well as errors; informational notices that provided ids were not re-derived do not count as failures. It is meant as the gate for a producer's CI.

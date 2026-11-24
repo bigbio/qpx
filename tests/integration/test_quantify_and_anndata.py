@@ -102,14 +102,14 @@ def test_a_dataset_directory_is_accepted(tmp_path):
 
 
 def test_maxlfq_runs_maxlfq_with_the_requested_threads(tmp_path, fake_mokume):
-    result = _quantify(_write_feature(tmp_path / "f.parquet"), tmp_path / "o.tsv", "--method", "maxlfq", "--threads", "3")
+    result = _quantify(_write_feature(tmp_path / "f.parquet"), tmp_path / "o.tsv", "--method", "maxlfq", "--max-cpus", "3")
 
     assert result.exit_code == 0, result.output
     assert fake_mokume["maxlfq"] == {"threads": 3, "force_builtin": True}
 
 
 def test_directlfq_receives_the_threads(tmp_path, fake_mokume):
-    result = _quantify(_write_feature(tmp_path / "f.parquet"), tmp_path / "o.tsv", "--method", "directlfq", "--threads", "3")
+    result = _quantify(_write_feature(tmp_path / "f.parquet"), tmp_path / "o.tsv", "--method", "directlfq", "--max-cpus", "3")
 
     assert result.exit_code == 0, result.output
     assert fake_mokume["directlfq"] == {"num_cores": 3}

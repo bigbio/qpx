@@ -23,13 +23,15 @@ def _link_rank(peptidoform, charge, rt, mz, feature: Optional[dict], feature_id:
 
     A feature in the PSM's own run beats no feature; then a feature quantifying the
     PSM's own peptidoform/charge; then the feature whose RT and m/z lie closest to
-    the precursor; then consensus quality; the feature_id breaks any remaining tie.
+    the precursor (its theoretical m/z where none was measured); then consensus
+    quality; the feature_id breaks any remaining tie.
     """
     if feature is None or feature_id is None:
         return _NO_LINK
     same = feature.get("peptidoform") == peptidoform and feature.get("charge") == charge
     drt = abs(feature["rt"] - rt) if rt is not None and feature.get("rt") is not None else math.inf
-    dmz = abs((feature.get("observed_mz") or 0.0) - (mz or 0.0))
+    feature_mz = feature.get("observed_mz") or feature.get("calculated_mz")
+    dmz = abs((feature_mz or 0.0) - (mz or 0.0))
     return (1, same, -drt, -dmz, quality, -feature_id)
 
 
@@ -159,9 +161,9 @@ class _RecordContext:
     def from_map(cls, cm, structures, seen, dedup, sdrf_path):
         """Resolve one input's map columns, groups, runs and search enzyme."""
         from qpx.converters.openms_consensus.channels import Ms1Channels
-        from qpx.converters.openms_consensus.feature_adapter import column_runs, feature_map_info, resolve_enzyme
+        from qpx.converters.openms_consensus.feature_adapter import feature_map_info, resolve_enzyme
         from qpx.converters.openms_consensus.pg_adapter import protein_group_maps
-        from qpx.converters.openms_consensus.psm_adapter import _run_resolver
+        from qpx.converters.openms_consensus.runs import _run_resolver, column_runs
 
         map_info = feature_map_info(cm)
         protein_groups = protein_group_maps(cm) if "feature" in structures or "pg" in structures else (None, None)

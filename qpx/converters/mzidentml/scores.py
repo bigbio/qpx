@@ -7,7 +7,6 @@ import re
 from qpx.converters.localization import localize_modifications, site_candidate
 from qpx.core.cv_terms import (
     CV_PEP,
-    CV_PEP_GLOBAL,
     SITE_LOCALIZATION_ACCESSIONS,
     SITE_PROBABILITY_ACCESSIONS,
     SKIP_SCORE_ACCESSIONS,
@@ -15,7 +14,6 @@ from qpx.core.cv_terms import (
 from qpx.core.scores import is_higher_better, normalize_score_name
 
 _SKIP_SCORE_ACCESSIONS = SKIP_SCORE_ACCESSIONS
-_PEP_ACCESSIONS = frozenset({CV_PEP, CV_PEP_GLOBAL})
 _INDEXED_SCORE_RE = re.compile(r"(\d+):([\d.]+(?:[Ee][+-]?\d+)?):(\d+(?:\|\d+)*):(?:true|false)")
 
 
@@ -136,11 +134,11 @@ def _extract_scores(cv_params: list[dict]) -> list[dict]:
 def _extract_pep(cv_params: list[dict]) -> float | None:
     """Extract posterior error probability from SII cvParams.
 
-    Looks for MS:1001493 (PEP) or MS:1002352 (global PEP).
+    Looks for MS:1001493 (percolator:PEP).
     Returns float value or None.
     """
     for cv in cv_params:
-        if cv["accession"] in _PEP_ACCESSIONS:
+        if cv["accession"] == CV_PEP:
             try:
                 return float(cv.get("value", ""))
             except (ValueError, TypeError):

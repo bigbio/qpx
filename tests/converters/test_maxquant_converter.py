@@ -11,6 +11,8 @@ import pandas as pd
 import pyarrow.parquet as pq
 import pytest
 
+from tests.conftest import read_view_table
+
 EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "examples" / "maxquant" / "maxquant_simple"
 
 _MSMS = EXAMPLES_DIR / "msms.txt"
@@ -205,9 +207,12 @@ def test_pg_spectral_count_per_experiment(tmp_path):
     assert counts == {("run1",): {"spectral_count": 7.0}, ("run2",): {"spectral_count": 0.0}}
 
 
-@pytest.mark.parametrize("experiment", ["Mix1", ""])
+@pytest.mark.parametrize("experiment", ["Mix1", "batch_corrected", ""])
 def test_pg_reads_the_reporter_columns_of_maxquant_set_up_without_experiment_names(tmp_path, experiment):
-    """Without experiment names, the one experiment has unsuffixed columns and evidence.txt no Experiment column."""
+    """Without experiment names, the one experiment has unsuffixed columns and evidence.txt no Experiment column.
+
+    An experiment name may contain ``corrected``: only ``Reporter intensity corrected N`` is a corrected column.
+    """
     from qpx.converters.maxquant.pg_adapter import MaxQuantPgAdapter
 
     labels = ["TMT126", "TMT127", "TMT128", "TMT129", "TMT130", "TMT131"]
@@ -449,6 +454,53 @@ def test_psm_handles_empty_modified_sequence(tmp_path):
     assert rows[0]["peptidoform"]
 
 
+def test_psm_keeps_the_lowest_pep_row_of_a_repeated_identity(tmp_path):
+    """Rows of one run, scan, modified sequence and charge are one PSM: the row of lowest PEP, then of lowest id.
+
+    MaxQuant reports some spectra twice for one peptide, as MULTI-MSMS and as MULTI-SECPEP.
+    """
+    from qpx.converters.maxquant.psm_adapter import MaxQuantPsmAdapter
+
+    msms = tmp_path / "msms.txt"
+    msms.write_text(
+        "Sequence\tModified sequence\tCharge\tRaw file\tScan number\tm/z\tMass\tPEP\tScore\tid\n"
+        "PEPTIDEK\t_PEPTIDEK_\t2\trun1\t100\t450.25\t898.5\t0.07\t80\t0\n"
+        "PEPTIDEK\t_PEPTIDEK_\t2\trun1\t100\t450.25\t898.5\t0.003\t90\t1\n"
+        "PEPTIDEK\t_PEPTIDEK_\t2\trun1\t101\t450.25\t898.5\t\t70\t2\n"
+        "PEPTIDEK\t_PEPTIDEK_\t2\trun1\t101\t450.25\t898.5\t0.5\t60\t3\n"
+        # The ids, not the line order, decide a tie.
+        "PEPTIDEK\t_PEPTIDEK_\t2\trun1\t102\t450.25\t898.5\t0.01\t50\t5\n"
+        "PEPTIDEK\t_PEPTIDEK_\t2\trun1\t102\t450.25\t898.5\t0.01\t40\t4\n"
+        "PEPTIDEK\t_PEPTIDEK_\t3\trun1\t102\t300.5\t898.5\t0.2\t30\t6\n"
+    )
+    output = tmp_path / "psm.parquet"
+    with MaxQuantPsmAdapter() as adapter:
+        adapter.convert(str(msms), str(output))
+
+    kept = sorted(
+        (row["scan"][0], row["charge"], row["additional_scores"]["andromeda_score"]) for row in pq.read_table(output).to_pylist()
+    )
+    assert kept == [(100, 2, 90.0), (101, 2, 60.0), (102, 2, 40.0), (102, 3, 30.0)]
+
+
+def test_psm_footer_takes_the_callers_creator(tmp_path):
+    """The creator tag is the caller's; the fixed score layout stays MaxQuant's."""
+    from qpx.converters.maxquant.psm_adapter import MaxQuantPsmAdapter
+
+    msms = tmp_path / "msms.txt"
+    msms.write_text(
+        "Sequence\tModified sequence\tCharge\tRaw file\tScan number\tm/z\tMass\tPEP\tScore\tid\n"
+        "PEPTIDEK\t_PEPTIDEK_\t2\trun1\t100\t450.25\t898.5\t0.01\t80\t0\n"
+    )
+    output = tmp_path / "psm.parquet"
+    with MaxQuantPsmAdapter() as adapter:
+        adapter.convert(str(msms), str(output), creator="local-mq")
+
+    parquet = pq.ParquetFile(output)
+    assert parquet.metadata.metadata[b"creator"] == b"local-mq"
+    assert parquet.read().to_pylist()[0]["additional_scores"]["andromeda_score"] == 80.0
+
+
 def test_feature_pg_qvalue_and_genes_keyed_on_full_membership(tmp_path):
     """Bug #248 (M): a shared razor accession must not bind to another group's metadata.
 
@@ -640,7 +692,7 @@ def psm_table(converted_output):
     """Read the psm.parquet produced by the converter."""
     path = converted_output / f"{_PREFIX}.psm.parquet"
     assert path.exists(), "psm.parquet was not produced"
-    return pq.read_table(str(path))
+    return read_view_table(str(path))
 
 
 @pytest.fixture(scope="module")
@@ -648,7 +700,7 @@ def feature_table(converted_output):
     """Read the feature.parquet produced by the converter."""
     path = converted_output / f"{_PREFIX}.feature.parquet"
     assert path.exists(), "feature.parquet was not produced"
-    return pq.read_table(str(path))
+    return read_view_table(str(path))
 
 
 # ---------------------------------------------------------------------------

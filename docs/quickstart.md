@@ -95,7 +95,7 @@ curl -L -o msms.txt \
 qpxc convert maxquant \
     --msms-file msms.txt \
     --output-folder ./output \
-    --structures psm \
+    --view psm \
     --verbose
 ```
 
@@ -146,10 +146,10 @@ qpxc convert spectronaut --report-path report.tsv --output-folder ./output
 qpxc convert fragpipe --psm-file psm.tsv --output-folder ./output
 
 # Validate a QPX dataset
-qpxc validate --dataset-path ./output
+qpxc validate --dataset ./output
 
 # Query a QPX dataset
-qpxc query sql --dataset-path ./output --sql "SELECT * FROM psm LIMIT 10"
+qpxc query sql --dataset ./output --sql "SELECT * FROM psm LIMIT 10"
 ```
 
 ## Need Help?

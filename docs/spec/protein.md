@@ -20,7 +20,7 @@ File: `{PREFIX}.protein.parquet`. One row per accession.
 - `qpxc transform protein-properties --fasta` and the `--fasta` of `qpxc convert` write it for the accessions of the `pg` and `feature` views that the FASTA has, with sequences. A value a producer recorded stays.
 - `qpxc convert maxquant` writes it from `proteinGroups.txt`: the `Fasta headers` and `Sequence lengths` of each `Protein IDs` member, where each cell has one token per member. It has no sequences.
 
-A header not in UniProt form yields only its description. Decoys stay out, since a FASTA's decoy entries are skipped and MaxQuant's `REV__` rows are dropped.
+A header not in UniProt form yields only its description. Decoys stay out: the decoy rows of `pg` and `feature` are not read, a FASTA's decoy entries are skipped and MaxQuant's `REV__` rows are dropped. A FASTA entry is a decoy when its identifier starts with `DECOY`, `REV_`, `RANDOM_` or `XXX_`, or carries the decoy affix of the database: the prefix or suffix OpenMS recognises, such as `rev` in `revsp|P12345|NAME` or `_rev` in `tr|P12345|NAME_rev`, that at least 40% of the entries carry.
 
 ## The FASTA itself
 

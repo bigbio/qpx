@@ -9,8 +9,8 @@ import pyarrow.parquet as pq
 import pytest
 
 import qpx
-from qpx.writers import FeatureWriter, PgWriter, PsmWriter, XicExtraction, XicWriter
-from tests.conftest import make_feature_record, make_psm_record, make_xic_record
+from qpx.writers import FeatureWriter, OntologyWriter, PepMapWriter, PgWriter, PsmWriter, XicExtraction, XicWriter
+from tests.conftest import make_feature_record, make_ontology_record, make_psm_record, make_xic_record
 
 
 def _copy(dataset_dir, tmp_path, name, accession):
@@ -256,6 +256,49 @@ class TestMergeOutput:
         metadata = pq.read_schema(output / "merged.feature.parquet").metadata
         assert metadata[b"file_type"] == b"feature_file"
         assert b"qpx_version" in metadata and b"identity_composite" in metadata
+
+    def test_joined_ontology_sources_and_pepmap_rows_are_sorted(self, dataset_dir, tmp_path):
+        """Merging the same datasets writes the same files, whatever order the query returns its groups in."""
+        sources = []
+        for name, accession, source, peptidoforms in (
+            ("one", "PXD000001", "z", ["YYYK", "ZZZK"]),
+            ("two", "PXD000002", "a", ["BBBK", "AAAK"]),
+        ):
+            target = _copy(dataset_dir, tmp_path, name, accession)
+            with OntologyWriter(target / "exp.ontology.parquet") as writer:
+                writer.write_batch([{**make_ontology_record(), "source_column_name": source, "source_tool": source}])
+            with PepMapWriter(target / "exp.pepmap.parquet") as writer:
+                writer.write_batch(
+                    [
+                        {"sequence": p, "peptidoform": p, "pg_accessions": [{"accession": "P1"}], "is_unique": True}
+                        for p in peptidoforms
+                    ]
+                )
+            sources.append(qpx.open_dataset(str(target)))
+        with qpx.DatasetCollection(sources) as collection:
+            collection.merge(tmp_path / "merged", on_collision="namespace")
+        for source in sources:
+            source.close()
+
+        ontology = pq.read_table(tmp_path / "merged" / "merged.ontology.parquet").to_pylist()
+        assert [(row["source_column_name"], row["source_tool"]) for row in ontology] == [("a;z", "a;z")]
+        pepmap = pq.read_table(tmp_path / "merged" / "merged.pepmap.parquet", columns=["peptidoform"]).column(0).to_pylist()
+        assert pepmap == ["AAAK", "BBBK", "YYYK", "ZZZK"]
+
+    def test_a_missing_accession_is_a_different_term(self, dataset_dir, tmp_path, caplog):
+        """A migrated row that gained no accession does not silently take the term of a new file, or lose it."""
+        sources = []
+        for name, accession, term in (("one", "PXD000001", None), ("two", "PXD000002", "MS:1000888")):
+            target = _copy(dataset_dir, tmp_path, name, accession)
+            with OntologyWriter(target / "exp.ontology.parquet") as writer:
+                writer.write_batch([{**make_ontology_record(), "ontology_accession": term}])
+            sources.append(qpx.open_dataset(str(target)))
+        with qpx.DatasetCollection(sources) as collection, caplog.at_level(logging.WARNING):
+            collection.merge(tmp_path / "merged", on_collision="namespace")
+        for source in sources:
+            source.close()
+
+        assert "1 ontology field(s) have different terms" in caplog.text
 
     def test_different_composites_write_one_file_each(self, tmp_path, dataset_dir):
         one, two = tmp_path / "one", tmp_path / "two"

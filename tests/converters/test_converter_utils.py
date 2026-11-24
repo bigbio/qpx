@@ -250,6 +250,7 @@ class TestStripUniprotPrefix:
             ("CONTAM_sp|CONTAM_P02768|N", "CONTAM_P02768"),  # the marker is not doubled
             ("sp|Cont_Q7SIH1|A2MG_BOVIN", "Cont_Q7SIH1"),  # the quantms contaminant marker
             ("sp|MYPROT1|X_HUMAN", "sp|MYPROT1|X_HUMAN"),  # not a UniProtKB accession -> verbatim
+            ("tr|A9ET61|A9ET61_SORC5_rev", "tr|A9ET61|A9ET61_SORC5_rev"),  # a decoy suffix keeps it apart from the target
             ("CONTAM_sp|CONTAM_P1|N", "CONTAM_sp|CONTAM_P1|N"),
             ("xyz|abc", "xyz|abc"),  # pipe but not a UniProt db prefix -> verbatim
             ("", ""),

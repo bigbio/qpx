@@ -105,7 +105,7 @@ The `transform` command group provides tools for processing and transforming QPX
 - [gene-map](#gene-map) - Map genes from FASTA
 - [site](#site) - Quantify modification sites from the feature view
 - [protein-properties](#protein-properties) - Fill protein coverage, molecular weight and peptide positions from an optional FASTA
-- [normalize-accessions](#normalize-accessions) - Normalize protein accession formats (full ↔ bare)
+- [normalize-accessions](#normalize-accessions) - Strip full UniProt identifiers to bare accessions
 - [update-metadata](#update-metadata) - Update sample/run metadata from a revised SDRF
 - [relayout](#relayout) - Sort a dataset's views for selective reads
 - [quantify](#quantify) - Protein quantification via mokume (DirectLFQ, MaxLFQ, iBAQ, TopN, etc.)
@@ -229,7 +229,7 @@ qpxc convert diann --report-path report.parquet ... --fasta search.fasta
 
 ## site
 
-Writes `site.parquet` from the feature view: per run and label, the intensity of the peptides that place a modification on a residue of their anchor protein, and its share of all peptides covering that residue ([Modification Sites](../spec/site.md#quantified-sites)). It needs `feature.pg_positions`, so run `protein-properties --fasta` first where the converter did not fill them.
+Writes `site.parquet` from the feature view: per run and label, the intensity of the peptides that place a modification on a residue of their anchor protein, and its share of all peptides covering that residue ([Modification Sites](../spec/site.md#quantified-sites)). It needs `feature.pg_positions`, so run `protein-properties --fasta` first where the converter did not fill them. The ontology view of the dataset gets the rows of the site view.
 
 ```bash
 qpxc transform site --dataset ./qpx_output --modification Phospho --in-place
@@ -243,7 +243,7 @@ qpxc transform site --dataset ./qpx_output --modification Phospho --in-place
 
 ## normalize-accessions
 
-Normalize protein accession formats between full UniProt form (`sp|ACC|NAME`) and bare form (`ACC`).
+Strip full UniProt identifiers (`sp|ACC|NAME`) to the bare accessions (`ACC`) that every convert command writes.
 
 ### Description {#normalize-accessions-description}
 
@@ -313,9 +313,9 @@ qpxc transform relayout --dataset ./qpx_output --in-place \\
     --view psm --sort-by run_file_name,scan
 ```
 
-The ids of a sorted feature, pg or psm view are numbered 1, 2, 3, … in the new row order, and the columns that hold them follow. A name-value list of one layout becomes a struct, which QPX reads back as the list, and measured values are rounded to the precision of the measurement; see [Physical Layout](../spec/serialization.md#physical-layout). If the dataset records integrity, its checksums are refreshed for the rewritten files, and its h5mu is built again when feature or pg is sorted.
+The ids of a sorted feature, pg or psm view are numbered 1, 2, 3, … in the new row order, and the columns that hold them follow. relayout keeps the physical layout of name-value columns and rounds measured values to the precision of the measurement; see [Physical Layout](../spec/serialization.md#physical-layout). If the dataset records integrity, its checksums are refreshed for the rewritten files, and its h5mu is built again when feature or pg is sorted.
 
-Sorting a large view needs memory. DuckDB 2.0 keeps to `--duckdb-memory` and spills the rest to `--temp-dir`, by default `.tmp` in the output folder, or in the working directory with `--in-place`; DuckDB 1.5 can go well past the limit when it sorts wide rows with nested columns. PXD030304, a DIA-NN feature view of 229 million rows and 18.3 GB, grew past 100 GB under DuckDB 1.5.2 with its default limit of 80% of RAM, and to 77 GB with a limit of 48 GB before it was stopped; under DuckDB 2.0 with a limit of 40 GB it took 40 minutes and peaked at 44 GB. For views of this size, use DuckDB 2.0 (Python 3.11 or later) and set `--duckdb-memory`.
+Sorting a large view needs memory. DuckDB 2.0 keeps to `--max-memory` and spills the rest to `--temp-dir`, by default `.tmp` in the output folder, or in the working directory with `--in-place`; DuckDB 1.5 can go well past the limit when it sorts wide rows with nested columns. PXD030304, a DIA-NN feature view of 229 million rows and 18.3 GB, grew past 100 GB under DuckDB 1.5.2 with its default limit of 80% of RAM, and to 77 GB with a limit of 48 GB before it was stopped; under DuckDB 2.0 with a limit of 40 GB it took 40 minutes and peaked at 44 GB. For views of this size, use DuckDB 2.0 (Python 3.11 or later) and set `--max-memory`.
 
 ## quantify
 
@@ -379,7 +379,7 @@ qpxc transform quantify \
 ```bash
 qpxc transform quantify \
     --feature-path ./qpx_output/diann.feature.parquet \
-    --method maxlfq --threads 8 \
+    --method maxlfq --max-cpus 8 \
     -o proteins_maxlfq.parquet
 ```
 
@@ -414,7 +414,7 @@ qpxc transform quantify \
 - If using older QPX datasets, ensure fields have been migrated from legacy names (`precursor_charge` → `charge`, `id_scan` → `scan`)
 - Decoy entries (`is_decoy=true`) and zero-intensity rows are automatically filtered
 - Use `--normalize` for cross-sample normalization
-- Use `--threads` to control parallelism for MaxLFQ
+- Use `--max-cpus` to control parallelism for MaxLFQ
 
 ---
 

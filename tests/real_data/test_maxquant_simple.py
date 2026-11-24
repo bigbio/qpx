@@ -15,10 +15,10 @@ Markers:
 
 from pathlib import Path
 
-import pyarrow.parquet as pq
 import pytest
 
 from qpx.dataset import Dataset
+from tests.conftest import read_view_table
 
 EXAMPLES_DIR = Path(__file__).parent.parent / "examples" / "maxquant" / "maxquant_simple"
 
@@ -64,7 +64,7 @@ def psm_table(dataset):
     """Raw PyArrow table for psm.parquet."""
     path = Path(dataset.path) / f"{_PREFIX}.psm.parquet"
     assert path.exists(), "psm.parquet was not produced"
-    return pq.read_table(str(path))
+    return read_view_table(path)
 
 
 @pytest.fixture(scope="module")
@@ -72,7 +72,7 @@ def feature_table(dataset):
     """Raw PyArrow table for feature.parquet."""
     path = Path(dataset.path) / f"{_PREFIX}.feature.parquet"
     assert path.exists(), "feature.parquet was not produced"
-    return pq.read_table(str(path))
+    return read_view_table(path)
 
 
 # ---------------------------------------------------------------------------

@@ -15,16 +15,18 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from qpx.converters.channel_labels import normalize_label
-from qpx.converters.ontology_util import dedupe_ontology_entries, reconcile_ontology_entries
+from qpx.converters.ontology_util import dedupe_ontology_entries, reconcile_ontology_entries, refresh_ontology_entries
 from qpx.converters.ptm import _add_nterm_dash, _unimod_title_of, name_to_unimod, normalize_peptidoform
 from qpx.converters.utils import canonical_accession
 from qpx.core.engine import create_connection
+from qpx.core.scores import field_ontology_entries
 from qpx.core.semantic_validation import _CANONICAL, _TAGS
 from qpx.core.sql import sql_build, validate_identifier
 from qpx.core.struct_lists import file_layouts, restore_table
 from qpx.dataset import Dataset
 from qpx.transforms.accession_normalizer import _LIST_ACCESSION_COLUMNS, _SCALAR_ACCESSION_COLUMNS, ACCESSION_VIEWS, _entry_names
 from qpx.transforms.mantissa import MANTISSA_BITS_FOOTER_KEY
+from qpx.transforms.producer_rows import _diann_feature_row, _irt_row, _msnet_row, _pg_row_fix, _raw_msnet_row
 from qpx.transforms.protein_properties import _rewrite_view
 from qpx.transforms.relayout import ID_REFERENCES, ORDINAL_IDS, _quoted
 from qpx.version import QPX_SPEC_VERSION, parse_spec_version
@@ -56,21 +58,15 @@ _NOT_MIGRATED_SUFFIXES = (".h5mu", ".h5ad")
 _ACCESSION_LISTS = {**_LIST_ACCESSION_COLUMNS, "pg_positions": "protein_accession"}
 # What the semantic validator removes from a peptidoform to compare it with its sequence.
 _MODIFICATION_MARKS = re.compile(rf"{_TAGS}|[-?]")
-# The MSNet psm columns that scripts/convert_msnet.py renames, in files it did not convert.
-_RAW_MSNET_COLUMNS = {
-    "precursor_charge": "charge",
-    "exp_mass_to_charge": "observed_mz",
-    "cal_mass_to_charge": "calculated_mz",
-    "retention_time": "rt",
-    "reference_file_name": "run_file_name",
-}
 # Run names old converters spelled apart from run.parquet: with the suffix of a quantms idXML, without the
 # dissociation suffix of a dataset split by it, or without a "%".
 _IDXML_RUN_SUFFIX = "_consensus_fdr_filter.idXML"
 _SPLIT_RUN_SUFFIXES = ("_CID", "_HCD")
 _RUN_NAMES_SQL = "SELECT DISTINCT $column FROM read_parquet($source)"
-# DIA-NN feature intensity names before specification 1.3.
-_DIANN_INTENSITY_NAMES = {"maxlfq": "pg_maxlfq", "precursor_normalised": "normalize_intensity"}
+# openms-consensus spelled the PSM q-value score `q-value`; score names are snake_case (ontology.md).
+_PSM_SCORE_NAMES = {"q-value": "qvalue"}
+# The DIA-NN scores of QPX 1.0.2 that a migration moves to the column they repeat (producer_rows.py).
+_MOVED_SCORES = {("feature", "qvalue"): "precursor_qvalue", ("pg", "qvalue"): "pg_qvalue"}
 # The first specification whose DIA-NN observed_mz is the measured MS1 apex rather than Precursor.Mz.
 _MEASURED_DIANN_MZ = (1, 3)
 # The rows that repeat an id, except the first, or for a feature the first copy holding its group's
@@ -174,47 +170,6 @@ def _modification(entry: dict) -> dict:
     return {**entry, "name": name, "accession": accession, "positions": positions}
 
 
-def _msnet_row(row: dict) -> dict:
-    """MSNet's consensus_support, is_decoy and cv_params as scripts/convert_msnet.py writes them.
-
-    consensus_support becomes a score of additional_scores. MSNet holds targets only; writer 1.2.1.dev5
-    left the is_decoy of some files null and kept cv_params without a value, which convert_msnet leaves out.
-    """
-    value = row.pop("consensus_support")
-    if value is not None:
-        score = {"score_name": "consensus_support", "score_value": float(value), "higher_better": None}
-        row["additional_scores"] = [*(row.get("additional_scores") or []), score]
-    if row.get("is_decoy") is None:
-        row["is_decoy"] = False
-    if row.get("cv_params"):
-        row["cv_params"] = [entry for entry in row["cv_params"] if entry["cv_value"] is not None]
-    return row
-
-
-def _raw_msnet_row(record: dict) -> dict:
-    """An MSNet psm row that scripts/convert_msnet.py did not convert, in the columns it writes.
-
-    mass_error_ppm is computed from the float32 m/z values the row keeps. The global q-value
-    becomes the first score; _msnet_row adds consensus_support after it.
-    """
-    row = {_RAW_MSNET_COLUMNS.get(key, key): value for key, value in record.items()}
-    observed, calculated = float(np.float32(row["observed_mz"])), float(np.float32(row["calculated_mz"]))
-    row["mass_error_ppm"] = 1e6 * (observed - calculated) / calculated
-    qvalue = row.pop("global_qvalue")
-    row["additional_scores"] = [{"score_name": "global_qvalue", "score_value": float(qvalue), "higher_better": None}]
-    row["cv_params"] = [{"cv_name": key, "cv_value": str(value)} for key, value in row["cv_params"].items() if value is not None]
-    row["scan"] = [row["scan"]]
-    row["modifications"] = row["modifications"] and [
-        {
-            "name": entry["name"],
-            "accession": None,
-            "positions": [{"position": int(site["position"]), "amino_acid": None, "scores": None} for site in entry["positions"]],
-        }
-        for entry in row["modifications"]
-    ]
-    return row
-
-
 def _peptidoform(peptidoform: str) -> str:
     """The canonical peptidoform; MSNet wrote ProForma tags after the mzTab dot of the N-terminus, .[Acetyl]PEPTIDE."""
     if peptidoform.startswith("."):
@@ -258,35 +213,15 @@ def _identity_row(record: dict) -> dict:
     return row
 
 
-def _diann_intensity_names(entries: list[dict]) -> list[dict]:
-    return [
-        {
-            **entry,
-            "intensities": [
-                {**item, "intensity_name": _DIANN_INTENSITY_NAMES.get(item["intensity_name"], item["intensity_name"])}
-                for item in entry["intensities"]
-            ],
-        }
-        for entry in entries
-    ]
-
-
-def _diann_feature_row(record: dict, measured_mz: bool) -> dict:
-    """Recover the library-decoy prefix separately from the report's is_decoy flag, and the current intensity names.
-
-    Without *measured_mz*, observed_mz held the theoretical Precursor.Mz and mass_error_ppm a float32 rounding
-    step; both become null, as a conversion writes them where DIA-NN measured no MS1 apex.
-    """
-    peptidoform = record["peptidoform"]
-    library_prefix = peptidoform.startswith("^")
-    row = {**record, "is_library_decoy": record.get("is_library_decoy") or library_prefix}
-    if library_prefix:
-        row["peptidoform"] = _add_nterm_dash(peptidoform.removeprefix("^"))
-    if not measured_mz:
-        row["observed_mz"] = row["mass_error_ppm"] = None
-    if row.get("additional_intensities"):
-        row["additional_intensities"] = _diann_intensity_names(row["additional_intensities"])
-    return _identity_row(row)
+def _psm_row(record: dict) -> dict:
+    """A psm row rewritten like a feature row, with its scores under their snake_case names."""
+    row = _identity_row(_raw_msnet_row(record) if "reference_file_name" in record else record)
+    if row.get("additional_scores"):
+        row["additional_scores"] = [
+            {**score, "score_name": _PSM_SCORE_NAMES.get(score["score_name"], score["score_name"])}
+            for score in row["additional_scores"]
+        ]
+    return row
 
 
 def _flat_pg_rows(record: dict) -> list[dict]:
@@ -333,7 +268,7 @@ def _mz_row(record: dict) -> dict:
 
 _ROW_MIGRATIONS = {
     "feature": lambda record: [_identity_row(record)],
-    "psm": lambda record: [_identity_row(_raw_msnet_row(record) if "reference_file_name" in record else record)],
+    "psm": lambda record: [_psm_row(record)],
     "pg": _flat_pg_rows,
     "run": lambda record: [_run_row(record)],
     "dataset": lambda record: [_dataset_row(record)],
@@ -353,14 +288,17 @@ def _migrated_pairs(view: str, footer: dict[bytes, bytes], records: list[dict]) 
     """
     if view == "feature" and footer.get(b"creator") == b"diann":
         measured_mz = (parse_spec_version(footer.get(b"qpx_version", b"").decode()) or (0, 0)) >= _MEASURED_DIANN_MZ
-        pairs = [(record, _diann_feature_row(record, measured_mz)) for record in records]
+        pairs = [(record, _identity_row(_diann_feature_row(record, measured_mz))) for record in records]
     else:
         migrate_row = _ROW_MIGRATIONS.get(view, lambda record: [record])
         pairs = [(record, row) for record in records for row in migrate_row(record)]
+    pg_fix = _pg_row_fix(footer) if view == "pg" else None
+    if pg_fix is not None:
+        pairs = [(record, pg_fix(row)) for record, row in pairs]
     if view in ACCESSION_VIEWS:
         pairs = [(record, _canonical_accessions(row)) for record, row in pairs]
     if view == "feature":
-        pairs = [(record, row) for record, row in pairs if _holds_each_label_once(row)]
+        pairs = [(record, _irt_row(row)) for record, row in pairs if _holds_each_label_once(row)]
     return pairs
 
 
@@ -394,14 +332,33 @@ def _extra_column_options(writer_class, source: Path) -> dict:
 
 
 def _migrate_ontology(source: Path, target: Path) -> int:
-    """One row per field and view, naming only fields the migrated views emit."""
+    """One row per field and view, naming only fields the migrated views emit, with the current terms."""
     writer_class, suffix = Dataset.writer_for("ontology")
     prefix = target.name.removesuffix(suffix)
-    records = pq.read_table(source).to_pylist()
-    entries = reconcile_ontology_entries(dedupe_ontology_entries(records), target.parent, prefix)
+    records = refresh_ontology_entries(dedupe_ontology_entries(pq.read_table(source).to_pylist()), target.parent, prefix)
+    entries = _follow_moved_scores(records, reconcile_ontology_entries(records, target.parent, prefix))
     with writer_class(target, **_writer_options("ontology", _footer(source))) as writer:
         writer.write_batch(entries)
     return len(entries)
+
+
+def _follow_moved_scores(records: list[dict], entries: list[dict]) -> list[dict]:
+    """Give the row of a column that took the values of a moved score the source of the score's dropped row."""
+    kept = {(entry["view"], entry["field_name"]) for entry in entries}
+    moved = {
+        (record["view"], _MOVED_SCORES[key]): record
+        for record in records
+        if (key := (record["view"], record["field_name"])) in _MOVED_SCORES and key not in kept and record["source_column_name"]
+    }
+    followed = []
+    for entry in entries:
+        score = moved.get((entry["view"], entry["field_name"]))
+        if score is not None and entry["source_column_name"] is None:
+            entry = field_ontology_entries(
+                entry["view"], {entry["field_name"]: score["source_column_name"]}, score["source_tool"]
+            )[0]
+        followed.append(entry)
+    return followed
 
 
 def _followed(value, new_ids: dict[int, int], field: str):

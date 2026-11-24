@@ -9,6 +9,7 @@ from typing import Optional
 import click
 
 from .options import _verbose_option
+from .postprocess import _describe_in_dataset
 
 
 @click.command("mz")
@@ -42,7 +43,9 @@ def convert_mz_cmd(
     Reads every .mzML / .mzML.gz file in --mzml-dir and writes scan-level
     spectral data (m/z and intensity arrays, precursor info) to a single
     mz.parquet. Each spectrum carries run_file_name + scan so it can be linked
-    back to PSM / feature records.
+    back to PSM / feature records. Written into a dataset, beside its
+    <prefix>.ontology.parquet, it adds the mz rows to that ontology view and
+    records an existing integrity record again.
 
     \b
     Examples:
@@ -69,5 +72,6 @@ def convert_mz_cmd(
 
     mapper = SpectraMappingTransform(mzml_directory=mzml_dir)
     mapper.write_mz_parquet_from_dir(output, ms_levels=levels)
+    _describe_in_dataset(output, "mz")
 
     click.echo(f"mz conversion complete. Output: {output}")

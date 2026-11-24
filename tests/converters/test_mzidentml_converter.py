@@ -259,19 +259,18 @@ class TestPepExtraction:
         ]
         assert _extract_pep(cv_params) == pytest.approx(0.001)
 
-    def test_extract_pep_global(self):
-        """Should extract PEP from MS:1002352 (global PEP)."""
+    def test_psm_p_value_is_not_pep(self):
+        """MS:1002352 is the PSM-level p-value, not a PEP."""
         from qpx.converters.mzidentml.scores import _extract_pep
 
         cv_params = [
             {
                 "accession": "MS:1002352",
-                "name": "PSM-level global FDR",
+                "name": "PSM-level p-value",
                 "value": "0.01",
             },
         ]
-        pep = _extract_pep(cv_params)
-        assert pep == pytest.approx(0.01)
+        assert _extract_pep(cv_params) is None
 
     def test_extract_pep_missing(self):
         """Should return None when PEP is not present."""
@@ -551,7 +550,7 @@ class TestSharedModificationsNoCrossContamination:
 
     @staticmethod
     def _sii(sii_id, site_prob):
-        # MS:1001969 == phosphoRS site probability (a site-localization cvParam).
+        # MS:1001969 == phosphoRS score (a site-localization cvParam).
         return {
             "id": sii_id,
             "charge": 2,

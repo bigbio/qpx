@@ -17,7 +17,7 @@ _WRITER_BLOCK = re.compile(r"^```python\n(.*?)^```", re.S | re.M)
 
 
 def _conforms(folder):
-    return CliRunner().invoke(qpx_main, ["validate", "--dataset-path", str(folder), "--conformance"])
+    return CliRunner().invoke(qpx_main, ["validate", "--dataset", str(folder), "--conformance"])
 
 
 @pytest.fixture(scope="module")
@@ -63,7 +63,6 @@ def _extra_column(table):
     return table.append_column("mystery", pa.array(["x"] * table.num_rows))
 
 
-LFQ_ENTRY = [{"label": "LFQ", "intensity": 1000.0}]
 DEFECTS = {
     "feature_missing_required_column": ("feature", _drop("sequence")),
     "feature_missing_nullable_column": ("feature", _drop("modifications")),
@@ -140,7 +139,7 @@ def test_relayouted_dataset_conforms_with_provided_ids(request, tmp_path):
     )
     assert result.exit_code == 0, result.output
 
-    for arguments in (["--dataset-path", str(folder)], ["--file", str(folder / "mytool.psm.parquet")]):
+    for arguments in (["--dataset", str(folder)], ["--file", str(folder / "mytool.psm.parquet")]):
         result = CliRunner().invoke(qpx_main, ["validate", *arguments, "--conformance"])
         assert result.exit_code == 0, result.output
         assert "  INFO " in result.output

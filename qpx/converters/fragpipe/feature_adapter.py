@@ -180,6 +180,7 @@ class FragPipeFeatureAdapter(BaseConverter):
             output_path,
             creator=creator,
             identity_composite=_FEATURE_IDENTITY_COMPOSITE,
+            struct_tables="fragpipe",
         ) as writer:
             for batch in self._query_batched("SELECT * FROM fragpipe_features", max(1, chunksize // len(experiments))):
                 df = batch.to_pandas()

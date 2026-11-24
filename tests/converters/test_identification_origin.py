@@ -12,7 +12,7 @@ from qpx.converters.openms_consensus.feature_adapter import _feature_identificat
 from qpx.converters.openms_consensus.provenance import _step_parameters
 from qpx.converters.openms_consensus.quant_scan import quant_scan_fields
 from qpx.converters.openms_consensus.streaming import read_provenance_header
-from tests.conftest import make_feature_record
+from tests.conftest import make_feature_record, read_view_table
 
 REPORT = Path(__file__).parents[1] / "examples" / "spectronaut" / "small" / "spectronaut_report.tsv"
 
@@ -170,7 +170,7 @@ def _imputed_output(tmp_path):
 
 def test_spectronaut_imputation_flags(imputed_output):
     out, first_run = imputed_output
-    features = pq.read_table(next(out.glob("*.feature.parquet"))).to_pylist()
+    features = read_view_table(next(out.glob("*.feature.parquet"))).to_pylist()
     assert {row["identification_type"] for row in features} == {"direct", "transferred"}
     for row in features:
         is_first = row["run_file_name"] == first_run

@@ -1,5 +1,6 @@
 """qpxc migrate brings a pre-1.1 dataset to the current specification."""
 
+import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
@@ -351,7 +352,7 @@ def test_relayouted_ids_are_derived_again_and_references_follow(dataset_dir, tmp
 def test_the_command_refuses_an_existing_folder(old_dataset, tmp_path):
     out = tmp_path / "exists"
     out.mkdir()
-    result = CliRunner().invoke(qpx_main, ["migrate", "--dataset-path", str(old_dataset), "--output-folder", str(out)])
+    result = CliRunner().invoke(qpx_main, ["migrate", "--dataset", str(old_dataset), "--output-folder", str(out)])
     assert result.exit_code != 0
     assert "exists" in result.output
 
@@ -423,6 +424,160 @@ def test_a_diann_feature_takes_the_current_intensity_names_and_measured_mz(tmp_p
     assert [entry["intensity_name"] for entry in entries] == ["pg_maxlfq", "normalize_intensity", "ms1_area"]
     expected = (pytest.approx(450.26), pytest.approx(0.01)) if measured else (None, None)
     assert (row["observed_mz"], row["mass_error_ppm"]) == expected
+
+
+@pytest.mark.parametrize(("creator", "name"), [(b"diann", "irt"), (b"spectronaut", "empirical_irt")])
+def test_an_irt_kept_in_cv_params_moves_to_its_column(tmp_path, creator, name):
+    """Files written before feature.irt kept DIA-NN iRT and Spectronaut EG.iRTEmpirical among cv_params."""
+    source = tmp_path / "old"
+    source.mkdir()
+    params = [{"cv_name": name, "cv_value": "41.25"}, {"cv_name": "proteotypic", "cv_value": "1"}]
+    rows = [_lfq_feature(cv_params=params), _lfq_feature(sequence="PEPTIDER", peptidoform="PEPTIDER", cv_params=params[1:])]
+    _write(source / "old.feature.parquet", rows, creator=creator, extra_metadata={b"qpx_version": b"1.1"})
+    out = tmp_path / "new"
+    migrate_dataset(source, out)
+
+    migrated = pq.read_table(out / "old.feature.parquet", columns=["sequence", "irt", "cv_params"]).to_pylist()
+    by_sequence = {row["sequence"]: row for row in migrated}
+    assert by_sequence["PEPTIDEK"]["irt"] == pytest.approx(41.25)
+    assert by_sequence["PEPTIDER"]["irt"] is None
+    assert all([entry["cv_name"] for entry in row["cv_params"]] == ["proteotypic"] for row in migrated)
+
+
+def test_a_diann_feature_drops_zero_ion_mobility_and_the_repeated_quantity_quality(tmp_path):
+    """Writer 1.1 kept DIA-NN's 0 for data without ion mobility, and Quantity.Quality also as a cv string."""
+    source = tmp_path / "old"
+    source.mkdir()
+    quality = float(np.float32(0.82203466))
+    scores = [{"score_name": "diann_quantity_quality", "score_value": quality, "higher_better": True}]
+
+    def params(quantification):
+        return [
+            {"cv_name": "precursor_quantification_score", "cv_value": quantification},
+            {"cv_name": "predicted_im", "cv_value": "0.0"},
+            {"cv_name": "predicted_iim", "cv_value": "0.0"},
+            {"cv_name": "iim", "cv_value": "1.1461371"},
+        ]
+
+    rows = [
+        _lfq_feature(ion_mobility=0.0, additional_scores=scores, cv_params=params("0.82203466")),
+        _lfq_feature(
+            sequence="PEPTIDER", peptidoform="PEPTIDER", ion_mobility=0.95, additional_scores=scores, cv_params=params("0.5")
+        ),
+    ]
+    _write(source / "old.feature.parquet", rows, extra_metadata={b"qpx_version": b"1.1"})
+    out = tmp_path / "new"
+    migrate_dataset(source, out)
+
+    migrated = pq.read_table(out / "old.feature.parquet", columns=["sequence", "ion_mobility", "cv_params"]).to_pylist()
+    by_sequence = {row["sequence"]: row for row in migrated}
+    assert by_sequence["PEPTIDEK"]["ion_mobility"] is None
+    assert by_sequence["PEPTIDER"]["ion_mobility"] == pytest.approx(0.95)
+    assert [entry["cv_name"] for entry in by_sequence["PEPTIDEK"]["cv_params"]] == ["iim"]
+    assert [entry["cv_name"] for entry in by_sequence["PEPTIDER"]["cv_params"]] == ["precursor_quantification_score", "iim"]
+
+
+@pytest.mark.parametrize(("name", "spec"), [("pg_qvalue", b"1.1"), ("qvalue", b"1.0.2")])
+def test_a_diann_pg_drops_the_score_repeating_its_pg_qvalue(tmp_path, name, spec):
+    """Writer 1.1 repeated a DIA-NN pg_qvalue as the score pg_qvalue, 1.0.2 as qvalue; a score with another value is kept."""
+    source = tmp_path / "old"
+    source.mkdir()
+
+    def pg(anchor, score):
+        scores = [
+            {"score_name": name, "score_value": score, "higher_better": False},
+            {"score_name": "pg_pep", "score_value": 0.2, "higher_better": False},
+        ]
+        return {**make_pg_record(anchor_protein=anchor), "pg_qvalue": 0.01, "additional_scores": scores}
+
+    _write(source / "old.pg.parquet", [pg(PROTEIN, 0.01), pg("Q1", 0.02)], extra_metadata={b"qpx_version": spec})
+    out = tmp_path / "new"
+    migrate_dataset(source, out)
+
+    migrated = pq.read_table(out / "old.pg.parquet", columns=["anchor_protein", "additional_scores"]).to_pylist()
+    names = {row["anchor_protein"]: [score["score_name"] for score in row["additional_scores"]] for row in migrated}
+    assert names == {PROTEIN: ["pg_pep"], "Q1": [name, "pg_pep"]}
+
+
+def test_a_diann_1_0_2_feature_moves_the_score_qvalue_to_precursor_qvalue(tmp_path):
+    """Writer 1.0.2 kept DIA-NN's Q.Value as the score qvalue, with the PSM-level term in the ontology view."""
+    source = tmp_path / "old"
+    source.mkdir()
+    scores = [
+        {"score_name": "qvalue", "score_value": 0.004, "higher_better": False},
+        {"score_name": "diann_evidence", "score_value": 1.5, "higher_better": True},
+    ]
+    _write(source / "old.feature.parquet", [_lfq_feature(additional_scores=scores)], extra_metadata={b"qpx_version": b"1.0.2"})
+    _write(
+        source / "old.ontology.parquet",
+        [_ontology_row("qvalue", "feature", "PSM-level q-value", "MS:1002354", "Q.Value", "DIA-NN")],
+    )
+    out = tmp_path / "new"
+    migrate_dataset(source, out)
+
+    (row,) = pq.read_table(out / "old.feature.parquet", columns=["precursor_qvalue", "additional_scores"]).to_pylist()
+    assert row["precursor_qvalue"] == pytest.approx(0.004)
+    assert [score["score_name"] for score in row["additional_scores"]] == ["diann_evidence"]
+    fields = {(entry["field_name"], entry["view"]) for entry in pq.read_table(out / "old.ontology.parquet").to_pylist()}
+    assert ("qvalue", "feature") not in fields
+
+
+@pytest.mark.parametrize("moved", [True, False])
+def test_the_column_row_takes_the_source_of_a_moved_score(tmp_path, moved):
+    """The rows of the DIA-NN 1.0.2 scores qvalue follow them to precursor_qvalue and pg_qvalue; a kept score keeps its row."""
+    source = tmp_path / "old"
+    source.mkdir()
+    feature = _lfq_feature(additional_scores=[{"score_name": "qvalue", "score_value": 0.004, "higher_better": False}])
+    if not moved:
+        feature["precursor_qvalue"] = 0.003
+    pg_score = [{"score_name": "qvalue", "score_value": 0.01 if moved else 0.02, "higher_better": False}]
+    pg = {**make_pg_record(anchor_protein=PROTEIN), "pg_qvalue": 0.01, "additional_scores": pg_score}
+    _write(source / "old.feature.parquet", [feature], extra_metadata={b"qpx_version": b"1.0.2"})
+    _write(source / "old.pg.parquet", [pg], extra_metadata={b"qpx_version": b"1.0.2"})
+    _write(
+        source / "old.ontology.parquet",
+        [
+            _ontology_row("qvalue", "feature", "PSM-level q-value", "MS:1002354", "Q.Value", "DIA-NN"),
+            _ontology_row("qvalue", "pg", "PSM-level q-value", "MS:1002354", "PG.Q.Value", "DIA-NN"),
+        ],
+    )
+    out = tmp_path / "new"
+    migrate_dataset(source, out)
+
+    rows = {(entry["field_name"], entry["view"]): entry for entry in pq.read_table(out / "old.ontology.parquet").to_pylist()}
+    sources = {key: (row["source_column_name"], row["source_tool"]) for key, row in rows.items()}
+    if moved:
+        assert ("qvalue", "feature") not in rows
+        assert ("qvalue", "pg") not in rows
+        assert sources["precursor_qvalue", "feature"] == ("Q.Value", "DIA-NN")
+        assert sources["pg_qvalue", "pg"] == ("PG.Q.Value", "DIA-NN")
+        assert rows["pg_qvalue", "pg"]["ontology_accession"] == "MS:1002373"
+    else:
+        assert sources["qvalue", "feature"] == ("Q.Value", "DIA-NN")
+        assert sources["qvalue", "pg"] == ("PG.Q.Value", "DIA-NN")
+        assert sources["precursor_qvalue", "feature"] == (None, None)
+        assert sources["pg_qvalue", "pg"] == (None, None)
+
+
+def test_a_quantms_pg_coverage_becomes_a_percentage_once(tmp_path):
+    """The quantms converter of QPX 1.0 wrote the mzTab fraction, 0 for none; a migrated file keeps its percentage."""
+    source = tmp_path / "old"
+    source.mkdir()
+    rows = [
+        {**make_pg_record(anchor_protein=anchor), "sequence_coverage": value}
+        for anchor, value in ((PROTEIN, 0.25), ("Q1", 0.0), ("Q2", None))
+    ]
+    _write(source / "old.pg.parquet", rows, creator=b"quantms")
+    migrate_dataset(source, tmp_path / "new")
+    migrate_dataset(tmp_path / "new", tmp_path / "again")
+
+    for folder in ("new", "again"):
+        migrated = pq.read_table(tmp_path / folder / "old.pg.parquet", columns=["anchor_protein", "sequence_coverage"])
+        assert {row["anchor_protein"]: row["sequence_coverage"] for row in migrated.to_pylist()} == {
+            PROTEIN: 25.0,
+            "Q1": None,
+            "Q2": None,
+        }
 
 
 @pytest.mark.parametrize(("group", "second", "kept"), [(PROTEIN, 0.02, 0.02), ("Q00402", None, 0.01)], ids=["group", "no-group"])
@@ -609,3 +764,54 @@ def test_run_names_take_the_run_views_spelling_when_each_matches_one_run(tmp_pat
     migrate_dataset(folder, tmp_path / "new")
 
     assert pq.read_table(tmp_path / "new" / "old.psm.parquet").column("run_file_name").to_pylist() == expected
+
+
+def _ontology_row(field, view, name=None, accession=None, source=None, tool=None):
+    return {
+        "field_name": field,
+        "ontology_name": name,
+        "ontology_accession": accession,
+        "ontology_source": "MS" if accession else None,
+        "ontology_version": "4.1.100" if accession else None,
+        "view": view,
+        "description": "old",
+        "source_column_name": source,
+        "source_tool": tool,
+    }
+
+
+def test_ontology_rows_take_the_current_terms(old_dataset, tmp_path):
+    """The terms QPX defines are those of a new conversion, also where a row had no accession; each row keeps
+    its source. An old FragPipe pg_qvalue, 1 - Protein Probability, gains none."""
+    old = [
+        _ontology_row("rt", "feature", "scan start time", "MS:1000016", "RT", "DIA-NN"),
+        _ontology_row("is_decoy", "pg", "decoy peptide", "MS:1002217", "Reverse", "MaxQuant"),
+        _ontology_row("intensity", "pg", "LC-MS feature intensity", "MS:1001840"),
+        _ontology_row("pg_qvalue", "pg", source="Protein Probability", tool="FragPipe"),
+        _ontology_row("lfq", "pg", "label-free quantity"),
+        _ontology_row("pg_global_qvalue", "feature", source="Global.PG.Q.Value", tool="DIA-NN"),
+    ]
+    _write(old_dataset / "old.ontology.parquet", old)
+    migrate_dataset(old_dataset, tmp_path / "new")
+
+    table = pq.read_table(tmp_path / "new" / "old.ontology.parquet").to_pylist()
+    rows = {(row["field_name"], row["view"]): row for row in table}
+    rt = rows["rt", "feature"]
+    assert (rt["ontology_name"], rt["ontology_accession"], rt["source_column_name"], rt["source_tool"]) == (
+        "retention time",
+        "MS:1000894",
+        "RT",
+        "DIA-NN",
+    )
+    assert rows["is_decoy", "pg"]["ontology_accession"] is None
+    assert rows["is_decoy", "pg"]["description"] == "MaxQuant Reverse (no CV term)"
+    assert ("intensity", "pg") not in rows
+    fragpipe = rows["pg_qvalue", "pg"]
+    assert (fragpipe["ontology_accession"], fragpipe["source_column_name"], fragpipe["source_tool"]) == (
+        None,
+        "Protein Probability",
+        "FragPipe",
+    )
+    assert rows["lfq", "pg"]["ontology_name"] == "MaxLFQ intensity"
+    global_qvalue = rows["pg_global_qvalue", "feature"]
+    assert (global_qvalue["ontology_accession"], global_qvalue["source_column_name"]) == ("MS:1002373", "Global.PG.Q.Value")

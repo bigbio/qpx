@@ -38,11 +38,11 @@ qpxc transform quantify \
 
 # Step 3: Validate the QPX output
 echo "Validating dataset..."
-qpxc validate --dataset-path $OUTPUT_DIR
+qpxc validate --dataset $OUTPUT_DIR
 
 # Step 4: Inspect dataset info
 echo "Dataset info..."
-qpxc info --dataset-path $OUTPUT_DIR
+qpxc info --dataset $OUTPUT_DIR
 
 echo "Workflow complete!"
 echo "Results:"
@@ -71,7 +71,7 @@ qpxc transform quantify \
 qpxc transform quantify \
     --feature-path ./output/diann.feature.parquet \
     --method maxlfq \
-    --threads 8 \
+    --max-cpus 8 \
     -o ./output/proteins_maxlfq.parquet
 
 echo "Protein quantification complete!"

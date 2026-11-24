@@ -143,7 +143,7 @@ Several fields in the PSM view use structures shared across other QPX views:
 - For details on the `modifications` field structure, see [Modifications](modifications.md).
 - For details on `additional_scores` and score semantics, see [Scores](scores.md).
 - For details on `cv_params` usage and recommended terms, see [Scores & CV Terms](scores.md).
-- For `additional_scores` and `cv_params` stored by `qpxc transform relayout` as a struct with one field per name, see [Struct lists](serialization.md#struct-lists).
+- MaxQuant, FragPipe and Proteome Discoverer store `additional_scores` and `cv_params` as fixed structs ([Struct lists](serialization.md#struct-lists)).
 
 !!! note "A null `feature_id` means no linked feature"
     `feature_id` records a PSM's feature link in the exported dataset. A null
@@ -283,8 +283,8 @@ PSM Parquet files store file-level metadata as key-value pairs in the Parquet fo
 !!! warning "DDA-specific view"
     The PSM view is designed primarily for **DDA** (data-dependent acquisition) methods. It is **not recommended** for DIA experiments, where the feature view should be used instead. Generating a PSM file for DIA data would produce duplicated information relative to the feature view.
 
-!!! note "PEP is a PSM-level metric"
-    `posterior_error_probability` is defined only in the PSM view. It represents the probability that a *specific* peptide-spectrum match is incorrect (lower is better). All major tools export PEP as P(incorrect): Percolator (`posterior_error_prob`), MaxQuant (`PEP`). FragPipe exports PeptideProphet Probability (P(correct)), so converters must compute `PEP = 1 - probability`. The feature and peptide views do not carry PEP as a top-level field; use `additional_scores` or `best_id_score` if a derived PEP value is needed at those levels.
+!!! note "PEP of a PSM"
+    In the PSM view, `posterior_error_probability` is the probability that a *specific* peptide-spectrum match is incorrect (lower is better). All major tools export PEP as P(incorrect): Percolator (`posterior_error_prob`), MaxQuant (`PEP`). FragPipe exports PeptideProphet Probability (P(correct)), so converters must compute `PEP = 1 - probability`. The feature view has its own `posterior_error_probability`, the PEP of the feature's peptide match ([Feature View](feature.md)).
 
 - **Relationship to feature view**: The PSM view captures individual spectrum matches, while the [Feature View](feature.md) aggregates these into quantified peptide features with intensity data. A single feature may correspond to multiple PSMs across different scans.
 - **Protein inference**: Protein inference results should not be the primary focus of the PSM view. `protein_accessions` is an **optional** column — protein mappings can be recovered by joining through the feature and protein group views. When included, it is useful for peptide filtering and protein-level browsing. For full protein group information, use the protein group (PG) view.

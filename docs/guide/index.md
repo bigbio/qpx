@@ -10,7 +10,7 @@ The qpx CLI is organized into five main command groups:
 
 Convert various mass spectrometry data formats to the QPX standard format:
 
-- **OpenMS Conversion**: Enrich native `-out_qpx` output or convert consensusXML to QPX data files
+- **OpenMS Conversion**: Convert OpenMS consensusXML to QPX data files
 - **DIA-NN Conversion**: Convert DIA-NN reports to feature and protein group formats
 - **MaxQuant Conversion**: Convert MaxQuant PSM, feature, and protein group data
 - **FragPipe Conversion**: Convert FragPipe PSM data to QPX format
@@ -58,7 +58,7 @@ Validate QPX data against schemas:
 
 ### Migrate Command
 
-`qpxc migrate --dataset-path OLD --output-folder NEW` rewrites a dataset under the current specification when the source files are gone. See [Versioning](../spec/versioning.md#migrating-without-re-converting).
+`qpxc migrate --dataset OLD --output-folder NEW` rewrites a dataset under the current specification when the source files are gone. See [Versioning](../spec/versioning.md#migrating-without-re-converting).
 
 ## Python API
 
@@ -143,17 +143,17 @@ qpxc transform quantify \
 
 # 3. Query the data
 qpxc query sql \
-    --dataset-path ./output \
+    --dataset ./output \
     --sql "SELECT anchor_protein, AVG(intensity) FROM feature GROUP BY anchor_protein" \
     --output results.csv
 
 # 4. Validate the dataset
 qpxc validate \
-    --dataset-path ./output
+    --dataset ./output
 
 # 5. Inspect dataset information
-qpxc info --dataset-path ./output
-qpxc info schema --dataset-path ./output --structure feature
+qpxc info --dataset ./output
+qpxc info schema --dataset ./output --view feature
 ```
 
 For further analysis, use the Python API:

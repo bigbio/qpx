@@ -57,10 +57,13 @@ def _consensusxml_list(ctx, param, value) -> tuple[Path, ...]:
 )
 @click.option("--output-prefix", default="openms", show_default=True)
 @click.option(
-    "--structures",
-    default="feature,psm,pg,run,sample",
-    show_default=True,
-    help="Comma-separated views to write (run/sample require --sdrf-file).",
+    "--view",
+    "structures",
+    multiple=True,
+    help=(
+        "View to write: feature, psm, pg, run or sample (run/sample require --sdrf-file); repeatable. "
+        "Default: all of them with --sdrf-file, else feature, psm and pg."
+    ),
 )
 @click.option(
     "--streaming/--no-streaming",
@@ -115,7 +118,6 @@ def convert_openms_consensus_cmd(**kwargs):
         logging.basicConfig(level=logging.INFO)
     from qpx.converters.openms_consensus.converter import OpenMSConsensusConverter
 
-    structs = tuple(s.strip() for s in structures.split(",") if s.strip())
     try:
         written = OpenMSConsensusConverter().convert(
             consensusxml_path=[str(path) for path in consensusxml_paths],
@@ -123,7 +125,7 @@ def convert_openms_consensus_cmd(**kwargs):
             output_prefix=output_prefix,
             include_unassigned_psms=include_unassigned_psms,
             sdrf_path=str(sdrf_path) if sdrf_path else None,
-            structures=structs,
+            structures=structures or None,
             streaming=streaming,
             project_accession=project_accession,
         )

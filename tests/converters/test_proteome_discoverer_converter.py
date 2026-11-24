@@ -7,6 +7,7 @@ import pytest
 from qpx.converters.proteome_discoverer import ProteomeDiscovererConverter
 from qpx.converters.proteome_discoverer.pg_adapter import _abundance_columns
 from qpx.converters.proteome_discoverer.reports import peptide_identity
+from tests.conftest import read_view_table
 
 _RUN = "plex1_F1"
 
@@ -106,7 +107,7 @@ def test_unreadable_modification_is_an_error():
 
 
 def test_psm_takes_run_from_input_files_and_scores_from_either_spelling(tmp_path):
-    psm = pq.read_table(_convert(tmp_path, [_psm_row()]) / "pd.psm.parquet").to_pylist()[0]
+    psm = read_view_table(_convert(tmp_path, [_psm_row()]) / "pd.psm.parquet").to_pylist()[0]
 
     assert (psm["run_file_name"], psm["scan"], psm["charge"]) == (_RUN, [100], 2)
     assert psm["sequence"] == "MPEPTIDEK"
@@ -116,6 +117,41 @@ def test_psm_takes_run_from_input_files_and_scores_from_either_spelling(tmp_path
     scores = {score["score_name"]: score["score_value"] for score in psm["additional_scores"]}
     assert scores["rank"] == 1
     assert scores["parent_ion_fraction"] == pytest.approx(0.9)
+
+
+def test_feature_holds_the_parent_ion_fraction_only_as_its_column(tmp_path):
+    """The PSM keeps it as a score; the feature view has a column of that name (#377)."""
+    feature = read_view_table(_convert(tmp_path, [_psm_row()]) / "pd.feature.parquet").to_pylist()[0]
+
+    assert feature["parent_ion_fraction"] == pytest.approx(0.9)
+    assert "parent_ion_fraction" not in {score["score_name"] for score in feature["additional_scores"]}
+
+
+@pytest.mark.parametrize(
+    ("left", "right", "score_name"),
+    [
+        ("Delta Score", "DeltaScore", "delta_score"),
+        ("SVM Score", "Percolator SVMScore", "percolator_svm_score"),
+    ],
+)
+def test_equal_score_aliases_are_stored_once_in_psm_and_feature(tmp_path, left, right, score_name):
+    """The two spellings of the same numeric score produce one entry in each view."""
+    out = _convert(tmp_path, [_psm_row(**{left: "0.25", right: "0.250"})])
+
+    for view in ("psm", "feature"):
+        scores = read_view_table(out / f"pd.{view}.parquet")["additional_scores"][0].as_py()
+        assert [score for score in scores if score["score_name"] == score_name] == [
+            {"score_name": score_name, "score_value": 0.25, "higher_better": True}
+        ]
+
+
+@pytest.mark.parametrize(("left", "right"), [("Delta Score", "DeltaScore"), ("SVM Score", "Percolator SVMScore")])
+def test_conflicting_score_aliases_stop_the_conversion(tmp_path, left, right):
+    """The error names both cells, even when rank filtering would drop their row."""
+    row = _psm_row(**{left: "0.25", right: "0.5", "Rank": "2"})
+    with pytest.raises(ValueError, match=rf"'{left}'='0.25', '{right}'='0.5'"):
+        _convert(tmp_path, [_psm_row(), row], rank1_only=True)
+    assert not list((tmp_path / "out").glob("*.parquet"))
 
 
 def test_ptmrs_probabilities_localize_the_modification(tmp_path):
@@ -148,13 +184,38 @@ def test_two_engines_on_one_spectrum_keep_one_psm_and_rank1_only_drops_the_other
     assert pq.read_table(out / "pd.psm.parquet").num_rows == 1
 
 
+def test_tied_hits_on_one_spectrum_keep_the_smallest_mass_error(tmp_path):
+    """Equal rank and q-value: the absolute mass error, then PEP and export row decide, as for the feature."""
+    rows = [
+        _psm_row(**{"mz in Da": "800.958", "Delta M in ppm": "572"}),
+        _psm_row(**{"Identifying Node": "Comet", "Delta M in ppm": "0.01"}),
+    ]
+    psms = pq.read_table(_convert(tmp_path, rows) / "pd.psm.parquet").to_pylist()
+
+    assert len(psms) == 1
+    assert psms[0]["observed_mz"] == pytest.approx(800.5)
+
+
+def test_pepmap_lists_the_proteins_of_every_converted_precursor(tmp_path):
+    rows = [
+        _psm_row(**{"Protein Accessions": "P99999"}),
+        _psm_row(**{"First Scan": "101", "Charge": "3", "Protein Accessions": "P12345"}),
+    ]
+    pepmap = pq.read_table(_convert(tmp_path, rows) / "pd.pepmap.parquet").to_pylist()
+
+    assert len(pepmap) == 1
+    assert [protein["accession"] for protein in pepmap[0]["pg_accessions"]] == ["P12345", "P99999"]
+    assert pepmap[0]["is_unique"] is False
+
+
 def test_feature_sums_the_reporters_of_the_used_psms(tmp_path):
     rows = [
         _psm_row(),
         _psm_row(**{"First Scan": "101", "Abundance 126": "5", "Abundance 127N": "7", "q-Value": "0.1"}),
         _psm_row(**{"First Scan": "102", "Abundance 126": "1000", "Quan Info": "ExcludedByMethod"}),
         _psm_row(**{"First Scan": "103", "Abundance 126": "1000", "PSM Ambiguity": "Rejected"}),
-        _psm_row(**{"First Scan": "104", "Abundance 126": "1000", "Rank": "2"}),
+        # A second engine's hit on the first spectrum counts that spectrum once.
+        _psm_row(**{"Identifying Node": "Comet", "q-Value": "0.01"}),
     ]
     features = pq.read_table(_convert(tmp_path, rows) / "pd.feature.parquet").to_pylist()
 
@@ -169,16 +230,62 @@ def test_feature_sums_the_reporters_of_the_used_psms(tmp_path):
     assert feature["gg_names"] == ["GENE1"]
 
 
+def test_feature_counts_each_spectrum_once_for_its_first_candidate(tmp_path):
+    """Rank, then q-value, absolute mass error, PEP and export row pick the candidate a spectrum counts for."""
+    phospho_s4 = "N-Term(TMTpro); S4(Phospho); K9(TMTpro)"
+    rows = [
+        _psm_row(**{"First Scan": "200", "q-Value": "0.01"}),
+        _psm_row(**{"First Scan": "200", "Annotated Sequence": "OTHERK", "Modifications": "", "Rank": "2"}),
+        _psm_row(**{"First Scan": "201", "Annotated Sequence": "OTHERK", "Modifications": "", "Rank": "2", "Abundance 126": "4"}),
+        _psm_row(**{"First Scan": "202", "Annotated Sequence": "THIRDK", "Modifications": "", "Delta M in ppm": "-2.0"}),
+        _psm_row(**{"First Scan": "202", "Annotated Sequence": "ANOTHERK", "Modifications": "", "Delta M in ppm": "1.0"}),
+        # Site candidates with equal scores: the first row of the export wins.
+        _psm_row(**{"First Scan": "203", "Annotated Sequence": "SPESTIDEK", "Modifications": phospho_s4, "Abundance 126": "3"}),
+        _psm_row(
+            **{
+                "First Scan": "203",
+                "Annotated Sequence": "SPESTIDEK",
+                "Modifications": "N-Term(TMTpro); S1(Phospho); K9(TMTpro)",
+                "Abundance 126": "3",
+            }
+        ),
+    ]
+    features = pq.read_table(_convert(tmp_path, rows) / "pd.feature.parquet").to_pylist()
+
+    assert {(f["peptidoform"], f["intensities"][0]["intensity"]) for f in features} == {
+        (peptide_identity("MPEPTIDEK", "N-Term(TMTpro); K9(TMTpro)")[0], 10.0),
+        (peptide_identity("OTHERK", "")[0], 4.0),
+        (peptide_identity("ANOTHERK", "")[0], 10.0),
+        (peptide_identity("SPESTIDEK", phospho_s4)[0], 3.0),
+    }
+
+
 def test_label_free_feature_takes_the_largest_ms1_abundance(tmp_path):
     rows = [
         {k: v for k, v in _psm_row(**{"Intensity": intensity, "First Scan": scan}).items() if not k.startswith("Abundance")}
         for intensity, scan in (("100", "1"), ("300", "2"))
     ]
+    # Two engines on one spectrum: spectral_count counts the spectrum once.
+    rows.append({**rows[1], "Identifying Node": "Comet"})
     feature = pq.read_table(_convert(tmp_path, rows) / "pd.feature.parquet").to_pylist()[0]
 
     assert feature["intensities"] == [{"label": "LFQ", "intensity": 300.0}]
     assert feature["rt"] == pytest.approx(600.0)
     assert feature["additional_intensities"][0]["intensities"] == [{"intensity_name": "spectral_count", "intensity_value": 2.0}]
+
+
+def test_label_free_precursors_of_one_spectrum_count_apart(tmp_path):
+    """PD gives each precursor of a chimeric spectrum its own MS1 abundance."""
+    rows = [
+        {k: v for k, v in _psm_row(**overrides).items() if not k.startswith("Abundance")}
+        for overrides in (
+            {"Intensity": "100"},
+            {"Annotated Sequence": "OTHERK", "Modifications": "", "mz in Da": "650.3", "Intensity": "300"},
+        )
+    ]
+    features = pq.read_table(_convert(tmp_path, rows) / "pd.feature.parquet").to_pylist()
+
+    assert sorted(f["intensities"][0]["intensity"] for f in features) == [100.0, 300.0]
 
 
 def test_ms1_label_abundances_stop_the_conversion(tmp_path):

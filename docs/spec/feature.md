@@ -11,11 +11,6 @@ by its run or quantification unit; the original ID remains traceable in
 Converters may override the schema default when their producer represents a
 different Feature-level entity.
 
-When enriching an existing native OpenMS QPX bundle, QPX preserves supplied
-opaque IDs and their cross-view references. Run references are normalized to
-the SDRF basename convention before any missing IDs are derived; supplied IDs
-are not recalculated from the normalized run names.
-
 For a de novo workflow without a database search, set `is_decoy` to `false` and
 record a `de_novo_peptide_sequencing` step in `provenance.parquet`. Protein-mapping
 fields may be null; `anchor_protein` is an annotation and is not part of a
@@ -65,7 +60,7 @@ These fields are shared with the PSM view and describe the peptide identificatio
 | `missed_cleavages` | Number of missed enzymatic cleavages | int16, null | no |
 | `rt` | Precursor retention time (in seconds) | float32, null | no |
 | `rt_aligned` | Retention time after the tool's alignment between runs, in seconds; `rt` is the time on this run's own clock. MaxQuant `Calibrated retention time`; specification 1.3 | float32, null | No |
-| `irt` | Indexed retention time on the tool's scale, filled from the `irt` or `empirical_irt` entry of `cv_params`; specification 1.3 | float32, null | No |
+| `irt` | Indexed retention time on the tool's scale: DIA-NN `iRT`, Spectronaut `EG.iRTEmpirical`; specification 1.3 | float32, null | No |
 | `consensus_rt` | Parent OpenMS `ConsensusFeature` retention time | float32, null | optional |
 | `rt_start` | Start of the retention time window for the feature | float32, null | no |
 | `rt_stop` | End of the retention time window for the feature | float32, null | no |
@@ -171,7 +166,7 @@ Several fields in the feature view use structures shared across other QPX views:
 - For details on `intensities` and `additional_intensities`, see [Intensities](intensities.md).
 - For details on `additional_scores` and score semantics, see [Scores](scores.md).
 - For details on `cv_params` usage and recommended terms, see [Scores & CV Terms](scores.md).
-- For `additional_scores`, `cv_params` and `additional_intensities` stored by `qpxc transform relayout` as a struct with one field per name (per label and name for `additional_intensities`), see [Struct lists](serialization.md#struct-lists).
+- Selected converters store `additional_scores` and `cv_params` as fixed structs ([Struct lists](serialization.md#struct-lists)).
 
 ## Example
 

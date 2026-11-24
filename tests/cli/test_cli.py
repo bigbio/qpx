@@ -159,7 +159,7 @@ class TestTransformQuantifyCLI:
     def test_quantify_help_shows_ibaq_options(self):
         runner = CliRunner()
         result = runner.invoke(qpx_main, ["transform", "quantify", "--help"])
-        _assert_help(result, "--organism", "--ploidy", "--min-aa", "--sdrf")
+        _assert_help(result, "--organism", "--ploidy", "--min-aa", "--sdrf-file")
 
     def test_ibaq_validation_does_not_require_directlfq_helper(self, monkeypatch, tmp_path):
         """iBAQ availability must not depend on a DirectLFQ-only helper."""
@@ -276,7 +276,7 @@ class TestTransformNormalizeAccessionsCLI:
     def test_normalize_accessions_help_renders(self):
         runner = CliRunner()
         result = runner.invoke(qpx_main, ["transform", "normalize-accessions", "--help"])
-        _assert_help(result, "--dataset", "--direction", "--fasta")
+        _assert_help(result, "--dataset", "--in-place", "--output-folder")
 
     def test_normalize_accessions_discovers_openms_prefix(self, tmp_path, monkeypatch):
         (tmp_path / "openms.feature.parquet").touch()
@@ -332,7 +332,7 @@ class TestTransformNormalizeAccessionsCLI:
         with Dataset(source) as dataset:
             assert all(result.is_valid for result in dataset.validate(strict=True).values())
         output = source if in_place else tmp_path / "output"
-        destination = ["--in-place"] if in_place else ["--output", str(output)]
+        destination = ["--in-place"] if in_place else ["--output-folder", str(output)]
         result = CliRunner().invoke(qpx_main, ["transform", "normalize-accessions", "--dataset", str(source), *destination])
         assert result.exit_code == 0, result.output
         with Dataset(output) as dataset:
@@ -354,7 +354,7 @@ class TestTransformUpdateMetadataCLI:
     def test_update_metadata_help_renders(self):
         runner = CliRunner()
         result = runner.invoke(qpx_main, ["transform", "update-metadata", "--help"])
-        _assert_help(result, "--dataset", "--sdrf", "--old-sdrf", "--force")
+        _assert_help(result, "--dataset", "--sdrf-file", "--old-sdrf-file", "--force")
 
 
 # ---------------------------------------------------------------------------
@@ -366,14 +366,14 @@ class TestQuerySqlCLI:
     def test_sql_help_renders(self):
         runner = CliRunner()
         result = runner.invoke(qpx_main, ["query", "sql", "--help"])
-        _assert_help(result, "--dataset-path", "--sql")
+        _assert_help(result, "--dataset", "--sql")
 
 
 class TestQueryFilterCLI:
     def test_filter_help_renders(self):
         runner = CliRunner()
         result = runner.invoke(qpx_main, ["query", "filter", "--help"])
-        _assert_help(result, "--dataset-path", "--structure", "--condition")
+        _assert_help(result, "--dataset", "--view", "--condition")
 
     def test_filter_reads_dataset_metadata(self, dataset_dir):
         """The canonical dataset name resolves to the dataset_meta accessor."""
@@ -383,9 +383,9 @@ class TestQueryFilterCLI:
             [
                 "query",
                 "filter",
-                "--dataset-path",
+                "--dataset",
                 str(dataset_dir),
-                "--structure",
+                "--view",
                 "dataset",
                 "--condition",
                 "project_accession IS NOT NULL",
@@ -402,7 +402,7 @@ class TestQueryHeadCLI:
     def test_head_help_renders(self):
         runner = CliRunner()
         result = runner.invoke(qpx_main, ["query", "head", "--help"])
-        _assert_help(result, "--dataset-path", "--structure")
+        _assert_help(result, "--dataset", "--view")
 
     def test_head_reads_dataset_metadata(self, dataset_dir):
         """Query head accepts the canonical dataset structure name."""
@@ -412,9 +412,9 @@ class TestQueryHeadCLI:
             [
                 "query",
                 "head",
-                "--dataset-path",
+                "--dataset",
                 str(dataset_dir),
-                "--structure",
+                "--view",
                 "dataset",
                 "--output-format",
                 "csv",
@@ -434,7 +434,7 @@ class TestInfoCLI:
     def test_info_help_renders(self):
         runner = CliRunner()
         result = runner.invoke(qpx_main, ["info", "--help"])
-        _assert_help(result, "--dataset-path")
+        _assert_help(result, "--dataset")
 
     def test_info_counts_every_shard(self, tmp_path):
         """A view split over several files reports the rows of all of them."""
@@ -445,7 +445,7 @@ class TestInfoCLI:
             with PsmWriter(tmp_path / f"{shard}.psm.parquet") as writer:
                 writer.write_batch([make_psm_record(scan=[scan])])
 
-        result = CliRunner().invoke(qpx_main, ["info", "--dataset-path", str(tmp_path)])
+        result = CliRunner().invoke(qpx_main, ["info", "--dataset", str(tmp_path)])
 
         assert result.exit_code == 0, result.output
         assert re.search(r"^\s*psm\s+2\s", result.output, re.MULTILINE), result.output
@@ -453,7 +453,7 @@ class TestInfoCLI:
     def test_info_schema_help_renders(self):
         runner = CliRunner()
         result = runner.invoke(qpx_main, ["info", "schema", "--help"])
-        _assert_help(result, "--dataset-path")
+        _assert_help(result, "--dataset")
 
     def test_info_metadata_help_renders(self):
         runner = CliRunner()
@@ -470,7 +470,7 @@ class TestValidateCLI:
     def test_validate_help_renders(self):
         runner = CliRunner()
         result = runner.invoke(qpx_main, ["validate", "--help"])
-        _assert_help(result, "--dataset-path", "--file", "--structure", "--semantic")
+        _assert_help(result, "--dataset", "--file", "--view", "--semantic")
 
     def test_validate_semantic_fails_a_wrong_calculated_mz(self, tmp_path):
         """--semantic checks calculated_mz against the peptidoform; the default run does not."""
@@ -523,7 +523,7 @@ class TestOntologyCLI:
     def test_ontology_build_help_renders(self):
         runner = CliRunner()
         result = runner.invoke(qpx_main, ["ontology", "build", "--help"])
-        _assert_help(result, "--source", "--all-sources")
+        _assert_help(result, "--source", "default: all")
 
 
 class TestStructureChoicesMatchTheRegistry:

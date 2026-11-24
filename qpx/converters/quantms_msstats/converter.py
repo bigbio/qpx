@@ -19,7 +19,7 @@ from qpx.core.scores import field_ontology_entries
 
 logger = logging.getLogger(__name__)
 
-# Feature rows per written batch; also the Parquet row-group size.
+# Feature records the writer buffers per write; each write is split into row groups of the writer's size.
 _BATCH_SIZE = 500_000
 
 

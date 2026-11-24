@@ -22,13 +22,15 @@ from __future__ import annotations
 
 import gzip
 import logging
-from collections import defaultdict
+import re
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from qpx.converters.utils import DECOY_AFFIXES, DECOY_SUFFIX
 from qpx.core.files import sha256_file
 from qpx.core.protein_annotation import write_protein_view
 from qpx.core.protein_sequence import (
@@ -41,6 +43,7 @@ logger = logging.getLogger(__name__)
 
 # Union of the decoy conventions used across qpx converters and quantms databases.
 _DECOY_PREFIXES = ("DECOY", "REV_", "RANDOM_", "XXX_")
+_DECOY_PREFIX = re.compile(rf"^(?:{DECOY_AFFIXES})_*", re.IGNORECASE)
 
 
 def _is_decoy_identifier(identifier: str) -> bool:
@@ -52,17 +55,46 @@ def _is_decoy_identifier(identifier: str) -> bool:
     return len(parts) >= 2 and parts[1].upper().startswith(_DECOY_PREFIXES)
 
 
+def _database_decoy_affix(identifiers) -> tuple[str, bool] | None:
+    """The decoy affix of a target-decoy database as ``(affix, is_prefix)``, in lower case.
+
+    As OpenMS DecoyHelper decides it: the prefix or suffix of DECOY_AFFIXES that at
+    least 40% of the entries carry, as ``rev`` of ``revsp|P12345|NAME`` or ``_rev`` of
+    ``tr|P12345|NAME_rev``. A target-only database has none.
+    """
+    counts: Counter[tuple[str, bool]] = Counter()
+    total = 0
+    for identifier in identifiers:
+        total += 1
+        lower = identifier.lower()
+        for is_prefix, pattern in ((True, _DECOY_PREFIX), (False, DECOY_SUFFIX)):
+            found = pattern.search(lower)
+            if found:
+                counts[found.group(0), is_prefix] += 1
+    if not counts:
+        return None
+    affix, count = counts.most_common(1)[0]
+    return affix if count >= 0.4 * total else None
+
+
+def _open_fasta(path: str | Path):
+    opener = gzip.open if str(path).endswith(".gz") else open
+    return opener(path, "rt", encoding="utf-8", errors="replace")
+
+
 class FastaSequences:
     """Protein sequences from a FASTA, looked up by full identifier or accession.
 
     ``>sp|P12345|NAME ...`` is reachable as ``sp|P12345|NAME`` (OpenMS) and as
-    ``P12345`` (DIA-NN). Decoy entries are skipped: a quantms target-decoy database
-    carries ``DECOY_sp|P12345|NAME``, whose accession field would otherwise collide
-    with the target and erase it as a conflict. A key that maps to two different
-    sequences is dropped rather than guessed.
+    ``P12345`` (DIA-NN). Decoy entries are skipped, and a decoy identifier resolves to
+    nothing: a quantms target-decoy database carries ``DECOY_sp|P12345|NAME``,
+    ``revsp|P12345|NAME`` or ``sp|P12345|NAME_rev``, whose accession field would
+    otherwise collide with the target and erase it as a conflict. A key that maps to
+    two different sequences is dropped rather than guessed.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, decoy_affix: tuple[str, bool] | None = None) -> None:
+        self._decoy_affix = decoy_affix
         self._sequences: dict[str, str] = {}
         self._headers: dict[str, str] = {}
         self._conflicting: set[str] = set()
@@ -72,12 +104,12 @@ class FastaSequences:
     @classmethod
     def from_path(cls, path: str | Path) -> FastaSequences:
         """Index a FASTA (plain or ``.gz``); multi-line sequences are joined."""
-        index = cls()
-        opener = gzip.open if str(path).endswith(".gz") else open
+        with _open_fasta(path) as handle:
+            index = cls(_database_decoy_affix(line[1:].split()[0] for line in handle if line[:1] == ">" and line[1:].strip()))
         identifier: str | None = None
         header = ""
         chunks: list[str] = []
-        with opener(path, "rt", encoding="utf-8", errors="replace") as handle:
+        with _open_fasta(path) as handle:
             for line in handle:
                 if line.startswith(">"):
                     index._add(identifier, chunks, header)
@@ -99,7 +131,7 @@ class FastaSequences:
         if not identifier:
             return
         self.entries += 1
-        if _is_decoy_identifier(identifier):
+        if self.is_decoy(identifier):
             self.decoy_entries += 1
             return
         sequence = "".join(chunks).upper().rstrip("*")
@@ -124,6 +156,16 @@ class FastaSequences:
     def __len__(self) -> int:
         return len(self._sequences)
 
+    def is_decoy(self, identifier: str) -> bool:
+        """True for a decoy by its prefix, or by the decoy affix of this database."""
+        if _is_decoy_identifier(identifier):
+            return True
+        if self._decoy_affix is None:
+            return False
+        affix, is_prefix = self._decoy_affix
+        lower = identifier.lower()
+        return lower.startswith(affix) if is_prefix else lower.endswith(affix)
+
     def entry(self, accession: str) -> tuple[str, str] | None:
         """The (header, sequence) of an accession the FASTA resolves to one entry."""
         sequence = self.get(accession)
@@ -133,7 +175,7 @@ class FastaSequences:
 
     def get(self, accession: str | None) -> str | None:
         """The sequence for ``accession``, or None when absent or ambiguous."""
-        if not accession or accession in self._conflicting:
+        if not accession or accession in self._conflicting or self.is_decoy(accession):
             return None
         sequence = self._sequences.get(accession)
         if sequence is None and "|" in accession:
@@ -144,7 +186,7 @@ class FastaSequences:
 
     def canonical_accession(self, accession: str) -> str:
         """Share an evidence key only for an unambiguous target FASTA accession."""
-        if _is_decoy_identifier(accession):
+        if self.is_decoy(accession):
             return accession
         parts = accession.split("|")
         if len(parts) >= 2 and parts[1] in self._sequences:
@@ -163,7 +205,6 @@ class ProteinPropertiesReport:  # pylint: disable=too-many-instance-attributes
     pg_coverage_filled: int = 0
     pg_molecular_weight_filled: int = 0
     pg_anchors_not_in_fasta: int = 0
-    feature_rows: int = 0
     feature_rows_eligible: int = 0
     feature_positions_filled: int = 0
     feature_rows_without_match: int = 0
@@ -414,7 +455,6 @@ def _fill_feature_table(table: pa.Table, fasta: FastaSequences, report: ProteinP
     import pyarrow.compute as pc
 
     names = table.schema.names
-    report.feature_rows += table.num_rows
     if "pg_positions" not in names or "pg_accessions" not in names:
         return table
     positions_column = table.column("pg_positions")

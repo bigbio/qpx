@@ -1,6 +1,7 @@
 """The protein view: from FASTA headers, from proteinGroups.txt, and through a merge."""
 
 import pyarrow.parquet as pq
+import pytest
 from click.testing import CliRunner
 
 from qpx.cli.main import qpx_main
@@ -82,6 +83,46 @@ def test_transform_writes_the_view_and_records_the_fasta(tmp_path):
     parameters = {p["key"]: p["value"] for p in pq.read_table(tmp_path / "x.provenance.parquet").to_pylist()[-1]["parameters"]}
     assert parameters["fasta_uri"] == "https://example.org/db.fasta"
     assert parameters["fasta_sha256"]
+
+
+@pytest.mark.parametrize(
+    ("fasta_decoy", "dataset_decoy"),
+    [
+        ("DECOY_sp|P02768|ALBU_HUMAN", "DECOY_sp|P02768|ALBU_HUMAN"),
+        ("revsp|P02768|ALBU_HUMAN", "revsp|P02768|ALBU_HUMAN"),
+        ("sp|P02768|ALBU_HUMAN_rev", "sp|P02768|ALBU_HUMAN_rev"),
+    ],
+)
+def test_the_view_holds_target_proteins_only(tmp_path, fasta_decoy, dataset_decoy):
+    """Neither a decoy row nor the decoy member of a target group (OpenMS groups mix them) enters the view."""
+    target = make_pg_record()
+    target.update(pg_accessions=["P02768", dataset_decoy], anchor_protein="P02768")
+    assert _protein_rows(tmp_path, [target, _decoy_row(dataset_decoy)], fasta_decoy) == [("P02768", "MKWV")]
+
+
+def test_a_decoy_row_stays_out_by_its_flag(tmp_path):
+    """A decoy marker the FASTA does not reveal: the row's is_decoy keeps the accession out."""
+    target = make_pg_record()
+    target.update(pg_accessions=["P02768"], anchor_protein="P02768")
+    assert _protein_rows(tmp_path, [target, _decoy_row("XYZ_P02768")], "XYZ_P02768") == [("P02768", "MKWV")]
+
+
+def _decoy_row(accession):
+    record = make_pg_record(is_decoy=True)
+    record.update(pg_accessions=[accession], anchor_protein=accession)
+    return record
+
+
+def _protein_rows(tmp_path, records, fasta_decoy):
+    with PgWriter(tmp_path / "x.pg.parquet") as writer:
+        writer.write_batch(records)
+    fasta = tmp_path / "db.fasta"
+    fasta.write_text(f">{_ALBUMIN}\nMKWV\n>{fasta_decoy}\nVWKM\n")
+    result = CliRunner().invoke(
+        qpx_main, ["transform", "protein-properties", "--dataset", str(tmp_path), "--fasta", str(fasta), "--in-place"]
+    )
+    assert result.exit_code == 0, result.output
+    return [(row["accession"], row["sequence"]) for row in pq.read_table(tmp_path / "x.protein.parquet").to_pylist()]
 
 
 def test_a_recorded_value_stays_and_the_fasta_fills_the_rest(tmp_path):

@@ -36,6 +36,7 @@ from qpx.converters.maxquant.evidence_fields import peak_annotations
 from qpx.converters.maxquant.silac import multiplet_labels
 from qpx.converters.ptm import from_proforma
 from qpx.converters.utils import mass_error_ppm, mq_flag_to_bool, safe_float
+from qpx.core.sql import sql_build, validate_identifier
 from qpx.writers.psm import PsmWriter
 
 logger = logging.getLogger(__name__)
@@ -110,11 +111,12 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
         }
         self._resolved = resolve_columns(_PSM_MAP, actual_cols)
         self._states = self._labeling_states(msms_path, actual_cols, sdrf_path)
+        self._drop_duplicate_psms()
 
         # Step 3: Stream and transform
         self.logger.info("Transforming MaxQuant PSMs ...")
 
-        with PsmWriter(output_path, creator=creator) as writer:
+        with PsmWriter(output_path, creator=creator, struct_tables="maxquant") as writer:
             for batch in self._query_batched("SELECT * FROM msms", chunksize):
                 df = batch.to_pandas()
                 records = self._transform_batch(df, spectral_data)
@@ -167,6 +169,55 @@ class MaxQuantPsmAdapter(MaxQuantBaseAdapter):
         )
         count = self._conn.execute("SELECT COUNT(*) FROM msms").fetchall()[0][0]
         self.logger.info(f"Loaded {count:,} MaxQuant PSM rows from msms.txt")
+
+    def _drop_duplicate_psms(self) -> None:
+        """Keep one msms.txt row per PSM identity: the one of lowest PEP, then of lowest ``id``.
+
+        MaxQuant can report a spectrum twice for one peptide, as MULTI-MSMS and as
+        MULTI-SECPEP of unknown labeling state. The two have one identity when the
+        label of the first has no modifications.
+        """
+        r = self._resolved
+        key = [
+            validate_identifier(r.get(field, column))
+            for field, column in (
+                ("run_file_name", "Raw file"),
+                ("scan", "Scan number"),
+                ("modified_sequence", "Modified sequence"),
+                ("charge", "Charge"),
+            )
+        ]
+        source, params = "msms", []
+        # The labeling states whose label modifications are in the peptidoform.
+        labelled = [(run, state) for run, states in self._states.items() for state, (_, mods) in enumerate(states) if mods]
+        if labelled:
+            source = sql_build(
+                "msms LEFT JOIN (SELECT unnest(?) AS labelled_run, unnest(?) AS labelled_state) "
+                'ON labelled_run = CAST($run AS VARCHAR) AND labelled_state = "Labeling state"',
+                run=key[0],
+            )
+            params = [[run for run, _ in labelled], [state for _, state in labelled]]
+            key.append("labelled_state")
+        keys = ", ".join(key)
+        if not self._conn.execute(
+            sql_build("SELECT count(*) > count(DISTINCT ($keys)) FROM $source", keys=keys, source=source), params
+        ).fetchall()[0][0]:
+            return
+        ((dropped,),) = self._conn.execute(
+            sql_build(
+                'DELETE FROM msms WHERE "id" IN (SELECT "id" FROM $source '
+                'QUALIFY row_number() OVER (PARTITION BY $keys ORDER BY $pep NULLS LAST, "id") > 1)',
+                source=source,
+                keys=keys,
+                pep=validate_identifier(r.get("posterior_error_probability", "PEP")),
+            ),
+            params,
+        ).fetchall()
+        self.logger.warning(
+            "Dropped %d msms.txt row(s) repeating the run, scan, modified sequence and charge of another row; "
+            "kept the row of lowest PEP",
+            dropped,
+        )
 
     # ------------------------------------------------------------------
     # Transform

@@ -103,7 +103,7 @@ QPX's DE fields map to common statistical tool outputs:
 
 ## Reading and checking the file
 
-`qpxc validate --dataset-path` checks a `.de.h5ad` file it finds in the dataset: unique indexes, the required fields, arrays of one length, p-values in [0, 1] and `entity_type`. The MuData view reshapes `uns["de_results"]` into a contrasts x entities matrix, where an entity a contrast did not test is NaN, as is the fold change of an F test. It also reads a long `pandas.DataFrame` in `uns["de_results"]` with the columns `contrast`, `protein` and `log2FC`, and optionally `pvals_adj`, `scores`, `pvals` and `se`.
+`qpxc validate --dataset` checks a `.de.h5ad` file it finds in the dataset: unique indexes, the required fields, arrays of one length, p-values in [0, 1] and `entity_type`. The MuData view reshapes `uns["de_results"]` into a contrasts x entities matrix, where an entity a contrast did not test is NaN, as is the fold change of an F test. It also reads a long `pandas.DataFrame` in `uns["de_results"]` with the columns `contrast`, `protein` and `log2FC`, and optionally `pvals_adj`, `scores`, `pvals` and `se`.
 
 ## Example
 
