@@ -704,6 +704,22 @@ def test_glycan_composition_and_fdr_are_kept(tmp_path, moved_to_calculated):
     assert scores["glycan_qvalue"]["higher_better"] is False
 
 
+def test_glycan_held_as_a_unimod_accession_is_named(tmp_path):
+    """An N-glycan at N is a Unimod entry, and the other modifications of its PSM are too; the glycan is
+    still found by mass and named after its composition."""
+    peptide_mass = compute_precursor_mz("PEN[UNIMOD:1531]C[UNIMOD:4]TK", 1) - PROTON_MASS
+    mz = (peptide_mass + 3 * PROTON_MASS) / 3
+    row = (
+        f"run_01.00001.00001.3\tPENCTK\t3\t3N({_GLYCAN_MASS:.4f}), 4C(57.0215)\t{peptide_mass:.4f}\t{mz:.4f}"
+        f"\t0.0\t{mz:.4f}\tHexNAc(2)Hex(9) % 1864.6341\tsp|P1|A_HUMAN\n"
+    )
+    rows = _convert_psm_rows(tmp_path, _OPEN_COLUMNS + "\tTotal Glycan Composition\tProtein", [row])
+    assert {mod["name"]: mod["accession"] for mod in rows[0]["modifications"]} == {
+        "Glycan:HexNAc2Hex9": "UNIMOD:1531",
+        "Carbamidomethyl": "UNIMOD:4",
+    }
+
+
 def test_feature_is_not_enriched_from_a_mass_shifted_psm(tmp_path):
     """A PSM with an unassigned mass shift is another molecule than the ion of its bare peptidoform."""
     ion = tmp_path / "combined_ion.tsv"
