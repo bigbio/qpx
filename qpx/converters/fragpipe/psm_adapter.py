@@ -189,6 +189,7 @@ class FragPipePsmAdapter(BaseConverter):
             "predicted_rt": None,
             "cv_params": cv_params or None,
             "ion_mobility": ion_mobility,
+            "compensation_voltage": safe_float(row.get("Compensation Voltage")),
             "missed_cleavages": missed_cleavages,
             "protein_accessions": accessions or None,
             "mz_array": None,
@@ -314,7 +315,4 @@ class FragPipePsmAdapter(BaseConverter):
                     "cv_value": str(int(termini)),
                 }
             )
-        compensation_voltage = safe_float(row.get("Compensation Voltage"))
-        if compensation_voltage is not None:
-            cv_params.append({"cv_name": "compensation_voltage", "cv_value": str(compensation_voltage)})
         return additional_scores, missed_cleavages, cv_params

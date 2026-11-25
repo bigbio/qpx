@@ -286,6 +286,12 @@ _FIELD_CV_MAP: dict[str, dict] = {
         "ontology_source": "MS",
         "description": "Ion mobility drift time of the spectrum (milliseconds)",
     },
+    "compensation_voltage": {
+        "ontology_name": "FAIMS compensation voltage",
+        "ontology_accession": "MS:1001581",
+        "ontology_source": "MS",
+        "description": "FAIMS compensation voltage (volts)",
+    },
     "centroid": {
         "ontology_name": "centroid spectrum",
         "ontology_accession": "MS:1000127",

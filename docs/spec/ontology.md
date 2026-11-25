@@ -172,6 +172,7 @@ Sample metadata fields map to biological ontologies. These mappings are critical
 | `protein_accessions` | --- | --- | Protein accessions the peptide maps to (optional column) |
 | `ion_mobility` | --- | --- | Ion mobility of the precursor as the producer reports it, 1/K0 (Vs/cm²) for TIMS data; from a `1/K0` source column, the inverse reduced ion mobility (`MS:1002815`) |
 | `ccs` | collisional cross sectional area | `MS:1002954` | Collisional cross section of the precursor (Å²) |
+| `compensation_voltage` | FAIMS compensation voltage | `MS:1001581` | FAIMS compensation voltage of the spectrum (volts) |
 | `mz_array` | m/z array | `MS:1000514` | Array of fragment m/z values |
 | `intensity_array` | intensity array | `MS:1000515` | Array of fragment intensity values |
 | `charge_array` | --- | --- | Array of fragment ion charge values |
@@ -203,6 +204,7 @@ CDAP gives a PSM the retention time at half of its precursor's elution (`RTAtPre
 | `predicted_rt` | predicted retention time | `MS:1000897` | Predicted retention time (seconds) |
 | `ion_mobility` | --- | --- | Ion mobility of the precursor as the producer reports it, 1/K0 (Vs/cm²) for TIMS data; from a `1/K0` source column, the inverse reduced ion mobility (`MS:1002815`) |
 | `ccs` | collisional cross sectional area | `MS:1002954` | Collisional cross section of the precursor (Å²) |
+| `compensation_voltage` | FAIMS compensation voltage | `MS:1001581` | FAIMS compensation voltage (volts); 0 for a non-FAIMS FragPipe unit, whose identity includes it |
 | `ion_mobility_start` | --- | --- | Start ion mobility value |
 | `ion_mobility_stop` | --- | --- | End ion mobility value |
 | `run_file_name` | --- | --- | Run file containing the feature |
@@ -262,6 +264,7 @@ CDAP gives a PSM the retention time at half of its precursor's elution (`RTAtPre
 | `scan_start_time` | scan start time | `MS:1000016` | Start time of the scan (minutes) |
 | `inverse_ion_mobility` | inverse reduced ion mobility | `MS:1002815` | Inverse ion mobility (1/K0) for TIMS data |
 | `drift_time` | ion mobility drift time | `MS:1002476` | Drift time (milliseconds) for drift-tube and travelling-wave instruments |
+| `compensation_voltage` | FAIMS compensation voltage | `MS:1001581` | FAIMS compensation voltage (volts) |
 | `ion_injection_time` | ion injection time | `MS:1000927` | Ion injection time (milliseconds) |
 | `total_ion_current` | total ion current | `MS:1000285` | Total ion current for the scan |
 | `precursors` | --- | --- | Precursor ions for this MS/MS scan |
@@ -281,6 +284,7 @@ The trace (`xic`), `fragment`, `site`, `proteoform`, `protein` and `pepmap` view
 | `xic` | `mz` | m/z array | `MS:1000514` |
 | `xic` | `intensity` | intensity array | `MS:1000515` |
 | `xic` | `is_decoy` | decoy peptide | `MS:1002217` |
+| `xic` | `compensation_voltage` | FAIMS compensation voltage | `MS:1001581` |
 | `fragment` | `observed_mz` | product ion m/z | `MS:1001225` |
 | `fragment` | `intensity` | product ion intensity | `MS:1001226` |
 | `fragment` | `intensity_array` | intensity array | `MS:1000515` |

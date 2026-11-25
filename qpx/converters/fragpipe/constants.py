@@ -241,7 +241,8 @@ def name_glycan(modifications: list[dict] | None, composition: object) -> list[d
     name = "Glycan:" + "".join(f"{residue}{count}" for residue, count in _GLYCAN_RESIDUE_RE.findall(match.group(1)))
     mass = float(match.group(2))
     return [
-        {**mod, "name": name} if abs(parse_unimod_delta(mod["name"]) - mass) <= _GLYCAN_MASS_TOL else mod for mod in modifications
+        {**mod, "name": name} if abs(parse_unimod_delta(mod["accession"] or mod["name"]) - mass) <= _GLYCAN_MASS_TOL else mod
+        for mod in modifications
     ]
 
 

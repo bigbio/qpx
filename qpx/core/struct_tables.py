@@ -78,7 +78,7 @@ FIXED_STRUCT_TABLES = {
                 {"name": "glycan_score", "higher_better": True},
                 {"name": "glycan_qvalue", "higher_better": False},
             ],
-            "cv_params": [{"name": "number_of_enzymatic_termini"}, {"name": "compensation_voltage"}],
+            "cv_params": [{"name": "number_of_enzymatic_termini"}],
         },
         "feature": {
             "additional_scores": [],
