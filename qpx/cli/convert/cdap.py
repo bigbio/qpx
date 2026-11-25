@@ -7,6 +7,7 @@ from pathlib import Path
 
 import click
 
+from qpx.cli.renamed import RenamedCommand
 from qpx.cli.resources import convert_resource_options
 
 from .options import (
@@ -19,7 +20,7 @@ from .options import (
 from .postprocess import _finish_conversion
 
 
-@click.command("cdap")
+@click.command("cdap", cls=RenamedCommand, renamed={"--structures": "--view"})
 @click.option(
     "--psm-dir",
     help="Directory containing CDAP *.psm files for one study",

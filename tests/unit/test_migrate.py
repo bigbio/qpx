@@ -587,12 +587,15 @@ def test_the_column_row_takes_the_source_of_a_moved_score(tmp_path, moved):
 
 
 def test_a_quantms_pg_coverage_becomes_a_percentage_once(tmp_path):
-    """The quantms converter of QPX 1.0 wrote the mzTab fraction, 0 for none; a migrated file keeps its percentage."""
+    """The quantms converter of QPX 1.0 wrote the mzTab fraction, 0 for none; a migrated file keeps its percentage.
+
+    A value above 1 is a percent protein-properties filled in.
+    """
     source = tmp_path / "old"
     source.mkdir()
     rows = [
         {**make_pg_record(anchor_protein=anchor), "sequence_coverage": value}
-        for anchor, value in ((PROTEIN, 0.25), ("Q1", 0.0), ("Q2", None))
+        for anchor, value in ((PROTEIN, 0.25), ("Q1", 0.0), ("Q2", None), ("Q3", 45.0))
     ]
     _write(source / "old.pg.parquet", rows, creator=b"quantms")
     migrate_dataset(source, tmp_path / "new")
@@ -604,7 +607,33 @@ def test_a_quantms_pg_coverage_becomes_a_percentage_once(tmp_path):
             PROTEIN: 25.0,
             "Q1": None,
             "Q2": None,
+            "Q3": 45.0,
         }
+
+
+def test_a_quantms_pg_drops_the_scores_that_repeat_its_columns(tmp_path):
+    """QPX 1.0 repeated the float coverage as a double score and the unique peptide count as a score."""
+    source = tmp_path / "old"
+    source.mkdir()
+    scores = [
+        {"score_name": "sequence_coverage_percent", "score_value": 0.1, "higher_better": True},
+        {"score_name": "peptide_count", "score_value": 3.0, "higher_better": True},
+        {"score_name": "other", "score_value": 0.1, "higher_better": True},
+    ]
+    rows = [
+        {**make_pg_record(), "sequence_coverage": 0.1, "peptide_counts": {"unique_sequences": 3, "total_sequences": 4}},
+        {**make_pg_record(anchor_protein="Q1"), "sequence_coverage": 45.0, "peptide_counts": None},
+    ]
+    table = pa.Table.from_pylist([{**row, "additional_scores": scores} for row in rows])
+    table = table.set_column(
+        table.schema.get_field_index("sequence_coverage"), "sequence_coverage", table["sequence_coverage"].cast(pa.float32())
+    )
+    pq.write_table(table.replace_schema_metadata({b"qpx_version": b"1.0", b"creator": b"quantms"}), source / "old.pg.parquet")
+    migrate_dataset(source, tmp_path / "new")
+
+    migrated = pq.read_table(tmp_path / "new" / "old.pg.parquet", columns=["anchor_protein", "additional_scores"])
+    names = {row["anchor_protein"]: [score["score_name"] for score in row["additional_scores"]] for row in migrated.to_pylist()}
+    assert names == {PROTEIN: ["other"], "Q1": ["sequence_coverage_percent", "peptide_count", "other"]}
 
 
 @pytest.mark.parametrize(("group", "second", "kept"), [(PROTEIN, 0.02, 0.02), ("Q00402", None, 0.01)], ids=["group", "no-group"])

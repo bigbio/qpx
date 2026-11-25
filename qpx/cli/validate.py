@@ -18,6 +18,7 @@ from typing import Optional
 import click
 import duckdb
 
+from qpx.cli.renamed import DATASET_PATH, RenamedCommand
 from qpx.cli.resources import duckdb_resource_options
 from qpx.core.data.validation import ValidationIssue, ValidationResult
 from qpx.dataset import Dataset
@@ -29,7 +30,7 @@ logger = logging.getLogger("qpx.cli.validate")
 _VALID_STRUCTURES = Dataset.structure_names()
 
 
-@click.command("validate")
+@click.command("validate", cls=RenamedCommand, renamed={**DATASET_PATH, "--structure": "--view"})
 @click.option(
     "--dataset",
     "dataset_path",

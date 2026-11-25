@@ -113,7 +113,7 @@ Each file records its layout as JSON under the footer key `qpx.struct_lists`, in
  "cv_params": [{"name": "identification_type"}, {"name": "only_identified_by_site"}]}
 ```
 
-A missing entry is a NULL field. A null list is a null struct, and an empty list is a present struct with all fields NULL. The converter raises on a name outside the fixed table, a repeated name in a row, or an entry with a null value. A column with zero declared fields stays a list and any entry in it raises. Other converter outputs, including OpenMS consensusXML, native OpenMS, mzIdentML and quantms MSstats, use lists. `additional_intensities` uses a list for every converter.
+A missing entry is a NULL field. A null list is a null struct, and an empty list is a present struct with all fields NULL. The converter raises on a name outside the fixed table, a score whose `higher_better` differs from the table's, a repeated name in a row, or an entry with a null value. A column with zero declared fields stays a list and any entry in it raises. Other converter outputs, including OpenMS consensusXML, native OpenMS, mzIdentML and quantms MSstats, use lists. `additional_intensities` uses a list for every converter.
 
 QPX restores the logical list for `Dataset`, `DatasetCollection`, `qpxc query`, `qpxc validate` and MuData. It omits NULL fields and takes names, order and score direction from each file's footer. Within a view it reads files in groups of one layout and storage type, then unions the groups. Use `ORDER BY` when row order matters. A file that holds such a struct without the footer key, as a DuckDB `COPY` or a pandas round trip leaves it, reads as the struct, and QPX refuses to read it in one view with files that hold the column as a list or with a footer layout.
 

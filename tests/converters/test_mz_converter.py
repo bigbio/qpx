@@ -374,3 +374,19 @@ def test_cli_adds_the_mz_rows_to_the_ontology_of_a_dataset(mzml_dir, tmp_path):
     result = CliRunner().invoke(convert_mz_cmd, ["--mzml-dir", str(mzml_dir), "--output", str(standalone / "ds.mz.parquet")])
     assert result.exit_code == 0, result.output
     assert sorted(path.name for path in standalone.iterdir()) == ["ds.mz.parquet"]
+
+
+def test_cli_warns_that_a_file_without_the_dataset_prefix_stays_outside_it(mzml_dir, tmp_path):
+    """A bare mz.parquet beside a dataset's ontology view gets no rows in it, and a warning says so."""
+    from qpx.cli.convert.mz import convert_mz_cmd
+    from qpx.writers.ontology import OntologyWriter
+
+    dataset = tmp_path / "dataset"
+    dataset.mkdir()
+    row = {"field_name": "qvalue", "view": "psm", "ontology_name": "qvalue", "ontology_accession": None}
+    with OntologyWriter(dataset / "ds.ontology.parquet", creator="qpx") as writer:
+        writer.write_batch([row])
+    result = CliRunner().invoke(convert_mz_cmd, ["--mzml-dir", str(mzml_dir), "--output", str(dataset / "mz.parquet")])
+    assert result.exit_code == 0, result.output
+    assert "mz.parquet is not named <prefix>.mz.parquet" in result.stderr
+    assert [entry["view"] for entry in pq.read_table(dataset / "ds.ontology.parquet").to_pylist()] == ["psm"]

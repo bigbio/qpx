@@ -6,8 +6,10 @@ from typing import Optional
 
 import click
 
+from qpx.cli.renamed import RenamedCommand
 
-@click.command("update-metadata")
+
+@click.command("update-metadata", cls=RenamedCommand, renamed={"--sdrf": "--sdrf-file", "--old-sdrf": "--old-sdrf-file"})
 @click.option(
     "--dataset",
     help="Path to a QPX dataset directory",

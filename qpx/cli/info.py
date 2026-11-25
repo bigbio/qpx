@@ -17,6 +17,7 @@ from typing import Optional
 
 import click
 
+from qpx.cli.renamed import DATASET_PATH, RenamedCommand, RenamedGroup
 from qpx.dataset import Dataset
 
 logger = logging.getLogger("qpx.cli.info")
@@ -31,7 +32,7 @@ _VALID_STRUCTURES = Dataset.structure_names()
 # ---------------------------------------------------------------------------
 
 
-@click.group(invoke_without_command=True)
+@click.group(invoke_without_command=True, cls=RenamedGroup, renamed=DATASET_PATH)
 @click.option(
     "--dataset",
     "dataset_path",
@@ -134,7 +135,7 @@ def _show_dataset_summary(dataset_path: Path, verbose: bool):
 # ---------------------------------------------------------------------------
 
 
-@info.command("schema")
+@info.command("schema", cls=RenamedCommand, renamed={**DATASET_PATH, "--structure": "--view"})
 @click.option(
     "--dataset",
     "dataset_path",
@@ -271,7 +272,7 @@ def _show_canonical_schema(structure: str):
 # ---------------------------------------------------------------------------
 
 
-@info.command("metadata")
+@info.command("metadata", cls=RenamedCommand, renamed=DATASET_PATH)
 @click.option(
     "--file",
     "file_path",

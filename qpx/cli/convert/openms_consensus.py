@@ -7,6 +7,7 @@ from pathlib import Path
 
 import click
 
+from qpx.cli.renamed import RenamedCommand
 from qpx.cli.resources import convert_resource_options
 
 from .options import (
@@ -29,7 +30,7 @@ def _consensusxml_list(ctx, param, value) -> tuple[Path, ...]:
     return paths
 
 
-@click.command("openms-consensus")
+@click.command("openms-consensus", cls=RenamedCommand, renamed={"--structures": "--view"})
 @click.option(
     "--consensusxml",
     "consensusxml_paths",
