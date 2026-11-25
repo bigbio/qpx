@@ -12,7 +12,14 @@ from qpx.core.data.identity import derive_composite_id
 from qpx.transforms.migrate import migrate_dataset
 from qpx.version import QPX_SPEC_VERSION
 from qpx.writers import ProteoformWriter, PsmWriter, SiteWriter
-from tests.conftest import make_feature_record, make_pg_record, make_psm_record, make_sample_record, make_xic_record
+from tests.conftest import (
+    make_feature_record,
+    make_pg_record,
+    make_psm_record,
+    make_sample_record,
+    make_xic_record,
+    read_view_table,
+)
 from tests.converters.test_diann_converter import _feature_rows_single_run
 from tests.unit.test_site_proteoform import make_proteoform_record, make_site_record
 
@@ -442,6 +449,26 @@ def test_an_irt_kept_in_cv_params_moves_to_its_column(tmp_path, creator, name):
     assert by_sequence["PEPTIDEK"]["irt"] == pytest.approx(41.25)
     assert by_sequence["PEPTIDER"]["irt"] is None
     assert all([entry["cv_name"] for entry in row["cv_params"]] == ["proteotypic"] for row in migrated)
+
+
+def test_a_compensation_voltage_kept_in_cv_params_moves_to_its_column(tmp_path):
+    """FragPipe psm files written before psm.compensation_voltage kept the FAIMS CV among cv_params."""
+    source = tmp_path / "old"
+    source.mkdir()
+    termini = {"cv_name": "number_of_enzymatic_termini", "cv_value": "2"}
+    rows = [
+        {**make_psm_record(), "cv_params": [termini, {"cv_name": "compensation_voltage", "cv_value": "-45.0"}]},
+        {**make_psm_record(sequence="PEPTIDER", peptidoform="PEPTIDER"), "cv_params": [termini]},
+    ]
+    _write(source / "old.psm.parquet", rows, creator=b"fragpipe", extra_metadata={b"qpx_version": b"1.2"})
+    out = tmp_path / "new"
+    migrate_dataset(source, out)
+
+    migrated = read_view_table(out / "old.psm.parquet").to_pylist()
+    by_sequence = {row["sequence"]: row for row in migrated}
+    assert by_sequence["PEPTIDEK"]["compensation_voltage"] == pytest.approx(-45.0)
+    assert by_sequence["PEPTIDER"]["compensation_voltage"] is None
+    assert all([entry["cv_name"] for entry in row["cv_params"]] == ["number_of_enzymatic_termini"] for row in migrated)
 
 
 def test_a_diann_feature_drops_zero_ion_mobility_and_the_repeated_quantity_quality(tmp_path):

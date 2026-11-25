@@ -66,6 +66,7 @@ These fields are optional and may not exist in the file at all. They are include
 | `pass_threshold` | Whether the search engine or validator marks the PSM as passing its threshold. `null` when it does not say | bool, null | optional |
 | `ion_mobility` | Ion mobility value for the precursor ion                                                                                                                | float32, null | optional |
 | `ccs` | Collisional cross section in square angstroms (MS:1002954), when the producer reports one | float32, null | no |
+| `compensation_voltage` | FAIMS compensation voltage of the spectrum in volts (MS:1001581); null for non-FAIMS data, never 0 | float32, null | optional |
 | `mz_array` | Array of m/z values for the spectrum                                                                                                                    | array[float32], null | optional |
 | `intensity_array` | Array of intensity values for the spectrum                                                                                                              | array[float32], null | optional |
 | `charge_array` | Array of fragment ion charge values                                                                                                                     | array[int32], null | optional |
