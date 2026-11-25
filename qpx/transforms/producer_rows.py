@@ -168,13 +168,23 @@ def _pg_row_fix(footer: dict[bytes, bytes]) -> Callable[[dict], dict] | None:
     return None
 
 
-def _irt_row(row: dict) -> dict:
-    """The irt of a feature row in its column, as a conversion writes it, and no longer among its cv_params."""
+def _param_column(row: dict, column: str, names: tuple[str, ...]) -> dict:
+    """The value a row kept among its cv_params under *names* in *column*, as a conversion writes it."""
     params = row.get("cv_params") or []
-    values = [entry["cv_value"] for entry in params if entry["cv_name"] in _IRT_PARAMS]
+    values = [entry["cv_value"] for entry in params if entry["cv_name"] in names]
     if not values:
         return row
-    irt = row.get("irt")
-    if irt is None and values[0] is not None:
-        irt = float(values[0])
-    return {**row, "irt": irt, "cv_params": [entry for entry in params if entry["cv_name"] not in _IRT_PARAMS] or None}
+    value = row.get(column)
+    if value is None and values[0] is not None:
+        value = float(values[0])
+    return {**row, column: value, "cv_params": [entry for entry in params if entry["cv_name"] not in names] or None}
+
+
+def _irt_row(row: dict) -> dict:
+    """The irt of a feature row in its column, and no longer among its cv_params."""
+    return _param_column(row, "irt", _IRT_PARAMS)
+
+
+def _compensation_voltage_row(row: dict) -> dict:
+    """The FAIMS compensation voltage of a FragPipe psm row in its column, and no longer among its cv_params."""
+    return _param_column(row, "compensation_voltage", ("compensation_voltage",))

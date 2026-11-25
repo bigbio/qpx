@@ -96,7 +96,7 @@ The table gives each column's fields in storage and list restoration order. `↓
 | `maxquant` | `psm` | `andromeda_score`, `andromeda_delta_score`, `parent_ion_fraction` | `fragmentation`, `mass analyzer`, `type` |
 | `maxquant` | `feature` | `andromeda_score`, `andromeda_delta_score` | — |
 | `maxquant` | `pg` | `andromeda_score` | `identification_type`, `only_identified_by_site` |
-| `fragpipe` | `psm` | `msfragger_hyperscore`, `msfragger_expectation` ↓, `parent_ion_fraction`, `glycan_score`, `glycan_qvalue` ↓ | `number_of_enzymatic_termini`, `compensation_voltage` |
+| `fragpipe` | `psm` | `msfragger_hyperscore`, `msfragger_expectation` ↓, `parent_ion_fraction`, `glycan_score`, `glycan_qvalue` ↓ | `number_of_enzymatic_termini` |
 | `fragpipe` | `feature` | — | — |
 | `fragpipe` | `pg` | `protein_probability`, `top_peptide_probability` | `sequence_length`, `protein_existence` |
 | `proteome_discoverer` | `psm` | `rank` ↓, `sequest_xcorr`, `comet_xcorr`, `mascot_ions_score`, `delta_score`, `percolator_svm_score`, `parent_ion_fraction` | `identifying_node`, `psm_ambiguity` |

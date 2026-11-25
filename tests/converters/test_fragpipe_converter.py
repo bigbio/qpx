@@ -573,6 +573,22 @@ def test_psm_lists_mapped_proteins_and_reads_probability(tmp_path):
     assert row["mass_error_ppm"] is None
 
 
+@pytest.mark.parametrize(("header", "value", "expected"), [("\tCompensation Voltage", "\t-45.0", -45.0), ("", "", None)])
+def test_psm_compensation_voltage_is_its_column(tmp_path, header, value, expected):
+    """FragPipe's Compensation Voltage is psm.compensation_voltage, not a cv_params entry; null without FAIMS."""
+    psm = tmp_path / "psm.tsv"
+    psm.write_text(
+        f"Spectrum\tPeptide\tCharge\tAssigned Modifications\tCalculated M/Z\tProtein\tNumber of Enzymatic Termini{header}\n"
+        f"run_01.00500.00500.2\tPEPTIDEK\t2\t\t500.000\tsp|P1|A_HUMAN\t2{value}\n"
+    )
+    out = tmp_path / "psm.parquet"
+    with FragPipePsmAdapter() as adapter:
+        adapter.convert(psm_path=str(psm), output_path=str(out))
+    row = read_view_table(out).to_pylist()[0]
+    assert row["compensation_voltage"] == expected
+    assert [entry["cv_name"] for entry in row["cv_params"]] == ["number_of_enzymatic_termini"]
+
+
 def test_psm_purity_is_the_parent_ion_fraction(tmp_path):
     """FragPipe Purity, the precursor's share of the isolation window, is kept as a score."""
     psm = tmp_path / "psm.tsv"
