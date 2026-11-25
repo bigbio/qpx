@@ -290,6 +290,7 @@ Spectronaut and QuantMS MSstats produce no PSM view.
 | `rt` | Filled. | Filled. | Filled. | The `scan start time` of the spectrum result. Null when the file omits it. |
 | `ion_mobility` | `1/K0`, when present. | `Ion Mobility`, when present. | Not provided. | Not implemented. |
 | `ccs` | `CCS`, when present. | Not provided. | Not provided. | Not provided. |
+| `compensation_voltage` | Not implemented. | `Compensation Voltage`, when present. | Not implemented. | Not implemented. |
 | `missed_cleavages` | Filled from `Missed cleavages`. | Filled from `Number of Missed Cleavages`. | Not implemented: no enzyme is declared to the converter. | Only the `MS:1003044` term on the identification item. Not calculated from the enzyme that the file declares. |
 | `protein_accessions` | `Proteins`, which MaxQuant leaves blank for some reverse hits. | `Protein` and `Mapped Proteins`. | Filled. | Filled. |
 | `cross_links`, `crosslinked_peptidoform`, `protein_starts`, `partner_protein_accessions`, `partner_protein_starts`, `crosslink_decoy_class` | Out of scope. | Out of scope. | Out of scope. | Cross-linking identifications only. |

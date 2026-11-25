@@ -573,6 +573,22 @@ def test_psm_lists_mapped_proteins_and_reads_probability(tmp_path):
     assert row["mass_error_ppm"] is None
 
 
+@pytest.mark.parametrize(("header", "value", "expected"), [("\tCompensation Voltage", "\t-45.0", -45.0), ("", "", None)])
+def test_psm_compensation_voltage_is_its_column(tmp_path, header, value, expected):
+    """FragPipe's Compensation Voltage is psm.compensation_voltage, not a cv_params entry; null without FAIMS."""
+    psm = tmp_path / "psm.tsv"
+    psm.write_text(
+        f"Spectrum\tPeptide\tCharge\tAssigned Modifications\tCalculated M/Z\tProtein\tNumber of Enzymatic Termini{header}\n"
+        f"run_01.00500.00500.2\tPEPTIDEK\t2\t\t500.000\tsp|P1|A_HUMAN\t2{value}\n"
+    )
+    out = tmp_path / "psm.parquet"
+    with FragPipePsmAdapter() as adapter:
+        adapter.convert(psm_path=str(psm), output_path=str(out))
+    row = read_view_table(out).to_pylist()[0]
+    assert row["compensation_voltage"] == expected
+    assert [entry["cv_name"] for entry in row["cv_params"]] == ["number_of_enzymatic_termini"]
+
+
 def test_psm_purity_is_the_parent_ion_fraction(tmp_path):
     """FragPipe Purity, the precursor's share of the isolation window, is kept as a score."""
     psm = tmp_path / "psm.tsv"
@@ -702,6 +718,22 @@ def test_glycan_composition_and_fdr_are_kept(tmp_path, moved_to_calculated):
     assert scores["glycan_score"]["higher_better"] is True
     assert scores["glycan_qvalue"]["score_value"] == pytest.approx(0.002)
     assert scores["glycan_qvalue"]["higher_better"] is False
+
+
+def test_glycan_held_as_a_unimod_accession_is_named(tmp_path):
+    """An N-glycan at N is a Unimod entry, and the other modifications of its PSM are too; the glycan is
+    still found by mass and named after its composition."""
+    peptide_mass = compute_precursor_mz("PEN[UNIMOD:1531]C[UNIMOD:4]TK", 1) - PROTON_MASS
+    mz = (peptide_mass + 3 * PROTON_MASS) / 3
+    row = (
+        f"run_01.00001.00001.3\tPENCTK\t3\t3N({_GLYCAN_MASS:.4f}), 4C(57.0215)\t{peptide_mass:.4f}\t{mz:.4f}"
+        f"\t0.0\t{mz:.4f}\tHexNAc(2)Hex(9) % 1864.6341\tsp|P1|A_HUMAN\n"
+    )
+    rows = _convert_psm_rows(tmp_path, _OPEN_COLUMNS + "\tTotal Glycan Composition\tProtein", [row])
+    assert {mod["name"]: mod["accession"] for mod in rows[0]["modifications"]} == {
+        "Glycan:HexNAc2Hex9": "UNIMOD:1531",
+        "Carbamidomethyl": "UNIMOD:4",
+    }
 
 
 def test_feature_is_not_enriched_from_a_mass_shifted_psm(tmp_path):

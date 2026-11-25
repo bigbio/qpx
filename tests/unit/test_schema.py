@@ -193,6 +193,7 @@ def test_mz_and_psm_with_optional_columns_absent():
                 "ion_type_array",
                 "ion_mobility_array",
                 "ion_mobility",
+                "compensation_voltage",
                 "cross_links",
             },
         ),

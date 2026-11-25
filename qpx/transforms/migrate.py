@@ -26,7 +26,14 @@ from qpx.core.struct_lists import file_layouts, restore_table
 from qpx.dataset import Dataset
 from qpx.transforms.accession_normalizer import _LIST_ACCESSION_COLUMNS, _SCALAR_ACCESSION_COLUMNS, ACCESSION_VIEWS, _entry_names
 from qpx.transforms.mantissa import MANTISSA_BITS_FOOTER_KEY
-from qpx.transforms.producer_rows import _diann_feature_row, _irt_row, _msnet_row, _pg_row_fix, _raw_msnet_row
+from qpx.transforms.producer_rows import (
+    _compensation_voltage_row,
+    _diann_feature_row,
+    _irt_row,
+    _msnet_row,
+    _pg_row_fix,
+    _raw_msnet_row,
+)
 from qpx.transforms.protein_properties import _rewrite_view
 from qpx.transforms.relayout import ID_REFERENCES, ORDINAL_IDS, _quoted
 from qpx.version import QPX_SPEC_VERSION, parse_spec_version
@@ -221,7 +228,7 @@ def _psm_row(record: dict) -> dict:
             {**score, "score_name": _PSM_SCORE_NAMES.get(score["score_name"], score["score_name"])}
             for score in row["additional_scores"]
         ]
-    return row
+    return _compensation_voltage_row(row)
 
 
 def _flat_pg_rows(record: dict) -> list[dict]:
