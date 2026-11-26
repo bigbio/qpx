@@ -102,7 +102,8 @@ One row per protein pair and label. A `heteromeric` pair is two proteins; a `sel
 | `family_a`, `family_b` | Protein family of each side | string, null | no |
 | `alternatives_a`, `alternatives_b` | The other proteins each side cannot be told apart from (shared peptides) | array[string], null | no |
 | `crosslink_protein_class` | `self` or `heteromeric` | string | yes |
-| `grouped_runs`, `label` | As in `residue_pair` | array[string], string null | yes |
+| `grouped_runs` | As in `residue_pair` | array[string] | yes |
+| `label` | As in `residue_pair` | string, null | no |
 | `residue_pair_count`, `psm_count` | Supporting residue pairs, and CSMs at the CSM cutoff as in `residue_pair` | int32, null | no |
 | `best_psm_id` | Best supporting CSM | int64, null | no |
 | `protein_pair_qvalue` | q-value over the protein pairs (`MS:1002676`, see below) | float64, null | no |
