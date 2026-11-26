@@ -139,7 +139,7 @@ A crosslinker is a search modification, as in mzIdentML (`SearchModification` wi
 | `position`, `target_amino_acid` | Where each end reacts (`K,S,T,Y`, `Protein N-term`) |
 | `mass_delta` | Mass of the intact link, as `cross_links[].linker_mass` |
 
-Stub masses of a cleavable reagent (`MS:1003390`) come from XLMOD by accession. A light/heavy reagent pair is described in `label_definitions`, as a SILAC label is. The `accession` field today names UNIMOD accessions; it would also accept XLMOD ones.
+The SDRF value names the reagent and its accession (`NT=BS3;AC=XLMOD:02000`), and its `TA` key, where present, gives `target_amino_acid`. Most annotated datasets give only the name and accession, so `target_amino_acid` otherwise comes from XLMOD by accession, as do `mass_delta` and the stub masses of a cleavable reagent (`MS:1003390`). A light/heavy reagent pair is described in `label_definitions`, as a SILAC label is. The `accession` field today names UNIMOD accessions; it would also accept XLMOD ones.
 
 ## Relation to mzIdentML 1.3
 
