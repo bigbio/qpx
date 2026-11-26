@@ -161,7 +161,9 @@ def _evidence_proteins(sii: dict, parsed: dict) -> tuple[list[str], list[Optiona
 
 
 def _is_decoy(sii: dict, parsed: dict) -> bool:
-    return any(parsed["peptide_evidence"].get(ref, {}).get("is_decoy", False) for ref in sii["peptide_evidence_refs"])
+    """A peptide is a decoy only when every protein it maps to is one: target and decoy together make a target."""
+    refs = sii["peptide_evidence_refs"]
+    return bool(refs) and all(parsed["peptide_evidence"].get(ref, {}).get("is_decoy", False) for ref in refs)
 
 
 def partner_fields(alpha_sii: dict, beta_sii: Optional[dict], parsed: dict) -> dict:

@@ -163,6 +163,7 @@ def test_crosslinked_peptidoform_names_the_whole_species():
 
 
 def test_partner_fields_cover_the_partner_and_a_decoy_on_either_side():
+    """A side mapped to a target and a decoy is a target, as a PSM is (psm.md)."""
     from qpx.converters.mzidentml.crosslinks import partner_fields
 
     parsed = {
@@ -180,12 +181,26 @@ def test_partner_fields_cover_the_partner_and_a_decoy_on_either_side():
         "protein_starts": [10],
         "partner_protein_accessions": ["DECOY_P2", "P3"],
         "partner_protein_starts": [20, 30],
-        "crosslink_decoy_class": "target_decoy",
-        "is_decoy": True,
+        "crosslink_decoy_class": "target_target",
+        "is_decoy": False,
     }
+    assert partner_fields(alpha, {"peptide_evidence_refs": ["b"]}, parsed)["crosslink_decoy_class"] == "target_decoy"
     assert partner_fields(alpha, None, parsed) == {"protein_starts": [10]}
     assert partner_fields(alpha, {"peptide_evidence_refs": ["b2"]}, parsed)["crosslink_decoy_class"] == "target_target"
     assert (
         partner_fields({"peptide_evidence_refs": ["b"]}, {"peptide_evidence_refs": ["b"]}, parsed)["crosslink_decoy_class"]
         == "decoy_decoy"
     )
+
+
+def test_a_psm_mapped_to_a_target_and_a_decoy_is_a_target():
+    from qpx.converters.mzidentml.psm_records import _psm_confidence_fields
+
+    parsed = {
+        "peptide_evidence": {"t": {"db_ref": "d1", "is_decoy": False}, "d": {"db_ref": "d2", "is_decoy": True}},
+        "db_sequences": {"d1": "P1", "d2": "DECOY1_P1"},
+    }
+    sii = {"peptide_evidence_refs": ["t", "d"], "cv_params": [], "rank": 1, "pass_threshold": True}
+
+    assert _psm_confidence_fields(sii, parsed)["is_decoy"] is False
+    assert _psm_confidence_fields({**sii, "peptide_evidence_refs": ["d"]}, parsed)["is_decoy"] is True

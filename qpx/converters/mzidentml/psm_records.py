@@ -11,6 +11,7 @@ from qpx.converters.mzidentml.crosslinks import (
     _build_interlink,
     _build_looplink,
     _group_siis,
+    _is_decoy,
     crosslinked_peptidoform,
     partner_fields,
 )
@@ -151,7 +152,7 @@ def _psm_confidence_fields(alpha_sii, parsed) -> dict:
     """Resolve accessions, decoy status and spectrum-level confidence."""
     pep_evidence = parsed["peptide_evidence"]
     proteins = _resolve_proteins(alpha_sii["peptide_evidence_refs"], pep_evidence, parsed["db_sequences"])
-    is_decoy = any(pep_evidence.get(ref, {}).get("is_decoy", False) for ref in alpha_sii["peptide_evidence_refs"])
+    is_decoy = _is_decoy(alpha_sii, parsed)
     additional_scores = _extract_scores(alpha_sii["cv_params"])
     additional_scores.append({"score_name": "rank", "score_value": float(alpha_sii["rank"]), "higher_better": False})
     pep_value = _extract_pep(alpha_sii["cv_params"])
