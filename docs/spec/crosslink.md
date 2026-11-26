@@ -73,7 +73,7 @@ One row per **linked residue pair** and label, laid out as a [site](site.md) row
 |-------|-------------|------|----------|
 | `residue_pair_id` | Opaque int64 identity, derived from the identity composite (both sides with their alternatives, `grouped_runs`, `label`) | int64 | yes |
 | `protein_accession_a`, `position_a`, `amino_acid_a` | Side A: protein, position and residue of its first site | string, int32, string null | yes |
-| `protein_accession_b`, `position_b`, `amino_acid_b` | Side B, likewise; the side whose site sorts first is A | string, int32, string null | yes |
+| `protein_accession_b`, `position_b`, `amino_acid_b` | Side B, likewise; the side whose site sorts first is A, and between equal sites the side whose sorted `alternatives` sort first (element by element, null first) | string, int32, string null | yes |
 | `family_a`, `family_b` | Protein family of each side, as `site.family` | string, null | no |
 | `alternatives_a`, `alternatives_b` | The other sites each side may be, as (`protein_accession`, `position`), sorted | array[struct], null | no |
 | `crosslink_protein_class` | `self` or `heteromeric` | string | yes |
@@ -98,7 +98,7 @@ One row per protein pair and label. A `heteromeric` pair is two proteins; a `sel
 | Field | Description | Type | Required |
 |-------|-------------|------|----------|
 | `protein_pair_id` | Opaque int64 identity, derived from the identity composite (both sides with their alternatives, `grouped_runs`, `label`) | int64 | yes |
-| `protein_accession_a`, `protein_accession_b` | The first protein of each side; for a self pair equal, or two entries of one `family`. The side whose protein sorts first is A | string | yes |
+| `protein_accession_a`, `protein_accession_b` | The first protein of each side; for a self pair equal, or two entries of one `family`. The side whose protein sorts first is A, and between equal proteins the side whose sorted `alternatives` sort first, as in `residue_pair` | string | yes |
 | `family_a`, `family_b` | Protein family of each side | string, null | no |
 | `alternatives_a`, `alternatives_b` | The other proteins each side cannot be told apart from (shared peptides) | array[string], null | no |
 | `crosslink_protein_class` | `self` or `heteromeric` | string | yes |
