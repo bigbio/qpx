@@ -42,8 +42,6 @@ The PSM rules apply unchanged: a peptide that maps to a target and a decoy is a 
 
 A decoy side names a decoy accession: a decoy never shares an accession with its target ([Producer Guide](producer-guide.md)), and the mzIdentML converter adds `DECOY_` where a producer gives it one (xiFDR does). That is what keeps a decoy pair's identity apart from its target pair's, since the identity composite holds no decoy class: with the targets' accessions, a target and a decoy protein pair share a key in 7 of the 10 xiFDR files we converted from PRIDE.
 
-The mzIdentML converter marks a CSM a decoy when any peptide evidence is a decoy (`crosslinks.py`, `_is_decoy`); under the PSM rule it would change for a peptide that maps to both a target and a decoy. In the PRIDE files we converted, that happens only where decoys are known by accession prefix (Kojak: the alpha peptide of 168 PSMs and the beta peptide of 713 CSMs).
-
 ## psm: new columns
 
 The peptides of a CSM are already described: `cross_links[]` holds `xl_type`, `partner_sequence`, `partner_peptidoform`, `donor_position`, `acceptor_position` and the `linker_*` fields; `protein_accessions` and `protein_starts` place the alpha peptide, `partner_protein_accessions` and `partner_protein_starts` the beta peptide; `crosslinked_peptidoform` names the linked species. The CSM q-value is `qvalue`, and the PEP of the whole identification (parent and child spectra together, `MS:1003336`) is `posterior_error_probability`. Per-peptide scores go in `additional_scores` as `alpha_score` and `beta_score`.
