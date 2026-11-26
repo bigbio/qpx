@@ -10,9 +10,9 @@ A crosslinking result is reported at four levels, the levels of the literature a
 | `csm` (crosslink spectrum match) | This spectrum is two linked peptides, or one looped peptide | [`psm`](psm.md) row | `psm.qvalue` |
 | `peptide_pair` | These two peptides are linked | `psm` row | `peptide_pair_qvalue` in `additional_scores` |
 | `residue_pair` | These two residues are linked in the sample | `residue_pair` (new) | `residue_pair_qvalue` |
-| `protein_pair` | These two proteins are linked: they interact, or form a homo-oligomer when both sides are one protein | `protein_pair` (new) | `protein_pair_qvalue` |
+| `protein_pair` | These two proteins are linked: two proteins that interact, or one protein with itself | `protein_pair` (new) | `protein_pair_qvalue` |
 
-The page adds as few names as it can. The two views follow the layout of [site](site.md) (`protein_accession`, `position`, `amino_acid`, `family`, `grouped_runs`, `label`, `psm_count`, `best_psm_id`, `alternatives`, `pg_id`); the q-values follow the typed q-value names (`site_qvalue`, `pg_qvalue`, `proteoform_qvalue`); the peptides keep the existing `psm` columns; the reagents go in `run.modification_parameters` and the FDR settings in [provenance](provenance.md). Search-engine internals (per-ion scores, candidate lists, encoded mzIdentML values) stay in the producer's own files.
+The page adds as few names as it can. The two views follow the layout of [site](site.md) (`protein_accession`, `position`, `amino_acid`, `family`, `grouped_runs`, `label`, `psm_count`, `best_psm_id`, `pg_id`); the q-values follow the typed q-value names (`site_qvalue`, `pg_qvalue`, `proteoform_qvalue`); the peptides keep the existing `psm` columns; the reagents go in `run.modification_parameters` and the FDR settings in [provenance](provenance.md). Search-engine internals (per-ion scores, candidate lists, encoded mzIdentML values) stay in the producer's own files.
 
 ## Link classes
 
@@ -40,7 +40,9 @@ WHERE link.xl_type = 'inter' AND crosslink_protein_class = 'self'
 
 The PSM rules apply unchanged: a peptide that maps to a target and a decoy is a target (`psm.is_decoy`), and a CSM has `crosslink_decoy_class` `target_target`, `target_decoy` or `decoy_decoy`, with `is_decoy` true for the latter two. A residue pair or protein pair takes `is_decoy` and `crosslink_decoy_class` from its best CSM, the CSM whose score ranks it.
 
-The mzIdentML converter marks a CSM a decoy when any peptide evidence is a decoy (`crosslinks.py`, `_is_decoy`); under the PSM rule it would change for a peptide that maps to both a target and a decoy.
+A decoy side names a decoy accession: a decoy never shares an accession with its target ([Producer Guide](producer-guide.md)), and the mzIdentML converter adds `DECOY_` where a producer gives it one (xiFDR does). That is what keeps a decoy pair's identity apart from its target pair's, since the identity composite holds no decoy class: with the targets' accessions, a target and a decoy protein pair share a key in 7 of the 10 xiFDR files we converted from PRIDE.
+
+The mzIdentML converter marks a CSM a decoy when any peptide evidence is a decoy (`crosslinks.py`, `_is_decoy`); under the PSM rule it would change for a peptide that maps to both a target and a decoy. In the PRIDE files we converted, that happens only where decoys are known by accession prefix (Kojak: the alpha peptide of 168 PSMs and the beta peptide of 713 CSMs).
 
 ## psm: new columns
 
@@ -65,7 +67,7 @@ Crosslink PSMs carry provided ids, because the schema composite names only the a
 
 ## residue_pair
 
-One row per **linked residue pair** and label, laid out as a [site](site.md) row with an A and a B side. When the evidence cannot tell several sites apart (a peptide shared by proteins, or several linkable residues), the other sites are the side's `alternatives`, and the set is the unit the q-value counts: a set is false when no pair of its sites is linked in the sample. Two overlapping sets (`A:12 — B:5` and `A:12, C:12 — B:5`) are two rows.
+One row per **linked residue pair** and label, laid out as a [site](site.md) row with an A and a B side. When the evidence cannot tell several sites apart (a peptide shared by proteins, or several linkable residues), the other sites are the side's `alternatives` (other sites, unlike `site.alternatives`, which lists other modifications of one residue), and the set is the unit the q-value counts: a set is false when no pair of its sites is linked in the sample. Two overlapping sets (`A:12 — B:5` and `A:12, C:12 — B:5`) are two rows. A peptide that occurs more than once in one protein (polyubiquitin, filaggrin) has one `psm.protein_starts` entry per accession today, so its other sites cannot be derived from the psm view (open question 9).
 
 | Field | Description | Type | Required |
 |-------|-------------|------|----------|
@@ -78,7 +80,7 @@ One row per **linked residue pair** and label, laid out as a [site](site.md) row
 | `linker_names` | Reagents of the supporting CSMs, as `cross_links[].linker_name` | array[string] | yes |
 | `grouped_runs` | Runs whose CSMs support the pair | array[string] | yes |
 | `label` | Channel of the reagent or sample, null without one; part of the identity, as in `site` | string, null | no |
-| `psm_count` | CSMs at the CSM cutoff that support the pair | int32, null | no |
+| `psm_count` | CSMs at the CSM cutoff that support the pair: the `csm_fdr` of provenance, or `psm.pass_threshold` where the producer reports no CSM q-value | int32, null | no |
 | `best_psm_id` | Best of those CSMs (`psm.psm_id`) | int64, null | no |
 | `residue_pair_qvalue` | q-value over the residue pairs (`MS:1002677`, see below) | float64, null | no |
 | `is_decoy`, `crosslink_decoy_class` | Of the best CSM | bool, string null | yes |
@@ -91,17 +93,17 @@ A quantified residue pair adds `intensity`, as a quantified site does; it is not
 
 ## protein_pair
 
-One row per protein pair and label. A `heteromeric` pair is two proteins; a `self` pair is one protein with itself, a candidate homo-oligomer (a strong one when its peptides overlap). mzIdentML 1.3 also reports such self pairs (`MS:1002676`). A producer that controls the error of heteromeric pairs only leaves the self pairs out.
+One row per protein pair and label. A `heteromeric` pair is two proteins; a `self` pair is one protein, or one protein `family`, with itself. A self link may join two sites of one molecule or of two copies; a self pair points to a homo-oligomer only when its peptides overlap (above). mzIdentML 1.3 also reports such self pairs (`MS:1002676`). A producer that controls the error of heteromeric pairs only leaves the self pairs out.
 
 | Field | Description | Type | Required |
 |-------|-------------|------|----------|
 | `protein_pair_id` | Opaque int64 identity, derived from the identity composite (both sides with their alternatives, `grouped_runs`, `label`) | int64 | yes |
-| `protein_accession_a`, `protein_accession_b` | The first protein of each side; equal for a self pair | string | yes |
+| `protein_accession_a`, `protein_accession_b` | The first protein of each side; for a self pair equal, or two entries of one `family` | string | yes |
 | `family_a`, `family_b` | Protein family of each side | string, null | no |
 | `alternatives_a`, `alternatives_b` | The other proteins each side cannot be told apart from (shared peptides) | array[string], null | no |
 | `crosslink_protein_class` | `self` or `heteromeric` | string | yes |
 | `grouped_runs`, `label` | As in `residue_pair` | array[string], string null | yes |
-| `residue_pair_count`, `psm_count` | Supporting residue pairs and CSMs | int32, null | no |
+| `residue_pair_count`, `psm_count` | Supporting residue pairs, and CSMs at the CSM cutoff as in `residue_pair` | int32, null | no |
 | `best_psm_id` | Best supporting CSM | int64, null | no |
 | `protein_pair_qvalue` | q-value over the protein pairs (`MS:1002676`, see below) | float64, null | no |
 | `is_decoy`, `crosslink_decoy_class` | Of the best CSM | bool, string null | yes |
@@ -120,7 +122,7 @@ A crosslink q-value means little without saying how it was estimated: the FDR is
 | `fdr_separate_self_heteromeric` | `true` when the two classes were estimated apart (`MS:1003343`) |
 | `fdr_subsets` | Any further subsets estimated apart, e.g. CSMs with a neighbor partner |
 
-The FDR at a rank is the false-target count over the rows at that rank or better, divided by their target-target count, capped at 1; the q-value is the lowest FDR at that rank or any worse rank, whichever way the score runs. `td_minus_dd` is the usual count. `td_plus_dd` is for links whose two peptides have one sequence: the decoy of such a link is a decoy–decoy pair of one sequence, so its DD rows stand for false targets and are added, not subtracted. It is not a looplink estimator; looplinks and noncovalent pairs get a null q-value unless a producer states an estimate for them. A producer that adjusts the count (andes never counts fewer false targets than DD rows, and adds a pseudo-count and a floor) describes it in the step's `config`.
+The FDR at a rank is the false-target count over the rows at that rank or better, divided by their target-target count, bounded to [0, 1] (TD − DD can be negative); the q-value is the lowest FDR at that rank or any worse rank, whichever way the score runs. `td_minus_dd` is the usual count. `td_plus_dd` is for links whose two peptides have one sequence: the decoy of such a link is a decoy–decoy pair of one sequence, so its DD rows stand for false targets and are added, not subtracted. It is not a looplink estimator; looplinks and noncovalent pairs get a null q-value unless a producer states an estimate for them. A producer that adjusts the count (andes never counts fewer false targets than DD rows, and adds a pseudo-count and a floor) describes it in the step's `config`.
 
 When one FDR is estimated over several projects together, the error of each project's part at the combined cut is a producer report, not a QPX table.
 
@@ -145,7 +147,8 @@ mzIdentML 1.3 is the reference for what a crosslinking result contains; QPX keep
 | QPX | mzIdentML 1.3 |
 |-----|---------------|
 | CSM (`psm` row) | Two SIIs sharing `MS:1002511`; donor/acceptor modifications `MS:1002509` / `MS:1002510` |
-| Looplink (`xl_type` `intra`) | One SII with `MS:1003329` |
+| Looplink (`xl_type` `intra`) | One SII with `MS:1003329`; in mzIdentML 1.2, a donor and an acceptor on one Peptide |
+| Noncovalent pair (`xl_type` `noncovalent`) | Two SIIs sharing `MS:1003331`; older xiFDR versions write a crosslink pair at location -1 instead |
 | `child_spectra` | Child SIIs grouped by `MS:1003332`; the group's PEP `MS:1003336` is `psm.posterior_error_probability` |
 | `psm.qvalue` of a CSM | `MS:1003337` |
 | `peptide_pair_qvalue` | `MS:1003338`; passes threshold `MS:1003339` |
@@ -155,9 +158,9 @@ mzIdentML 1.3 is the reference for what a crosslinking result contains; QPX keep
 | `crosslink_protein_class` | `MS:1003343`: self and heteromeric estimated apart |
 | `run.modification_parameters` | `SearchModification` with donor/acceptor terms, XLMOD accession, `MS:1003390` |
 
-The CV has no residue-pair or protein-pair q-value term: `MS:1002677` and `MS:1002676` are global-FDR terms (global as opposed to local FDR, `MS:1002350` / `MS:1002351`), and q-values are their own family (`MS:1002354`). Requesting q-value terms for the two levels from PSI would close that gap. The passes-threshold flags are left out: a reader applies a cut to the q-value. mzIdentML's donor/acceptor ordering rule (longer peptide, then mass, then alphabetical) is a fallback for symmetric reagents; QPX keeps the alpha/beta order of `peptidoform`.
+The CV has no crosslink q-value term at any level: `MS:1003337`, `MS:1003338`, `MS:1002677` and `MS:1002676` are global-FDR terms (global as opposed to local FDR, `MS:1002350` / `MS:1002351`), and q-values are their own family (`MS:1002354`, for PSMs). A value under one of them is an FDR, which equals the q-value only when the FDR does not fall at worse ranks. Requesting q-value terms for the levels from PSI would close that gap. The passes-threshold flags of the pair levels are left out: a reader applies a cut to the q-value. `psm.pass_threshold` stays, since the CSM is often the only level with a cut: no file we converted from PRIDE (mzIdentML 1.1 and 1.2) has a CSM q-value. mzIdentML's donor/acceptor ordering rule (longer peptide, then mass, then alphabetical) is a fallback for symmetric reagents; QPX keeps the alpha/beta order of `peptidoform`.
 
-The mzIdentML converter would parse the encoded residue-pair and protein-pair values into `residue_pair` and `protein_pair`, pairing the `.a` and `.b` sides by their ID; today `pg_adapter._float_value` returns null for them and they are lost.
+The mzIdentML converter would parse the encoded residue-pair and protein-pair values into `residue_pair` and `protein_pair`, pairing the `.a` and `.b` sides by their ID; today `pg_adapter._float_value` returns null for them and they are lost. What those values hold, and how the converter should read them, is open question 11. xiFDR also writes some SIIs twice in one result, and the protein groups reference both copies, so `psm_count` and `best_psm_id` come from the psm rows, not from those references.
 
 ## Possible follow-up
 
@@ -173,6 +176,9 @@ The mzIdentML converter would parse the encoded residue-pair and protein-pair va
 6. `cross_links[].xl_type`: rename `inter` / `intra` / `dead-end` to `crosslink` / `looplink` / `monolink` at the next schema version? Most XL-MS software reads `inter` / `intra` at protein level (Mascot: intralinks are within one protein, looplinks within one peptide), which is why `crosslink_protein_class` is a separate column.
 7. Heterobifunctional reagents (which end reacted on which peptide): worth a field, or left to `peptidoform`?
 8. `run.modification_parameters.accession` accepting XLMOD accessions: enough, or does a reagent need fields a modification lacks?
+9. `psm.protein_starts` holds one start per accession. Should a peptide that occurs more than once in a protein list each start, repeating the accession, so its residue pairs can be derived? In the 10 xiFDR files from PRIDE, QPX rebuilds xiFDR's residue pairs from the CSMs (`protein_starts` + position − 1), except 173, and 168 of those are in such proteins.
+10. Monolinks: in the PRIDE files they are Unimod "… quenched monolink" modifications on the peptide (Kojak `UNIMOD:1878` and `UNIMOD:1879` on 20,772 PSMs, OpenPepXL `UNIMOD:1020` on 642), and the mzIdentML converter keeps them in `peptidoform` with no `cross_links` entry. Should converters write them as `xl_type` `dead-end`, or should monolinks stay modifications? Not every `Xlink:` Unimod entry is a monolink: only those named "… quenched monolink" are.
+11. The encoded residue-pair and protein-pair values: xiFDR writes its FDR there, -1 when it estimated none, and other negative values too, and one protein-pair id can carry different values on different groups (9 in PXD062462). Should the converter keep them as a score, fill `residue_pair_qvalue` and `protein_pair_qvalue` only where a q-value can be derived, and map -1 to null? Which value does a conflicting id take?
 
 ## References
 
