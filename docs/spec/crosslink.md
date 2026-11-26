@@ -23,12 +23,12 @@ Two columns describe a link, and they answer different questions:
 
 Two peptides from distinct entries of one protein `family` (the canonical entry, its isoforms, variants and chains, as in [site](site.md) and [proteoforms](proteoform.md)) are `self` in QPX, because their peptides usually cannot tell those entries apart. This deviates from `MS:1003343`, whose text calls a link between distinct sequences heteromeric; a producer that follows the CV text records it in [provenance](#how-the-q-values-were-estimated).
 
-**Overlapping peptides.** A `self` crosslink whose two peptides are the same or overlap in the protein cannot come from one chain unless the sequence repeats, so it points to a homo-oligomer (xiNET's homomultimeric link). QPX stores no flag for it: it follows from columns the PSM already has.
+**Overlapping peptides.** A `self` crosslink whose two peptides are the same or overlap in the protein cannot come from one chain unless the sequence repeats, so it points to a homo-oligomer (xiNET's homomultimeric link). QPX stores no flag for it: it follows from columns the PSM already has. The query compares the first protein and start of each side, so it misses an overlap in a shared protein listed later, or at a repeat other than the first (open question 9).
 
 ```sql
 SELECT *
 FROM (SELECT *, unnest(cross_links) AS link FROM psm)
-WHERE link.xl_type = 'inter' AND crosslink_protein_class = 'self'
+WHERE link.xl_type = 'inter'
   AND protein_accessions[1] = partner_protein_accessions[1]
   AND protein_starts[1] < partner_protein_starts[1] + length(link.partner_sequence)
   AND partner_protein_starts[1] < protein_starts[1] + length(sequence)
