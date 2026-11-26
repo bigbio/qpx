@@ -98,7 +98,7 @@ One row per protein pair and label. A `heteromeric` pair is two proteins; a `sel
 | Field | Description | Type | Required |
 |-------|-------------|------|----------|
 | `protein_pair_id` | Opaque int64 identity, derived from the identity composite (both sides with their alternatives, `grouped_runs`, `label`) | int64 | yes |
-| `protein_accession_a`, `protein_accession_b` | The first protein of each side; for a self pair equal, or two entries of one `family` | string | yes |
+| `protein_accession_a`, `protein_accession_b` | The first protein of each side; for a self pair equal, or two entries of one `family`. The side whose protein sorts first is A | string | yes |
 | `family_a`, `family_b` | Protein family of each side | string, null | no |
 | `alternatives_a`, `alternatives_b` | The other proteins each side cannot be told apart from (shared peptides) | array[string], null | no |
 | `crosslink_protein_class` | `self` or `heteromeric` | string | yes |
