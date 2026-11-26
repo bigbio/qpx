@@ -67,7 +67,7 @@ Crosslink PSMs carry provided ids, because the schema composite names only the a
 
 ## residue_pair
 
-One row per **linked residue pair** and label, laid out as a [site](site.md) row with an A and a B side. When the evidence cannot tell several sites apart (a peptide shared by proteins, or several linkable residues), the other sites are the side's `alternatives` (other sites, unlike `site.alternatives`, which lists other modifications of one residue), and the set is the unit the q-value counts: a set is false when no pair of its sites is linked in the sample. Two overlapping sets (`A:12 — B:5` and `A:12, C:12 — B:5`) are two rows. A peptide that occurs more than once in one protein (polyubiquitin, filaggrin) has one `psm.protein_starts` entry per accession today, so its other sites cannot be derived from the psm view (open question 9).
+One row per **linked residue pair** and label, laid out as a [site](site.md) row with an A and a B side. When the evidence cannot tell several sites apart (a peptide shared by proteins, or several linkable residues), the other sites are the side's `alternatives` (other sites, unlike `site.alternatives`, which lists other modifications of one residue), and the set is the unit the q-value counts: a set is false when no pair of its sites is linked in the sample. Two overlapping sets (`A:12 — B:5` and `A:12, C:12 — B:5`) are two rows. A peptide that occurs more than once in one protein (polyubiquitin, filaggrin) has one `psm.protein_starts` entry per accession today, so its other sites cannot be derived from the psm view (open question 9). A noncovalent pair links no residues, so it has no `residue_pair` row.
 
 | Field | Description | Type | Required |
 |-------|-------------|------|----------|
@@ -180,6 +180,7 @@ The mzIdentML converter would parse the encoded residue-pair and protein-pair va
 9. `psm.protein_starts` holds one start per accession. Should a peptide that occurs more than once in a protein list each start, repeating the accession, so its residue pairs can be derived? In the 10 xiFDR files from PRIDE, QPX rebuilds xiFDR's residue pairs from the CSMs (`protein_starts` + position − 1), except 173, and 168 of those are in such proteins.
 10. Monolinks: in the PRIDE files they are Unimod "… quenched monolink" modifications on the peptide (Kojak `UNIMOD:1878` and `UNIMOD:1879` on 20,772 PSMs, OpenPepXL `UNIMOD:1020` on 642), and the mzIdentML converter keeps them in `peptidoform` with no `cross_links` entry. Should converters write them as `xl_type` `dead-end`, or should monolinks stay modifications? Not every `Xlink:` Unimod entry is a monolink: only those named "… quenched monolink" are.
 11. The encoded residue-pair and protein-pair values: xiFDR writes its FDR there, -1 when it estimated none, and other negative values too, and one protein-pair id can carry different values on different groups (9 in PXD062462). Should the converter derive q-values from them, which needs every ranked pair, failing pairs and decoys included, and map -1 to null? Which value does a conflicting id take?
+12. Noncovalent pairs: does a pair of proteins seen only as a noncovalent association count as a `protein_pair` row, and with what q-value?
 
 ## References
 
