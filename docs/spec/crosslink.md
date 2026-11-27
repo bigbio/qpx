@@ -19,7 +19,7 @@ The page adds as few names as it can. The two views follow the layout of [site](
 Two columns describe a link, and they answer different questions:
 
 - **`cross_links[].xl_type`** (unchanged): what joins the peptides. `inter` is a crosslink between two peptides, `intra` a looplink within one peptide, `dead-end` a monolink, `noncovalent` two peptides associated without a link. Open question 6 proposes plainer values.
-- **`crosslink_protein_class`** (new, named like the existing `crosslink_decoy_class`): `self` when both peptides come from one protein sequence, `heteromeric` when they come from distinct sequences, the split of `MS:1003343` (Leitner et al. 2020; Lenz et al. 2021). A looplink is `self`; a monolink has no partner and gets null; a noncovalent pair is classified like a crosslink.
+- **`crosslink_protein_class`** (new, named like the existing `crosslink_decoy_class`): `self` when the two peptides can come from one protein sequence, that is when a protein, or a `family` (below), is among those of both, `heteromeric` when none is, the split of `MS:1003343` (Leitner et al. 2020; Lenz et al. 2021). A looplink is `self`; a monolink has no partner and gets null; a noncovalent pair is classified like a crosslink.
 
 Two peptides from distinct entries of one protein `family` (the canonical entry, its isoforms, variants and chains, as in [site](site.md) and [proteoforms](proteoform.md)) are `self` in QPX, because their peptides usually cannot tell those entries apart. This deviates from `MS:1003343`, whose text calls a link between distinct sequences heteromeric; a producer that follows the CV text records it in [provenance](#how-the-q-values-were-estimated).
 
@@ -70,11 +70,11 @@ One row per **linked residue pair** and label, laid out as a [site](site.md) row
 | Field | Description | Type | Required |
 |-------|-------------|------|----------|
 | `residue_pair_id` | Opaque int64 identity, derived from the identity composite (both sides with their alternatives, `grouped_runs`, `label`) | int64 | yes |
-| `protein_accession_a`, `position_a`, `amino_acid_a` | Side A: protein, position and residue of its first site, the lowest of its sites in (`protein_accession`, `position`) order | string, int32, string null | yes |
+| `protein_accession_a`, `position_a`, `amino_acid_a` | Side A: protein, position and residue of its first site, the lowest of its sites in (`protein_accession`, `position`) order; in a `self` row, the lowest in a protein, or else a `family`, that both sides share | string, int32, string null | yes |
 | `protein_accession_b`, `position_b`, `amino_acid_b` | Side B, likewise; the side whose site sorts first is A, and between equal sites the side whose sorted `alternatives` sort first (element by element, null first) | string, int32, string null | yes |
 | `family_a`, `family_b` | Protein family of each side, as `site.family` | string, null | no |
 | `alternatives_a`, `alternatives_b` | The other sites each side may be, as (`protein_accession`, `position`), sorted; null when the side has no other site | array[struct], null | no |
-| `crosslink_protein_class` | `self` or `heteromeric` | string | yes |
+| `crosslink_protein_class` | `self` or `heteromeric`, over all sites of both sides ([Link classes](#link-classes)) | string | yes |
 | `linker_names` | Reagents of the supporting CSMs, as `cross_links[].linker_name` | array[string] | yes |
 | `grouped_runs` | Runs whose CSMs support the pair | array[string] | yes |
 | `label` | Channel of the reagent or sample, null without one; part of the identity, as in `site` | string, null | no |
@@ -96,10 +96,10 @@ One row per protein pair and label. A `heteromeric` pair is two proteins; a `sel
 | Field | Description | Type | Required |
 |-------|-------------|------|----------|
 | `protein_pair_id` | Opaque int64 identity, derived from the identity composite (both sides with their alternatives, `grouped_runs`, `label`) | int64 | yes |
-| `protein_accession_a`, `protein_accession_b` | The first protein of each side, the lowest of its proteins; for a self pair equal, or two entries of one `family`. The side whose protein sorts first is A, and between equal proteins the side whose sorted `alternatives` sort first, as in `residue_pair` | string | yes |
+| `protein_accession_a`, `protein_accession_b` | The first protein of each side, the lowest of its proteins; in a `self` pair, the lowest in a protein, or else a `family`, that both sides share, so A and B are equal or two entries of one `family`. The side whose protein sorts first is A, and between equal proteins the side whose sorted `alternatives` sort first, as in `residue_pair` | string | yes |
 | `family_a`, `family_b` | Protein family of each side | string, null | no |
 | `alternatives_a`, `alternatives_b` | The other proteins each side cannot be told apart from (shared peptides), sorted; null when the side has no other protein | array[string], null | no |
-| `crosslink_protein_class` | `self` or `heteromeric` | string | yes |
+| `crosslink_protein_class` | As in `residue_pair`, over all proteins of both sides | string | yes |
 | `grouped_runs` | As in `residue_pair` | array[string] | yes |
 | `label` | As in `residue_pair` | string, null | no |
 | `residue_pair_count`, `psm_count` | Supporting residue pairs, and CSMs at the CSM cutoff as in `residue_pair` | int32, null | no |
