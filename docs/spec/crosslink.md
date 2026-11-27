@@ -38,7 +38,7 @@ WHERE link.xl_type = 'inter'
 
 ## Decoys
 
-The PSM rules apply unchanged: a peptide that maps to a target and a decoy is a target (`psm.is_decoy`), and a CSM has `crosslink_decoy_class` `target_target`, `target_decoy` or `decoy_decoy`, with `is_decoy` true for the latter two. A residue pair or protein pair takes `is_decoy` and `crosslink_decoy_class` from its best CSM, the CSM whose score ranks it.
+The PSM rules apply unchanged: a peptide that maps to a target and a decoy is a target (`psm.is_decoy`), and a CSM has `crosslink_decoy_class` `target_target`, `target_decoy` or `decoy_decoy`, with `is_decoy` true for the latter two. A residue pair or protein pair takes `is_decoy` and `crosslink_decoy_class` from its best CSM, the CSM whose score ranks it. A side that maps to a target and a decoy is a target side, and only its target proteins count: they alone give its sites in `residue_pair`, its proteins in `protein_pair` and its `crosslink_protein_class` at every level. Which proteins are decoys comes from the search, as `is_decoy` does (the peptide evidence).
 
 A decoy side names a decoy accession: a decoy never shares an accession with its target ([Producer Guide](producer-guide.md)), and the mzIdentML converter adds `DECOY_` where a producer gives it one (xiFDR does). That is what keeps a decoy pair's identity apart from its target pair's, since the identity composite holds no decoy class: with the targets' accessions, a target and a decoy protein pair share a key in 7 of the 10 xiFDR files we converted from PRIDE.
 
@@ -70,10 +70,10 @@ One row per **linked residue pair** and label, laid out as a [site](site.md) row
 | Field | Description | Type | Required |
 |-------|-------------|------|----------|
 | `residue_pair_id` | Opaque int64 identity, derived from the identity composite (both sides with their alternatives, `grouped_runs`, `label`) | int64 | yes |
-| `protein_accession_a`, `position_a`, `amino_acid_a` | Side A: protein, position and residue of its first site | string, int32, string null | yes |
+| `protein_accession_a`, `position_a`, `amino_acid_a` | Side A: protein, position and residue of its first site, the lowest of its sites in (`protein_accession`, `position`) order | string, int32, string null | yes |
 | `protein_accession_b`, `position_b`, `amino_acid_b` | Side B, likewise; the side whose site sorts first is A, and between equal sites the side whose sorted `alternatives` sort first (element by element, null first) | string, int32, string null | yes |
 | `family_a`, `family_b` | Protein family of each side, as `site.family` | string, null | no |
-| `alternatives_a`, `alternatives_b` | The other sites each side may be, as (`protein_accession`, `position`), sorted | array[struct], null | no |
+| `alternatives_a`, `alternatives_b` | The other sites each side may be, as (`protein_accession`, `position`), sorted; null when the side has no other site | array[struct], null | no |
 | `crosslink_protein_class` | `self` or `heteromeric` | string | yes |
 | `linker_names` | Reagents of the supporting CSMs, as `cross_links[].linker_name` | array[string] | yes |
 | `grouped_runs` | Runs whose CSMs support the pair | array[string] | yes |
@@ -96,9 +96,9 @@ One row per protein pair and label. A `heteromeric` pair is two proteins; a `sel
 | Field | Description | Type | Required |
 |-------|-------------|------|----------|
 | `protein_pair_id` | Opaque int64 identity, derived from the identity composite (both sides with their alternatives, `grouped_runs`, `label`) | int64 | yes |
-| `protein_accession_a`, `protein_accession_b` | The first protein of each side; for a self pair equal, or two entries of one `family`. The side whose protein sorts first is A, and between equal proteins the side whose sorted `alternatives` sort first, as in `residue_pair` | string | yes |
+| `protein_accession_a`, `protein_accession_b` | The first protein of each side, the lowest of its proteins; for a self pair equal, or two entries of one `family`. The side whose protein sorts first is A, and between equal proteins the side whose sorted `alternatives` sort first, as in `residue_pair` | string | yes |
 | `family_a`, `family_b` | Protein family of each side | string, null | no |
-| `alternatives_a`, `alternatives_b` | The other proteins each side cannot be told apart from (shared peptides) | array[string], null | no |
+| `alternatives_a`, `alternatives_b` | The other proteins each side cannot be told apart from (shared peptides), sorted; null when the side has no other protein | array[string], null | no |
 | `crosslink_protein_class` | `self` or `heteromeric` | string | yes |
 | `grouped_runs` | As in `residue_pair` | array[string] | yes |
 | `label` | As in `residue_pair` | string, null | no |
