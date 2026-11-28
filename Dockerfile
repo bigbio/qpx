@@ -22,7 +22,7 @@ RUN apt-get update \
 # hatch-vcs derives the version from git history; when the build context lacks
 # a .git directory (typical Docker builds), fall back to this placeholder.
 ARG QPX_VERSION=0.0.0.dev0
-ENV SETUPTOOLS_SCM_PRETEND_VERSION=${QPX_VERSION}
+ENV SETUPTOOLS_SCM_PRETEND_VERSION_FOR_QPX=${QPX_VERSION}
 
 # Minimal build inputs required by ``pip install .`` under hatchling.
 WORKDIR /src

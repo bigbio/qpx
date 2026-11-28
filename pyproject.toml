@@ -72,6 +72,7 @@ source = "vcs"
 
 [tool.hatch.version.raw-options]
 local_scheme = "no-local-version"
+dist_name = "qpx"
 
 [tool.hatch.build.targets.sdist]
 exclude = ["tests/examples"]
