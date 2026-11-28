@@ -11,6 +11,7 @@ the QPX feature schema. Protein-level quantity is not produced here.
 from __future__ import annotations
 
 import logging
+import math
 import re
 from collections import defaultdict
 from itertools import chain
@@ -21,9 +22,9 @@ from qpx.converters.openms_consensus.channels import Ms1Channels, column_labels,
 from qpx.converters.openms_consensus.modifications import localization_scores, to_modifications
 from qpx.converters.openms_consensus.protein_groups import ProteinGroupIndex, identification_identifier
 from qpx.converters.openms_consensus.quant_scan import quant_scan_fields
+from qpx.converters.openms_consensus.runs import _run_resolver, _scan_of, column_runs
 from qpx.converters.utils import canonical_accession, mass_error_ppm, safe_float
 from qpx.core.cleavage import count_missed_cleavages
-from qpx.core.files import run_file_stem as _run_stem
 
 _log = logging.getLogger(__name__)
 
@@ -185,10 +186,15 @@ class PeptideLevelConfidence:
         for pid in pids:
             if not self.applies(pid):
                 continue
+            score_type = str(pid.getScoreType() or "")
             for hit in pid.getHits():
                 key = (identification_identifier(pid) or "", to_proforma(hit.getSequence()))
+                hit_qvalue = qvalue_meta_of(hit)
+                if hit_qvalue is None:
+                    # Without a q-value meta value, a q-value score type makes the hit score the q-value.
+                    hit_qvalue = qvalue_of(hit, score_type)
                 pep, qvalue = self._best.get(key, (None, None))
-                self._best[key] = (_min_or(pep, _scored(pep_of(hit))), _min_or(qvalue, _scored(qvalue_meta_of(hit))))
+                self._best[key] = (_min_or(pep, _scored(pep_of(hit))), _min_or(qvalue, _scored(hit_qvalue)))
 
     def of(self, pid, peptidoform: str) -> tuple[float | None, float | None]:
         """``(PEP, q-value)`` of the peptide's best PSM in ``pid``'s source."""
@@ -271,16 +277,13 @@ def load_consensus_map(consensusxml_path: str):
 def _pid_scans(pid) -> list[int]:
     """Scan numbers parsed from one identification's spectrum reference.
 
-    Uses the shared parser in :mod:`psm_adapter` (imported lazily to avoid a
-    circular import — psm_adapter imports this module) so feature.scan and
+    Uses the parser of :mod:`runs` that the psm view uses, so feature.scan and
     psm.scan are produced by the same logic, including all native ID components
     and the deterministic surrogate fallback.
     """
     ref = pid.getSpectrumReference() if hasattr(pid, "getSpectrumReference") else ""
     if not ref and pid.metaValueExists("spectrum_reference"):
         ref = pid.getMetaValue("spectrum_reference")
-    from qpx.converters.openms_consensus.psm_adapter import _scan_of
-
     return _scan_of(ref)
 
 
@@ -352,7 +355,8 @@ def _group_subfeatures_by_run(cf, map_info: dict[int, tuple[str, str]]) -> dict[
     label-free, one map == one run. One entry per label — if a channel is linked
     twice, keep the max rather than emit it twice (which would double-count
     downstream). ``rt`` and ``mz`` come from the run's first element in map order,
-    the lightest measured partner of an MS1-label multiplet.
+    the lightest measured partner of an MS1-label multiplet; an isobaric element's
+    m/z is its reporter ion's.
     """
     by_run: dict[str, dict] = {}
     for sub in cf.getFeatureList():
@@ -392,8 +396,6 @@ def consensus_features_to_records(
     # reports missed_cleavages too. Without it a caller of the library API got a
     # null column while the same data through the CLI got a value.
     enzyme = resolve_enzyme(cm, sdrf_path)
-    from qpx.converters.openms_consensus.psm_adapter import _run_resolver
-
     resolve_run = _run_resolver(cm)
     removed, confidence = identification_context(cm)
     ms1 = Ms1Channels(cm, column_runs(cm))
@@ -413,33 +415,6 @@ def consensus_features_to_records(
             )
         )
     return records
-
-
-def primary_run_stems(protein_identification) -> list[str]:
-    """Run stems of one ProteinIdentification's primary MS run paths (``spectra_data``), in order."""
-    get_paths = protein_identification.getPrimaryMSRunPath
-    paths: list = []
-    try:
-        get_paths(paths)  # pyopenms < 3.6 fills an output list
-    except TypeError:
-        paths = get_paths()  # pyopenms >= 3.6 returns the paths
-    return [_run_stem(p.decode() if isinstance(p, (bytes, bytearray)) else str(p)) for p in paths]
-
-
-def column_runs(cm) -> dict[int, str]:
-    """Map index -> run_file_name from the consensusXML column headers.
-
-    The single source of the column -> run mapping for every adapter. A lone column
-    without a filename (a single-run map promoted by FileConverter) takes the one
-    primary MS run all ProteinIdentifications record, when there is exactly one.
-    """
-    headers = cm.getColumnHeaders()
-    runs = {idx: _run_stem(headers[idx].filename) for idx in headers}
-    if len(runs) == 1 and not next(iter(runs.values())):
-        id_runs = {run for prot in cm.getProteinIdentifications() for run in primary_run_stems(prot)}
-        if len(id_runs) == 1:
-            runs = dict.fromkeys(runs, id_runs.pop())
-    return runs
 
 
 def feature_map_info(cm) -> dict[int, tuple[str, str]]:
@@ -642,11 +617,9 @@ def _feature_peptide_fields(cf, hit, enzyme, seq_obj=None) -> dict:
     modifications = to_modifications(seq_obj, site_scores)
     charge = int(cf.getCharge() or hit.getCharge() or 0)
     is_decoy = is_decoy_hit(hit)
-    observed_mz = float(cf.getMZ()) if cf.getMZ() else 0.0
     streamed_consensus_rt = getattr(cf, "consensus_rt", None)
     consensus_rt = float(cf.getRT() if streamed_consensus_rt is None else streamed_consensus_rt)
-    calculated_mz = float(seq_obj.getMZ(charge)) if charge else observed_mz
-    error_ppm = mass_error_ppm(calculated_mz, observed_mz) if charge > 0 else None
+    calculated_mz = float(seq_obj.getMZ(charge)) if charge else None
     # Missed cleavages are a property of the peptide and the search enzyme, both
     # of which are in hand; the DIA-NN path already reports them (bigbio/qpx#300).
     missed = count_missed_cleavages(sequence, enzyme) if enzyme else None
@@ -658,8 +631,6 @@ def _feature_peptide_fields(cf, hit, enzyme, seq_obj=None) -> dict:
         "charge": charge,
         "is_decoy": is_decoy,
         "calculated_mz": calculated_mz,
-        "observed_mz": observed_mz,
-        "mass_error_ppm": error_ppm,
         "missed_cleavages": missed,
         "consensus_rt": consensus_rt,
         "additional_scores": additional_scores,
@@ -678,6 +649,18 @@ def _identified_labels_by_run(pids, map_info, cf_runs, resolve_run, ms1) -> dict
     return {run: [label for label in ms1.run_labels(run) if label in labels] for run, labels in identified.items()}
 
 
+def _run_mz_fields(calculated_mz: float | None, mz: float) -> dict:
+    """A run's precursor m/z as ``observed_mz``, unless it is the theoretical m/z.
+
+    A sub-feature that OpenMS placed at the peptide's theoretical m/z holds no
+    measurement. The comparison is made in double precision, before ``observed_mz``
+    is stored as float32.
+    """
+    if calculated_mz is not None and math.isclose(mz, calculated_mz, rel_tol=1e-12):
+        return {"observed_mz": None, "mass_error_ppm": None}
+    return {"observed_mz": mz, "mass_error_ppm": mass_error_ppm(calculated_mz, mz)}
+
+
 def _multiplet_fields(record: dict, entry: dict, lightest: str | None) -> dict:
     """Position of an MS1-label multiplet row: its lightest measured partner.
 
@@ -689,6 +672,11 @@ def _multiplet_fields(record: dict, entry: dict, lightest: str | None) -> dict:
         "observed_mz": entry["mz"],
         "mass_error_ppm": mass_error_ppm(record["calculated_mz"], entry["mz"]) if measured_lightest else None,
     }
+
+
+def _precursor_mz(cf, entry: dict, ms1) -> float:
+    """The m/z of a run's precursor: isobaric elements sit at their reporter ions, the consensus feature at the precursor."""
+    return entry["mz"] if ms1 or "LFQ" in entry["labels"] else float(cf.getMZ())
 
 
 def feature_records_for_cf(
@@ -740,6 +728,7 @@ def feature_records_for_cf(
             "run_file_name": run,
             "scan": scan_by_run.get(run, []),
             "rt": entry["rt"],
+            **_run_mz_fields(peptide_fields["calculated_mz"], _precursor_mz(cf, entry, ms1)),
             "intensities": intensities,
             "posterior_error_probability": posterior_error_probability,
             "peptide_qvalue": peptide_qvalue,

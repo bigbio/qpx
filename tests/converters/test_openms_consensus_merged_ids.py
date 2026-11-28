@@ -4,6 +4,8 @@ Covers run attribution of identification copies, unnamed single-run maps,
 duplicate consensus features and multi-file input, on both readers.
 """
 
+from functools import partial
+
 import pyarrow.parquet as pq
 import pytest
 from click.testing import CliRunner
@@ -352,7 +354,7 @@ def test_cli_accepts_consensusxml_list(tmp_path):
     first.write_text(_merged_copies_xml())
     second.write_text(_renamed(_merged_copies_xml(), {"run_A": "run_C", "run_B": "run_D"}))
     out = tmp_path / "out"
-    args = ["convert", "openms-consensus", "--structures", "psm", "--no-mudata", "--output-folder", str(out)]
+    args = ["convert", "openms-consensus", "--view", "psm", "--no-mudata", "--output-folder", str(out)]
 
     result = CliRunner().invoke(qpx_main, [*args, "--consensusxml", f"{first},{second}"])
     assert result.exit_code == 0, result.output
@@ -451,15 +453,25 @@ def _percolator_run(run_id, spectra_data, peptide_level):
     )
 
 
-def _xcorr_pid(tag, scan, sequence, qvalue, pep, rt=100.0, indent="  "):
-    """A PSM whose primary score is COMET:xcorr, with Percolator q-value and PEP as hit meta values."""
+def _xcorr_pid(tag, scan, sequence, qvalue, pep, rt=100.0, indent="  ", qvalue_score=False):
+    """A PSM whose primary score is COMET:xcorr, with Percolator q-value and PEP as hit meta values.
+
+    With *qvalue_score* the primary score is the q-value instead, and the hit has no q-value meta value.
+    """
+    if qvalue_score:
+        score_type, higher, score, qvalues = "q-value", "false", qvalue, ""
+    else:
+        score_type, higher, score = "COMET:xcorr", "true", 2.5
+        qvalues = (
+            f'{indent}    <UserParam type="float" name="q-value" value="{qvalue}"/>\n'
+            f'{indent}    <UserParam type="float" name="MS:1001491" value="{qvalue}"/>\n'
+        )
     return (
-        f'{indent}<{tag} identification_run_ref="PI_0" score_type="COMET:xcorr" higher_score_better="true"'
+        f'{indent}<{tag} identification_run_ref="PI_0" score_type="{score_type}" higher_score_better="{higher}"'
         f' significance_threshold="0" MZ="450.26" RT="{rt}" spectrum_reference="controllerType=0 controllerNumber=1 scan={scan}">\n'
-        f'{indent}  <PeptideHit score="2.5" sequence="{sequence}" charge="2" protein_refs="PI_0_PH_0">\n'
+        f'{indent}  <PeptideHit score="{score}" sequence="{sequence}" charge="2" protein_refs="PI_0_PH_0">\n'
         f'{indent}    <UserParam type="string" name="target_decoy" value="target"/>\n'
-        f'{indent}    <UserParam type="float" name="q-value" value="{qvalue}"/>\n'
-        f'{indent}    <UserParam type="float" name="MS:1001491" value="{qvalue}"/>\n'
+        f"{qvalues}"
         f'{indent}    <UserParam type="float" name="MS:1001493" value="{pep}"/>\n'
         f"{indent}  </PeptideHit>\n"
         f'{indent}  <UserParam type="int" name="map_index" value="0"/>\n'
@@ -467,23 +479,24 @@ def _xcorr_pid(tag, scan, sequence, qvalue, pep, rt=100.0, indent="  "):
     )
 
 
-def _percolator_xml(peptide_level):
+def _percolator_xml(peptide_level, qvalue_score=False):
     """PEPTIDEK: best PSM (scan 1) unassigned, a second PSM (scan 2) on the feature. ELVISLIVEK: only a
     non-representative PSM on its feature, so peptide-level mode has nothing but the 1.0 placeholder."""
     second = 1.0 if peptide_level else 0.004
+    psm = partial(_xcorr_pid, qvalue_score=qvalue_score)
     elements = _element(
-        0, [(0, 100.0, 1000.0)], [_xcorr_pid("PeptideIdentification", 2, "PEPTIDEK", second, second, indent="    ")]
+        0, [(0, 100.0, 1000.0)], [psm("PeptideIdentification", 2, "PEPTIDEK", second, second, indent="    ")]
     ) + _element(
         1,
         [(0, 300.0, 2000.0)],
-        [_xcorr_pid("PeptideIdentification", 3, "ELVISLIVEK", second, second, rt=300.0, indent="    ")],
+        [psm("PeptideIdentification", 3, "ELVISLIVEK", second, second, rt=300.0, indent="    ")],
         mz=460.0,
         rt=300.0,
     )
     return (
         _HEADER
         + _percolator_run("PI_0", "run_01.mzML", peptide_level)
-        + _xcorr_pid("UnassignedPeptideIdentification", 1, "PEPTIDEK", 0.001, 0.01)
+        + psm("UnassignedPeptideIdentification", 1, "PEPTIDEK", 0.001, 0.01)
         + _maps(["run_01.mzML"])
         + f"  <consensusElementList>\n{elements}  </consensusElementList>\n"
         + "</consensusXML>\n"
@@ -512,7 +525,25 @@ def test_peptide_level_percolator_confidence(tmp_path, streaming):
     assert _score(psms[("PEPTIDEK", 1)], "peptide_qvalue") == pytest.approx(0.001)
     assert _score(psms[("PEPTIDEK", 2)], "peptide_qvalue") == pytest.approx(0.001)
     assert _score(psms[("ELVISLIVEK", 3)], "peptide_qvalue") is None
-    assert all(_score(row, "q-value") is None for row in psms.values())
+    assert all(row["qvalue"] is None for row in psms.values())
+    _assert_valid(out, ("feature", "psm"))
+
+
+@pytest.mark.parametrize("streaming", [False, True], ids=["memory", "streaming"])
+def test_peptide_level_qvalue_score_is_only_the_peptide_qvalue(tmp_path, streaming):
+    """Under peptide-level FDR a q-value score, 1.0 on all but the peptide's best PSM, is no PSM's own q-value."""
+    source = tmp_path / "percolator.consensusXML"
+    source.write_text(_percolator_xml(peptide_level=True, qvalue_score=True))
+
+    out, written = _convert(tmp_path, str(source), streaming)
+
+    features = {row["peptidoform"]: row for row in _rows(written, "feature")}
+    assert features["PEPTIDEK"]["peptide_qvalue"] == pytest.approx(0.001)
+    assert features["ELVISLIVEK"]["peptide_qvalue"] is None
+    psms = {(row["peptidoform"], row["scan"][0]): row for row in _rows(written, "psm")}
+    assert _score(psms[("PEPTIDEK", 1)], "peptide_qvalue") == pytest.approx(0.001)
+    assert _score(psms[("PEPTIDEK", 2)], "peptide_qvalue") == pytest.approx(0.001)
+    assert all(row["qvalue"] is None and _score(row, "qvalue") is None for row in psms.values())
     _assert_valid(out, ("feature", "psm"))
 
 
@@ -529,8 +560,9 @@ def test_psm_level_percolator_confidence(tmp_path, streaming):
     assert features["PEPTIDEK"]["posterior_error_probability"] == pytest.approx(0.004)
     psms = {(row["peptidoform"], row["scan"][0]): row for row in _rows(written, "psm")}
     assert psms[("PEPTIDEK", 1)]["posterior_error_probability"] == pytest.approx(0.01)
-    assert _score(psms[("PEPTIDEK", 1)], "q-value") == pytest.approx(0.001)
-    assert _score(psms[("PEPTIDEK", 2)], "q-value") == pytest.approx(0.004)
+    assert psms[("PEPTIDEK", 1)]["qvalue"] == pytest.approx(0.001)
+    assert psms[("PEPTIDEK", 2)]["qvalue"] == pytest.approx(0.004)
+    assert all(_score(row, "qvalue") is None for row in psms.values())
 
 
 def _shared_peak_xml():

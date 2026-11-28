@@ -11,6 +11,7 @@ from qpx.converters.mzidentml.crosslinks import (
     _build_interlink,
     _build_looplink,
     _group_siis,
+    _is_decoy,
     crosslinked_peptidoform,
     partner_fields,
 )
@@ -49,6 +50,7 @@ def _build_psm_records(parsed: dict, rank1_only: bool = False) -> list[dict]:
     spectrum_results = parsed["spectrum_results"]
 
     records = []
+    dropped = 0
     for sir in spectrum_results:
         scan, scan_scheme = _parse_native_id(sir["spectrum_id"])
         run_file = spectra_data.get(sir["spectra_data_ref"], "unknown")
@@ -59,17 +61,31 @@ def _build_psm_records(parsed: dict, rank1_only: bool = False) -> list[dict]:
         # Classify SIIs
         groups = _group_siis(siis)
 
+        # One PSM per spectrum, peptidoform and charge: xiFDR lists some identifications twice in one result.
+        seen: set[tuple] = set()
         for group in groups:
             if rank1_only and group["alpha"]["rank"] > 1:
                 continue
             record = _build_one_psm(group, context, parsed)
-            if record is not None:
-                # Transient hint (dropped by the writer) telling
-                # ``_attach_spectra`` whether ``scan`` is an acquisition scan
-                # number or a 0-based file index, so it fetches by the right key.
-                record["_spectrum_id_scheme"] = scan_scheme
-                records.append(record)
+            if record is None:
+                continue
+            key = (record["crosslinked_peptidoform"] or record["peptidoform"], record["charge"])
+            if key in seen:
+                dropped += 1
+                continue
+            seen.add(key)
+            # Transient hint (dropped by the writer) telling
+            # ``_attach_spectra`` whether ``scan`` is an acquisition scan
+            # number or a 0-based file index, so it fetches by the right key.
+            record["_spectrum_id_scheme"] = scan_scheme
+            records.append(record)
 
+    if dropped:
+        logger.warning(
+            "Dropped %d identification(s) repeating the peptidoform and charge of another in their spectrum result; "
+            "kept the first",
+            dropped,
+        )
     return records
 
 
@@ -87,7 +103,8 @@ def _build_one_psm(group: dict, context: _SpectrumContext, parsed: dict) -> Opti
 
     confidence_fields = _psm_confidence_fields(alpha_sii, parsed)
     cross_links = None
-    if xl_type == "intra":
+    # mzIdentML 1.2 marks a looplink only by a donor and an acceptor in one Peptide (OpenPepXL).
+    if xl_type in ("intra", "none"):
         cross_links = _build_looplink(alpha_pep, linker_info)
     elif xl_type in ("inter", "noncovalent"):
         cross_links = _build_interlink(alpha_pep, beta_sii, peptides, linker_info, xl_type)
@@ -135,7 +152,7 @@ def _psm_confidence_fields(alpha_sii, parsed) -> dict:
     """Resolve accessions, decoy status and spectrum-level confidence."""
     pep_evidence = parsed["peptide_evidence"]
     proteins = _resolve_proteins(alpha_sii["peptide_evidence_refs"], pep_evidence, parsed["db_sequences"])
-    is_decoy = any(pep_evidence.get(ref, {}).get("is_decoy", False) for ref in alpha_sii["peptide_evidence_refs"])
+    is_decoy = _is_decoy(alpha_sii, parsed)
     additional_scores = _extract_scores(alpha_sii["cv_params"])
     additional_scores.append({"score_name": "rank", "score_value": float(alpha_sii["rank"]), "higher_better": False})
     pep_value = _extract_pep(alpha_sii["cv_params"])

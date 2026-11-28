@@ -44,6 +44,33 @@ class TestFastaSequences:
         assert fasta.get("P12345") == "MPEPTIDE"
         assert fasta.decoy_entries == 1
 
+    @pytest.mark.parametrize(
+        ("target", "decoy"),
+        [
+            ("tr|A9ET61|A9ET61_SORC5", "tr|A9ET61|A9ET61_SORC5_rev"),  # quantms decoy_string_position suffix
+            ("sp|A9F596|ACCA_SORC5", "revsp|A9F596|ACCA_SORC5"),  # decoy_string "rev" without a separator
+        ],
+    )
+    def test_the_decoy_affix_of_the_database_is_found(self, tmp_path, target, decoy):
+        """A suffix or an unseparated prefix that half the entries carry marks the decoys, as OpenMS reads them."""
+        fasta = FastaSequences.from_path(_fasta(tmp_path, f">{target}\nMPEPTIDE\n>{decoy}\nEDITPEPM\n"))
+        assert fasta.get(target.split("|")[1]) == "MPEPTIDE"
+        assert fasta.decoy_entries == 1
+        assert fasta.get(decoy) is None
+
+    def test_an_affix_few_entries_carry_marks_no_decoy(self, tmp_path):
+        fasta = FastaSequences.from_path(
+            _fasta(tmp_path, ">DECR1_HUMAN\nMKK\n>sp|P12345|A_HUMAN\nMPEP\n>sp|P67890|B_HUMAN\nMTTT\n")
+        )
+        assert fasta.get("DECR1_HUMAN") == "MKK"
+        assert fasta.decoy_entries == 0
+
+    def test_a_decoy_identifier_does_not_resolve_to_its_target(self, tmp_path):
+        """The accession field of DECOY_sp|ALDOA_RABIT| names the target, whose sequence is not the decoy's."""
+        fasta = FastaSequences.from_path(_fasta(tmp_path, ">sp|ALDOA_RABIT|\nMPHS\n>DECOY_sp|ALDOA_RABIT|\nMHLP\n"))
+        assert fasta.get("sp|ALDOA_RABIT|") == "MPHS"
+        assert fasta.get("DECOY_sp|ALDOA_RABIT|") is None
+
     def test_conflicting_sequences_resolve_to_nothing(self, tmp_path):
         fasta = FastaSequences.from_path(_fasta(tmp_path, ">sp|P12345|A\nMPEP\n>tr|P12345|B\nMKKK\n"))
         assert fasta.get("P12345") is None
@@ -103,7 +130,7 @@ def test_the_result_still_validates(dataset_dir, tmp_path):
     from qpx.cli.validate import validate_cmd
 
     _run(dataset_dir, _dataset_fasta(tmp_path), "--in-place")
-    result = CliRunner().invoke(validate_cmd, ["--dataset-path", str(dataset_dir)])
+    result = CliRunner().invoke(validate_cmd, ["--dataset", str(dataset_dir)])
 
     assert "INVALID" not in result.output, result.output
     assert "Overall: VALID" in result.output, result.output
@@ -209,44 +236,34 @@ def test_coverage_counts_shared_peptides_named_by_psm_evidence(dataset_dir, tmp_
     assert features["THIRDPEP"]["pg_positions"] is None
 
 
-@pytest.mark.parametrize("direction", ["forward", "reverse"])
-def test_coverage_keeps_psm_evidence_after_accession_normalization(dataset_dir, tmp_path, direction):
+def test_coverage_keeps_psm_evidence_after_accession_normalization(dataset_dir, tmp_path):
     """Normalizing identifiers, the PSM view's included, must retain shared-peptide PSM evidence."""
+    from qpx.transforms.accession_normalizer import _normalization_footer, _normalize_table
+    from qpx.transforms.protein_properties import _rewrite_view
     from qpx.writers import PsmWriter
     from tests.conftest import make_psm_record
 
     fasta = _dataset_fasta(tmp_path)
     full = "sp|P67890|PROT2_HUMAN"
-    if direction == "forward":
-        preparation = CliRunner().invoke(
-            transform,
-            [
-                "normalize-accessions",
-                "--dataset",
-                str(dataset_dir),
-                "--direction",
-                "reverse",
-                "--fasta",
-                str(fasta),
-                "--in-place",
-            ],
-        )
-        assert preparation.exit_code == 0, preparation.output
+    # Give the fixture the full identifiers of an earlier qpx.
+    full_ids = {"P12345": "sp|P12345|PROT1_HUMAN", "P67890": full}
+    for view in ("feature", "pg"):
+        path = dataset_dir / f"exp.{view}.parquet"
+        staging = path.with_name(f"full.{view}.parquet")
+        _rewrite_view(path, staging, lambda table: _normalize_table(table, full_ids), _normalization_footer(pq.ParquetFile(path)))
+        staging.replace(path)
     psm = make_psm_record(sequence="THIRDPEP", run_file_name="run_02")
-    psm["protein_accessions"] = [full if direction == "forward" else "P67890"]
+    psm["protein_accessions"] = [full]
     with PsmWriter(dataset_dir / "exp.psm.parquet") as writer:
         writer.write_batch([psm])
 
-    result = CliRunner().invoke(
-        transform,
-        ["normalize-accessions", "--dataset", str(dataset_dir), "--direction", direction, "--fasta", str(fasta), "--in-place"],
-    )
+    result = CliRunner().invoke(transform, ["normalize-accessions", "--dataset", str(dataset_dir), "--in-place"])
     assert result.exit_code == 0, result.output
     anchors_before = [row["anchor_protein"] for row in _rows(dataset_dir, "pg")]
     _run(dataset_dir, fasta, "--in-place")
 
     pg = {row["anchor_protein"]: row for row in _rows(dataset_dir, "pg")}
-    anchor = "P67890" if direction == "forward" else full
+    anchor = "P67890"
     assert pg[anchor]["sequence_coverage"] == pytest.approx(100 * 8 / 13, rel=1e-5)
     assert list(pg) == anchors_before
     assert [row["protein_accessions"] for row in _rows(dataset_dir, "psm")] == [[anchor]]
@@ -278,6 +295,35 @@ def test_new_provenance_updates_structure_count(dataset_dir, tmp_path, in_place)
 
     _run(output, _dataset_fasta(tmp_path), "--in-place")
     assert _rows(output, "dataset")[0]["total_structures"] == 7
+
+
+@pytest.mark.parametrize("in_place", [True, False])
+def test_the_protein_view_gets_its_ontology_rows(dataset_dir, tmp_path, in_place):
+    """The protein view written after the conversion is described in the ontology view, which the integrity record covers."""
+    from qpx import Dataset
+    from qpx.writers import DatasetWriter
+    from qpx.writers.ontology import OntologyWriter
+
+    kept = {"field_name": "anchor_protein", "view": "pg", "ontology_name": "anchor protein", "ontology_accession": "MS:1001591"}
+    with OntologyWriter(dataset_dir / "exp.ontology.parquet", creator="qpx") as writer:
+        writer.write_batch([kept])
+    with Dataset(dataset_dir) as dataset:
+        record = dataset.dataset_meta.to_df().iloc[0].to_dict()
+        record.update(dataset.compute_integrity())
+    with DatasetWriter(dataset_dir / "exp.dataset.parquet") as writer:
+        writer.write_batch([record])
+    source_ontology = (dataset_dir / "exp.ontology.parquet").read_bytes()
+    output = dataset_dir if in_place else tmp_path / "annotated"
+    _run(dataset_dir, _dataset_fasta(tmp_path), *(["--in-place"] if in_place else ["--output-folder", str(output)]))
+
+    terms = {(row["view"], row["field_name"]): row["ontology_accession"] for row in _rows(output, "ontology")}
+    assert terms[("pg", "anchor_protein")] == "MS:1001591"
+    assert terms[("protein", "gene_name")] == "MS:1000934"
+    assert {view for view, _ in terms} == {"pg", "protein"}
+    with Dataset(output) as dataset:
+        assert dataset.verify_integrity() == {"errors": [], "warnings": []}
+    if not in_place:
+        assert (dataset_dir / "exp.ontology.parquet").read_bytes() == source_ontology
 
 
 def test_coverage_does_not_merge_conflicting_fasta_accessions(dataset_dir, tmp_path):

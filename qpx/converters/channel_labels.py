@@ -1,11 +1,9 @@
 """
-Shared quantification channel-label resolution for QuantMS/OpenMS QPX.
+Shared quantification channel-label resolution.
 
-Both QPX paths for OpenMS output — the consensusXML converter
-(:mod:`qpx.converters.openms_consensus`) and the enrichment of OpenMS ``-out_qpx``
-(:mod:`qpx.converters.openms`) — must put the *same* canonical reporter labels
-into ``intensities[].label`` so TMT/iTRAQ/LFQ results are consistent and join
-to ``sample``/``run`` the same way DIA-NN (quantmsdiann) output does.
+The converters put the *same* canonical reporter labels into
+``intensities[].label`` so TMT/iTRAQ/LFQ results are consistent and join to
+``sample``/``run`` the same way whichever tool wrote them.
 
 The canonical vocabulary is the shared sdrf-pipelines ``channel_map`` (single
 source of truth for label spellings, incl. the TMT10 ch10 = ``TMT131`` vs
@@ -21,19 +19,12 @@ import re
 from collections import defaultdict
 from typing import Iterable, Optional
 
-import numpy as np
 import pandas as pd
-import pyarrow as pa
-import pyarrow.compute as pc
-import pyarrow.parquet as pq
-from defusedxml.common import DefusedXmlException
-from defusedxml.ElementTree import ParseError, iterparse
 from sdrf_pipelines.converters.channel_map import CHANNEL_LABELS
 from sdrf_pipelines.converters.channel_map import normalize_label as _normalize_label
 from sdrf_pipelines.converters.openms.utils import infer_itraqplex, infer_tmtplex
 
 from qpx.core.files import run_file_stem
-from qpx.writers.encoding import SampledParquetWriter
 
 logger = logging.getLogger(__name__)
 
@@ -45,11 +36,6 @@ __all__ = [
     "fraction_groups_from_sdrf",
     "experiment_type_from_labels",
     "resolve_channel_labels",
-    "parse_consensusxml_maplist",
-    "channel_labels_from_consensusxml",
-    "fraction_groups_from_consensusxml",
-    "relabel_intensities_table",
-    "relabel_intensities_parquet",
     "normalize_label",
 ]
 
@@ -268,6 +254,9 @@ def plex_for_columns(family: str, labels: set[str], n_columns: int) -> dict[int,
 
     A label's position depends on the plex: ``ITRAQ114`` is channel 1 of iTRAQ4
     and channel 2 of iTRAQ8, so four labels in an 8-column table read 8-plex columns.
+    A table with one column per label and no plex of that size was set up with
+    these channels only, which take its columns in plex order: TMT128N to TMT131C
+    of TMT11 in eight columns read columns 1 to 8.
     """
     plex = resolve_channel_labels(family, labels)
     if not plex or not n_columns or len(plex) == n_columns:
@@ -275,6 +264,8 @@ def plex_for_columns(family: str, labels: set[str], n_columns: int) -> dict[int,
     for name, channels in CHANNEL_LABELS.items():
         if name.startswith(_FAMILY_PREFIX[family]) and len(channels) == n_columns and labels <= set(channels.values()):
             return channels
+    if len(labels) == n_columns:
+        return dict(enumerate((label for _, label in sorted(plex.items()) if label in labels), start=1))
     logger.warning(
         "The table has %d reporter columns, but the SDRF labels %s are channels of a %d-channel %s plex; "
         "each is read from the column of its position in that plex, so check the labels if the run used another plex",
@@ -344,366 +335,6 @@ def resolve_channel_labels(
     return {}
 
 
-# OpenMS ConsensusMap ``<map>`` UserParams that describe the experimental-design
-# grouping of each run. ``fraction_group`` is OpenMS's replicate/fraction
-# grouping key: runs that share a ``fraction_group`` are fractions of the same
-# quantification unit (see the OpenMS experimental design). ``fraction`` and
-# ``sample_name`` are captured alongside for provenance.
-_MAP_DESIGN_PARAMS = ("fraction_group", "fraction", "sample_name")
-
-
-def _maplist_start(element, current_id, current):
-    """Read one map's attributes and experimental-design UserParams."""
-    tag = element.tag.rsplit("}", 1)[-1]
-    if tag == "map":
-        current_id = int(element.attrib["id"])
-        current = {
-            "label": element.attrib.get("label", "").strip(),
-            "name": element.attrib.get("name", "").strip(),
-        }
-    elif tag == "UserParam" and current is not None:
-        param_name = element.attrib.get("name", "")
-        if param_name in _MAP_DESIGN_PARAMS:
-            current.update({param_name: element.attrib.get("value", "")})
-    return current_id, current
-
-
-def parse_consensusxml_maplist(consensusxml_path: str) -> dict[int, dict[str, str]]:
-    """Parse a consensusXML's leading ``<mapList>`` exactly once.
-
-    Both channel-label resolution and fraction-group capture need the same
-    leading ``<mapList>`` block, so this single raw pass is the shared source
-    for :func:`channel_labels_from_consensusxml` and
-    :func:`fraction_groups_from_consensusxml` — avoiding two iterparse passes
-    over the (possibly tens-of-GB) file.
-
-    Returns ``{map_index (0-based ``id``) -> {"label", "name", and any of
-    ``fraction_group``/``fraction``/``sample_name`` that were declared}}`` in
-    document order. Only the leading ``mapList`` is read (defused ``iterparse``,
-    bounded memory), and ``{}`` is returned on a missing or malformed file.
-    """
-    maps: dict[int, dict[str, str]] = {}
-    try:
-        in_map_list = False
-        current_id: Optional[int] = None
-        current: Optional[dict[str, str]] = None
-        for event, element in iterparse(consensusxml_path, events=("start", "end")):
-            tag = element.tag.rsplit("}", 1)[-1]
-            if (event, tag) == ("start", "mapList"):
-                in_map_list = True
-            elif in_map_list and event == "start":
-                current_id, current = _maplist_start(element, current_id, current)
-            elif in_map_list and (event, tag) == ("end", "map"):
-                if current_id is not None and current is not None:
-                    maps[current_id] = current
-                current_id = None
-                current = None
-            elif (event, tag) == ("end", "mapList"):
-                break
-            if event == "end":
-                element.clear()
-    except (OSError, ParseError, DefusedXmlException, KeyError, ValueError):
-        return {}
-    return maps
-
-
-def channel_labels_from_consensusxml(
-    consensusxml_path: str,
-    experiment_type: str,
-    sdrf_labels: Optional[set[str]] = None,
-    maplist: Optional[dict[int, dict[str, str]]] = None,
-) -> dict[int, str]:
-    """
-    Resolve ``{1-based channel index -> canonical label}`` from a consensusXML.
-
-    The OpenMS ConsensusMap ``ColumnHeaders`` give the **authoritative** channel
-    count and order (map-index), independent of which channels happen to carry
-    data — so this is more robust than inferring the plex from the data alone.
-    The canonical spelling still comes from the SDRF-declared plex + channel_map;
-    a ColumnHeader ``label`` is used only as a fallback for a position the plex
-    map does not cover. Only the leading ``mapList`` is parsed, so even very
-    large consensusXML files are handled with bounded memory. Returns ``{}``
-    when the file is unavailable or malformed.
-
-    Pass a pre-parsed *maplist* (from :func:`parse_consensusxml_maplist`) to
-    reuse a single parse when the caller also needs the fraction groups.
-    """
-    maps = maplist if maplist is not None else parse_consensusxml_maplist(consensusxml_path)
-    headers = {map_index: entry.get("label", "") for map_index, entry in maps.items()}
-    if not headers:
-        return {}
-
-    n_channels = len(headers)
-    # Plex resolved with the consensusXML channel count as the index range.
-    plex = resolve_channel_labels(experiment_type, sdrf_labels, range(1, n_channels + 1))
-    labels: dict[int, str] = {}
-    for map_index in sorted(headers):
-        position = map_index + 1  # ColumnHeaders are 0-based; qpx channels are 1-based
-        raw = headers[map_index]
-        labels[position] = plex.get(position) or (normalize_label(raw) if raw else str(position))
-    return labels
-
-
-def fraction_groups_from_consensusxml(
-    consensusxml_path: str,
-    maplist: Optional[dict[int, dict[str, str]]] = None,
-) -> dict[str, dict[str, str]]:
-    """
-    Extract the per-map experimental-design grouping from a consensusXML.
-
-    OpenMS writes ``<UserParam name="fraction_group">``,
-    ``<UserParam name="fraction">`` and ``<UserParam name="sample_name">`` into
-    every ``<mapList>`` ``<map>`` entry for LFQ (label-free) runs. This is the
-    grouping key that makes ``grouped_runs`` correct for fractionated LFQ, yet it
-    is otherwise dropped on the OpenMS ``-out_qpx`` path.
-
-    Returns ``{map_name -> {"fraction_group", "fraction", "sample_name"}}`` keyed
-    by the map ``name`` attribute (the run file name; falls back to the 0-based
-    ``id`` when a map has no name). Values are the raw string values from the
-    XML. Only maps that actually declare a ``fraction_group`` are returned, so
-    isobaric / pre-design consensusXML files (no such UserParams) yield ``{}``.
-    Like :func:`channel_labels_from_consensusxml`, only the leading ``mapList``
-    is parsed with a bounded, defused-XML ``iterparse`` — even very large files
-    are handled with constant memory, and ``{}`` is returned on a missing or
-    malformed file.
-
-    Pass a pre-parsed *maplist* (from :func:`parse_consensusxml_maplist`) to
-    reuse a single parse when the caller also needs the channel labels.
-    """
-    maps = maplist if maplist is not None else parse_consensusxml_maplist(consensusxml_path)
-    groups: dict[str, dict[str, str]] = {}
-    for map_index in sorted(maps):
-        entry = maps[map_index]
-        design = {name: entry[name] for name in _MAP_DESIGN_PARAMS if name in entry}
-        if not design.get("fraction_group"):
-            continue
-        key = entry.get("name") or str(map_index)
-        groups[key] = design
-    return groups
-
-
 def is_ms1_label(text: str) -> bool:
     """A SILAC, dimethyl or mTRAQ label names its quantity already, whatever the experiment type says."""
     return _MS1_LABEL.match(text) is not None
-
-
-def _relabel_entries(column, channel_labels: dict[int, str], is_lfq: bool) -> pa.Array:
-    """
-    Relabel the ``label`` field of a list<struct> intensities column.
-
-    OpenMS ``-out_qpx`` writes the *filename* into feature ``intensities[].label``
-    and a bare 1-based index (``"1"``, ``"2"``, ...) into pg ``intensities[].label``.
-    Recover the channel index from a numeric label, else from the array position
-    (channels are emitted in index order), then map to the canonical label.
-    LFQ collapses to the single ``"LFQ"`` label. Each distinct label (and, for a
-    non-numeric one, position) is mapped once; the lists are rebuilt with Arrow.
-    """
-    lists = column.combine_chunks()
-    lengths = pc.fill_null(pc.call_function("list_value_length", [lists]), 0).to_numpy(zero_copy_only=False)
-    offsets = np.concatenate([[0], np.cumsum(lengths)])
-    entries = lists.flatten()
-    encoded = pc.fill_null(entries.field("label"), "").dictionary_encode()
-    texts = encoded.dictionary.to_pylist()
-    codes = encoded.indices.to_numpy(zero_copy_only=False).astype(np.int64)
-    positions = np.arange(len(entries)) - np.repeat(offsets[:-1], lengths) + 1
-    # A numeric label fixes the channel; any other label takes its position's channel.
-    fixed = [
-        text
-        if is_ms1_label(text)
-        else "LFQ"
-        if is_lfq
-        else channel_labels.get(int(text), normalize_label(text))
-        if text.isdigit()
-        else None
-        for text in texts
-    ]
-    width = int(positions.max()) + 1 if len(positions) else 1
-    keys = np.where(np.array([label is not None for label in fixed], dtype=bool)[codes], codes * width, codes * width + positions)
-    unique, inverse = np.unique(keys, return_inverse=True)
-
-    def label_of(key: int) -> str:
-        code, position = divmod(key, width)
-        if fixed[code] is not None:
-            return fixed[code]
-        text = texts[code]
-        return channel_labels.get(position, normalize_label(text) if text else text)
-
-    label_field = entries.type.field("label")
-    labels = pa.array([label_of(int(key)) for key in unique], type=label_field.type).take(pa.array(inverse))
-    structs = pa.StructArray.from_arrays(
-        [labels if field.name == "label" else entries.field(field.name) for field in entries.type],
-        fields=list(entries.type),
-    )
-    offset_type = pa.int64() if pa.types.is_large_list(lists.type) else pa.int32()
-    return type(lists).from_arrays(pa.array(offsets, type=offset_type), structs, type=lists.type, mask=lists.is_null())
-
-
-def _relabel_scalar_labels(column, channel_labels: dict[int, str], is_lfq: bool) -> pa.Array:
-    """Relabel a flat scalar ``label`` column (pg is flattened since QPX 1.1).
-
-    OpenMS writes a bare 1-based index (``"1"``, ``"2"``, ...) into the pg
-    ``label`` column; map the numeric index to its canonical channel label. LFQ
-    collapses to ``"LFQ"``. Null labels (identification-only rows) pass through.
-    Non-numeric labels are normalized but otherwise kept.
-    """
-    encoded = column.combine_chunks().dictionary_encode()
-    labels = [
-        text
-        if is_ms1_label(text)
-        else "LFQ"
-        if is_lfq
-        else channel_labels.get(int(text), normalize_label(text))
-        if text.isdigit()
-        else normalize_label(text)
-        for text in encoded.dictionary.to_pylist()
-    ]
-    return pa.array(labels, type=column.type).take(encoded.indices)
-
-
-def _resolve_parquet_compression(
-    parquet: pq.ParquetFile,
-    source_metadata: dict[bytes, bytes],
-    compression: str | None,
-) -> str:
-    """Resolve the output codec from an override, QPX metadata, or the file."""
-    if compression is not None:
-        return compression
-
-    declared = source_metadata.get(b"compression_format")
-    if declared:
-        return declared.decode()
-
-    if parquet.num_row_groups:
-        row_group = parquet.metadata.row_group(0)
-        codecs = {row_group.column(index).compression.lower() for index in range(row_group.num_columns)}
-        if len(codecs) == 1:
-            codec = codecs.pop()
-            return "none" if codec == "uncompressed" else codec
-    return "snappy"
-
-
-def _append_cv_param_column(
-    table,
-    run_column: str,
-    cv_param_name: str,
-    resolver,
-) -> tuple[object, int]:
-    """Append a ``{cv_name, cv_value}`` param to each row whose run resolves.
-
-    ``resolver(run_value)`` returns the cv_value string for a row's
-    ``run_column`` value (or ``None`` to leave the row untouched); existing
-    ``cv_params`` are preserved and the param is not duplicated. Returns the
-    (possibly updated) table and the number of rows annotated.
-    """
-    if run_column not in table.column_names or "cv_params" not in table.column_names:
-        return table, 0
-    run_values = table.column(run_column).to_pylist()
-    cv_values = table.column("cv_params").to_pylist()
-    new_cv = []
-    annotated = 0
-    for run_value, cv_params in zip(run_values, cv_values):
-        cv_value = resolver(run_value)
-        params = list(cv_params) if cv_params else []
-        if cv_value is not None and not any((p or {}).get("cv_name") == cv_param_name for p in params):
-            params.append({"cv_name": cv_param_name, "cv_value": str(cv_value)})
-            annotated += 1
-        new_cv.append(params or None)
-    field_index = table.schema.get_field_index("cv_params")
-    cv_array = pa.array(new_cv, type=table.column("cv_params").type)
-    return table.set_column(field_index, "cv_params", cv_array), annotated
-
-
-def relabel_intensities_table(
-    table: pa.Table,
-    channel_labels: dict[int, str],
-    is_lfq: bool,
-    columns: tuple[str, ...] = ("intensities", "label", "additional_intensities"),
-    *,
-    relabel: bool = True,
-    cv_param_name: str | None = None,
-    run_column: str | None = None,
-    cv_param_resolver=None,
-) -> tuple[pa.Table, int]:
-    """Relabel one Arrow table and return it with the annotated-row count."""
-    if relabel:
-        for column in columns:
-            if column not in table.column_names:
-                continue
-            field_index = table.schema.get_field_index(column)
-            original = table.column(column)
-            if pa.types.is_list(original.type) or pa.types.is_large_list(original.type):
-                values = _relabel_entries(original, channel_labels, is_lfq)
-            elif column == "label" and pa.types.is_string(original.type):
-                values = _relabel_scalar_labels(original, channel_labels, is_lfq)
-            else:
-                continue
-            table = table.set_column(field_index, column, values)
-
-    do_cv_param = cv_param_resolver is not None and run_column is not None and cv_param_name is not None
-    if not do_cv_param:
-        return table, 0
-    return _append_cv_param_column(table, run_column, cv_param_name, cv_param_resolver)
-
-
-def relabel_intensities_parquet(
-    src_path: str,
-    dst_path: str,
-    channel_labels: dict[int, str],
-    is_lfq: bool,
-    columns: tuple[str, ...] = ("intensities", "label", "additional_intensities"),
-    compression: str | None = None,
-    *,
-    relabel: bool = True,
-    cv_param_name: str | None = None,
-    run_column: str | None = None,
-    cv_param_resolver=None,
-) -> int:
-    """
-    Rewrite ``src_path`` to ``dst_path`` in a single streaming pass.
-
-    Two transforms are applied together so each file is rewritten only once:
-
-    * **relabel** (default) — canonicalize ``intensities[].label`` /
-      ``additional_intensities[].label`` (see :func:`_relabel_entries`). Set
-      ``relabel=False`` to leave intensity labels untouched (e.g. a cv_param-only
-      pass when no channel evidence is available).
-    * **cv_param annotation** — when ``cv_param_resolver``, ``run_column`` and
-      ``cv_param_name`` are all supplied, append a ``{cv_name, cv_value}`` param
-      to each row whose ``run_column`` value resolves via the resolver (used to
-      stamp OpenMS's ``fraction_group`` onto pg/feature rows).
-
-    Streams by row group so memory stays bounded on large tables. Non-target
-    columns pass through untouched. The output is written like every QPX view,
-    with per-column encodings measured on its first rows; *compression* overrides
-    the source codec when supplied. Returns the number of rows annotated with a cv_param.
-    """
-    do_cv_param = cv_param_resolver is not None and run_column is not None and cv_param_name is not None
-
-    parquet = pq.ParquetFile(src_path)
-    source_metadata = dict(parquet.schema_arrow.metadata or {})
-    output_compression = _resolve_parquet_compression(parquet, source_metadata, compression)
-
-    if compression is not None or b"compression_format" in source_metadata:
-        source_metadata[b"compression_format"] = output_compression.encode()
-    output_schema = parquet.schema_arrow.with_metadata(source_metadata or None)
-    writer = SampledParquetWriter(dst_path, output_schema, output_compression)
-    annotated = 0
-    try:
-        for group in range(parquet.num_row_groups):
-            table = parquet.read_row_group(group)
-            table, group_annotated = relabel_intensities_table(
-                table,
-                channel_labels,
-                is_lfq,
-                columns,
-                relabel=relabel,
-                cv_param_name=cv_param_name if do_cv_param else None,
-                run_column=run_column,
-                cv_param_resolver=cv_param_resolver,
-            )
-            annotated += group_annotated
-            table = table.replace_schema_metadata(output_schema.metadata)
-            writer.write_table(table)
-    finally:
-        writer.close()
-    return annotated

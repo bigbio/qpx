@@ -7,10 +7,7 @@ from pathlib import Path
 
 import click
 
-from qpx.core.engine import duckdb_defaults
-
-# DuckDB's own name for its spill folder, created on the first spill and removed when the connection closes.
-_SPILL_FOLDER = ".tmp"
+from qpx.core.engine import SPILL_FOLDER, duckdb_defaults
 
 _temp_dir_option = click.option(
     "--temp-dir",
@@ -21,7 +18,7 @@ _temp_dir_option = click.option(
 
 def _spill_directory(temp_dir: Path | None, output_folder: Path | None) -> Path | None:
     if temp_dir is None and output_folder is not None:
-        return Path(output_folder) / _SPILL_FOLDER
+        return Path(output_folder) / SPILL_FOLDER
     return temp_dir
 
 
@@ -42,16 +39,16 @@ def convert_resource_options(func):
 
 
 def duckdb_resource_options(func):
-    """Add --duckdb-memory, --duckdb-threads and --temp-dir, applied to every DuckDB connection the command opens."""
+    """Add --max-memory, --max-cpus and --temp-dir, applied to every DuckDB connection the command opens."""
 
-    @click.option("--duckdb-memory", help="DuckDB memory limit (e.g. '16GB'; default: 80% of RAM)")
-    @click.option("--duckdb-threads", type=int, help="DuckDB thread count (default: one per available CPU)")
+    @click.option("--max-memory", help="DuckDB memory limit (e.g. '16GB'; default: 80% of RAM)")
+    @click.option("--max-cpus", type=int, help="Maximum number of threads (default: one per available CPU)")
     @_temp_dir_option
     @functools.wraps(func)
-    def command(*args, duckdb_memory: str | None, duckdb_threads: int | None, temp_dir: Path | None, **kwargs):
+    def command(*args, max_memory: str | None, max_cpus: int | None, temp_dir: Path | None, **kwargs):
         with duckdb_defaults(
-            memory_limit=duckdb_memory,
-            threads=duckdb_threads,
+            memory_limit=max_memory,
+            threads=max_cpus,
             temp_directory=_spill_directory(temp_dir, kwargs.get("output_folder")),
         ):
             return func(*args, **kwargs)

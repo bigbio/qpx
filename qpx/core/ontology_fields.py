@@ -19,7 +19,7 @@ def emitted_field_names(con, relation: str) -> set[str]:
     """Return the top-level columns of a relation and the score, CV and intensity names its rows use.
 
     ``con`` is anything with a DuckDB-style ``execute`` method, and ``relation`` a
-    table, view or ``read_parquet`` expression.
+    table or view with the logical list types.
     """
     columns = {row[0] for row in con.execute(sql_build("DESCRIBE SELECT * FROM $relation", relation=relation)).fetchall()}
     names = set(columns)

@@ -3,8 +3,8 @@ Validate subcommand -- validate QPX datasets and individual structures
 against their canonical schemas.
 
 Usage:
-    qpxc validate --dataset-path ./PXD014414
-    qpxc validate --dataset-path ./PXD014414 --structure feature
+    qpxc validate --dataset ./PXD014414
+    qpxc validate --dataset ./PXD014414 --view feature
     qpxc validate --file ./data.feature.parquet
 """
 
@@ -18,6 +18,7 @@ from typing import Optional
 import click
 import duckdb
 
+from qpx.cli.renamed import DATASET_PATH, RenamedCommand
 from qpx.cli.resources import duckdb_resource_options
 from qpx.core.data.validation import ValidationIssue, ValidationResult
 from qpx.dataset import Dataset
@@ -29,9 +30,10 @@ logger = logging.getLogger("qpx.cli.validate")
 _VALID_STRUCTURES = Dataset.structure_names()
 
 
-@click.command("validate")
+@click.command("validate", cls=RenamedCommand, renamed={**DATASET_PATH, "--structure": "--view"})
 @click.option(
-    "--dataset-path",
+    "--dataset",
+    "dataset_path",
     help="Path to a QPX dataset directory",
     type=click.Path(exists=True, file_okay=False, path_type=Path),
 )
@@ -42,9 +44,9 @@ _VALID_STRUCTURES = Dataset.structure_names()
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
 )
 @click.option(
-    "--structure",
+    "--view",
     "structures",
-    help="Structure(s) to validate (repeatable). Default: all.",
+    help="View to validate; repeatable (default: all)",
     type=click.Choice(_VALID_STRUCTURES, case_sensitive=False),
     multiple=True,
 )
@@ -83,12 +85,12 @@ def validate_cmd(
     \b
     Examples:
         # Validate an entire dataset
-        qpxc validate --dataset-path ./PXD014414
+        qpxc validate --dataset ./PXD014414
 
     \b
         # Validate specific structures
-        qpxc validate --dataset-path ./PXD014414 --structure feature
-        qpxc validate --dataset-path ./PXD014414 --structure feature --structure pg
+        qpxc validate --dataset ./PXD014414 --view feature
+        qpxc validate --dataset ./PXD014414 --view feature --view pg
 
     \b
         # Validate a single Parquet file
@@ -96,15 +98,15 @@ def validate_cmd(
 
     \b
         # Also check peptidoforms, modification positions and m/z
-        qpxc validate --dataset-path ./PXD014414 --semantic
+        qpxc validate --dataset ./PXD014414 --semantic
 
     \b
         # Also re-derive the ids from their composites
-        qpxc validate --dataset-path ./PXD014414 --check-identity
+        qpxc validate --dataset ./PXD014414 --check-identity
 
     \b
         # The gate for a producer's CI: every check, warnings fail too
-        qpxc validate --dataset-path ./PXD014414 --conformance
+        qpxc validate --dataset ./PXD014414 --conformance
     """
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -119,7 +121,7 @@ def validate_cmd(
         _validate_dataset(dataset_path, list(structures) if structures else None, semantic, check_identity, conformance)
         return
 
-    raise click.ClickException("Provide --dataset-path or --file.")
+    raise click.ClickException("Provide --dataset or --file.")
 
 
 def _passes(result, conformance: bool) -> bool:

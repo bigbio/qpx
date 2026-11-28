@@ -57,7 +57,7 @@ jobs:
             --protein-groups-file tests/examples/maxquant/maxquant_full/proteinGroups.txt \
             --output-folder examples/output \
             --output-prefix maxquant \
-            --structures psm,feature,pg \
+            --view psm --view feature --view pg \
             --verbose
 
           echo "Generated example files:"

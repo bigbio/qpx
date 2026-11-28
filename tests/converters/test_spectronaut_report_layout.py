@@ -8,6 +8,7 @@ import pytest
 
 from qpx.converters.spectronaut.converter import SpectronautConverter
 from qpx.converters.spectronaut.report_layout import channel_labels, long_columns, melted_report_sql, pivot_columns
+from tests.conftest import read_view_table
 
 _REPORT = Path(__file__).parents[1] / "examples" / "spectronaut" / "small" / "spectronaut_report.tsv"
 _RUNS = ("runA.raw", "runB.raw")
@@ -169,6 +170,19 @@ def test_feature_view_maps_measured_mz_rt_bounds_and_ion_mobility(tmp_path):
     assert feature["ion_mobility"] == pytest.approx(0.85)
     names = [e["intensity_name"] for entry in feature["additional_intensities"] for e in entry["intensities"]]
     assert names == ["pg_quantity"]
+
+
+def test_empirical_irt_is_only_the_irt_column(tmp_path):
+    """EG.iRTEmpirical fills feature.irt and is not repeated in cv_params (#377)."""
+    report = pd.read_csv(_REPORT, sep="\t", nrows=1, low_memory=False, decimal=",")
+    path = tmp_path / "report.tsv"
+    report.to_csv(path, sep="\t", index=False)
+
+    _features(tmp_path, path)
+    feature = read_view_table(tmp_path / "sn.feature.parquet").to_pylist()[0]
+
+    assert feature["irt"] == pytest.approx(float(report["EG.iRTEmpirical"].iloc[0]))
+    assert [entry["cv_name"] for entry in feature["cv_params"]] == ["predicted_irt"]
 
 
 def test_a_zero_ion_mobility_is_no_measurement(tmp_path):

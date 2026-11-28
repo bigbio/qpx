@@ -133,7 +133,7 @@ class OpenMSConsensusConverter(BaseOrchestrator):  # pylint: disable=too-few-pub
         output_folder: str,
         output_prefix: str = "openms",
         sdrf_path: Optional[str] = None,
-        structures: tuple[str, ...] = _STRUCTURE_ALL,
+        structures: Optional[tuple[str, ...]] = None,
         creator: str = "openms-consensus",
         streaming: Optional[bool] = None,
         project_accession: Optional[str] = None,
@@ -169,7 +169,8 @@ class OpenMSConsensusConverter(BaseOrchestrator):  # pylint: disable=too-few-pub
         Protein inference always uses every identification, regardless of this
         option.
 
-        ``structures`` selects which of feature/psm/pg/run/sample to emit. pg
+        ``structures`` selects which of feature/psm/pg/run/sample to emit; by
+        default all of them with an SDRF, else feature, psm and pg. pg
         carries the protein abundance OpenMS recorded in the file, else an
         unnormalized unique-peptide sum. The sum stays an additional intensity
         beside OpenMS' value.
@@ -181,6 +182,8 @@ class OpenMSConsensusConverter(BaseOrchestrator):  # pylint: disable=too-few-pub
 
         ``project_accession`` (e.g. ``PXD001819``) is stamped into dataset.parquet.
         """
+        if structures is None:
+            structures = _STRUCTURE_ALL if sdrf_path else ("feature", "psm", "pg")
         _validate_structures(structures, sdrf_path)
         consensusxml_paths = _as_paths(consensusxml_path)
         requested = set(structures)

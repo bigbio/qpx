@@ -242,6 +242,30 @@ def test_gene_map_dataset_copy_preserves_subdirectories(tmp_path):
     assert (out_dir / "psm_shards" / "part-0.parquet").read_bytes() == b"shard-payload"
 
 
+def test_gene_map_parquet_adds_the_gene_columns_to_a_plain_file(tmp_path):
+    """A file pandas wrote, without a QPX footer or gene columns, gains both gene columns and keeps no footer keys."""
+    from click.testing import CliRunner
+
+    from qpx.cli.main import qpx_main
+
+    source = tmp_path / "plain.parquet"
+    pd.DataFrame({"pg_accessions": [["P12345"], None]}).to_parquet(source)
+    fasta = tmp_path / "db.fasta"
+    fasta.write_text(">sp|P12345|A_HUMAN a OS=Homo sapiens GN=BRCA1 PE=1 SV=2\nMKV\n")
+    out_dir = tmp_path / "annotated"
+
+    result = CliRunner().invoke(
+        qpx_main,
+        ["transform", "gene-map", "--parquet-path", str(source), "--fasta", str(fasta), "--output-folder", str(out_dir)],
+    )
+
+    assert result.exit_code == 0, result.output
+    after = pq.read_table(out_dir / source.name)
+    assert {"gg_names", "gg_accessions"} <= set(after.column_names)
+    assert after.column("gg_names").to_pylist() == [["BRCA1"], None]
+    assert not after.schema.metadata
+
+
 def test_annotate_dataframe_handles_an_empty_frame(tmp_path):
     """An empty view must not divide by zero when logging the mapped share."""
     import pandas as pd

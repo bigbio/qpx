@@ -28,10 +28,8 @@ fragpipe:
       pg_accessions: ["Protein", "Protein ID"]
       gg_accessions: ["Gene", "Gene Names"]
       pg_names: ["Description", "Protein Description"]
-      # Real FDR/Q-Value columns first (low = best); "Protein Probability" is a
-      # confidence score (~1.0 = best) and must only be a last-resort fallback,
-      # converted as 1 - probability by the adapter — never used raw as a q-value.
-      pg_qvalue: ["Protein FDR", "Protein Q-Value", "Combined Protein FDR", "Protein Probability"]
+      # "Protein Probability" is a ProteinProphet score, written only in additional_scores.
+      pg_qvalue: ["Protein FDR", "Protein Q-Value", "Combined Protein FDR"]
       peptide_count_total: ["Combined Total Peptides", "Total Peptides"]
       peptide_count_unique: ["Combined Unique Peptides", "Unique Peptides"]
       spectral_count: ["Combined Spectral Count", "Spectral Count"]
@@ -93,6 +91,7 @@ diann:
       rt_start: ["RT.Start"]
       rt_stop: ["RT.Stop"]
       predicted_rt: ["Predicted.RT"]
+      irt: ["iRT"]
       pg_accessions: ["Protein.Group"]
       precursor_mz: ["Precursor.Mz"]
       ms1_apex_mz_delta: ["Ms1.Apex.Mz.Delta"]
@@ -244,8 +243,8 @@ spectronaut:
       pg_protein_accessions: ["PG.ProteinAccessions"]
       intensity: ["FG.Quantity"]
       observed_mz: ["FG.PrecMzCalibrated"]
-      qvalue: ["EG.Qvalue"]
-      pg_qvalue: ["PG.Qvalue"]
+      precursor_qvalue: ["EG.Qvalue"]
+      pg_global_qvalue: ["PG.Qvalue"]
       pg_qvalue_runwise: ["PG.QValue (Run-Wise)"]
       posterior_error_probability: ["EG.PEP"]
       is_decoy: ["EG.IsDecoy"]
@@ -269,6 +268,6 @@ spectronaut:
       pg_names: ["PG.ProteinNames"]
       gg_accessions: ["PG.Genes"]
       intensity: ["PG.Quantity"]
-      qvalue: ["PG.Qvalue"]
-      pg_qvalue_runwise: ["PG.QValue (Run-Wise)"]
+      global_qvalue: ["PG.Qvalue"]
+      pg_qvalue: ["PG.QValue (Run-Wise)"]
       run_file_name: ["R.FileName"]

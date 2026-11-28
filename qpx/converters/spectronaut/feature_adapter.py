@@ -34,10 +34,11 @@ from qpx.writers.feature import FeatureWriter
 
 logger = logging.getLogger(__name__)
 
-# Score mappings: (Spectronaut column, output score name, higher_better)
+# Score mappings: (Spectronaut column, output score name, higher_better). EG.Qvalue
+# fills precursor_qvalue and leaves the list, as DIA-NN's Q.Value does; PG.Qvalue is
+# the pg_global_qvalue column only.
 _SCORE_MAPPINGS = [
-    ("EG.Qvalue", "qvalue", False),
-    ("PG.Qvalue", "pg_qvalue", False),
+    ("EG.Qvalue", "precursor_qvalue", False),
     ("PG.QValue (Run-Wise)", "pg_qvalue_runwise", False),
     ("EG.Cscore", "spectronaut_cscore", True),
     ("PG.Cscore", "spectronaut_pg_cscore", True),
@@ -48,7 +49,6 @@ _SCORE_MAPPINGS = [
 # CV param mappings: (Spectronaut column, output cv_name)
 _CV_MAPPINGS = [
     ("EG.iRTPredicted", "predicted_irt"),
-    ("EG.iRTEmpirical", "empirical_irt"),
 ]
 
 _RT_SECONDS_FACTOR = 60.0
@@ -157,6 +157,7 @@ class SpectronautFeatureAdapter(SpectronautBaseAdapter):
             output_path,
             creator=creator,
             identity_composite=_FEATURE_IDENTITY_COMPOSITE,
+            struct_tables="spectronaut",
         ) as writer:
             for i in range(0, len(run_names), file_num):
                 batch_runs = run_names[i : i + file_num]
@@ -181,7 +182,9 @@ class SpectronautFeatureAdapter(SpectronautBaseAdapter):
         if sql is None:
             self.logger.warning("The report has no F.FrgIon or F.PeakArea column: no fragment view")
             return False
-        rows = write_fragment_view(self._conn, sql, output_path, _FEATURE_IDENTITY_COMPOSITE, creator="spectronaut")
+        rows = write_fragment_view(
+            self._conn, sql, output_path, _FEATURE_IDENTITY_COMPOSITE, creator="spectronaut", struct_tables="spectronaut"
+        )
         self.logger.info("Wrote %d fragment rows to %s", rows, output_path)
         return True
 
@@ -254,6 +257,8 @@ class SpectronautFeatureAdapter(SpectronautBaseAdapter):
             parts.append(f"CAST({_safe_float_sql(prt_col)} * {_RT_SECONDS_FACTOR} AS FLOAT) AS predicted_rt")
         else:
             parts.append("NULL::FLOAT AS predicted_rt")
+        irt_col = r.get("irt_empirical")
+        parts.append(f"{_safe_float_sql(irt_col)} AS irt" if irt_col and _has(irt_col) else "NULL::FLOAT AS irt")
 
         run_col = r["run_file_name"]
         # Match the pg adapter's case-insensitive, extended extension strip so
@@ -305,7 +310,7 @@ class SpectronautFeatureAdapter(SpectronautBaseAdapter):
             parts.append(f'NOT contains(FIRST(r."{pg_col}"), \';\') AS "unique"')
 
         # pg_global_qvalue
-        pgqv_col = r.get("pg_qvalue")
+        pgqv_col = r.get("pg_global_qvalue")
         if pgqv_col and _has(pgqv_col):
             parts.append(f"{_safe_double_sql(pgqv_col)} AS pg_global_qvalue")
         else:
@@ -381,7 +386,7 @@ class SpectronautFeatureAdapter(SpectronautBaseAdapter):
         mod_id = validate_identifier(mod_col)
         pg_id = validate_identifier(pg_col)
 
-        qv_col = r.get("qvalue")
+        qv_col = r.get("precursor_qvalue")
         having_clause = "1=1"
         if qvalue_threshold is not None and qv_col and qv_col in report_cols:
             qv_id = validate_identifier(qv_col)

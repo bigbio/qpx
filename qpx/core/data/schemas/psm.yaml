@@ -91,6 +91,10 @@ fields:
     type: float32
     optional: true
     doc: "Collisional cross section in square angstroms (MS:1002954), when the producer reports one"
+  compensation_voltage:
+    type: float32
+    optional: true
+    doc: "FAIMS compensation voltage in volts (MS:1001581); null for non-FAIMS data"
   missed_cleavages:
     type: int16
     doc: "Number of missed enzymatic cleavages (MS:1003044)"

@@ -5,6 +5,7 @@ import random
 
 import pyarrow as pa
 import pyarrow.parquet as pq
+import pytest
 from click.testing import CliRunner
 
 from qpx.cli.main import qpx_main
@@ -18,7 +19,7 @@ from qpx.writers.ontology import OntologyWriter
 from qpx.writers.pg import PgWriter
 from qpx.writers.psm import PsmWriter
 from qpx.writers.xic import XicWriter
-from tests.conftest import make_feature_record, make_pg_record, make_psm_record, make_xic_record, without_rounded_cv_values
+from tests.conftest import make_feature_record, make_pg_record, make_psm_record, make_xic_record
 
 REPORT = "tests/examples/spectronaut/small/spectronaut_report.tsv"
 
@@ -122,13 +123,12 @@ def test_relayout_sorts_rows_renumbers_ids_and_refreshes_integrity(tmp_path):
     assert after.schema.metadata[b"identity_source"] == b"provided"
     with Dataset(str(source), file_prefix="sn") as unsorted, Dataset(str(target), file_prefix="sn") as relayouted:
         before, read = unsorted.feature.to_arrow(), relayouted.feature.to_arrow()
-    # Measured values are rounded as the footer states, the cv_params ones compared in
-    # test_struct_lists; every other value is unchanged.
+    # Measured values are rounded as the footer states.
     plan = json.loads(after.schema.metadata[b"qpx.mantissa_bits"])
     assert (plan["intensities.intensity"], plan["rt"]) == (12, 16)
     before = round_table(before, plan)
     values = [name for name in before.schema.names if name != "feature_id"]
-    read_rows, before_rows = (without_rounded_cv_values(table.select(values).to_pylist(), "feature") for table in (read, before))
+    read_rows, before_rows = (table.select(values).to_pylist() for table in (read, before))
     assert sorted(map(repr, read_rows)) == sorted(map(repr, before_rows))
     assert read.schema.equals(before.schema)
     assert after.schema.metadata[b"qpx.sort_order"] == b"anchor_protein,peptidoform,charge,run_file_name"
@@ -363,3 +363,141 @@ def test_relayout_asks_for_the_order_of_a_view_without_a_default(tmp_path):
     assert result.exit_code != 0
     assert "fragment has no default sort order" in result.output
     assert not target.exists()
+
+
+def _psm_table(writer, first, count):
+    records = [make_psm_record(scan=[scan]) for scan in range(first, first + count)]
+    return writer.align_table_to_schema(pa.Table.from_pylist(records, schema=writer.arrow_schema))
+
+
+def _row_groups_and_scans(path):
+    parquet = pq.ParquetFile(path)
+    groups = [parquet.metadata.row_group(i).num_rows for i in range(parquet.metadata.num_row_groups)]
+    return groups, [scan for (scan,) in parquet.read(columns=["scan"]).column("scan").to_pylist()]
+
+
+def _write_psm_tables(path, sizes):
+    with PsmWriter(path) as writer:
+        first = 1
+        for count in sizes:
+            writer.write_table(_psm_table(writer, first, count))
+            first += count
+    return _row_groups_and_scans(path)
+
+
+def test_consecutive_tables_share_a_row_group(tmp_path):
+    """A writer fills a row group before it starts the next, also across write_table() calls (#377)."""
+    groups, scans = _write_psm_tables(tmp_path / "ds.psm.parquet", [4, 1294])
+    assert groups == [1298]
+    assert scans == list(range(1, 1299))
+
+
+def test_tables_larger_than_a_row_group_leave_only_the_last_group_short(tmp_path, monkeypatch):
+    """Each table completes the group the tables before it left open."""
+    monkeypatch.setattr(encoding, "ROW_GROUP_ROWS", 100)
+    groups, scans = _write_psm_tables(tmp_path / "ds.psm.parquet", [150, 150, 150])
+    assert groups == [100, 100, 100, 100, 50]
+    assert scans == list(range(1, 451))
+
+
+def test_tables_sharing_a_row_group_keep_to_its_byte_cap(tmp_path, monkeypatch):
+    """The byte cap counts the rows of every table in the group."""
+    with PsmWriter(tmp_path / "probe.psm.parquet") as writer:
+        monkeypatch.setattr(encoding, "ROW_GROUP_BYTES", writer.identified_table(_psm_table(writer, 1, 20)).nbytes)
+    groups, _ = _write_psm_tables(tmp_path / "ds.psm.parquet", [15, 15, 15, 15])
+    assert sum(groups) == 60
+    assert all(15 < rows < 30 for rows in groups[:-1])
+
+
+def test_tables_and_flushed_batches_share_row_groups_in_call_order(tmp_path):
+    """A flushed batch fills the row group of the tables written before it, and the next table continues it."""
+    path = tmp_path / "ds.psm.parquet"
+    with PsmWriter(path, batch_size=1) as writer:
+        writer.write_table(_psm_table(writer, 1, 2))
+        writer.write_batch([make_psm_record(scan=[3])])
+        writer.write_table(_psm_table(writer, 4, 2))
+    assert _row_groups_and_scans(path) == ([5], [1, 2, 3, 4, 5])
+
+
+def test_flushed_batches_fill_row_groups(tmp_path, monkeypatch):
+    """Batches smaller than a row group are not each a group of their own (#377)."""
+    monkeypatch.setattr(encoding, "ROW_GROUP_ROWS", 4)
+    path = tmp_path / "ds.psm.parquet"
+    with PsmWriter(path, batch_size=3) as writer:
+        writer.write_batch([make_psm_record(scan=[scan]) for scan in range(1, 11)])
+    assert _row_groups_and_scans(path) == ([4, 4, 2], list(range(1, 11)))
+
+
+def test_footer_keys_set_after_a_table_reach_the_file(tmp_path):
+    """Keys set before close are in the footer although the table has not reached the file yet."""
+    path = tmp_path / "ds.psm.parquet"
+    with PsmWriter(path) as writer:
+        writer.write_table(_psm_table(writer, 1, 2))
+        writer.set_scan_format("index")
+        writer.add_footer_metadata({b"x_test": b"1"})
+    parquet = pq.ParquetFile(path)
+    assert parquet.metadata.metadata[b"scan_format"] == b"index"
+    assert parquet.metadata.metadata[b"x_test"] == b"1"
+    assert parquet.schema_arrow.metadata[b"scan_format"] == b"index"
+
+
+def test_an_empty_table_publishes_an_empty_file(tmp_path):
+    """Writing an empty table still publishes the view."""
+    path = tmp_path / "ds.psm.parquet"
+    with PsmWriter(path) as writer:
+        writer.write_table(_psm_table(writer, 1, 0))
+    assert pq.read_metadata(path).num_rows == 0
+    assert pq.read_metadata(path).metadata[b"file_type"] == b"psm_file"
+
+
+def test_a_failed_body_does_not_publish_the_tables_it_wrote(tmp_path):
+    """Tables written before an error in the body never reach the destination."""
+    path = tmp_path / "ds.psm.parquet"
+    with pytest.raises(RuntimeError, match="body failure"):
+        with PsmWriter(path) as writer:
+            writer.write_table(_psm_table(writer, 1, 2))
+            raise RuntimeError("body failure")
+    assert not list(tmp_path.iterdir())
+
+
+def _row_groups(path):
+    metadata = pq.read_metadata(path)
+    return [metadata.row_group(i).num_rows for i in range(metadata.num_row_groups)]
+
+
+def test_sampled_writer_fills_row_groups_across_tables(tmp_path, monkeypatch):
+    """A rewrite that writes one table per batch or source row group leaves only its last group short (#377)."""
+    monkeypatch.setattr(encoding, "ROW_GROUP_ROWS", 300)
+    table = pa.table({"x": pa.array(range(2004), pa.int64())})
+    path = tmp_path / "out.parquet"
+    with SampledParquetWriter(path, table.schema, "zstd") as writer:
+        for offset, count in ((0, 1000), (1000, 1000), (2000, 4)):
+            writer.write_table(table.slice(offset, count))
+    assert _row_groups(path) == [300] * 6 + [204]
+    assert pq.read_table(path).equals(table)
+
+
+def test_sampled_writer_writes_queued_rows_before_a_sized_table(tmp_path):
+    """A table written with its own row-group size follows the rows queued before it."""
+    table = pa.table({"x": pa.array(range(10), pa.int64())})
+    path = tmp_path / "out.parquet"
+    with SampledParquetWriter(path, table.schema, "zstd") as writer:
+        writer.write_table(table.slice(0, 3))
+        writer.write_table(table.slice(3), row_group_size=7)
+    assert _row_groups(path) == [3, 7]
+    assert pq.read_table(path).equals(table)
+
+
+def test_a_rewritten_view_fills_row_groups_across_source_row_groups(tmp_path, monkeypatch):
+    """normalize-accessions and protein-properties wrote one group per batch, leaving 4-row groups (#377)."""
+    from qpx.transforms.protein_properties import _rewrite_view
+
+    monkeypatch.setattr(encoding, "ROW_GROUP_ROWS", 300)
+    table = pa.table({"x": pa.array(range(2004), pa.int64())})
+    source, destination = tmp_path / "in.parquet", tmp_path / "out.parquet"
+    with pq.ParquetWriter(source, table.schema) as writer:
+        for offset, count in ((0, 1000), (1000, 1000), (2000, 4)):
+            writer.write_table(table.slice(offset, count))
+    _rewrite_view(source, destination, lambda batch: batch)
+    assert _row_groups(destination) == [300] * 6 + [204]
+    assert pq.read_table(destination).select(["x"]).equals(table)

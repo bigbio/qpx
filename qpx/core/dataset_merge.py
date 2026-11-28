@@ -85,7 +85,6 @@ class _Merge:
     """One merge of a collection into *output_dir*."""
 
     def __init__(self, collection: "DatasetCollection", output_dir: Path, prefix: str, on_collision: str):
-        self._collection = collection
         self._conn = collection._engine.connection
         self._datasets = collection.datasets
         self._output_dir = output_dir
@@ -394,7 +393,9 @@ class _Merge:
         firsts = ", ".join(f"first({column}) AS {column}" for column in _ONTOLOGY_FIRST)
         conflicts = self._conn.execute(
             sql_build(
-                'SELECT field_name, "view" FROM ($union) GROUP BY field_name, "view" HAVING COUNT(DISTINCT ontology_accession) > 1',
+                # A row without the accession of another counts: its column may hold another quantity.
+                'SELECT field_name, "view" FROM ($union) GROUP BY field_name, "view" '
+                "HAVING COUNT(DISTINCT coalesce(ontology_accession, '')) > 1",
                 union=union,
             )
         ).fetchall()
@@ -403,8 +404,8 @@ class _Merge:
                            len(conflicts), conflicts[:5])  # fmt: skip
         table = self._conn.sql(
             f'SELECT field_name, "view", {firsts}, '
-            "string_agg(DISTINCT source_column_name, ';') AS source_column_name, "
-            "string_agg(DISTINCT source_tool, ';') AS source_tool "
+            "string_agg(DISTINCT source_column_name, ';' ORDER BY source_column_name) AS source_column_name, "
+            "string_agg(DISTINCT source_tool, ';' ORDER BY source_tool) AS source_tool "
             f'FROM ({union}) GROUP BY field_name, "view" ORDER BY "view", field_name'
         ).to_arrow_table()
         self._write_records("ontology", table)
@@ -440,7 +441,7 @@ class _Merge:
         table = self._conn.sql(
             "SELECT first(sequence) AS sequence, peptidoform, list_distinct(flatten(list(pg_accessions))) AS pg_accessions, "
             "list_distinct(flatten(list(sequence_edits))) AS sequence_edits "
-            f"FROM ({union}) GROUP BY peptidoform"
+            f"FROM ({union}) GROUP BY peptidoform ORDER BY peptidoform"
         )
         reader = table.to_arrow_reader(_BATCH_ROWS)
         with self._writer_class("pepmap")(self._output_dir / f"{self._prefix}{self._suffix('pepmap')}") as writer:

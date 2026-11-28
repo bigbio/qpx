@@ -106,7 +106,6 @@ The `convert` command group provides converters for multiple proteomics software
 
 ## Available Commands
 
-- [openms](#openms) - Enrich native OpenMS `-out_qpx` output into a full QPX dataset
 - [openms-consensus](#openms-consensus) - Convert an OpenMS consensusXML (+ SDRF) to QPX (interim; pg intensity = OpenMS abundance or unnormalized unique-peptide sum)
 - [diann](#diann) - Convert DIA-NN report to QPX format
 - [diann-xic](#diann-xic) - Merge DIA-NN XIC exports into one QPX xic view
@@ -116,7 +115,7 @@ The `convert` command group provides converters for multiple proteomics software
 - [proteome-discoverer](#proteome-discoverer) - Convert Proteome Discoverer text exports to QPX format
 - [mzidentml](#mzidentml) - Convert mzIdentML file to PSM format
 - [cdap](#cdap) - Convert CPTAC CDAP `.psm` files to QPX format
-- [mz](#mz) - Convert an mzML spectra directory to QPX `mz.parquet` (full spectra)
+- [mz](#mz) - Convert an mzML spectra directory to a QPX `<prefix>.mz.parquet` (full spectra)
 - [sdrf](#sdrf) - Convert SDRF to sample and run parquet files
 - [quantms-msstats](#quantms-msstats) - Convert QuantMS `*_msstats_in.csv` plus SDRF to QPX
 
@@ -202,12 +201,14 @@ qpxc convert diann \
 
 #### XIC Traces from DIA-NN `--xic` Export {#diann-example-xic}
 
-Merge the per-run `*.xic.parquet` files written by DIA-NN's `--xic` option into the dataset's single `xic` view:
+Merge the per-run `*.xic.parquet` files written by DIA-NN's `--xic` option into the dataset's single `xic` view with [diann-xic](#diann-xic), after the report conversion and into the same folder:
 
 ```bash
 qpxc convert diann \
     --report-path tests/examples/diann/full/diann_report.tsv.gz \
     --sdrf-file tests/examples/diann/full/PXD036609.sdrf.tsv \
+    --output-folder ./output
+qpxc convert diann-xic \
     --xic-folder ./diann_xic \
     --output-folder ./output
 ```
@@ -220,7 +221,7 @@ Output files generated:
 - **Protein Group**: `{output-prefix}.pg.parquet` (produced with `--pg-matrix-path`)
 - **Peptide-protein map**: `{output-prefix}.pepmap.parquet` (every protein in `Protein.Ids` for each converted peptidoform)
 - **Mass spectra**: `{output-prefix}.mz.parquet` (produced when `--mzml-info-folder` contains `*_ms2_info.parquet`; feature-matched MS2 spectra only)
-- **XIC**: `{output-prefix}.xic.parquet` (produced when `--xic-folder` contains DIA-NN `*.xic.parquet` exports)
+- **XIC**: `{output-prefix}.xic.parquet`, written by [diann-xic](#diann-xic)
 - **MuData**: `{output-prefix}.h5mu` (written by default; `--no-mudata` skips it)
 
 ### Common Issues {#diann-issues}
@@ -284,9 +285,11 @@ qpxc convert diann-xic \
 `--xic` option. All runs are merged into `PXD014414.xic.parquet`; `run_file_name`
 distinguishes them. The file footer records `xic_selection`, `xic_window`,
 `xic_extraction_window_seconds`, `xic_qvalue_threshold`, `xic_smoothed`,
-`xic_zero_points`, `xic_rt_unit` and `transition_format`. Use
-`qpxc convert diann --xic-folder ...` instead when you are also converting the
-DIA-NN report and want the XIC view in the same output folder.
+`xic_zero_points`, `xic_rt_unit` and `transition_format`. Written into the
+folder of a `qpxc convert diann` conversion with the same prefix (`diann` when
+neither command is given `--output-prefix`), the view joins that dataset: its
+ontology rows and a provenance step are added and a recorded integrity is
+refreshed.
 
 ### Output Files {#diann-xic-output}
 
@@ -387,7 +390,7 @@ The converter auto-detects column names from the Spectronaut report, supporting 
 | `EG.ModifiedSequence` | `peptidoform` | Converted to ProForma notation |
 | `FG.Charge` | `charge` | Precursor charge state |
 | `FG.Quantity` | `intensities[0].intensity` | Raw precursor intensity |
-| `EG.Qvalue` | `additional_scores` | Mapped to PSI-MS CV terms |
+| `EG.Qvalue` | `precursor_qvalue` | Run-level precursor q-value, filtered by `--qvalue-threshold` |
 | `PG.ProteinGroups` | `pg_accessions` | Semicolon-delimited protein groups |
 | `PG.Quantity` | PG `intensities` | Protein group quantity |
 
@@ -449,8 +452,8 @@ print(generate_example(convert_maxquant_cmd, "Convert MaxQuant data with default
 qpxc convert maxquant \
     --msms-file tests/examples/maxquant/maxquant_simple/msms.txt \
     --output-folder ./output \
-    --structures psm \
-    --spectral-data \
+    --view psm \
+    --include-spectra \
     --output-prefix maxquant_psm
 ```
 
@@ -462,7 +465,7 @@ qpxc convert maxquant \
     --protein-groups-file tests/examples/maxquant/maxquant_full/proteinGroups.txt \
     --sdrf-file tests/examples/maxquant/maxquant_full/PXD001819.sdrf.tsv \
     --output-folder ./output \
-    --structures feature \
+    --view feature \
     --verbose
 ```
 
@@ -475,7 +478,7 @@ qpxc convert maxquant \
     --protein-groups-file tests/examples/maxquant/maxquant_full/proteinGroups.txt \
     --sdrf-file tests/examples/maxquant/maxquant_full/PXD001819.sdrf.tsv \
     --output-folder ./output \
-    --structures psm,feature,pg \
+    --view psm --view feature --view pg \
     --verbose
 ```
 
@@ -493,7 +496,7 @@ qpxc convert maxquant \
 
 ### Output Files {#maxquant-output}
 
-Depending on `--structures` parameter:
+Depending on `--view`:
 
 - **PSM**: `{output-prefix}.psm.parquet`
 - **Feature**: `{output-prefix}.feature.parquet`
@@ -514,16 +517,20 @@ Depending on `--structures` parameter:
 
 **Issue**: `The SDRF TMT labels [...] match no TMT plex`
 
-- **Solution**: Each `Reporter intensity N` column is read as the channel at that position of the TMT or iTRAQ plex (TMT6 to TMTpro 18, iTRAQ 4 and 8; partial plexes too) that holds all SDRF `comment[label]` values, so labels from different plexes cannot be mapped. Every conversion given `--sdrf-file`, a PSM-only one too, resolves the plex first and stops before writing any file.
+- **Solution**: Each `Reporter intensity N` column is read as the channel at that position of the TMT or iTRAQ plex (TMT6 to TMTpro 18, iTRAQ 4 and 8; partial plexes too) that holds all SDRF `comment[label]` values, so labels from different plexes cannot be mapped. When MaxQuant was set up with only the SDRF's channels, so that the table has one reporter column per label and no plex has that many channels (TMT128N to TMT131C of TMT11 in eight columns), the columns are those channels in plex order. Every conversion given `--sdrf-file`, a PSM-only one too, resolves the plex first and stops before writing any file.
+
+**Issue**: `proteinGroups.txt has no per-experiment intensity columns`
+
+- **Solution**: MaxQuant set up without experiment names writes only the total columns (`Intensity`, `Reporter intensity N`), the quantities of one experiment of all its raw files. Give `--evidence-file`: its raw files are the `grouped_runs` of the protein groups
 
 ### Best Practices {#maxquant-best-practices}
 
-- Use `--structures` to control which output files are generated
+- Use `--view` to choose which views are written
 - Always provide `--protein-groups-file` when available: features then take the protein group their `Protein group IDs` name, the membership the pg view carries
 - Ensure SDRF sample names match MaxQuant experiment names
 - Provide `--sdrf-file` with the PSM and feature conversions: MaxQuant leaves fixed modifications out of `Modified sequence`, so the SDRF's `MT=fixed` modifications, else those of the `parameters.txt` or `summary.txt` next to the input, are added to the peptidoforms to match `calculated_mz`. TMT, iTRAQ and SILAC labels among the SDRF's are skipped: the isobaric label comes from the SDRF channel labels, a SILAC label from `Labeling state`. A warning is logged for each fixed modification that cannot be placed, and when no source declares one
 - Use compressed files (.gz) to save disk space
-- Use `--spectral-data` flag if downstream analysis requires spectral information
+- Use `--include-spectra` flag if downstream analysis requires spectral information
 
 ---
 
@@ -595,6 +602,8 @@ The labels come from the channel of each annotation line (`127N` is `TMT127N`), 
 ## proteome-discoverer
 
 Convert the text exports of a Proteome Discoverer consensus result to QPX format. Export `PSMs`, `Proteins` and `Input Files` from the result; the `.pdResult` file itself is not read.
+
+When `Delta Score` and `DeltaScore` both hold a value in a row, the converter writes their common value once or stops if they differ. It applies the same rule to `SVM Score` and `Percolator SVMScore`. A conflict reports both column names and values.
 
 ### Parameters {#proteome-discoverer-parameters}
 
@@ -684,7 +693,8 @@ The converter supports multiple native ID formats for scan number extraction:
 - **Compressed files**: Supports both `.mzid` and `.mzid.gz` formats
 - **Modifications**: Full support for UNIMOD and custom modifications
 - **Scores**: Extracts all CV-term scores with `higher_better` flag annotation
-- **Decoy detection**: Automatic detection via `isDecoy` attribute
+- **Decoy detection**: Automatic detection via `isDecoy` attribute; a file that marks no decoy falls back to the accession prefixes `DECOY`, `decoy_` and `rev_` (Kojak). A decoy that shares its target's accession (xiFDR) gets `DECOY_` before it in every view
+- **Repeated identifications**: an identification that a spectrum result lists twice (xiFDR) is one PSM, the first
 - **Multi-file support**: Handles mzIdentML referencing multiple spectra files
 
 ### Best Practices {#mzidentml-best-practices}
@@ -741,12 +751,12 @@ qpxc convert cdap \
     --psm-dir /data/CPTAC/PDC000440 \
     --output-folder ./qpx_output/PDC000440 \
     --project-accession PDC000440 \
-    --structures psm,feature
+    --view psm --view feature
 ```
 
 ### Output Files {#cdap-output}
 
-Depending on `--structures`:
+Depending on `--view`:
 
 - **PSM**: `{output-prefix}.psm.parquet`
 - **Feature**: `{output-prefix}.feature.parquet`, one row per peptidoform, charge and fraction run, with one `intensities` entry per channel (null where CDAP reports no signal)
@@ -758,14 +768,14 @@ Depending on `--structures`:
 ### Best Practices {#cdap-best-practices}
 
 - Point `--psm-dir` to one CPTAC study directory containing `*.psm` files
-- Use `--structures` to skip views that are not needed
+- Use `--view` to write only the views you need
 - See [Memory](#memory) for full-scale CPTAC studies
 
 ---
 
 ## mz
 
-Convert a directory of mzML spectra to a QPX `mz.parquet` (full spectra).
+Convert a directory of mzML spectra to a QPX `<prefix>.mz.parquet` (full spectra).
 
 ### Description {#mz-description}
 
@@ -810,6 +820,8 @@ A single `mz.parquet` with one row per spectrum:
 - `ms_level`, `scan_start_time`, `total_ion_current`, `centroid`
 - `precursors` — precursor m/z, charge, isolation window (MS2+)
 - `mz`, `intensity` — full peak arrays
+
+Written as `<prefix>.mz.parquet` beside the `<prefix>.ontology.parquet` of a dataset, the command adds the rows of the mz view to that ontology view and, when the dataset view holds an integrity record, records the integrity of the dataset again. A standalone mz file gets no ontology view, and a file beside an ontology view that is not named `<prefix>.mz.parquet` stays outside that dataset, with a warning.
 
 ### Best Practices {#mz-best-practices}
 
@@ -909,48 +921,6 @@ qpxc convert quantms-msstats \
 - Collapses TMT/iTRAQ channel rows into one Feature while retaining RT and scan location when present.
 - Rejects conflicting intensity values for the same Feature and channel instead of selecting or summing them.
 - Ignores MSstats `IsotopeLabelType`. A labelled table needs a `Channel` column holding the SDRF labels: `H` in MSstats means a reference standard, not a heavy channel of the experiment, so it cannot be aliased to a label.
-
----
-
-## openms
-
-Enrich native OpenMS `-out_qpx` Parquet output into a full QPX dataset.
-
-!!! warning "Deprecated"
-
-    Use [`openms-consensus`](#openms-consensus), which reads the consensusXML and is the supported OpenMS route. What OpenMS calls a "QPX collection" is the files of one dataset, not a [collection](../spec/collection.md). OpenMS quantification tools write no run, sample or provenance view, so without this enrichment `pg` rows cannot be mapped to samples and `design_matrix` raises.
-
-### Description {#openms-description}
-
-```python exec="1" html="1" session="doc_utils"
-from qpx.cli.convert import convert_openms_cmd
-
-print(generate_description(convert_openms_cmd))
-```
-
-### Parameters {#openms-parameters}
-
-```python exec="1" html="1" session="doc_utils"
-from qpx.cli.convert import convert_openms_cmd
-
-print(generate_params_table(convert_openms_cmd))
-```
-
-### Usage Examples {#openms-examples}
-
-```python exec="1" html="1" session="doc_utils"
-from qpx.cli.convert import convert_openms_cmd
-
-print(generate_example(convert_openms_cmd))
-```
-
-### Output Files {#openms-output}
-
-- Upgrades and validates the OpenMS `psm`, `feature`, and `pg` Parquet files found in `--qpx-dir`, normalizing run references while preserving supplied IDs.
-- Recovers PSM runs from exact spectrum evidence when the companion `--consensusxml` contains peptide identifications. Missing or ambiguous spectrum matches stop conversion before existing core outputs are replaced.
-- Preserves records with duplicate IDs and reports warnings without deduplicating rows or inventing replacement IDs. `qpxc validate` reports these duplicates as errors.
-- Generates `run`, `sample`, `ontology`, `provenance`, and `dataset` views.
-- Generates a MuData file when the converted quantification views are sufficient for export.
 
 ---
 
@@ -1072,7 +1042,7 @@ Several consensusXML files into one dataset:
 qpxc convert openms-consensus \
   --consensusxml PBMC007_1_resolved.consensusXML,PBMC009_1_resolved.consensusXML \
   --sdrf-file PXD011628.sdrf.tsv \
-  --structures feature,psm,run,sample \
+  --view feature --view psm --view run --view sample \
   --output-folder ./qpx_output \
   --output-prefix PXD011628
 ```

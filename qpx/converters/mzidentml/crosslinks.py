@@ -23,7 +23,7 @@ def _build_looplink(
         if not donor or not acceptor:
             continue
 
-        linker = linker_info.get(xl_value, linker_info.get("_default", {}))
+        linker = donor["linker"] or linker_info.get(xl_value, linker_info.get("_default", {}))
         links.append(
             {
                 "xl_type": "intra",
@@ -68,8 +68,12 @@ def _build_interlink(
         donor = next((m for m in a_mods + b_mods if m["role"] == "donor"), None)
         if not a_mods or donor is None:
             continue
+        # mzIdentML 1.2 writers (xiFDR) mark a noncovalent pair with a link at location -1.
+        if a_mods[0]["position"] < 0:
+            xl_type = "noncovalent"
+            continue
 
-        linker = linker_info.get(xl_value, linker_info.get("_default", {}))
+        linker = donor["linker"] or linker_info.get(xl_value, linker_info.get("_default", {}))
 
         links.append(
             {
@@ -84,22 +88,24 @@ def _build_interlink(
             }
         )
 
-    # Noncovalently associated peptides share no linked site.
     if not links and xl_type == "noncovalent":
-        links.append(
-            {
-                "xl_type": "noncovalent",
-                "partner_sequence": beta_sequence,
-                "partner_peptidoform": beta_peptidoform,
-                "donor_position": None,
-                "acceptor_position": None,
-                "linker_name": "noncovalent",
-                "linker_accession": None,
-                "linker_mass": 0.0,
-            }
-        )
+        links.append(_noncovalent_link(beta_sequence, beta_peptidoform))
 
     return links or None
+
+
+def _noncovalent_link(partner_sequence: str, partner_peptidoform: str) -> dict:
+    """Noncovalently associated peptides share no linked site."""
+    return {
+        "xl_type": "noncovalent",
+        "partner_sequence": partner_sequence,
+        "partner_peptidoform": partner_peptidoform,
+        "donor_position": None,
+        "acceptor_position": None,
+        "linker_name": "noncovalent",
+        "linker_accession": None,
+        "linker_mass": 0.0,
+    }
 
 
 def _tag_residue(peptidoform: str, position: int, tag: str) -> str:
@@ -155,7 +161,9 @@ def _evidence_proteins(sii: dict, parsed: dict) -> tuple[list[str], list[Optiona
 
 
 def _is_decoy(sii: dict, parsed: dict) -> bool:
-    return any(parsed["peptide_evidence"].get(ref, {}).get("is_decoy", False) for ref in sii["peptide_evidence_refs"])
+    """A peptide is a decoy only when every protein it maps to is one: target and decoy together make a target."""
+    refs = sii["peptide_evidence_refs"]
+    return bool(refs) and all(parsed["peptide_evidence"].get(ref, {}).get("is_decoy", False) for ref in refs)
 
 
 def partner_fields(alpha_sii: dict, beta_sii: Optional[dict], parsed: dict) -> dict:

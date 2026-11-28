@@ -145,13 +145,13 @@ Each converter uses memory differently, and for most of them a larger `--max-mem
 
 1. Check if the input file contains the required source columns
 
-2. For spectral data, ensure `--spectral-data` flag is used:
+2. For spectral data, ensure `--include-spectra` flag is used:
 
    ```bash
    qpxc convert maxquant \
        --msms-file msms.txt \
        --output-folder ./ \
-       --spectral-data
+       --include-spectra
    ```
 
 3. Review the [Format Specification](spec/index.md) for required vs optional fields
@@ -164,10 +164,10 @@ Use the `validate` command to check a dataset against the canonical schemas:
 
 ```bash
 # Validate all structures in a dataset
-qpxc validate --dataset-path ./PXD014414
+qpxc validate --dataset ./PXD014414
 
 # Validate a specific structure
-qpxc validate --dataset-path ./PXD014414 --structure feature
+qpxc validate --dataset ./PXD014414 --view feature
 
 # Validate a single Parquet file
 qpxc validate --file ./data.feature.parquet
@@ -252,13 +252,13 @@ qpxc convert sdrf \
 1. Check available structures in the dataset:
 
    ```bash
-   qpxc info --dataset-path ./PXD014414
+   qpxc info --dataset ./PXD014414
    ```
 
 2. Check the schema for a specific structure:
 
    ```bash
-   qpxc info schema --dataset-path ./PXD014414 --structure feature
+   qpxc info schema --dataset ./PXD014414 --view feature
    ```
 
 3. Table names in SQL match the QPX structure names: `psm`, `feature`, `pg`, `mz`, `sample`, `run`, `dataset`, `ontology`, `provenance`.
@@ -267,22 +267,12 @@ qpxc convert sdrf \
 
 **Solutions**:
 
-1. Use `--duckdb-memory` to increase DuckDB memory (`validate`, `query sql` and the `transform gene-map`/`protein-properties` commands):
+1. Use `--max-memory` to increase DuckDB memory; every command that opens DuckDB takes it, with `--max-cpus` for threads:
 
    ```bash
    qpxc query sql \
-       --dataset-path ./PXD014414 \
+       --dataset ./PXD014414 \
        --sql "SELECT * FROM feature" \
-       --duckdb-memory 32GB
-   ```
-
-   For convert commands, use `--max-memory` instead:
-
-   ```bash
-   qpxc convert diann \
-       --report-path report.tsv \
-       --sdrf-file data.sdrf.tsv \
-       --output-folder ./output \
        --max-memory 32GB
    ```
 
@@ -290,8 +280,8 @@ qpxc convert sdrf \
 
    ```bash
    qpxc validate \
-       --dataset-path ./PXD014414 \
-       --duckdb-memory 8GB \
+       --dataset ./PXD014414 \
+       --max-memory 8GB \
        --temp-dir /scratch/qpx_spill
    ```
 

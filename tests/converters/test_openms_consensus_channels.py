@@ -11,6 +11,7 @@ import pytest
 
 from qpx.converters.openms_consensus.channels import column_labels
 from qpx.converters.openms_consensus.converter import OpenMSConsensusConverter
+from qpx.converters.openms_consensus.feature_adapter import _run_mz_fields
 from qpx.converters.openms_consensus.streaming import _parse_hit_score
 
 TOPP = Path(__file__).parents[1] / "examples" / "openms_topp"
@@ -109,6 +110,24 @@ def test_three_plex_with_partial_multiplets(tmp_path, streaming):
     assert partial["observed_mz"] == pytest.approx(619.804, abs=1e-3)
     assert partial["mass_error_ppm"] is None
     assert features["ENGTWQFYIK"]["mass_error_ppm"] is not None
+
+
+def test_observed_mz_is_measured_or_null(tmp_path, streaming):
+    """ProteomicsLFQ places the features of identified peptides at their theoretical m/z.
+
+    An isobaric feature is at its precursor's m/z, its elements at their reporter ions.
+    """
+    lfq = _convert(tmp_path / "lfq", "ProteomicsLFQ_1_out", streaming)["feature"]
+    assert lfq and all(row["observed_mz"] is None and row["mass_error_ppm"] is None for row in lfq)
+    isobaric = _convert(tmp_path / "iso", "IsobaricWorkflow_1_out", streaming)["feature"]
+    assert next(row for row in isobaric if row["sequence"] == "ELEFANTK")["observed_mz"] == pytest.approx(436.7035, abs=1e-3)
+    assert all(row["observed_mz"] != row["calculated_mz"] and row["mass_error_ppm"] is not None for row in isobaric)
+
+
+def test_only_the_theoretical_mz_is_dropped():
+    """Only an m/z within float noise of the theoretical one counts as theoretical."""
+    assert _run_mz_fields(500.0, 500.0 + 1e-10) == {"observed_mz": None, "mass_error_ppm": None}
+    assert _run_mz_fields(500.0, 500.0005)["mass_error_ppm"] == pytest.approx(1.0)
 
 
 def test_isobaric_pg_is_openms_abundance_not_the_sum(tmp_path, streaming):

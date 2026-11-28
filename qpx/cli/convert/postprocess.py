@@ -86,7 +86,7 @@ def _annotate_protein_properties(output_folder: Path, fasta: Optional[Path], pre
     """
     if fasta is None:
         return
-    from qpx.cli.transform import annotate_dataset_protein_properties
+    from qpx.cli.transform.protein_properties import annotate_dataset_protein_properties
 
     click.echo(f"Filling protein properties from {fasta.name}")
     try:
@@ -238,6 +238,67 @@ def _preserve_sdrf(output_folder: Path, prefix: str) -> None:
     target = Path(output_folder) / f"{prefix}.sdrf.tsv"
     if not (target.exists() and target.samefile(source)):
         shutil.copyfile(source, target)
+
+
+def _describe_in_dataset(path: Path, view: str) -> None:
+    """Describe a view file written into a dataset, beside its ontology view, as a conversion would.
+
+    Gives the view its ontology rows and a provenance step, and records an existing integrity
+    record again. A standalone file, with no ontology view beside it, is left as written.
+    """
+    from qpx.converters.ontology_util import write_view_ontology
+
+    folder, prefix = path.parent, path.name.removesuffix(f".{view}.parquet")
+    if prefix == path.name:
+        if any(folder.glob("*.ontology.parquet")):
+            _warn(f"{path.name} is not named <prefix>.{view}.parquet, so the dataset in {folder} does not describe it")
+        return
+    ontology = folder / f"{prefix}.ontology.parquet"
+    if not ontology.is_file():
+        return
+    write_view_ontology(folder, prefix, {view: path}, ontology)
+    _record_view_step(folder, prefix, view)
+    _refresh_recorded_integrity(folder, prefix)
+
+
+def _record_view_step(output_folder: Path, prefix: str, view: str) -> None:
+    """Add this command to the dataset's provenance as the conversion step that wrote ``view``, replacing an earlier run."""
+    from qpx._version import __version__
+    from qpx.converters.orchestrator import build_provenance_step
+    from qpx.dataset import Dataset
+
+    ctx = click.get_current_context()
+    step_name = f"{ctx.command.name.replace('-', '_')}_to_qpx"
+    with Dataset(str(output_folder), file_prefix=prefix) as ds:
+        if ds.provenance is None:
+            return
+        steps = [step for step in ds.provenance.to_arrow().to_pylist() if step["step_name"] != step_name]
+        parameters = _effective_parameters(ctx) + [
+            {"key": f"dependency_{name}", "value": version(name)} for name in _RECORDED_DEPENDENCIES
+        ]
+        steps.append(
+            build_provenance_step(
+                step_category="format_conversion",
+                step_name=step_name,
+                tool_name="qpx",
+                tool_version=__version__,
+                parameters=parameters,
+                output_views=[view],
+                step_order=max((step["step_order"] for step in steps), default=0) + 1,
+            )
+        )
+        ds.save_structure(steps, "provenance", prefix=prefix)
+
+
+def _refresh_recorded_integrity(output_folder: Path, prefix: str) -> None:
+    """Record the integrity of the output folder again when its dataset parquet already holds a record."""
+    from qpx.dataset import Dataset
+
+    with Dataset(str(output_folder), file_prefix=prefix) as ds:
+        meta = ds.dataset_meta.to_df() if ds.dataset_meta is not None else None
+    record = meta.iloc[0].to_dict() if meta is not None and not meta.empty else {}
+    if any(isinstance(record.get(field), dict) for field in ("file_checksums", "file_row_counts", "file_sizes_bytes")):
+        _maybe_compute_integrity(output_folder, prefix, True)
 
 
 def _maybe_compute_integrity(output_folder, prefix: str, enabled: bool) -> None:

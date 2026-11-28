@@ -34,6 +34,29 @@ logger = logging.getLogger(__name__)
 
 # Derive field map from central mappings
 _PG_MAP = get_field_mappings("maxquant", "pg")
+_REPORTER_EXPERIMENT = re.compile(r"Reporter intensity (\d+)(?: (.+))?")
+
+
+def _column(name: str, experiment: str) -> str:
+    """The column of one experiment: ``Peptides exp1``, or ``Peptides`` for MaxQuant's one unnamed experiment."""
+    return " ".join(filter(None, (name, experiment)))
+
+
+def _intensity_experiment(column: str) -> str:
+    """The experiment of an ``Intensity <experiment>`` column, ``""`` for ``Intensity``."""
+    return column.removeprefix("Intensity").removeprefix(" ")
+
+
+def _intensity_columns(columns: list[str], unnamed: bool) -> list[str]:
+    """``Intensity <experiment>``, or the total ``Intensity`` of MaxQuant's one unnamed experiment."""
+    if unnamed:
+        return [c for c in columns if c == "Intensity"]
+    return [c for c in columns if c.startswith("Intensity ")]
+
+
+def _reporter_columns(columns: list[str], unnamed: bool) -> list[str]:
+    """``Reporter intensity N <experiment>``, or the unsuffixed ones of MaxQuant's one unnamed experiment."""
+    return [c for c in columns if (m := _REPORTER_EXPERIMENT.fullmatch(c)) and (m.group(2) is None) == unnamed]
 
 
 def _positive(value) -> Optional[float]:
@@ -86,7 +109,10 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
                 absent, the SDRF (``sdrf_path``) is used as a fallback to map each
                 Experiment (matched to a ``source name``) to its raw files. If
                 neither evidence.txt nor the SDRF resolves an Experiment, conversion
-                raises rather than emitting a dangling experiment token.
+                raises rather than emitting a dangling experiment token. An
+                evidence.txt without an ``Experiment`` column comes from MaxQuant set
+                up without experiment names: its raw files are one experiment, whose
+                proteinGroups.txt columns have no suffix (``Intensity``).
             chunksize: Rows per batch.
             creator: Creator tag in Parquet metadata.
         """
@@ -119,7 +145,7 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
         # Step 5: Stream and transform
         self.logger.info("Transforming MaxQuant protein groups ...")
 
-        with PgWriter(output_path, creator=creator) as writer:
+        with PgWriter(output_path, creator=creator, struct_tables="maxquant") as writer:
             for batch in self._query_batched("SELECT * FROM protein_groups", chunksize):
                 df = batch.to_pandas()
                 records = self._transform_batch(df, intensity_cols, channels)
@@ -163,21 +189,39 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
         file name, so ``grouped_runs`` must expand each Experiment to its raw
         files to survive the sample join.
 
+        Without an ``Experiment`` column, MaxQuant was set up without experiment
+        names and all raw files are one experiment, keyed ``""``.
+
         Returns an empty dict when *evidence_path* is ``None`` or lacks the
         required columns, in which case callers try the SDRF mapping.
         """
         if not evidence_path:
             return {}
         try:
-            rows = self._conn.execute(
-                """
-                SELECT DISTINCT "Experiment" AS experiment, "Raw file" AS raw_file
-                FROM read_csv_auto($1, delim='\t', header=true, auto_detect=true,
-                                   null_padding=true)
-                WHERE "Experiment" IS NOT NULL AND "Raw file" IS NOT NULL
-                """,
+            columns = self._conn.execute(
+                "SELECT * FROM read_csv_auto($1, delim='\t', header=true, auto_detect=true, null_padding=true) LIMIT 0",
                 [evidence_path],
-            ).fetchall()
+            ).description
+            if "Experiment" in {column[0] for column in columns}:
+                rows = self._conn.execute(
+                    """
+                    SELECT DISTINCT "Experiment" AS experiment, "Raw file" AS raw_file
+                    FROM read_csv_auto($1, delim='\t', header=true, auto_detect=true,
+                                       null_padding=true)
+                    WHERE "Experiment" IS NOT NULL AND "Raw file" IS NOT NULL
+                    """,
+                    [evidence_path],
+                ).fetchall()
+            else:
+                rows = self._conn.execute(
+                    """
+                    SELECT DISTINCT '' AS experiment, "Raw file" AS raw_file
+                    FROM read_csv_auto($1, delim='\t', header=true, auto_detect=true,
+                                       null_padding=true)
+                    WHERE "Raw file" IS NOT NULL
+                    """,
+                    [evidence_path],
+                ).fetchall()
         except duckdb.Error:
             self.logger.warning(
                 "Could not read Experiment/Raw file from evidence.txt; trying the SDRF mapping",
@@ -244,13 +288,8 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
             return set(intensity_cols["multiplet"])
         reporter_cols = intensity_cols.get("reporter", [])
         if reporter_cols:
-            experiments = set()
-            for col in reporter_cols:
-                m = re.match(r"Reporter intensity \d+ (.+)", col)
-                if m:
-                    experiments.add(m.group(1))
-            return experiments
-        return {col.removeprefix("Intensity ") for col in intensity_cols.get("intensity", [])}
+            return {_REPORTER_EXPERIMENT.fullmatch(col).group(2) or "" for col in reporter_cols}
+        return {_intensity_experiment(col) for col in intensity_cols.get("intensity", [])}
 
     def _detect_intensity_columns(self, isobaric: bool) -> dict[str, list[str]]:
         """Detect sample-specific intensity columns in proteinGroups.txt."""
@@ -259,15 +298,19 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
         ).fetchall()
         col_names = [c[0] for c in cols]
 
+        # MaxQuant set up without experiment names writes the totals of its one
+        # experiment ("Intensity", "Reporter intensity N"); otherwise those are the
+        # sums over the experiments' columns.
+        unnamed = "" in self._experiment_to_runs
         # Find Intensity <sample> columns (LFQ-style)
-        intensity_cols = [c for c in col_names if c.startswith("Intensity ") and c != "Intensity"]
+        intensity_cols = _intensity_columns(col_names, unnamed)
         # SILAC experiments take precedence over "Intensity <experiment>", the sum over their labels.
-        multiplet = self._multiplet_experiments(intensity_cols)
+        multiplet = [""] if unnamed and self._multiplet else self._multiplet_experiments(intensity_cols)
         lfq_cols = [c for c in col_names if c.startswith("LFQ intensity ")]
         ibaq_cols = [c for c in col_names if c.startswith("iBAQ ") and c != "iBAQ"]
 
         # TMT/iTRAQ: "Reporter intensity N <experiment>" columns
-        reporter_cols = [c for c in col_names if re.match(r"Reporter intensity \d+ .+", c) and "corrected" not in c.lower()]
+        reporter_cols = _reporter_columns(col_names, unnamed)
         if reporter_cols and not isobaric:
             logger.warning(
                 "proteinGroups.txt has reporter intensity columns but no SDRF declares the channels; "
@@ -295,8 +338,8 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
         experiments = self._detect_experiments(intensity_cols)
         if not experiments:
             raise ValueError(
-                "proteinGroups.txt has no per-experiment intensity columns; "
-                "the total Intensity cannot be assigned to grouped_runs"
+                "proteinGroups.txt has no per-experiment intensity columns; the total Intensity of MaxQuant "
+                "set up without experiment names needs evidence.txt, whose raw files are its grouped_runs"
             )
         missing = sorted(exp for exp in experiments if self._lookup_runs(exp) is None)
         if missing:
@@ -400,17 +443,17 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
 
         MaxQuant does not report feature (peptide-charge) counts, so ``feature_counts`` stays null.
         """
-        identification = row.get(f"Identification type {exp}")
+        identification = row.get(_column("Identification type", exp))
         cv_params = (
             [{"cv_name": "identification_type", "cv_value": str(identification)}] if isinstance(identification, str) else []
         )
         if mq_flag_to_bool(row.get("Only identified by site", "")):
             cv_params.append({"cv_name": "only_identified_by_site", "cv_value": "true"})
-        unique, total = self._count(row, f"Unique peptides {exp}"), self._count(row, f"Peptides {exp}")
+        unique, total = self._count(row, _column("Unique peptides", exp)), self._count(row, _column("Peptides", exp))
         return {
             "peptide_counts": None if unique is None or total is None else {"unique_sequences": unique, "total_sequences": total},
             "feature_counts": None,
-            "sequence_coverage": safe_float(row.get(f"Sequence coverage {exp} [%]")),
+            "sequence_coverage": safe_float(row.get(_column("Sequence coverage", exp) + " [%]")),
             "cv_params": cv_params or None,
         }
 
@@ -506,7 +549,7 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
         """
         intensities: list[dict] = []
         additional_intensities: list[dict] = []
-        identified = (safe_float(row.get(f"MS/MS count {exp}")) or 0) > 0
+        identified = (safe_float(row.get(_column("MS/MS count", exp))) or 0) > 0
         dropped_channels: list[str] = []
         for channel_name, index in channels or []:
             col_name = ch_cols.get(index + ri_offset)
@@ -538,16 +581,13 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
     def _tmt_records(self, row, reporter_cols, channels, make_rec) -> list[dict]:
         """Expand a protein group over reporter experiments."""
         records: list[dict] = []
-        # Detect ri_offset from column names (0 vs 1 indexed)
-        ri_offset = 0 if any(re.match(r"Reporter intensity 0 ", c) for c in reporter_cols) else 1
         # Group by experiment name
         experiments: dict[str, dict[int, str]] = {}  # exp -> {col_idx: col_name}
         for col in reporter_cols:
-            m = re.match(r"Reporter intensity (\d+) (.+)", col)
-            if m:
-                ch_num = int(m.group(1))
-                exp = m.group(2)
-                experiments.setdefault(exp, {})[ch_num] = col
+            m = _REPORTER_EXPERIMENT.fullmatch(col)
+            experiments.setdefault(m.group(2) or "", {})[int(m.group(1))] = col
+        # Detect ri_offset from column numbers (0 vs 1 indexed)
+        ri_offset = 0 if any(0 in ch_cols for ch_cols in experiments.values()) else 1
         for exp, ch_cols in experiments.items():
             intensities, additional_intensities, dropped_channels = self._reporter_quantities(
                 row, exp, ch_cols, channels, ri_offset
@@ -561,13 +601,13 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
         """Expand a protein group over SILAC experiments: one label per SDRF sample, with its ratios as numerator."""
         records: list[dict] = []
         for exp in experiments:
-            identified = (safe_float(row.get(f"MS/MS count {exp}")) or 0) > 0
+            identified = (safe_float(row.get(_column("MS/MS count", exp))) or 0) > 0
             intensities: list[dict] = []
             additional_intensities: list[dict] = []
             for letter, label in self._multiplet.items():
                 if self._run_labels and not self._has_sample(exp, label):
                     continue
-                value = safe_float(row.get(f"Intensity {letter} {exp}")) or 0.0
+                value = safe_float(row.get(_column(f"Intensity {letter}", exp))) or 0.0
                 if value <= 0 and not identified:
                     continue
                 intensities.append({"label": label, "intensity": value if value > 0 else None})
@@ -583,10 +623,10 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
         records: list[dict] = []
         # ── LFQ: one record per run using "Intensity <run>" columns ──
         for intensity_col in intensity_cols.get("intensity", []):
-            run_name = intensity_col.removeprefix("Intensity ")
+            run_name = _intensity_experiment(intensity_col)
             intensity_val = _positive(row.get(intensity_col))
             # Global counts cannot establish identification in this unit.
-            if intensity_val is None and (safe_float(row.get(f"MS/MS count {run_name}")) or 0) <= 0:
+            if intensity_val is None and (safe_float(row.get(_column("MS/MS count", run_name))) or 0) <= 0:
                 continue
             records.append(
                 make_rec(
@@ -603,8 +643,8 @@ class MaxQuantPgAdapter(MaxQuantBaseAdapter):
         compute and is left out; ``MS/MS count <experiment>`` (razor and unique
         peptide spectra) is a count, kept when 0.
         """
-        columns = (("lfq", f"LFQ intensity {experiment}"), ("ibaq", f"iBAQ {experiment}"))
+        columns = (("lfq", _column("LFQ intensity", experiment)), ("ibaq", _column("iBAQ", experiment)))
         values = [(name, _positive(row.get(column))) for name, column in columns]
-        values.append(("spectral_count", safe_float(row.get(f"MS/MS count {experiment}"))))
+        values.append(("spectral_count", safe_float(row.get(_column("MS/MS count", experiment)))))
         extra_vals = [{"intensity_name": name, "intensity_value": value} for name, value in values if value is not None]
         return [{"label": "LFQ", "intensities": extra_vals}] if extra_vals else []

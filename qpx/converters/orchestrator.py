@@ -1,6 +1,6 @@
 """BaseOrchestrator — shared ontology, provenance, and dataset writing for converters.
 
-Orchestrators (MaxQuantConverter, OpenMSConverter, etc.) compose adapters and
+Orchestrators (MaxQuantConverter, DiaNNConverter, etc.) compose adapters and
 write ontology.parquet, provenance.parquet, and dataset.parquet. This base class
 consolidates the common writing logic.
 """

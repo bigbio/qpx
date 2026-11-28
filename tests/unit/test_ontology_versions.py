@@ -32,7 +32,8 @@ def test_field_versions_belong_only_to_mapped_ontology(loaded_ms_version):
         assert by_field[field]["ontology_accession"] is None
         assert by_field[field]["ontology_source"] is None
         assert by_field[field]["ontology_version"] is None
-    assert all(entry["ontology_version"] == loaded_ms_version for entry in scores.field_ontology_entries())
+    for entry in scores.field_ontology_entries():
+        assert entry["ontology_version"] == (loaded_ms_version if entry["ontology_source"] == "MS" else None)
 
 
 def test_score_versions_belong_only_to_mapped_ontology(loaded_ms_version):

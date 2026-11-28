@@ -259,19 +259,18 @@ class TestPepExtraction:
         ]
         assert _extract_pep(cv_params) == pytest.approx(0.001)
 
-    def test_extract_pep_global(self):
-        """Should extract PEP from MS:1002352 (global PEP)."""
+    def test_psm_p_value_is_not_pep(self):
+        """MS:1002352 is the PSM-level p-value, not a PEP."""
         from qpx.converters.mzidentml.scores import _extract_pep
 
         cv_params = [
             {
                 "accession": "MS:1002352",
-                "name": "PSM-level global FDR",
+                "name": "PSM-level p-value",
                 "value": "0.01",
             },
         ]
-        pep = _extract_pep(cv_params)
-        assert pep == pytest.approx(0.01)
+        assert _extract_pep(cv_params) is None
 
     def test_extract_pep_missing(self):
         """Should return None when PEP is not present."""
@@ -455,6 +454,71 @@ class TestMzIdentMLPgAdapter:
             assert row["peptides"] is not None, "peptides is None"
             assert len(row["peptides"]) > 0, "peptides list is empty"
 
+    def test_decoy_evidence_marks_a_group_that_shares_its_target_accession(self):
+        """xiFDR gives a decoy its target's accession and flags only the PeptideEvidence (PXD062462)."""
+        from lxml import etree
+
+        from qpx.converters.mzidentml.document import MzidDocument
+        from qpx.converters.mzidentml.pg_adapter import MzIdentMLPgAdapter
+
+        ns = "http://psidev.info/psi/pi/mzIdentML/1.2"
+        document = MzidDocument()
+        document.attach(
+            etree.fromstring(
+                f'<MzIdentML xmlns="{ns}"><SequenceCollection>'
+                '<DBSequence id="dbseq_P1" accession="P12345"/><DBSequence id="dbseq_decoyP1" accession="P12345"/>'
+                '<PeptideEvidence id="pe1" peptide_ref="p" dBSequence_ref="dbseq_P1" isDecoy="false"/>'
+                '<PeptideEvidence id="pe2" peptide_ref="p" dBSequence_ref="dbseq_decoyP1" isDecoy="true"/>'
+                "</SequenceCollection></MzIdentML>"
+            )
+        )
+        groups = [
+            etree.fromstring(
+                f'<ProteinAmbiguityGroup xmlns="{ns}" id="PAG"><ProteinDetectionHypothesis id="h" dBSequence_ref="{ref}"/>'
+                "</ProteinAmbiguityGroup>"
+            )
+            for ref in ("dbseq_P1", "dbseq_decoyP1")
+        ]
+        with MzIdentMLPgAdapter() as adapter:
+            records = [adapter._build_pag_record(group, ns, document, ["run"]) for group in groups]
+        assert [(record["pg_accessions"], record["is_decoy"]) for record in records] == [
+            (["P12345"], False),
+            (["DECOY_P12345"], True),
+        ]
+
+    @pytest.mark.parametrize(
+        ("decoy_accession", "decoy_flag", "written"),
+        [
+            ("P12345", ' isDecoy="true"', "DECOY_P12345"),
+            ("DECOY1_P12345", "", "DECOY1_P12345"),
+            ("P12345", ' isDecoy="1"', "DECOY_P12345"),
+        ],
+        ids=["xifdr_shared_accession", "kojak_prefix_only", "xsd_boolean_one"],
+    )
+    def test_a_decoy_never_shares_its_target_accession(self, decoy_accession, decoy_flag, written):
+        """xiFDR flags only the decoy PeptideEvidence and reuses the accession; Kojak flags nothing (PXD056910)."""
+        from lxml import etree
+
+        from qpx.converters.mzidentml.document import MzidDocument
+
+        document = MzidDocument()
+        document.attach(
+            etree.fromstring(
+                '<MzIdentML xmlns="http://psidev.info/psi/pi/mzIdentML/1.2"><SequenceCollection>'
+                f'<DBSequence id="t" accession="P12345"/><DBSequence id="d" accession="{decoy_accession}"/>'
+                '<PeptideEvidence id="pe_t" peptide_ref="p" dBSequence_ref="t"/>'
+                f'<PeptideEvidence id="pe_d" peptide_ref="p" dBSequence_ref="d"{decoy_flag}/>'
+                "</SequenceCollection></MzIdentML>"
+            )
+        )
+        with MzIdentMLPsmAdapter() as adapter:
+            parsed = adapter._parse_sections(document)
+        assert parsed["db_sequences"] == {"t": "P12345", "d": written}
+        assert {ref: evidence["is_decoy"] for ref, evidence in parsed["peptide_evidence"].items()} == {
+            "pe_t": False,
+            "pe_d": True,
+        }
+
     def test_pg_run_file_name_set(self, tmp_path):
         """grouped_runs should be a single-element list derived from the mzid filename."""
         from qpx.converters.mzidentml.pg_adapter import MzIdentMLPgAdapter
@@ -551,7 +615,7 @@ class TestSharedModificationsNoCrossContamination:
 
     @staticmethod
     def _sii(sii_id, site_prob):
-        # MS:1001969 == phosphoRS site probability (a site-localization cvParam).
+        # MS:1001969 == phosphoRS score (a site-localization cvParam).
         return {
             "id": sii_id,
             "charge": 2,
@@ -709,6 +773,130 @@ class TestCrossLinkFields:
         link = table.column("cross_links")[0].as_py()[0]
         assert link["donor_position"] is None and link["acceptor_position"] is None
 
+    @staticmethod
+    def _interlink(alpha_modification: str, beta_modification: str) -> dict:
+        from xml.etree.ElementTree import fromstring
+
+        from qpx.converters.mzidentml.crosslinks import _build_interlink
+
+        ns = "http://psidev.info/psi/pi/mzIdentML/1.2"
+        peptides = {}
+        for ref, sequence, modification in (("a", "PEPKR", alpha_modification), ("b", "SEKR", beta_modification)):
+            peptide = fromstring(f'<Peptide xmlns="{ns}"><PeptideSequence>{sequence}</PeptideSequence>{modification}</Peptide>')
+            _, xl_mods, _ = MzIdentMLPsmAdapter._parse_peptide_modifications(peptide, ns, sequence)
+            peptides[ref] = {"sequence": sequence, "peptidoform": sequence, "xl_mods": xl_mods}
+        return _build_interlink(peptides["a"], {"peptide_ref": "b"}, peptides, {}, "inter")[0]
+
+    @pytest.mark.parametrize(
+        "accession, name, linker",
+        [("XLMOD:02126", "DSSO", ("DSSO", "XLMOD:02126")), ("UNIMOD:1842", "Xlink:DSSO", ("DSSO", "UNIMOD:1842"))],
+    )
+    def test_linker_is_named_by_the_donor_modification(self, accession, name, linker):
+        """Proteome Discoverer and Mascot name the linker only on the donor (PXD059766, PXD054720)."""
+        link = self._interlink(
+            f'<Modification location="4" monoisotopicMassDelta="158.00376"><cvParam accession="{accession}" name="{name}"/>'
+            '<cvParam accession="MS:1002509" name="cross-link donor" value="1"/></Modification>',
+            '<Modification location="3" monoisotopicMassDelta="0"><cvParam accession="MS:1002510" name="cross-link acceptor" value="1"/>'
+            "</Modification>",
+        )
+        assert (link["linker_name"], link["linker_accession"]) == linker
+
+    def test_link_at_location_minus_one_is_noncovalent(self):
+        """xiFDR writes a noncovalent pair in mzIdentML 1.2 as a link at location -1 (PXD062462)."""
+        link = self._interlink(
+            '<Modification location="-1" monoisotopicMassDelta="0.0"><cvParam accession="MS:1001460" name="unknown modification"/>'
+            '<cvParam accession="MS:1002509" name="cross-link donor" value="7"/></Modification>',
+            '<Modification location="-1" monoisotopicMassDelta="0.0"><cvParam accession="MS:1002510" name="cross-link acceptor" value="7"/>'
+            "</Modification>",
+        )
+        assert (link["xl_type"], link["donor_position"], link["acceptor_position"]) == ("noncovalent", None, None)
+
+    def test_an_identification_listed_twice_in_one_result_is_one_psm(self):
+        """xiFDR lists some identifications twice in one result, a pair under two MS:1002511 values (PXD062462)."""
+        from xml.etree.ElementTree import fromstring
+
+        ns = "http://psidev.info/psi/pi/mzIdentML/1.2"
+        peptides = {"linear": {"sequence": "PEPK", "peptidoform": "PEPK", "modifications": None}}
+        for ref, sequence, location, role in (("a", "PEPKR", 4, "MS:1002509"), ("b", "SEKR", 3, "MS:1002510")):
+            peptide = fromstring(
+                f'<Peptide xmlns="{ns}"><PeptideSequence>{sequence}</PeptideSequence>'
+                f'<Modification location="{location}" monoisotopicMassDelta="0"><cvParam accession="{role}" value="1"/>'
+                "</Modification></Peptide>"
+            )
+            _, xl_mods, _ = MzIdentMLPsmAdapter._parse_peptide_modifications(peptide, ns, sequence)
+            peptides[ref] = {"sequence": sequence, "peptidoform": sequence, "xl_mods": xl_mods}
+
+        def sii(sii_id, peptide_ref, link_group=None):
+            cv_params = [{"accession": "MS:1002511", "name": "xl", "value": link_group}] if link_group else []
+            return {
+                "id": sii_id,
+                "peptide_ref": peptide_ref,
+                "rank": 1,
+                "pass_threshold": False,
+                "charge": 3,
+                "exp_mz": 500.0,
+                "calc_mz": 500.0,
+                "cv_params": cv_params,
+                "peptide_evidence_refs": [],
+            }
+
+        siis = [
+            sii("1", "linear"),
+            sii("2", "linear"),
+            sii("3", "a", "7"),
+            sii("4", "b", "7"),
+            sii("5", "a", "8"),
+            sii("6", "b", "8"),
+        ]
+        parsed = {
+            "spectra_data": {"sd": "run"},
+            "spectrum_results": [{"spectrum_id": "index=1", "spectra_data_ref": "sd", "siis": siis}],
+            "peptides": peptides,
+            "peptide_evidence": {},
+            "db_sequences": {},
+            "linker_info": {},
+            "modification_tags": {},
+        }
+        records = _build_psm_records(parsed)
+        assert [[cv["cv_value"] for cv in record["cv_params"]] for record in records] == [["1"], ["3", "4"]]
+
+    def test_a_peptide_with_its_donor_and_acceptor_is_a_looplink(self):
+        """mzIdentML 1.2 marks a looplink only in its Peptide; the item has no cross-link term (PXD021417)."""
+        from xml.etree.ElementTree import fromstring
+
+        ns = "http://psidev.info/psi/pi/mzIdentML/1.2"
+        peptide = fromstring(
+            f'<Peptide xmlns="{ns}"><PeptideSequence>PKEPKR</PeptideSequence>'
+            '<Modification location="2" monoisotopicMassDelta="138.0681"><cvParam accession="XLMOD:02001" name="DSS"/>'
+            '<cvParam accession="MS:1002509" value="1"/></Modification>'
+            '<Modification location="5" monoisotopicMassDelta="0"><cvParam accession="MS:1002510" value="1"/></Modification></Peptide>'
+        )
+        _, xl_mods, _ = MzIdentMLPsmAdapter._parse_peptide_modifications(peptide, ns, "PKEPKR")
+        sii = {
+            "id": "x",
+            "peptide_ref": "p",
+            "rank": 1,
+            "pass_threshold": True,
+            "charge": 2,
+            "exp_mz": 500.0,
+            "calc_mz": 500.0,
+            "cv_params": [],
+            "peptide_evidence_refs": [],
+        }
+        parsed = {
+            "spectra_data": {"sd": "run"},
+            "spectrum_results": [{"spectrum_id": "index=1", "spectra_data_ref": "sd", "siis": [sii]}],
+            "peptides": {"p": {"sequence": "PKEPKR", "peptidoform": "PKEPKR", "modifications": [], "xl_mods": xl_mods}},
+            "peptide_evidence": {},
+            "db_sequences": {},
+            "linker_info": {},
+            "modification_tags": {},
+        }
+        (record,) = _build_psm_records(parsed)
+        (link,) = record["cross_links"]
+        assert (link["xl_type"], link["donor_position"], link["acceptor_position"], link["linker_name"]) == ("intra", 2, 5, "DSS")
+        assert record["crosslinked_peptidoform"] == "PK[XLMOD:02001#XL1]EPK[#XL1]R"
+
     def test_two_pairs_in_one_group_pair_across_peptides(self):
         alpha_light, beta_light, alpha_heavy, beta_heavy = (
             {"id": name, "peptide_ref": name[0], "cv_params": [{"accession": "MS:1002511", "name": "xl", "value": "1"}]}
@@ -742,3 +930,16 @@ class TestRankAndThreshold:
         sii.update(charge=2, exp_mz=500.0, calc_mz=500.0)
         assert len(_build_psm_records(parsed)) == 1
         assert _build_psm_records(parsed, rank1_only=True) == []
+
+    @pytest.mark.parametrize("flag", ["true", "1"])
+    def test_pass_threshold_is_an_xsd_boolean(self, flag):
+        """OpenPepXL writes passThreshold="1" (PXD021417)."""
+        from xml.etree.ElementTree import fromstring
+
+        ns = "http://psidev.info/psi/pi/mzIdentML/1.2"
+        sir = fromstring(
+            f'<SpectrumIdentificationResult xmlns="{ns}"><SpectrumIdentificationItem id="x" chargeState="2" '
+            f'experimentalMassToCharge="500" passThreshold="{flag}" peptide_ref="p"/></SpectrumIdentificationResult>'
+        )
+        with MzIdentMLPsmAdapter() as adapter:
+            assert adapter._parse_spectrum_result(sir, ns)["siis"][0]["pass_threshold"] is True

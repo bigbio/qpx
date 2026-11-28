@@ -13,7 +13,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from tests.conftest import assert_pg_table_wellformed
+from tests.conftest import assert_pg_table_wellformed, read_view_table
 from tests.converters.pg_ids_roundtrip import assert_softlink_valid, open_converted, pg_ids_by_sequence
 
 EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "examples" / "diann" / "small"
@@ -179,7 +179,7 @@ def _feature_table(converted_output):
     """Read the feature.parquet produced by the converter."""
     path = converted_output / "diann_test.feature.parquet"
     assert path.exists(), "feature.parquet was not produced"
-    return pq.read_table(str(path))
+    return read_view_table(str(path))
 
 
 @pytest.fixture(scope="module")
@@ -187,7 +187,7 @@ def pg_table(converted_output):
     """Read the pg.parquet produced by the converter."""
     path = converted_output / "diann_test.pg.parquet"
     assert path.exists(), "pg.parquet was not produced"
-    return pq.read_table(str(path))
+    return read_view_table(str(path))
 
 
 # ---------------------------------------------------------------------------
@@ -315,7 +315,7 @@ def test_plexdia_feature_collapses_channels_into_one_row(tmp_path):
             qvalue_threshold=0.01,
         )
 
-    rows = pq.read_table(output_path).to_pylist()
+    rows = read_view_table(output_path).to_pylist()
     assert len(rows) == 1
     assert rows[0]["run_file_name"] == "run_A"
     assert {entry["label"]: entry["intensity"] for entry in rows[0]["intensities"]} == {"L": 100.0, "H": 200.0}
@@ -399,7 +399,7 @@ def test_plexdia_pg_quantification_method_matches_each_channel(tmp_path, fallbac
             sdrf_path=str(sdrf_path),
         )
 
-    rows = pq.read_table(output_path).to_pylist()
+    rows = read_view_table(output_path).to_pylist()
     expected_intensities = {"L": 1000.0, "H": 2000.0}
     expected_intensities[fallback_channel] = {"L": 900.0, "H": 1800.0}[fallback_channel]
     assert len(rows) == 2
@@ -663,7 +663,7 @@ def _pg_rows_single_run(
             output_path=str(output_path),
             qvalue_threshold=qvalue_threshold,
         )
-    return pq.read_table(output_path).to_pylist()
+    return read_view_table(output_path).to_pylist()
 
 
 def test_diann_pg_threshold_keeps_groups_above_pg_qvalue(tmp_path):
@@ -761,7 +761,7 @@ def _feature_rows_single_run(
             output_path=str(output_path),
             qvalue_threshold=qvalue_threshold,
         )
-    return pq.read_table(output_path).to_pylist()
+    return read_view_table(output_path).to_pylist()
 
 
 def _two_precursor_report_rows() -> list[dict]:
@@ -1017,6 +1017,18 @@ def test_diann_feature_ion_mobility_is_null_without_ion_mobility_data(tmp_path):
     assert cv == {"iim": "0.9", "predicted_im": "0.96", "predicted_iim": "0.91"}
 
 
+def test_diann_irt_is_only_the_irt_column(tmp_path):
+    """iRT fills feature.irt and is not repeated in cv_params (#377)."""
+    rows = _two_precursor_report_rows()
+    rows[0].update({"iRT": 41.25, "Predicted.iRT": 40.5})
+
+    features = {row["sequence"]: row for row in _feature_rows_single_run(tmp_path, rows)}
+
+    assert features["PEPTIDEK"]["irt"] == pytest.approx(41.25)
+    assert {entry["cv_name"] for entry in features["PEPTIDEK"]["cv_params"]} == {"proteotypic", "predicted_irt"}
+    assert features["PEPTIDER"]["irt"] is None
+
+
 def test_diann_library_decoys_drop_the_caret_and_keep_distinct_ids(tmp_path):
     """DIA-NN 2.x writes a library decoy with ^ and the decoy sequence generated from its parent.
 
@@ -1158,10 +1170,18 @@ class TestDiaNNOntologyConversion:
 
         entries = [row for row in table.to_pylist() if row["field_name"] == "precursor_qvalue" and row["view"] == "feature"]
         assert len(entries) == 1
-        assert entries[0]["ontology_name"] == "DIA-NN:Q.Value"
+        assert entries[0]["ontology_name"] == "precursor q-value"
         assert entries[0]["ontology_accession"] is None
         assert entries[0]["source_column_name"] == "Q.Value"
         assert entries[0]["source_tool"] == "DIA-NN"
+
+    def test_pg_qvalue_column_keeps_its_cv_term(self, converted_output):
+        """PG.Q.Value is only the pg_qvalue column, and its row still names the PSI-MS term (#377)."""
+        table = pq.read_table(str(converted_output / "diann_test.ontology.parquet"))
+        entries = [row for row in table.to_pylist() if (row["field_name"], row["view"]) == ("pg_qvalue", "pg")]
+        assert [(row["ontology_accession"], row["source_column_name"], row["source_tool"]) for row in entries] == [
+            ("MS:1002373", "PG.Q.Value", "DIA-NN")
+        ]
 
     def test_schema_validation(self, converted_output):
         from qpx.core.data import OntologySchema

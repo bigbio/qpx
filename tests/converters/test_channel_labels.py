@@ -1,14 +1,9 @@
-"""Plex-aware channel-label resolution for the OpenMS QPX paths.
+"""Plex-aware channel-label resolution shared by the converters.
 
-Regression coverage for canonical TMT/iTRAQ labels shared by the OpenMS
-consensusXML and ``-out_qpx`` paths. Labels come from the shared sdrf-pipelines
-channel_map and are plex-aware.
+Regression coverage for canonical TMT/iTRAQ labels. Labels come from the shared
+sdrf-pipelines channel_map and are plex-aware.
 """
 
-import random
-import sys
-
-import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
@@ -16,7 +11,6 @@ from qpx.converters.channel_labels import (
     experiment_runs_from_sdrf,
     experiment_type_from_labels,
     normalize_label,
-    relabel_intensities_parquet,
     resolve_channel_labels,
 )
 
@@ -145,11 +139,10 @@ def test_sdrf_run_paths_reject_missing_data_files(tmp_path, data_file):
     assert not run_output.exists()
 
 
-from qpx.core.parquet_io import read_parquet_metadata
 from qpx.dataset import Dataset
 from qpx.writers.feature import FeatureWriter
 from qpx.writers.pg import PgWriter
-from tests.conftest import make_feature_record, make_pg_record, write_lfq_consensusxml
+from tests.conftest import make_feature_record, make_pg_record
 
 
 def _resolve(experiment_type, channel_indices, sdrf_labels=None):
@@ -177,6 +170,20 @@ def test_experiment_type_from_labels():
 
 
 @pytest.mark.parametrize(
+    "labels",
+    [
+        {"SILAC light", "SILAC heavy"},
+        {"SILAC light", "SILAC medium", "SILAC heavy"},
+        {"NT=silac LIGHT;AC=MS:1002038", "NT=SILAC HEAVY;AC=MS:1002040"},
+        {"SILAC medium"},
+    ],
+)
+def test_silac_sdrf_labels_are_not_classified_as_lfq(labels):
+    """Canonical SILAC labels, including ontology notation, identify the family."""
+    assert experiment_type_from_labels(labels) == "SILAC"
+
+
+@pytest.mark.parametrize(
     ("raw_label", "expected"),
     [
         ("tmt126", "TMT126"),
@@ -191,80 +198,6 @@ def test_experiment_type_from_labels():
 def test_normalize_label_case_and_ontology_form(raw_label, expected):
     """Known label spellings and ontology forms normalize to one join key."""
     assert normalize_label(raw_label) == expected
-
-
-def _write_intensities_parquet(path, rows):
-    itype = pa.list_(pa.struct([("label", pa.string()), ("intensity", pa.float32())]))
-    pq.write_table(pa.table({"intensities": pa.array(rows, type=itype)}), path)
-
-
-def test_relabel_openms_feature_filename_labels(tmp_path):
-    """OpenMS feature -out_qpx: filename in every label -> reporter names by position."""
-    src = tmp_path / "in.parquet"
-    dst = tmp_path / "out.parquet"
-    fname = "run01.mzML"
-    _write_intensities_parquet(src, [[{"label": fname, "intensity": float(i)} for i in range(1, 11)]])
-    labels = resolve_channel_labels("TMT", {f"TMT12{i}" for i in range(6)} | {"TMT131"}, range(1, 11))
-    relabel_intensities_parquet(str(src), str(dst), labels, is_lfq=False)
-    got = [e["label"] for e in pq.read_table(dst).column("intensities").to_pylist()[0]]
-    assert got[0] == "TMT126"
-    assert got[9] == "TMT131"  # tmt10plex, position 10
-    assert fname not in got
-
-
-def test_relabel_openms_pg_index_labels(tmp_path):
-    """OpenMS pg -out_qpx: bare index labels '1','2',... -> reporter names."""
-    src = tmp_path / "pg_in.parquet"
-    dst = tmp_path / "pg_out.parquet"
-    _write_intensities_parquet(src, [[{"label": str(i), "intensity": 1.0} for i in range(1, 12)]])
-    labels = resolve_channel_labels("TMT", None, range(1, 12))  # tmt11plex by count
-    relabel_intensities_parquet(str(src), str(dst), labels, is_lfq=False)
-    got = [e["label"] for e in pq.read_table(dst).column("intensities").to_pylist()[0]]
-    assert got == [
-        "TMT126",
-        "TMT127N",
-        "TMT127C",
-        "TMT128N",
-        "TMT128C",
-        "TMT129N",
-        "TMT129C",
-        "TMT130N",
-        "TMT130C",
-        "TMT131N",
-        "TMT131C",
-    ]
-
-
-def test_relabel_preserves_qpx_compression_and_float_encoding(tmp_path):
-    """Relabeling must not silently rewrite ZSTD/BYTE_STREAM_SPLIT as Snappy."""
-    src = tmp_path / "feature_in.parquet"
-    dst = tmp_path / "feature_out.parquet"
-    rng = random.Random(0)
-    with FeatureWriter(src, compression="zstd") as writer:
-        writer.write_batch([{**make_feature_record(), "rt": rng.uniform(0, 7200)} for _ in range(5000)])
-
-    relabel_intensities_parquet(
-        str(src),
-        str(dst),
-        {1: "TMT126"},
-        is_lfq=False,
-        compression="zstd",
-    )
-
-    assert read_parquet_metadata(dst)["compression_format"] == "zstd"
-    parquet = pq.ParquetFile(dst)
-    row_group = parquet.metadata.row_group(0)
-
-    def _col(path):
-        return next(
-            row_group.column(index) for index in range(row_group.num_columns) if row_group.column(index).path_in_schema == path
-        )
-
-    # ZSTD compression is preserved (not silently downgraded to Snappy).
-    assert _col("intensities.list.element.intensity").compression == "ZSTD"
-    # The rewrite measures encodings like every QPX writer: continuous retention
-    # times are smallest byte-stream-split, where pyarrow would use a dictionary.
-    assert "BYTE_STREAM_SPLIT" in _col("rt").encodings
 
 
 def test_run_label_is_canonical_join_key(tmp_path):
@@ -346,138 +279,6 @@ def test_run_rejects_duplicate_canonical_labels(tmp_path):
                 sample_output=str(tmp_path / "sample.parquet"),
                 run_output=str(tmp_path / "run.parquet"),
             )
-
-
-def test_relabel_lfq_collapses_to_lfq(tmp_path):
-    src = tmp_path / "lfq_in.parquet"
-    dst = tmp_path / "lfq_out.parquet"
-    _write_intensities_parquet(src, [[{"label": "run01.mzML", "intensity": 5.0}]])
-    relabel_intensities_parquet(str(src), str(dst), {}, is_lfq=True)
-    assert pq.read_table(dst).column("intensities").to_pylist()[0][0]["label"] == "LFQ"
-
-
-def _write_consensusxml(path, n_channels):
-    """Write a minimal isobaric consensusXML with n_channel ColumnHeaders."""
-    import pyopenms as oms
-
-    cmap = oms.ConsensusMap()
-    headers = {}
-    for i in range(n_channels):
-        h = oms.ColumnHeader()
-        h.filename = "run01.mzML"
-        h.label = str(i + 1)  # OpenMS puts a bare channel id here for isobaric
-        headers[i] = h
-    cmap.setColumnHeaders(headers)
-    cf = oms.ConsensusFeature()
-    cf.setRT(100.0)
-    cf.setMZ(500.0)
-    cmap.push_back(cf)
-    oms.ConsensusXMLFile().store(str(path), cmap)
-
-
-def test_channel_labels_from_consensusxml_tmt11(tmp_path, monkeypatch):
-    """consensusXML ColumnHeaders give the authoritative channel count/order;
-    canonical labels come from the SDRF-declared plex without loading the map."""
-    cxml = tmp_path / "x.consensusXML"
-    _write_consensusxml(cxml, 11)
-    monkeypatch.setitem(sys.modules, "pyopenms", None)
-    tmt11 = {
-        "TMT126",
-        "TMT127N",
-        "TMT127C",
-        "TMT128N",
-        "TMT128C",
-        "TMT129N",
-        "TMT129C",
-        "TMT130N",
-        "TMT130C",
-        "TMT131N",
-        "TMT131C",
-    }
-    from qpx.converters.channel_labels import channel_labels_from_consensusxml
-
-    labels = channel_labels_from_consensusxml(str(cxml), "TMT", tmt11)
-    assert len(labels) == 11
-    assert labels[1] == "TMT126"
-    assert labels[10] == "TMT131N"
-    assert labels[11] == "TMT131C"
-
-
-def test_channel_labels_from_consensusxml_stops_after_map_list(tmp_path):
-    """The parser must not consume consensus features after reading channel headers."""
-    cxml = tmp_path / "header_only.consensusXML"
-    maps = "\n".join(f'<map id="{index}" name="run01.mzML" label="{index + 1}" />' for index in range(6))
-    cxml.write_text(
-        f'<consensusXML><mapList count="6">{maps}</mapList>' + (" " * 100_000) + "<malformed",
-        encoding="utf-8",
-    )
-
-    from qpx.converters.channel_labels import channel_labels_from_consensusxml
-
-    labels = channel_labels_from_consensusxml(str(cxml), "TMT")
-    assert labels[1] == "TMT126"
-    assert labels[6] == "TMT131"
-
-
-def test_channel_labels_from_consensusxml_missing_file():
-    from qpx.converters.channel_labels import channel_labels_from_consensusxml
-
-    assert channel_labels_from_consensusxml("/no/such.consensusXML", "TMT", {"TMT126"}) == {}
-
-
-# ---------------------------------------------------------------------------
-# fraction_groups_from_consensusxml (LFQ experimental-design capture)
-# ---------------------------------------------------------------------------
-
-
-def test_fraction_groups_from_consensusxml_lfq(tmp_path):
-    from qpx.converters.channel_labels import fraction_groups_from_consensusxml
-
-    cxml = tmp_path / "lfq.consensusXML"
-    write_lfq_consensusxml(
-        cxml,
-        [
-            (0, "run_A_f1.mzML", "1", "1", "1"),
-            (1, "run_A_f2.mzML", "1", "2", "1"),
-            (2, "run_B_f1.mzML", "2", "1", "2"),
-        ],
-    )
-    groups = fraction_groups_from_consensusxml(str(cxml))
-    assert set(groups) == {"run_A_f1.mzML", "run_A_f2.mzML", "run_B_f1.mzML"}
-    assert groups["run_A_f1.mzML"] == {"fraction_group": "1", "fraction": "1", "sample_name": "1"}
-    # Two fractions of the same sample share a fraction_group.
-    assert groups["run_A_f2.mzML"]["fraction_group"] == "1"
-    assert groups["run_B_f1.mzML"]["fraction_group"] == "2"
-
-
-def test_fraction_groups_from_consensusxml_stops_after_map_list(tmp_path):
-    """Parsing must stop at </mapList> and not choke on trailing junk."""
-    from qpx.converters.channel_labels import fraction_groups_from_consensusxml
-
-    cxml = tmp_path / "trailing.consensusXML"
-    write_lfq_consensusxml(
-        cxml,
-        [(0, "run01.mzML", "1", "1", "1")],
-        trailing=(" " * 100_000) + "<malformed",
-    )
-    groups = fraction_groups_from_consensusxml(str(cxml))
-    assert groups["run01.mzML"]["fraction_group"] == "1"
-
-
-def test_fraction_groups_from_consensusxml_isobaric_returns_empty(tmp_path):
-    """Isobaric / pre-design maps have no fraction_group UserParam -> {}."""
-    from qpx.converters.channel_labels import fraction_groups_from_consensusxml
-
-    cxml = tmp_path / "isobaric.consensusXML"
-    maps = "".join(f'<map id="{i}" name="run01.mzML" label="{i + 1}" />' for i in range(6))
-    cxml.write_text(f'<consensusXML><mapList count="6">{maps}</mapList>', encoding="utf-8")
-    assert fraction_groups_from_consensusxml(str(cxml)) == {}
-
-
-def test_fraction_groups_from_consensusxml_missing_file():
-    from qpx.converters.channel_labels import fraction_groups_from_consensusxml
-
-    assert fraction_groups_from_consensusxml("/no/such.consensusXML") == {}
 
 
 @pytest.mark.parametrize(

@@ -2,13 +2,14 @@
 
 import click
 
+from qpx.cli.renamed import RenamedGroup
+
 from .cdap import convert_cdap_cmd
 from .diann import convert_diann_cmd, convert_diann_xic_cmd
 from .fragpipe import convert_fragpipe_cmd
 from .maxquant import convert_maxquant_cmd
 from .mz import convert_mz_cmd
 from .mzidentml import convert_mzidentml_cmd
-from .openms import convert_openms_cmd
 from .openms_consensus import convert_openms_consensus_cmd
 from .proteome_discoverer import convert_proteome_discoverer_cmd
 from .quantms_msstats import convert_quantms_msstats_cmd
@@ -24,7 +25,6 @@ __all__ = [
     "convert_maxquant_cmd",
     "convert_mz_cmd",
     "convert_mzidentml_cmd",
-    "convert_openms_cmd",
     "convert_proteome_discoverer_cmd",
     "convert_openms_consensus_cmd",
     "convert_quantms_msstats_cmd",
@@ -33,7 +33,8 @@ __all__ = [
 ]
 
 
-@click.group()
+# Converters always write zstd, the default of the removed --compression.
+@click.group(cls=RenamedGroup, renamed={"--compression": None})
 def convert():
     """Convert external tool outputs to QPX format."""
 
@@ -45,7 +46,6 @@ for _command in (
     convert_fragpipe_cmd,
     convert_proteome_discoverer_cmd,
     convert_mzidentml_cmd,
-    convert_openms_cmd,
     convert_openms_consensus_cmd,
     convert_sdrf_cmd,
     convert_quantms_msstats_cmd,

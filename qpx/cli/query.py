@@ -17,6 +17,7 @@ from typing import Optional
 
 import click
 
+from qpx.cli.renamed import DATASET_PATH, RenamedCommand
 from qpx.cli.resources import duckdb_resource_options
 from qpx.dataset import Dataset
 
@@ -24,7 +25,8 @@ logger = logging.getLogger("qpx.cli.query")
 
 # Shared option for the dataset path
 _dataset_path_option = click.option(
-    "--dataset-path",
+    "--dataset",
+    "dataset_path",
     help="Path to a QPX dataset directory",
     required=True,
     type=click.Path(exists=True, file_okay=False, path_type=Path),
@@ -52,7 +54,11 @@ def query_cmd():
 # ---------------------------------------------------------------------------
 
 
-@query_cmd.command("sql")
+@query_cmd.command(
+    "sql",
+    cls=RenamedCommand,
+    renamed={**DATASET_PATH, "--structures": "--view", "--duckdb-memory": "--max-memory", "--duckdb-threads": "--max-cpus"},
+)
 @_dataset_path_option
 @click.option(
     "--sql",
@@ -73,8 +79,11 @@ def query_cmd():
     default="csv",
 )
 @click.option(
-    "--structures",
-    help="Comma-separated list of structures to load (default: all found)",
+    "--view",
+    "structures",
+    multiple=True,
+    help="View to load; repeatable (default: all found)",
+    type=click.Choice(_VALID_STRUCTURES, case_sensitive=False),
 )
 @duckdb_resource_options
 @click.option("--verbose", help="Enable verbose logging", is_flag=True)
@@ -89,22 +98,22 @@ def query_sql_cmd(**kwargs):
     Examples:
         # Count features per run
         qpxc query sql \\
-            --dataset-path ./PXD014414 \\
+            --dataset ./PXD014414 \\
             --sql "SELECT run_file_name, COUNT(*) AS n FROM feature GROUP BY 1"
 
     \b
         # Join feature with run, export to CSV
         qpxc query sql \\
-            --dataset-path ./PXD014414 \\
+            --dataset ./PXD014414 \\
             --sql "SELECT f.sequence, r.run_file_name FROM feature f JOIN run r USING (run_file_name)" \\
             --output results.csv
 
     \b
-        # Query specific structures only
+        # Load only the psm view
         qpxc query sql \\
-            --dataset-path ./PXD014414 \\
+            --dataset ./PXD014414 \\
             --sql "SELECT COUNT(*) FROM psm" \\
-            --structures psm
+            --view psm
     """
     dataset_path = kwargs["dataset_path"]
     sql_query = kwargs["sql_query"]
@@ -118,9 +127,7 @@ def query_sql_cmd(**kwargs):
 
     import qpx
 
-    structure_list = [s.strip() for s in structures.split(",")] if structures else None
-
-    with qpx.open_dataset(dataset_path, structures=structure_list) as ds:
+    with qpx.open_dataset(dataset_path, structures=list(structures) or None) as ds:
         logger.info(f"Opened dataset: {ds}")
         logger.info(f"Executing SQL: {sql_query}")
 
@@ -139,11 +146,12 @@ def query_sql_cmd(**kwargs):
 # ---------------------------------------------------------------------------
 
 
-@query_cmd.command("filter")
+@query_cmd.command("filter", cls=RenamedCommand, renamed={**DATASET_PATH, "--structure": "--view"})
 @_dataset_path_option
 @click.option(
-    "--structure",
-    help="QPX data structure to filter (e.g., feature, psm, pg)",
+    "--view",
+    "structure",
+    help="QPX view to filter (e.g., feature, psm, pg)",
     required=True,
     type=click.Choice(_VALID_STRUCTURES, case_sensitive=False),
 )
@@ -184,15 +192,15 @@ def query_filter_cmd(**kwargs):
     Examples:
         # Filter features by charge and q-value
         qpxc query filter \\
-            --dataset-path ./PXD014414 \\
-            --structure feature \\
+            --dataset ./PXD014414 \\
+            --view feature \\
             --condition "charge > 2 AND global_qvalue < 0.01"
 
     \b
         # Filter PSMs, select specific columns
         qpxc query filter \\
-            --dataset-path ./PXD014414 \\
-            --structure psm \\
+            --dataset ./PXD014414 \\
+            --view psm \\
             --condition "is_decoy = false" \\
             --columns "sequence,charge,score" \\
             --limit 100
@@ -200,8 +208,8 @@ def query_filter_cmd(**kwargs):
     \b
         # Export filtered protein groups to parquet
         qpxc query filter \\
-            --dataset-path ./PXD014414 \\
-            --structure pg \\
+            --dataset ./PXD014414 \\
+            --view pg \\
             --condition "global_qvalue < 0.01" \\
             --output filtered_pg.parquet \\
             --output-format parquet
@@ -253,11 +261,12 @@ def query_filter_cmd(**kwargs):
 # ---------------------------------------------------------------------------
 
 
-@query_cmd.command("head")
+@query_cmd.command("head", cls=RenamedCommand, renamed={**DATASET_PATH, "--structure": "--view"})
 @_dataset_path_option
 @click.option(
-    "--structure",
-    help="QPX data structure to inspect (e.g., feature, psm, pg)",
+    "--view",
+    "structure",
+    help="QPX view to inspect (e.g., feature, psm, pg)",
     required=True,
     type=click.Choice(_VALID_STRUCTURES, case_sensitive=False),
 )
@@ -296,14 +305,14 @@ def query_head_cmd(
     Examples:
         # Show first 10 rows of features
         qpxc query head \\
-            --dataset-path ./PXD014414 \\
-            --structure feature
+            --dataset ./PXD014414 \\
+            --view feature
 
     \b
         # Show 5 PSM rows with specific columns
         qpxc query head \\
-            --dataset-path ./PXD014414 \\
-            --structure psm \\
+            --dataset ./PXD014414 \\
+            --view psm \\
             -n 5 \\
             --columns "sequence,charge,score"
     """

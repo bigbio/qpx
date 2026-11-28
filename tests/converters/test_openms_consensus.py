@@ -95,14 +95,14 @@ def _accumulated_protein_maps(cm):
     """Fold ``cm`` into fresh pg accession maps, as the converter does."""
     from qpx.converters.openms_consensus.feature_adapter import feature_map_info
     from qpx.converters.openms_consensus.pg_adapter import _ProteinMaps, accumulate_consensus_map
-    from qpx.converters.openms_consensus.psm_adapter import _run_resolver
+    from qpx.converters.openms_consensus.runs import _run_resolver
 
     protein_maps = _ProteinMaps()
     accumulate_consensus_map(cm, feature_map_info(cm), _run_resolver(cm), protein_maps)
     return protein_maps
 
 
-def _invoke_consensus_convert(tmp_path, folder, *extra, prefix="t"):
+def _invoke_consensus_convert(tmp_path, folder, *extra, prefix="t", structures=("feature", "pg", "psm")):
     """Run ``convert openms-consensus`` on the TMT fixture and return the CliRunner result without asserting."""
     from click.testing import CliRunner
 
@@ -121,8 +121,7 @@ def _invoke_consensus_convert(tmp_path, folder, *extra, prefix="t"):
             str(folder),
             "--output-prefix",
             prefix,
-            "--structures",
-            "feature,pg,psm",
+            *(arg for view in structures or () for arg in ("--view", view)),
             *extra,
         ],
     )
@@ -148,6 +147,15 @@ def test_converter_requires_sdrf_for_requested_metadata(tmp_path):
             structures=("run",),
         )
     assert not out.exists()
+
+
+def test_cli_without_sdrf_writes_the_core_views(tmp_path):
+    out = tmp_path / "out"
+    result = _invoke_consensus_convert(tmp_path, out, "--no-mudata", structures=None)
+
+    assert result.exit_code == 0, result.output
+    assert {path.name for path in out.glob("t.*.parquet")} >= {"t.feature.parquet", "t.psm.parquet", "t.pg.parquet"}
+    assert not (out / "t.run.parquet").exists()
 
 
 def test_converter_writes_only_requested_sdrf_structure(tmp_path):
@@ -519,7 +527,7 @@ def test_consensus_psm_unknown_nativeid_uses_surrogate_scan(tmp_path):
 def test_streaming_retains_all_protein_identification_run_paths(tmp_path):
     """Every ProteinIdentification block keeps its own id_merge_index run list,
     keyed by identifier; the streaming reader must not retain only the last block."""
-    from qpx.converters.openms_consensus.psm_adapter import _merge_index_runs
+    from qpx.converters.openms_consensus.runs import _merge_index_runs
     from qpx.converters.openms_consensus.streaming import StreamingConsensusMap
 
     xml = """<?xml version="1.0" encoding="UTF-8"?>
@@ -1051,8 +1059,12 @@ def test_openms_consensus_cli_fills_protein_properties_from_optional_fasta(tmp_p
                 str(folder),
                 "--output-prefix",
                 "t",
-                "--structures",
-                "feature,pg,psm",
+                "--view",
+                "feature",
+                "--view",
+                "pg",
+                "--view",
+                "psm",
                 *extra,
             ],
         )
@@ -1095,8 +1107,12 @@ def test_openms_consensus_fasta_uses_the_output_prefix_in_a_shared_folder(tmp_pa
                 str(folder),
                 "--output-prefix",
                 prefix,
-                "--structures",
-                "feature,pg,psm",
+                "--view",
+                "feature",
+                "--view",
+                "pg",
+                "--view",
+                "psm",
                 *extra,
             ],
         )
@@ -1122,7 +1138,7 @@ def _consensus_convert(tmp_path, folder, *extra):
 def test_convert_writes_the_mudata_view_by_default(tmp_path):
     """convert diann / openms-consensus wrote the parquet views and stopped, so the
     MuData view had to be built by the caller (an embedded script in the nf-module).
-    It is now written by the converter itself, as convert openms already does."""
+    It is now written by the converter itself."""
     folder = tmp_path / "with_mudata"
     result = _consensus_convert(tmp_path, folder)
 

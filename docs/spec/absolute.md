@@ -92,7 +92,7 @@ Each row in `var` is one protein group, and the index is unique. `uns["var_key"]
 
 ## Producing and checking the file
 
-`qpxc transform quantify --method ibaq --fasta ... -o PXD000000.ae.h5ad` writes this layout, and `qpxc validate --dataset-path` checks an `.ae.h5ad` file it finds in the dataset: unique indexes, no negative layer, `X` as the declared logarithm of `ibaq_raw`, the `standards` columns, and a warning when `log_base`, `var_key` or `aggregation` is missing.
+`qpxc transform quantify --method ibaq --fasta ... -o PXD000000.ae.h5ad` writes this layout, and `qpxc validate --dataset` checks an `.ae.h5ad` file it finds in the dataset: unique indexes, no negative layer, `X` as the declared logarithm of `ibaq_raw`, the `standards` columns, and a warning when `log_base`, `var_key` or `aggregation` is missing.
 
 ## Example
 

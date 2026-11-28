@@ -33,13 +33,15 @@ def fasta_header_fields(header: str) -> dict:
 
 
 _ACCESSION_QUERIES = {
-    "pg": "SELECT unnest(pg_accessions) AS accession FROM read_parquet('$source')",
-    "feature": "SELECT unnest(pg_accessions).accession AS accession FROM read_parquet('$source')",
+    "pg": "SELECT unnest(pg_accessions) AS accession FROM read_parquet('$source') WHERE NOT coalesce(is_decoy, false)",
+    "feature": (
+        "SELECT unnest(pg_accessions).accession AS accession FROM read_parquet('$source') WHERE NOT coalesce(is_decoy, false)"
+    ),
 }
 
 
 def _dataset_accessions(dataset_dir: Path, prefix: str) -> list[str]:
-    """Every protein accession of the dataset's pg and feature views."""
+    """Every protein accession of the target rows of the dataset's pg and feature views."""
     from qpx.core.engine import create_connection
     from qpx.core.sql import escape_path, sql_build
 

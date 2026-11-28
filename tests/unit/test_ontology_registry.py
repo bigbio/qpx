@@ -232,6 +232,15 @@ def test_scores_integration():
     for e in entries:
         assert "ontology_version" in e
 
+    # A feature score qvalue is the precursor q-value it fills (scores.md), not a PSM-level one.
+    (feature,) = score_ontology_entries({"qvalue"}, view="feature")
+    assert (feature["field_name"], feature["ontology_name"], feature["ontology_accession"]) == (
+        "qvalue",
+        "precursor q-value",
+        None,
+    )
+    assert score_ontology_entries({"qvalue"}, view="psm")[0]["ontology_accession"] == "MS:1002354"
+
 
 @pytest.mark.parametrize(
     ("score_name", "expected"),

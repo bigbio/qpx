@@ -14,11 +14,13 @@ from collections.abc import Callable, Iterable
 import duckdb
 import pandas as pd
 import pyarrow as pa
+import pyarrow.parquet as pq
 
 from qpx.converters.ptm import compute_precursor_mz
 from qpx.core.cleavage import count_missed_cleavages
 from qpx.core.engine import create_converter_connection
 from qpx.core.sql import escape_path, sql_build, validate_identifier, validate_table
+from qpx.core.struct_lists import file_layouts, restore_sql
 from qpx.writers.pepmap import PepMapWriter
 
 
@@ -251,10 +253,14 @@ class BaseConverter(ABC):
         """Load a Parquet file into a DuckDB table."""
         safe = escape_path(path)
         tbl = validate_table(table_name)
+        layouts = file_layouts(pq.read_metadata(path).metadata)
+        items = ", ".join(restore_sql(column, layout) for column, layout in layouts.items())
+        projection = sql_build("* REPLACE ($items)", items=items) if items else "*"
         self._conn.execute(
             sql_build(
-                "CREATE OR REPLACE TABLE $tbl AS SELECT * FROM read_parquet('$path')",
+                "CREATE OR REPLACE TABLE $tbl AS SELECT $projection FROM read_parquet('$path')",
                 tbl=tbl,
+                projection=projection,
                 path=safe,
             )
         )

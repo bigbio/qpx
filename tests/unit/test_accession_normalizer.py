@@ -29,8 +29,8 @@ def test_forward_maps_anchor_and_members_of_both_layouts(tmp_path):
     pg = tmp_path / "x.pg.parquet"
     pq.write_table(pa.table({"pg_accessions": [["tr|Q15149|PLEC_HUMAN", None, "P01308"], None]}), pg)
 
-    result = normalize_parquet(feature, tmp_path / "out.feature.parquet", direction="forward")
-    normalize_parquet(pg, tmp_path / "out.pg.parquet", direction="forward")
+    result = normalize_parquet(feature, tmp_path / "out.feature.parquet")
+    normalize_parquet(pg, tmp_path / "out.pg.parquet")
 
     table = pq.read_table(tmp_path / "out.feature.parquet")
     assert result["accessions_changed"] == 2
@@ -50,7 +50,7 @@ def test_file_without_changes_is_copied(tmp_path):
     source = tmp_path / "x.pg.parquet"
     pq.write_table(pa.table({"anchor_protein": ["P04114"], "pg_accessions": [["P04114", "P02768"]]}), source)
 
-    result = normalize_parquet(source, tmp_path / "out.pg.parquet", direction="forward")
+    result = normalize_parquet(source, tmp_path / "out.pg.parquet")
 
     assert result["accessions_changed"] == 0
     assert (tmp_path / "out.pg.parquet").read_bytes() == source.read_bytes()
@@ -64,7 +64,7 @@ def test_psm_and_pepmap_accessions_are_normalized_and_a_pg_file_keeps_its_ids(tm
     psm = tmp_path / "x.psm.parquet"
     with PsmWriter(psm) as writer:
         writer.write_batch([{**make_psm_record(), "protein_accessions": ["sp|P04637|P53_HUMAN"]}])
-    normalize_parquet(psm, tmp_path / "out.psm.parquet", direction="forward")
+    normalize_parquet(psm, tmp_path / "out.psm.parquet")
     normalized = pq.read_table(tmp_path / "out.psm.parquet")
     assert normalized.column("protein_accessions").to_pylist() == [["P04637"]]
     assert pq.read_metadata(tmp_path / "out.psm.parquet").metadata[b"identity_source"] == b"derived"
@@ -72,7 +72,7 @@ def test_psm_and_pepmap_accessions_are_normalized_and_a_pg_file_keeps_its_ids(tm
     pg = tmp_path / "x.pg.parquet"
     with PgWriter(pg) as writer:
         writer.write_batch([make_pg_record(anchor_protein="sp|P04637|P53_HUMAN", pg_accessions=["sp|P04637|P53_HUMAN"])])
-    normalize_parquet(pg, tmp_path / "out.pg.parquet", direction="forward")
+    normalize_parquet(pg, tmp_path / "out.pg.parquet")
     assert pq.read_metadata(tmp_path / "out.pg.parquet").metadata[b"identity_source"] == b"provided"
     assert pq.read_table(tmp_path / "out.pg.parquet").column("pg_id").to_pylist() == pq.read_table(pg).column("pg_id").to_pylist()
 

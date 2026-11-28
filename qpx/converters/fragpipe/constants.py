@@ -63,6 +63,9 @@ def protein_accessions(*fields: object) -> list[str]:
 # ---------------------------------------------------------------------------
 
 _FP_MOD_TOKEN_RE = re.compile(r"(?:(\d+)([A-Z])|([NC]-term))\(([^)]+)\)")
+# A residue or terminus of a FragPipe Modified Sequence, with the content of its brackets.
+_SEQUENCE_RESIDUE_RE = re.compile(r"([A-Za-z])(?:\[([^\]]*)\])?")
+_DELTA_MASS_RE = re.compile(r"-?\d+\.\d+")
 
 
 def _token_modification(token: str, sequence: str) -> tuple[int, str] | None:
@@ -87,6 +90,32 @@ def _token_modification(token: str, sequence: str) -> tuple[int, str] | None:
     else:
         position = int(pos_str)
     return position, mass_tag(mass, *position_site(sequence, position))
+
+
+def with_sequence_mods(assigned_mods: str, modified_sequence: str) -> str:
+    """Assigned Modifications plus the delta masses of ``Modified Sequence`` at sites they leave out.
+
+    IonQuant writes every modification of an ion into ``Modified Sequence`` of
+    ``combined_ion.tsv`` as a delta mass (``n[42.0106]AC[57.0215]M[15.9949]K``),
+    but can leave some out of Assigned Modifications, which alone would give an
+    oxidised ion and its unoxidised form one peptidoform. Philosopher's ``ion.tsv`` writes the
+    residue plus modification as an integer (``M[147]``) and leaves out fixed
+    modifications; its Assigned Modifications are complete, and such brackets are not read.
+    """
+    tokens = [token.strip() for token in assigned_mods.split(",") if token.strip()]
+    sites = {match.group(1) or match.group(3) for token in tokens if (match := _FP_MOD_TOKEN_RE.match(token))}
+    position = 0
+    for residue, mass in _SEQUENCE_RESIDUE_RE.findall(modified_sequence):
+        if residue in "nc":
+            site = f"{residue.upper()}-term"
+            token = f"{site}({mass})"
+        else:
+            position += 1
+            site = str(position)
+            token = f"{position}{residue}({mass})"
+        if _DELTA_MASS_RE.fullmatch(mass) and site not in sites:
+            tokens.append(token)
+    return ", ".join(tokens)
 
 
 @lru_cache(maxsize=8192)
@@ -212,7 +241,8 @@ def name_glycan(modifications: list[dict] | None, composition: object) -> list[d
     name = "Glycan:" + "".join(f"{residue}{count}" for residue, count in _GLYCAN_RESIDUE_RE.findall(match.group(1)))
     mass = float(match.group(2))
     return [
-        {**mod, "name": name} if abs(parse_unimod_delta(mod["name"]) - mass) <= _GLYCAN_MASS_TOL else mod for mod in modifications
+        {**mod, "name": name} if abs(parse_unimod_delta(mod["accession"] or mod["name"]) - mass) <= _GLYCAN_MASS_TOL else mod
+        for mod in modifications
     ]
 
 

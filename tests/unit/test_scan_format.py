@@ -8,6 +8,7 @@ import qpx
 from qpx.cli.main import qpx_main
 from qpx.core.data import FeatureSchema, PsmSchema
 from qpx.core.scan import scan_format_from_native_id
+from qpx.writers import encoding
 from qpx.writers.psm import PsmWriter
 from tests.conftest import _valid_arrays, make_psm_record
 
@@ -45,8 +46,9 @@ def _write_psm(path, scan, scan_format=None):
         writer.write_batch([make_psm_record(scan=scan)])
 
 
-def test_scan_format_can_be_declared_after_multiple_batches(tmp_path):
+def test_scan_format_can_be_declared_after_multiple_batches(tmp_path, monkeypatch):
     """Late metadata must be visible in both the footer and restored Arrow schema."""
+    monkeypatch.setattr(encoding, "ROW_GROUP_ROWS", 1)
     path = tmp_path / "test.psm.parquet"
     with PsmWriter(path, batch_size=1) as writer:
         writer.write_batch([make_psm_record(scan=[1])])
@@ -70,6 +72,7 @@ def test_metadata_failure_keeps_previous_destination(tmp_path, monkeypatch):
         raise RuntimeError("metadata update failed")
 
     monkeypatch.setattr(pq.ParquetWriter, "add_key_value_metadata", fail_metadata_update, raising=False)
+    monkeypatch.setattr(encoding, "ROW_GROUP_ROWS", 1)
     with PsmWriter(path, batch_size=1) as writer:
         writer.write_batch([make_psm_record(scan=[2])])
         with pytest.raises(RuntimeError, match="metadata update failed"):
@@ -82,6 +85,7 @@ def test_metadata_failure_keeps_previous_destination(tmp_path, monkeypatch):
 def test_older_arrow_preserves_output_without_late_metadata(tmp_path, monkeypatch, caplog, flushed):
     """Older Arrow still writes rows, and supports declarations before opening."""
     monkeypatch.delattr(pq.ParquetWriter, "add_key_value_metadata", raising=False)
+    monkeypatch.setattr(encoding, "ROW_GROUP_ROWS", 1)
     path = tmp_path / "test.psm.parquet"
     with PsmWriter(path, batch_size=1 if flushed else 10) as writer:
         writer.write_batch([make_psm_record(scan=[1])])
@@ -107,7 +111,7 @@ def test_declared_format_reaches_schema_dataset_and_cli(tmp_path, scan_format, s
     with qpx.Dataset(tmp_path, duckdb_threads=6) as dataset:
         assert not dataset.validate(structures=["psm"], strict=True)["psm"].is_valid
         assert dataset.psm.to_arrow().schema.metadata is None
-    for args in (["--file", str(path)], ["--dataset-path", str(tmp_path), "--structure", "psm"]):
+    for args in (["--file", str(path)], ["--dataset", str(tmp_path), "--view", "psm"]):
         result = CliRunner().invoke(qpx_main, ["validate", *args])
         assert result.exit_code == 1
         assert "scan_format" in result.output

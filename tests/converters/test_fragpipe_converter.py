@@ -16,6 +16,7 @@ from qpx.converters.fragpipe.feature_adapter import FragPipeFeatureAdapter
 from qpx.converters.fragpipe.pg_adapter import FragPipePgAdapter
 from qpx.converters.fragpipe.psm_adapter import FragPipePsmAdapter
 from qpx.converters.ptm import PROTON_MASS, compute_precursor_mz
+from tests.conftest import read_view_table
 
 _COMBINED_PROTEIN_TSV = (
     "Protein\tGene\tDescription\t"
@@ -177,7 +178,7 @@ def _read_pg(tmp_path, protein_tsv, **convert_kwargs):
     convert_kwargs.setdefault("experiment_to_runs", {"expA": ["run_A"]})
     with FragPipePgAdapter() as adapter:
         adapter.convert(protein_path=str(protein_path), output_path=str(out_path), **convert_kwargs)
-    return pq.read_table(str(out_path)).to_pandas()
+    return read_view_table(str(out_path)).to_pandas()
 
 
 def test_pg_qvalue_prefers_real_fdr_over_probability(tmp_path):
@@ -193,16 +194,18 @@ def test_pg_qvalue_prefers_real_fdr_over_probability(tmp_path):
     assert df["pg_qvalue"].iloc[0] == pytest.approx(0.001)
 
 
-def test_pg_qvalue_probability_only_is_inverted(tmp_path):
-    """#246: when only 'Protein Probability' is available it is converted to an
-    FDR-like value (1 - probability), never stored raw."""
+def test_pg_qvalue_is_null_with_only_protein_probability(tmp_path):
+    """A ProteinProphet probability is a score, not a q-value (pg.md); it is not turned into pg_qvalue."""
     tsv = (
         "Protein\tGene\tDescription\tProtein Probability\t"
         "expA Total Intensity\tCombined Total Peptides\tCombined Unique Peptides\n"
         "sp|P1|A_HUMAN\tG1\tprot1\t0.9999\t1000\t5\t3\n"
     )
     df = _read_pg(tmp_path, tsv)
-    assert df["pg_qvalue"].iloc[0] == pytest.approx(1.0 - 0.9999)
+    assert df["pg_qvalue"].isna().iloc[0]
+    assert {s["score_name"]: s["score_value"] for s in df["additional_scores"].iloc[0]}["protein_probability"] == pytest.approx(
+        0.9999
+    )
 
 
 def test_maxlfq_only_experiment_emits_pg(tmp_path):
@@ -417,6 +420,25 @@ def test_feature_decoy_from_raw_accession_without_psm(tmp_path):
     assert bool(df.iloc[0]["is_decoy"]) is True
 
 
+def test_feature_peptidoform_adds_the_modifications_only_modified_sequence_gives(tmp_path):
+    """IonQuant can leave an ion's modifications out of Assigned Modifications (PXD041421),
+    so the oxidised ion took the peptidoform and feature_id of the unoxidised one. Integer
+    masses, Philosopher's residue plus modification, are not read."""
+    ion = tmp_path / "combined_ion.tsv"
+    ion.write_text(
+        "Peptide Sequence\tModified Sequence\tProtein\tGene\tM/Z\tCharge\tAssigned Modifications\tsampleA Intensity\n"
+        "PEPTMIDEK\tPEPTMIDEK\tsp|P12345|PROT_HUMAN\tGENE1\t531.25\t2\t\t1000\n"
+        "PEPTMIDEK\tPEPTM[15.9949]IDEK\tsp|P12345|PROT_HUMAN\tGENE1\t539.25\t2\t\t1000\n"
+        "PEPTMIDER\tPEPTM[147]IDER\tsp|P12345|PROT_HUMAN\tGENE1\t545.25\t2\t\t1000\n"
+    )
+    out = tmp_path / "feature.parquet"
+    with FragPipeFeatureAdapter() as adapter:
+        adapter.convert(feature_path=str(ion), output_path=str(out), experiment_to_runs={"sampleA": ["run_A"]})
+    rows = pq.read_table(out).to_pylist()
+    assert {row["peptidoform"] for row in rows} == {"PEPTMIDEK", "PEPTM[UNIMOD:35]IDEK", "PEPTMIDER"}
+    assert len({row["feature_id"] for row in rows}) == 3
+
+
 def test_feature_rows_are_keyed_by_the_experiment_run(tmp_path):
     """A feature names the raw run of its experiment, which run.parquet and the pg
     grouped_runs hold, and the run that identified it only when that is known."""
@@ -551,6 +573,22 @@ def test_psm_lists_mapped_proteins_and_reads_probability(tmp_path):
     assert row["mass_error_ppm"] is None
 
 
+@pytest.mark.parametrize(("header", "value", "expected"), [("\tCompensation Voltage", "\t-45.0", -45.0), ("", "", None)])
+def test_psm_compensation_voltage_is_its_column(tmp_path, header, value, expected):
+    """FragPipe's Compensation Voltage is psm.compensation_voltage, not a cv_params entry; null without FAIMS."""
+    psm = tmp_path / "psm.tsv"
+    psm.write_text(
+        f"Spectrum\tPeptide\tCharge\tAssigned Modifications\tCalculated M/Z\tProtein\tNumber of Enzymatic Termini{header}\n"
+        f"run_01.00500.00500.2\tPEPTIDEK\t2\t\t500.000\tsp|P1|A_HUMAN\t2{value}\n"
+    )
+    out = tmp_path / "psm.parquet"
+    with FragPipePsmAdapter() as adapter:
+        adapter.convert(psm_path=str(psm), output_path=str(out))
+    row = read_view_table(out).to_pylist()[0]
+    assert row["compensation_voltage"] == expected
+    assert [entry["cv_name"] for entry in row["cv_params"]] == ["number_of_enzymatic_termini"]
+
+
 def test_psm_purity_is_the_parent_ion_fraction(tmp_path):
     """FragPipe Purity, the precursor's share of the isolation window, is kept as a score."""
     psm = tmp_path / "psm.tsv"
@@ -561,7 +599,7 @@ def test_psm_purity_is_the_parent_ion_fraction(tmp_path):
     out = tmp_path / "psm.parquet"
     with FragPipePsmAdapter() as adapter:
         adapter.convert(psm_path=str(psm), output_path=str(out))
-    scores = {s["score_name"]: s for s in pq.read_table(out).to_pylist()[0]["additional_scores"]}
+    scores = {s["score_name"]: s for s in read_view_table(out).to_pylist()[0]["additional_scores"]}
     assert scores["parent_ion_fraction"]["score_value"] == pytest.approx(0.87)
     assert scores["parent_ion_fraction"]["higher_better"] is True
 
@@ -611,7 +649,7 @@ def _convert_psm_rows(tmp_path, header: str, rows: list[str]) -> list[dict]:
     out = tmp_path / "psm.parquet"
     with FragPipePsmAdapter() as adapter:
         adapter.convert(psm_path=str(psm), output_path=str(out))
-    return sorted(pq.read_table(out).to_pylist(), key=lambda row: row["scan"])
+    return sorted(read_view_table(out).to_pylist(), key=lambda row: row["scan"])
 
 
 def test_open_search_mass_shift_is_part_of_the_peptidoform(tmp_path):
@@ -680,6 +718,22 @@ def test_glycan_composition_and_fdr_are_kept(tmp_path, moved_to_calculated):
     assert scores["glycan_score"]["higher_better"] is True
     assert scores["glycan_qvalue"]["score_value"] == pytest.approx(0.002)
     assert scores["glycan_qvalue"]["higher_better"] is False
+
+
+def test_glycan_held_as_a_unimod_accession_is_named(tmp_path):
+    """An N-glycan at N is a Unimod entry, and the other modifications of its PSM are too; the glycan is
+    still found by mass and named after its composition."""
+    peptide_mass = compute_precursor_mz("PEN[UNIMOD:1531]C[UNIMOD:4]TK", 1) - PROTON_MASS
+    mz = (peptide_mass + 3 * PROTON_MASS) / 3
+    row = (
+        f"run_01.00001.00001.3\tPENCTK\t3\t3N({_GLYCAN_MASS:.4f}), 4C(57.0215)\t{peptide_mass:.4f}\t{mz:.4f}"
+        f"\t0.0\t{mz:.4f}\tHexNAc(2)Hex(9) % 1864.6341\tsp|P1|A_HUMAN\n"
+    )
+    rows = _convert_psm_rows(tmp_path, _OPEN_COLUMNS + "\tTotal Glycan Composition\tProtein", [row])
+    assert {mod["name"]: mod["accession"] for mod in rows[0]["modifications"]} == {
+        "Glycan:HexNAc2Hex9": "UNIMOD:1531",
+        "Carbamidomethyl": "UNIMOD:4",
+    }
 
 
 def test_feature_is_not_enriched_from_a_mass_shifted_psm(tmp_path):

@@ -44,8 +44,7 @@ SCORE_PARENT_IDS = frozenset(
 # ---------------------------------------------------------------------------
 # Scores -- specific score accessions
 # ---------------------------------------------------------------------------
-CV_PEP = "MS:1001493"  # posterior error probability (PEP)
-CV_PEP_GLOBAL = "MS:1002352"  # PSM-level global FDR (global PEP)
+CV_PEP = "MS:1001493"  # percolator:PEP
 
 # ---------------------------------------------------------------------------
 # Site localization scores

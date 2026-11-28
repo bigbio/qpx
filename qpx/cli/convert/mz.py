@@ -9,6 +9,7 @@ from typing import Optional
 import click
 
 from .options import _verbose_option
+from .postprocess import _describe_in_dataset
 
 
 @click.command("mz")
@@ -21,7 +22,7 @@ from .options import _verbose_option
 @click.option(
     "--output",
     "-o",
-    help="Output .mz.parquet file path",
+    help="Output file, <prefix>.mz.parquet to join the dataset of that prefix",
     required=True,
     type=click.Path(dir_okay=False, path_type=Path),
 )
@@ -37,12 +38,14 @@ def convert_mz_cmd(
     ms_levels: Optional[str],
     verbose: bool,
 ):
-    """Convert a directory of mzML spectra to a QPX mz.parquet (full spectra).
+    """Convert a directory of mzML spectra to a QPX mz view (full spectra).
 
     Reads every .mzML / .mzML.gz file in --mzml-dir and writes scan-level
-    spectral data (m/z and intensity arrays, precursor info) to a single
-    mz.parquet. Each spectrum carries run_file_name + scan so it can be linked
-    back to PSM / feature records.
+    spectral data (m/z and intensity arrays, precursor info) to the file
+    --output names. Each spectrum carries run_file_name + scan so it can be linked
+    back to PSM / feature records. Written into a dataset, beside its
+    <prefix>.ontology.parquet, it adds the mz rows to that ontology view and
+    records an existing integrity record again.
 
     \b
     Examples:
@@ -69,5 +72,6 @@ def convert_mz_cmd(
 
     mapper = SpectraMappingTransform(mzml_directory=mzml_dir)
     mapper.write_mz_parquet_from_dir(output, ms_levels=levels)
+    _describe_in_dataset(output, "mz")
 
     click.echo(f"mz conversion complete. Output: {output}")

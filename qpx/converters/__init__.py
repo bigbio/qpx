@@ -24,7 +24,6 @@ from qpx.converters.maxquant.feature_adapter import MaxQuantFeatureAdapter
 from qpx.converters.maxquant.pg_adapter import MaxQuantPgAdapter
 from qpx.converters.maxquant.psm_adapter import MaxQuantPsmAdapter
 from qpx.converters.mzidentml.psm_adapter import MzIdentMLPsmAdapter
-from qpx.converters.openms.converter import OpenMSConverter
 from qpx.converters.orchestrator import BaseOrchestrator, build_dataset_record
 from qpx.converters.proteome_discoverer import ProteomeDiscovererConverter
 from qpx.converters.quantms_msstats.converter import QuantmsMsstatsConverter
@@ -64,8 +63,6 @@ __all__ = [
     "ProteomeDiscovererConverter",
     # mzIdentML
     "MzIdentMLPsmAdapter",
-    # OpenMS
-    "OpenMSConverter",
     # QuantMS MSstats
     "QuantmsMsstatsFeatureAdapter",
     "QuantmsMsstatsConverter",

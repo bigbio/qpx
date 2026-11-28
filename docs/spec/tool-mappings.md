@@ -17,7 +17,7 @@ The PSM (Peptide Spectrum Match) view captures spectrum-level identification res
 | QPX Field | MaxQuant | DIA-NN | FragPipe |
 | --- | --- | --- | --- |
 | `sequence` | Sequence | Stripped.Sequence | Peptide |
-| `peptidoform` | Modified sequence, plus the fixed modifications MaxQuant leaves out (SDRF, else parameters.txt or summary.txt; the isobaric label from the SDRF channel labels) and the SILAC label modifications of the `Labeling state` (summary.txt `Labels<n>`) | Modified.Sequence | Modified Peptide |
+| `peptidoform` | Modified sequence, plus the fixed modifications MaxQuant leaves out (SDRF, else parameters.txt or summary.txt; the isobaric label from the SDRF channel labels) and the SILAC label modifications of the `Labeling state` (summary.txt `Labels<n>`) | Modified.Sequence | Assigned Modifications, plus the mass shift they leave unexplained in the measured mass (`Calculated Peptide Mass` + `Delta Mass`) |
 | `label` | Labeling state (SILAC) | --- | --- |
 | `charge` | Charge | Precursor.Charge | Charge |
 | `posterior_error_probability` | PEP | PEP | 1 − PeptideProphet Probability (Probability in FragPipe 22) |
@@ -39,7 +39,7 @@ The Feature view captures quantified peptide features with intensity data. Featu
 | QPX Field | MaxQuant | DIA-NN | FragPipe | QuantMS MSstats |
 | --- | --- | --- | --- | --- |
 | `sequence` | Sequence | Stripped.Sequence | Peptide | PeptideSequence (unmodified) |
-| `peptidoform` | Modified sequence, plus the fixed modifications MaxQuant leaves out (SDRF, else parameters.txt or summary.txt; the isobaric label from the SDRF channel labels) | Modified.Sequence | Modified Peptide | PeptideSequence (ProForma-normalized) |
+| `peptidoform` | Modified sequence, plus the fixed modifications MaxQuant leaves out (SDRF, else parameters.txt or summary.txt; the isobaric label from the SDRF channel labels) | Modified.Sequence | Assigned Modifications, plus the delta masses of Modified Sequence at sites they leave out | PeptideSequence (ProForma-normalized) |
 | `charge` | Charge | Precursor.Charge | --- | Charge / PrecursorCharge |
 | `is_decoy` | Reverse | Decoy (`--report-decoys`), else accession prefix | --- | ProteinName prefix |
 | `is_library_decoy` | --- | `^` prefix of Modified.Sequence (2.x) | --- | --- |

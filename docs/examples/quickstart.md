@@ -9,7 +9,7 @@ Convert MaxQuant output files to QPX format.
 qpxc convert maxquant \
     --msms-file tests/examples/maxquant/maxquant_simple/msms.txt \
     --output-folder ./output \
-    --structures psm
+    --view psm
 
 # Convert all structures (PSM + feature + PG)
 qpxc convert maxquant \

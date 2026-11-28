@@ -40,6 +40,7 @@ def annotate_dataset_protein_properties(
     """
     from tempfile import TemporaryDirectory
 
+    from qpx.converters.ontology_util import write_view_ontology
     from qpx.dataset import Dataset
     from qpx.transforms.protein_properties import annotate_protein_properties
 
@@ -54,6 +55,10 @@ def annotate_dataset_protein_properties(
         report, names = annotate_protein_properties(dataset, prefix, fasta, staging, fasta_uri)
         if not any(name.endswith((".pg.parquet", ".feature.parquet")) for name in names):
             raise click.ClickException(f"No pg or feature Parquet file found in {dataset}")
+        protein, ontology = f"{prefix}.protein.parquet", f"{prefix}.ontology.parquet"
+        if protein in names and (dataset / ontology).is_file():
+            write_view_ontology(dataset, prefix, {"protein": staging / protein}, staging / ontology)
+            names.append(ontology)
         moves = [(staging / name, out_dir / name) for name in names]
         with Dataset(str(dataset), file_prefix=prefix) as qpx_dataset:
             metadata = _stage_dataset_integrity(qpx_dataset, prefix, staging, out_dir)
@@ -122,7 +127,7 @@ def transform_protein_properties_cmd(
     whose evidence names it: PSM protein accessions, feature groups, recorded positions),
     ``pg.molecular_weight`` (anchor average mass, kDa) and ``feature.pg_positions``
     (every one-based occurrence in each group member), and writes the ``protein``
-    view of the accessions the FASTA has. Values a producer recorded
+    view of the accessions the FASTA has, with its rows in the ontology view. Values a producer recorded
     are never overwritten. Proteins absent from the FASTA, such as DIA-NN's internal
     decoys, stay null and are counted in the report. The step is recorded in the
     provenance view with the FASTA's checksum.

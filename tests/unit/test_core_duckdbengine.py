@@ -111,6 +111,23 @@ def test_command_resources_reach_connections_opened_in_the_block(tmp_path):
         after.close()
 
 
+def test_command_removes_the_spill_folder_it_left_empty(tmp_path, monkeypatch):
+    """A spill folder created inside the block and left empty is removed; one that existed or holds files stays."""
+    monkeypatch.chdir(tmp_path)
+    kept, busy = tmp_path / "kept", tmp_path / "busy"
+    kept.mkdir()
+    # DuckDB creates the folder on its first spill, and DuckDB 2.0 can leave it behind empty.
+    with duckdb_defaults():
+        (tmp_path / ".tmp").mkdir()
+    with duckdb_defaults(temp_directory=kept):
+        pass
+    with duckdb_defaults(temp_directory=busy):
+        busy.mkdir()
+        (busy / "spill.tmp").write_bytes(b"")
+    assert not (tmp_path / ".tmp").exists()
+    assert kept.is_dir() and busy.is_dir()
+
+
 def test_lazy_query(feature_parquet):
     """LazyQuery: count, filter, execute, distinct_values."""
     engine = DuckDBEngine()

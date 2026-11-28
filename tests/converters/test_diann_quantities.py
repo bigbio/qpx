@@ -10,6 +10,7 @@ from qpx.cli.transform.quantify import _quantify_sdrf_mapping
 from qpx.converters.diann.converter import parse_diann_mod_masses
 from qpx.converters.diann.feature_adapter import DiannFeatureAdapter
 from qpx.converters.diann.pg_adapter import DiannPgAdapter
+from tests.conftest import read_view_table
 
 # Theoretical m/z of PEPTIDEK 2+ and of its mTRAQ-light form, as DIA-NN reports in Precursor.Mz.
 _MZ = 464.7347285
@@ -58,7 +59,7 @@ def _features(tmp_path, rows, sdrf=None, mod_masses=()) -> list[dict]:
     output = tmp_path / "out.feature.parquet"
     with DiannFeatureAdapter() as adapter:
         adapter.convert(diann_report=str(report), output_path=str(output), sdrf_path=sdrf, mod_masses=mod_masses)
-    return pq.read_table(output).to_pylist()
+    return read_view_table(output).to_pylist()
 
 
 def _pg(tmp_path, rows, sdrf=None) -> list[dict]:
@@ -67,7 +68,7 @@ def _pg(tmp_path, rows, sdrf=None) -> list[dict]:
     output = tmp_path / "out.pg.parquet"
     with DiannPgAdapter() as adapter:
         adapter.convert(diann_report=str(report), pg_matrix_path=None, output_path=str(output), sdrf_path=sdrf)
-    return pq.read_table(output).to_pylist()
+    return read_view_table(output).to_pylist()
 
 
 def _mtraq_rows(**per_channel) -> list[dict]:
@@ -260,6 +261,9 @@ def test_pg_carries_the_spec_mapped_quantities_and_scores(tmp_path):
     assert scores["genes_maxlfq_quality"] == (pytest.approx(0.7), True)
     assert scores["lib_pg_qvalue"] == (pytest.approx(0.005), False)
     assert scores["protein_qvalue"] == (pytest.approx(0.006), False)
+    # PG.Q.Value is the pg_qvalue column only (#377).
+    assert pg["pg_qvalue"] == pytest.approx(0.002)
+    assert "pg_qvalue" not in scores
 
 
 def test_quantify_reads_numeric_plexdia_labels(tmp_path):

@@ -337,3 +337,56 @@ def test_per_peak_ion_mobility_is_kept_with_its_unit(tmp_path):
     row = pq.read_table(str(out)).to_pylist()[0]
     assert row["ion_mobility_array"] == pytest.approx([0.8, 0.9])
     assert row["ion_mobility_array_unit"] == "ms"
+
+
+def test_cli_adds_the_mz_rows_to_the_ontology_of_a_dataset(mzml_dir, tmp_path):
+    """Written beside a dataset's ontology view, the mz view gets its rows and a recorded integrity still verifies;
+    a standalone file gets no ontology view."""
+    from qpx.cli.convert.mz import convert_mz_cmd
+    from qpx.cli.convert.postprocess import _maybe_compute_integrity
+    from qpx.dataset import Dataset
+    from qpx.writers import DatasetWriter
+    from qpx.writers.ontology import OntologyWriter
+    from tests.conftest import make_dataset_record
+
+    dataset = tmp_path / "dataset"
+    dataset.mkdir()
+    row = {"field_name": "ms_level", "view": "mz", "ontology_name": "ms level", "ontology_accession": "MS:1000511"}
+    other = {"field_name": "qvalue", "view": "psm", "ontology_name": "qvalue", "ontology_accession": None}
+    with OntologyWriter(dataset / "ds.ontology.parquet", creator="qpx") as writer:
+        writer.write_batch([row, other])
+    with DatasetWriter(dataset / "ds.dataset.parquet") as writer:
+        writer.write_batch([make_dataset_record()])
+    _maybe_compute_integrity(dataset, "ds", True)
+    result = CliRunner().invoke(convert_mz_cmd, ["--mzml-dir", str(mzml_dir), "--output", str(dataset / "ds.mz.parquet")])
+    assert result.exit_code == 0, result.output
+
+    rows = pq.read_table(dataset / "ds.ontology.parquet").to_pylist()
+    terms = {(entry["view"], entry["field_name"]): entry["ontology_accession"] for entry in rows}
+    assert terms[("mz", "ms_level")] == "MS:1000511"
+    assert terms[("mz", "scan_start_time")] == "MS:1000016"
+    # The rows of other views are kept as they are.
+    assert terms[("psm", "qvalue")] is None
+    with Dataset(str(dataset), file_prefix="ds") as ds:
+        assert ds.verify_integrity() == {"errors": [], "warnings": []}
+
+    standalone = tmp_path / "standalone"
+    result = CliRunner().invoke(convert_mz_cmd, ["--mzml-dir", str(mzml_dir), "--output", str(standalone / "ds.mz.parquet")])
+    assert result.exit_code == 0, result.output
+    assert sorted(path.name for path in standalone.iterdir()) == ["ds.mz.parquet"]
+
+
+def test_cli_warns_that_a_file_without_the_dataset_prefix_stays_outside_it(mzml_dir, tmp_path):
+    """A bare mz.parquet beside a dataset's ontology view gets no rows in it, and a warning says so."""
+    from qpx.cli.convert.mz import convert_mz_cmd
+    from qpx.writers.ontology import OntologyWriter
+
+    dataset = tmp_path / "dataset"
+    dataset.mkdir()
+    row = {"field_name": "qvalue", "view": "psm", "ontology_name": "qvalue", "ontology_accession": None}
+    with OntologyWriter(dataset / "ds.ontology.parquet", creator="qpx") as writer:
+        writer.write_batch([row])
+    result = CliRunner().invoke(convert_mz_cmd, ["--mzml-dir", str(mzml_dir), "--output", str(dataset / "mz.parquet")])
+    assert result.exit_code == 0, result.output
+    assert "mz.parquet is not named <prefix>.mz.parquet" in result.stderr
+    assert [entry["view"] for entry in pq.read_table(dataset / "ds.ontology.parquet").to_pylist()] == ["psm"]

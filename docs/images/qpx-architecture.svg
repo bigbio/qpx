@@ -18,7 +18,7 @@ text { font-family: system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans
 <text x="40" y="122" font-size="16" text-anchor="start" class="b">Inputs</text>
 <text x="40" y="142" font-size="12" text-anchor="start" class="mono mu">qpxc convert &lt;tool&gt;</text>
 <text x="40" y="181.0" font-size="13" text-anchor="start" class="b">OpenMS / quantms</text>
-<text x="40" y="198.0" font-size="11" text-anchor="start" class="mono t2">native QPX · XML · MSstats</text>
+<text x="40" y="198.0" font-size="11" text-anchor="start" class="mono t2">consensusXML · MSstats</text>
 <line x1="40" y1="213.2" x2="272" y2="213.2" stroke="var(--hair)" stroke-width="1"/>
 <text x="40" y="232.2" font-size="13" text-anchor="start" class="b">DIA-NN</text>
 <text x="40" y="249.2" font-size="11" text-anchor="start" class="mono t2">report.parquet / .tsv · pg_matrix</text>

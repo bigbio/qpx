@@ -59,11 +59,13 @@ def transform_site_cmd(dataset: Path, modifications: tuple, in_place: bool, outp
     the modification there, and the apparent stoichiometry against all peptides covering
     the residue. Needs feature.pg_positions, which 'qpxc transform protein-properties
     --fasta' fills. The anchor protein is the one a shared peptide's site is placed on.
+    The ontology view of the dataset gets the rows of the site view.
 
     \b
     Example:
         qpxc transform site --dataset ./qpx_output --modification Phospho --in-place
     """
+    from qpx.converters.ontology_util import write_view_ontology
     from qpx.dataset import Dataset
     from qpx.transforms.site_quant import derive_sites
 
@@ -84,9 +86,13 @@ def transform_site_cmd(dataset: Path, modifications: tuple, in_place: bool, outp
             rows = derive_sites(feature, list(modifications), staging / f"{prefix}.site.parquet")
         except ValueError as error:
             raise click.ClickException(str(error)) from error
-        provenance = f"{prefix}.provenance.parquet"
+        site, provenance, ontology = f"{prefix}.site.parquet", f"{prefix}.provenance.parquet", f"{prefix}.ontology.parquet"
         _provenance_step(modifications, dataset / provenance, staging / provenance)
-        moves = [(staging / name, out_dir / name) for name in (f"{prefix}.site.parquet", provenance)]
+        names = [site, provenance]
+        if (dataset / ontology).is_file():
+            write_view_ontology(dataset, prefix, {"site": staging / site}, staging / ontology)
+            names.append(ontology)
+        moves = [(staging / name, out_dir / name) for name in names]
         with Dataset(str(dataset), file_prefix=prefix) as qpx_dataset:
             metadata = _stage_dataset_integrity(qpx_dataset, prefix, staging, out_dir)
         if metadata is not None:

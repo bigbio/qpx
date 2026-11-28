@@ -99,16 +99,10 @@ def test_streaming_missing_scores_are_not_zero(tmp_path, score, expected):
         str(source), str(tmp_path / "out"), structures=("feature", "psm", "pg"), streaming=True
     )
 
-    for view, field in (("feature", "peptide_qvalue"), ("pg", "global_qvalue")):
+    for view, field in (("feature", "peptide_qvalue"), ("pg", "global_qvalue"), ("psm", "qvalue")):
         rows = pq.read_table(written[view]).to_pylist()
         assert rows
         assert all(row[field] == expected for row in rows)
-    psms = pq.read_table(written["psm"]).to_pylist()
-    assert psms
-    scores = [
-        score["score_value"] for row in psms for score in row["additional_scores"] or [] if score["score_name"] == "q-value"
-    ]
-    assert scores == ([expected] * len(psms) if expected is not None else [])
 
 
 def test_mass_error_ppm_is_computed_from_the_two_mz_values():
