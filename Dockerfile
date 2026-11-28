@@ -11,7 +11,7 @@
 # Run:
 #   docker run --rm -v $(pwd):/data ghcr.io/bigbio/qpx:dev convert diann --help
 
-FROM python:3.11-slim-bookworm
+FROM python:3.11-slim-trixie
 
 # Runtime system deps required by pyOpenMS (see environment.yml).
 # hadolint ignore=DL3008
@@ -29,7 +29,7 @@ WORKDIR /src
 COPY pyproject.toml README.md LICENSE ./
 COPY qpx ./qpx
 
-RUN pip install --no-cache-dir --upgrade pip==24.0 \
+RUN pip install --no-cache-dir --upgrade pip==26.3 \
  && pip install --no-cache-dir . \
  && rm -rf /src
 
