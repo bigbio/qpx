@@ -11,15 +11,15 @@ jobs:
     timeout-minutes: 60 # 1 hour timeout for the entire job
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Python 3.10
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v7
         with:
           python-version: "3.10"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v10.4.0
         with:
           enable-cache: true
 
@@ -67,7 +67,7 @@ jobs:
 
       - name: Upload Example Outputs
         if: ${{ github.event_name == 'release' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: qpx-example-outputs-${{ github.ref_name }}
           path: examples/output/
